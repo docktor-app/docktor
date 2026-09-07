@@ -251,7 +251,7 @@ Plans:
   3. User can remove a proxy configuration from the UI; the routing/TLS env vars are removed from the service's compose file and it is redeployed
   4. Proxy operations are idempotent: reconfiguring an existing domain updates the service's env vars rather than creating a duplicate
 
-**Plans**: 6/6 plans executed
+**Plans**: 7 plans (6/6 executed, 1 gap-closure plan pending)
 
 Plans:
 **Wave 1**
@@ -274,6 +274,10 @@ Plans:
 **Wave 5** *(blocked on Wave 4 completion)*
 
 - [x] 06-05-PLAN.md — Client: Proxy tab, Settings > Proxy card, protected-stack action disabling, Playwright coverage
+
+**Wave 6** *(gap closure — blocked on Wave 5 completion)*
+
+- [ ] 06-07-PLAN.md — G-06-3: build @docktor/shared before every test and dev entry point, pin the invalid-hostname 400 with a database-free route test, and fail loudly on a stale compiled shared
 
 ## Progress
 
