@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 06-proxy-configuration
 source: [06-01-SUMMARY.md, 06-02-SUMMARY.md, 06-03-SUMMARY.md, 06-04-SUMMARY.md, 06-05-SUMMARY.md, 06-06-SUMMARY.md]
 started: 2026-09-04T00:00:00Z
@@ -68,5 +68,12 @@ blocked: 0
   reason: "User reported: proxy.test.ts > POST /api/stacks/:id/services/:serviceName/proxy > returns 400 for an invalid hostname — AssertionError: expected 201 to be 400 (received 201)"
   severity: major
   test: 3
-  artifacts: []  # Filled by diagnosis
-  missing: []    # Filled by diagnosis
+  artifacts:
+    - shared/src/validation/proxy.ts        # hostnamePattern regex + assignDomainSchema — verified correct, not the cause
+    - shared/package.json                   # main: "dist/index.js" — server consumes the compiled artifact, not src
+    - server/src/routes/proxy.ts            # route wiring — verified correct, not the cause
+    - server/package.json                   # test/test:integration scripts — no pretest/prepare rebuild of @docktor/shared
+    - package.json (root)                   # only build/build:server rebuild shared first; no prepare/postinstall hook
+    - .planning/debug/assigning-a-domain-with-an-invalid-hostname-returns-400.md  # full investigation
+  missing:
+    - "A build-freshness guarantee for @docktor/shared before @docktor/server's test/test:integration scripts run (e.g. a pretest hook running `yarn workspace @docktor/shared build`, or resolving @docktor/shared to TS source in dev/test contexts) — without it, a stale/never-built shared/dist silently serves a more permissive (or entirely unvalidated) assignDomainSchema than what's in shared/src, letting invalid hostnames like 'not a hostname' pass validation and reach 201."
