@@ -37,7 +37,7 @@ one where silent holes would otherwise accumulate.
 
 | capability | decision | reason |
 |---|---|---|
-| `LETSENCRYPT_HOST` (or its `ACME_HOST` alias — resolved at execution time, see 06-01 Task 1) | INTEGRATE | |
+| `LETSENCRYPT_HOST` (or `ACME_HOST` alias) | INTEGRATE | alias resolved at execution time, see 06-01 Task 1 |
 | `DEFAULT_EMAIL` on the companion container | INTEGRATE | D-09 — the single global ACME registration email |
 | `NGINX_PROXY_CONTAINER` | INTEGRATE | A2 — pinned explicitly rather than relying on label auto-detection |
 | automatic renewal | INTEGRATE | owned entirely by the container; Docktor observes outcome only |
