@@ -7,9 +7,9 @@
         "dev": "dotenv -e ../.env.development -- tsx watch src/index.ts",
         "build": "tsc --project tsconfig.json",
         "start": "node dist/index.js",
-        "test": "vitest run",
-        "test:unit": "vitest run --project unit",
-        "test:integration": "vitest run --project test/integration"
+        "test": "yarn workspace @docktor/shared build && vitest run",
+        "test:unit": "yarn workspace @docktor/shared build && vitest run --project unit",
+        "test:integration": "yarn workspace @docktor/shared build && vitest run --project test/integration"
     },
     "dependencies": {
         "@docktor/shared": "workspace:*",

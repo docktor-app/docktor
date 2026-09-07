@@ -7,10 +7,10 @@
         "dev": "vite",
         "build": "tsc -b && vite build",
         "preview": "vite preview",
-        "test": "vitest run",
-        "test:unit": "vitest run",
-        "test:integration": "playwright test",
-        "test:integration:headed": "playwright test --ui"
+        "test": "yarn workspace @docktor/shared build && vitest run",
+        "test:unit": "yarn workspace @docktor/shared build && vitest run",
+        "test:integration": "yarn workspace @docktor/shared build && playwright test",
+        "test:integration:headed": "yarn workspace @docktor/shared build && playwright test --ui"
     },
     "dependencies": {
         "@docktor/shared": "workspace:*",

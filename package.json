@@ -10,7 +10,7 @@
         "client"
     ],
     "scripts": {
-        "dev": "concurrently -n server,client -c blue,green \"yarn workspace @docktor/server dev\" \"yarn workspace @docktor/client dev\"",
+        "dev": "yarn workspace @docktor/shared build && concurrently -n server,client -c blue,green \"yarn workspace @docktor/server dev\" \"yarn workspace @docktor/client dev\"",
         "build": "yarn workspace @docktor/shared build && yarn workspace @docktor/client build && yarn workspace @docktor/server build",
         "build:server": "yarn workspace @docktor/shared build && yarn workspace @docktor/server build",
         "build:client": "yarn workspace @docktor/client build",
