@@ -1,27 +1,20 @@
 ---
-status: testing
+status: complete
 phase: 06-proxy-configuration
 source: [06-VERIFICATION.md]
 started: 2026-09-07T19:20:00Z
-updated: 2026-09-07T19:20:00Z
+updated: 2026-09-07T19:35:00Z
 ---
 
 ## Current Test
 
-number: 1
-name: Live DB-backed integration re-run of the invalid-hostname 400 (G-06-3 final closure)
-expected: |
-  On a host with a reachable Postgres (no TCP-to-Docker-published-port block), run
-  `yarn workspace @docktor/server test:integration test/integration/proxy.test.ts`.
-  All cases pass, including "returns 400 for an invalid hostname" at proxy.test.ts:132
-  (previously 201, G-06-3).
-awaiting: user response
+[testing complete]
 
 ## Tests
 
 ### 1. Live DB-backed integration re-run of the invalid-hostname 400 (G-06-3 final closure)
 expected: On a host with a reachable Postgres (no TCP-to-Docker-published-port block), run `yarn workspace @docktor/server test:integration test/integration/proxy.test.ts`. All cases pass, including "returns 400 for an invalid hostname" at proxy.test.ts:132 (previously 201, G-06-3). This re-runs the same assertion that originally caught G-06-3 (formerly test 3 in this file) — the route-level mechanism is now proven correct and DB-independent (06-VERIFICATION.md Truth #18), but the plan's own human-check designates this live re-run as the final closure step.
-result: pending
+result: pass
 
 ### 2. Certificate issuance on a real host
 expected: With the proxy stack deployed and a domain assigned with TLS on, confirm Docktor can read the acme-companion-written cert files. A domain whose DNS does not point at the host shows "Cert failed" with a real acme-companion log line; a domain that does point at the host reaches "Secured".
@@ -31,9 +24,9 @@ reason: No real host with public DNS available for testing right now (unaffected
 ## Summary
 
 total: 2
-passed: 0
+passed: 1
 issues: 0
-pending: 1
+pending: 0
 skipped: 1
 blocked: 0
 
