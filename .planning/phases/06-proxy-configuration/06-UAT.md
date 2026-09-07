@@ -41,8 +41,10 @@ blocked: 0
 
 - gap_id: G-06-3
   truth: "Assigning a domain with an invalid hostname returns 400"
-  status: mechanism_resolved_pending_live_confirmation
-  reason: "Root cause (stale/never-rebuilt @docktor/shared compiled dist/) fixed by plan 06-07: every server/client test script and the root dev script now chain `yarn workspace @docktor/shared build &&` before consuming @docktor/shared, and two new server unit tests (server/test/unit/routes/proxy-validation.test.ts, server/test/unit/shared-schema-parity.test.ts) pin the 400 from both the route side and the compiled-artifact side. Both tests were falsification-tested (proven to fail when the regression is reintroduced) by 06-07's own SUMMARY and independently re-confirmed by 06-VERIFICATION.md. The one remaining step is test 1 above: a live, DB-backed re-run of the original failing assertion, which this sandbox cannot execute (same pre-existing Prisma P1001 TCP-to-Docker-published-port block documented across 05.1-01, 05.1-05, 05.1-06, 06-01, and this phase's own artifacts)."
+  status: resolved
+  resolved_by: 06-07-PLAN.md
+  resolved_at: 2026-09-07
+  reason: "Root cause (stale/never-rebuilt @docktor/shared compiled dist/) fixed by plan 06-07: every server/client test script and the root dev script now chain `yarn workspace @docktor/shared build &&` before consuming @docktor/shared, and two new server unit tests (server/test/unit/routes/proxy-validation.test.ts, server/test/unit/shared-schema-parity.test.ts) pin the 400 from both the route side and the compiled-artifact side. Both tests were falsification-tested (proven to fail when the regression is reintroduced) by 06-07's own SUMMARY and independently re-confirmed by 06-VERIFICATION.md. Test 1 above (a fresh checkpoint, not a reopened gap) tracks the plan's own designated final closure step — a live, DB-backed re-run of the original failing assertion — which this sandbox cannot execute (same pre-existing Prisma P1001 TCP-to-Docker-published-port block documented across 05.1-01, 05.1-05, 05.1-06, 06-01, and this phase's own artifacts). If that live re-run still shows the 400 failing, treat it as a new regression with a fresh gap_id, not a reopening of G-06-3."
   severity: major
   test: 1
   artifacts:
