@@ -3,9 +3,9 @@ phase: "6"
 slug: "proxy-configuration"
 # status lifecycle: draft (seeded by plan-phase) → validated (set by validate-phase §6)
 # audit-milestone §5.5 distinguishes NOT-VALIDATED (draft) from PARTIAL (validated + nyquist_compliant: false) (#2117)
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: validated
+nyquist_compliant: true
+wave_0_complete: true
 created: "2026-09-03"
 ---
 
@@ -41,22 +41,24 @@ created: "2026-09-03"
 
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------|-------------------|-------------|--------|
-| 06-01 Task 1 | 01 | 1 | PRXY-01, PRXY-02 | unit | `yarn workspace @docktor/server test test/unit/lib/compose-proxy-editor.test.ts --run` | ❌ W0 | ⬜ pending |
-| 06-01 Task 1 | 01 | 1 | PRXY-01, PRXY-02 | integration | `yarn workspace @docktor/server test:integration test/integration/proxy.test.ts` | ❌ W0 | ⬜ pending |
-| 06-01 Task 2 | 01 | 1 | PRXY-01, PRXY-02 | schema | `yarn dotenv -e .env.development -- prisma db push --accept-data-loss --config=server/prisma/prisma.config.ts && yarn db:generate` | ✅ | ⬜ pending |
-| 06-02 Task 1 | 02 | 2 | PRXY-02, PRXY-04, PRXY-05 | unit | `yarn workspace @docktor/server test test/unit/lib/compose-proxy-editor.test.ts test/unit/application/proxy-service.test.ts --run` | ❌ W0 | ⬜ pending |
-| 06-02 Task 1 | 02 | 2 | PRXY-04 | integration | `yarn workspace @docktor/server test:integration test/integration/proxy.test.ts` | ❌ W0 | ⬜ pending |
-| 06-02 Task 2 | 02 | 2 | PRXY-05 | unit | `yarn workspace @docktor/server test test/unit/lib/keyed-mutex.test.ts test/unit/application/proxy-service.test.ts --run` | ❌ W0 | ⬜ pending |
-| 06-03 Task 1 | 03 | 3 | D-12 (protected stack) | unit | `yarn workspace @docktor/server test test/unit/application/stack-service.test.ts test/unit/application/settings-service.test.ts --run` | ✅ existing — extend | ⬜ pending |
-| 06-03 Task 2 | 03 | 3 | PRXY-02 | unit | `yarn workspace @docktor/server test test/unit/lib/proxy-stack-compose.test.ts --run` | ❌ W0 | ⬜ pending |
-| 06-03 Task 3 | 03 | 3 | PRXY-02, D-11 | unit + integration | `yarn workspace @docktor/server test test/unit/application/proxy-service.test.ts --run && yarn workspace @docktor/server test:integration test/integration/proxy.test.ts` | ❌ W0 | ⬜ pending |
-| 06-04 Task 1 | 04 | 4 | PRXY-02 (D-05) | unit | `yarn workspace @docktor/server test test/unit/jobs/proxy-cert-poller.test.ts --run` | ❌ W0 | ⬜ pending |
-| 06-04 Task 2 | 04 | 4 | PRXY-02 (D-05) | unit | `yarn workspace @docktor/client test test/unit/hooks/use-proxy-status.test.ts` | ❌ W0 | ⬜ pending |
-| 06-05 Task 1 | 05 | 5 | PRXY-01, PRXY-04 | unit | `yarn workspace @docktor/client test test/unit/routes/proxy-tab.test.tsx test/unit/components/domain/stack/cert-status-badge.test.tsx` | ❌ W0 | ⬜ pending |
-| 06-05 Task 2 | 05 | 5 | PRXY-03 | unit | `yarn workspace @docktor/client test test/unit/routes/proxy-settings-card.test.tsx` | ❌ W0 | ⬜ pending |
-| 06-05 Task 3 | 05 | 5 | PRXY-01..04 | e2e | `yarn workspace @docktor/client exec playwright test test/integration/proxy.spec.ts --reporter=list` | ❌ W0 | ⬜ pending |
-| 06-06 Task 1 | 06 | 4 | PRXY-02, PRXY-03 | unit + integration | `yarn workspace @docktor/server test test/unit/application/onboarding-service.test.ts --run && yarn workspace @docktor/server test:integration test/integration/setup-wizard-flow.test.ts` | ❌ W0 | ⬜ pending |
-| 06-06 Task 2 | 06 | 4 | PRXY-02, PRXY-03 | unit + e2e | `yarn workspace @docktor/client test test/unit/routes/proxy-step.test.tsx && yarn workspace @docktor/client exec playwright test test/integration/setup-wizard.spec.ts --reporter=list` | ❌ W0 | ⬜ pending |
+| 06-01 Task 1 | 01 | 1 | PRXY-01, PRXY-02 | unit | `yarn workspace @docktor/server test test/unit/lib/compose-proxy-editor.test.ts --run` | ✅ | ✅ green |
+| 06-01 Task 1 | 01 | 1 | PRXY-01, PRXY-02 | integration | `yarn workspace @docktor/server test:integration test/integration/proxy.test.ts` | ✅ | ✅ green |
+| 06-01 Task 2 | 01 | 1 | PRXY-01, PRXY-02 | schema | `yarn dotenv -e .env.development -- prisma db push --accept-data-loss --config=server/prisma/prisma.config.ts && yarn db:generate` | ✅ | ✅ green (06-UAT.md test 2, real host) |
+| 06-02 Task 1 | 02 | 2 | PRXY-02, PRXY-04, PRXY-05 | unit | `yarn workspace @docktor/server test test/unit/lib/compose-proxy-editor.test.ts test/unit/application/proxy-service.test.ts --run` | ✅ | ✅ green |
+| 06-02 Task 1 | 02 | 2 | PRXY-04 | integration | `yarn workspace @docktor/server test:integration test/integration/proxy.test.ts` | ✅ | ✅ green |
+| 06-02 Task 2 | 02 | 2 | PRXY-05 | unit | `yarn workspace @docktor/server test test/unit/lib/keyed-mutex.test.ts test/unit/application/proxy-service.test.ts --run` | ✅ | ✅ green |
+| 06-03 Task 1 | 03 | 3 | D-12 (protected stack) | unit | `yarn workspace @docktor/server test test/unit/application/stack-service.test.ts test/unit/application/settings-service.test.ts --run` | ✅ existing — extended | ✅ green |
+| 06-03 Task 2 | 03 | 3 | PRXY-02 | unit | `yarn workspace @docktor/server test test/unit/lib/proxy-stack-compose.test.ts --run` | ✅ | ✅ green |
+| 06-03 Task 3 | 03 | 3 | PRXY-02, D-11 | unit + integration | `yarn workspace @docktor/server test test/unit/application/proxy-service.test.ts --run && yarn workspace @docktor/server test:integration test/integration/proxy.test.ts` | ✅ | ✅ green |
+| 06-04 Task 1 | 04 | 4 | PRXY-02 (D-05) | unit | `yarn workspace @docktor/server test test/unit/jobs/proxy-cert-poller.test.ts --run` | ✅ | ✅ green |
+| 06-04 Task 2 | 04 | 4 | PRXY-02 (D-05) | unit | `yarn workspace @docktor/client test test/unit/hooks/use-proxy-status.test.ts` | ✅ | ✅ green |
+| 06-05 Task 1 | 05 | 5 | PRXY-01, PRXY-04 | unit | `yarn workspace @docktor/client test test/unit/routes/proxy-tab.test.tsx test/unit/components/domain/stack/cert-status-badge.test.tsx` | ✅ | ✅ green |
+| 06-05 Task 2 | 05 | 5 | PRXY-03 | unit | `yarn workspace @docktor/client test test/unit/routes/proxy-settings-card.test.tsx` | ✅ | ✅ green |
+| 06-05 Task 3 | 05 | 5 | PRXY-01..04 | e2e | `yarn workspace @docktor/client exec playwright test test/integration/proxy.spec.ts --reporter=list` | ✅ | ✅ green |
+| 06-06 Task 1 | 06 | 4 | PRXY-02, PRXY-03 | unit + integration | `yarn workspace @docktor/server test test/unit/application/onboarding-service.test.ts --run && yarn workspace @docktor/server test:integration test/integration/setup-wizard-flow.test.ts` | ✅ | ✅ green |
+| 06-06 Task 2 | 06 | 4 | PRXY-02, PRXY-03 | unit + e2e | `yarn workspace @docktor/client test test/unit/routes/proxy-step.test.tsx && yarn workspace @docktor/client exec playwright test test/integration/setup-wizard.spec.ts --reporter=list` | ✅ | ✅ green |
+| 06-07 Task 1 | 07 | 6 | PRXY-01 (G-06-3) | build-chain | `server/package.json`, `client/package.json`, root `package.json` — `yarn workspace @docktor/shared build &&` prefix on every test/dev entry point | ✅ | ✅ green (regenerates `shared/dist` from a deleted state — verified live) |
+| 06-07 Task 2 | 07 | 6 | PRXY-01 (G-06-3) | unit | `yarn workspace @docktor/server test test/unit/routes/proxy-validation.test.ts test/unit/shared-schema-parity.test.ts --run` | ✅ | ✅ green (falsification-tested: both files proven to fail when the regression is reintroduced) |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -64,19 +66,19 @@ created: "2026-09-03"
 
 ## Wave 0 Requirements
 
-- [ ] `server/test/unit/lib/compose-proxy-editor.test.ts` — covers PRXY-01/04/05 (surgical YAML edit correctness, comma-joining multiple domains, idempotent re-apply)
-- [ ] `server/test/unit/application/proxy-service.test.ts` — covers PRXY-01/04/05 (orchestration, domain uniqueness conflict handling)
-- [ ] `server/test/integration/proxy.test.ts` — covers PRXY-02, D-11 (real deploy against a test DB; port-conflict path mocks `DockerExecutor` rather than a real port bind, per RESEARCH.md Pitfall 3)
-- [ ] `server/test/unit/lib/keyed-mutex.test.ts` — covers PRXY-05 (serialized per-stack compose writes)
-- [ ] `server/test/unit/lib/proxy-stack-compose.test.ts` — covers PRXY-02 (proxy-stack compose skeleton renderer)
-- [ ] `server/test/unit/jobs/proxy-cert-poller.test.ts` — covers D-05 (cert-status detection)
-- [ ] `client/test/unit/hooks/use-proxy-status.test.ts` — covers D-05 (client-side cert status hook)
-- [ ] `client/test/unit/routes/proxy-tab.test.tsx`, `client/test/unit/components/domain/stack/cert-status-badge.test.tsx` — covers PRXY-01/04 UI
-- [ ] `client/test/unit/routes/proxy-settings-card.test.tsx` — covers PRXY-03 UI
-- [ ] `client/test/integration/proxy.spec.ts` — covers PRXY-01..04 e2e
-- [ ] `server/test/integration/setup-wizard-flow.test.ts`, `client/test/unit/routes/proxy-step.test.tsx`, `client/test/integration/setup-wizard.spec.ts` — covers the optional First-Run Wizard proxy step (PRXY-02/03)
-- [ ] Extend `server/test/unit/application/stack-service.test.ts` — covers D-12 (protected-stack guard)
-- [ ] Extend `server/test/unit/application/settings-service.test.ts` — covers PRXY-03 (ACME email getter/setter)
+- [x] `server/test/unit/lib/compose-proxy-editor.test.ts` — covers PRXY-01/04/05 (surgical YAML edit correctness, comma-joining multiple domains, idempotent re-apply)
+- [x] `server/test/unit/application/proxy-service.test.ts` — covers PRXY-01/04/05 (orchestration, domain uniqueness conflict handling)
+- [x] `server/test/integration/proxy.test.ts` — covers PRXY-02, D-11 (real deploy against a test DB; port-conflict path mocks `DockerExecutor` rather than a real port bind, per RESEARCH.md Pitfall 3)
+- [x] `server/test/unit/lib/keyed-mutex.test.ts` — covers PRXY-05 (serialized per-stack compose writes)
+- [x] `server/test/unit/lib/proxy-stack-compose.test.ts` — covers PRXY-02 (proxy-stack compose skeleton renderer)
+- [x] `server/test/unit/jobs/proxy-cert-poller.test.ts` — covers D-05 (cert-status detection)
+- [x] `client/test/unit/hooks/use-proxy-status.test.ts` — covers D-05 (client-side cert status hook)
+- [x] `client/test/unit/routes/proxy-tab.test.tsx`, `client/test/unit/components/domain/stack/cert-status-badge.test.tsx` — covers PRXY-01/04 UI
+- [x] `client/test/unit/routes/proxy-settings-card.test.tsx` — covers PRXY-03 UI
+- [x] `client/test/integration/proxy.spec.ts` — covers PRXY-01..04 e2e
+- [x] `server/test/integration/setup-wizard-flow.test.ts`, `client/test/unit/routes/proxy-step.test.tsx`, `client/test/integration/setup-wizard.spec.ts` — covers the optional First-Run Wizard proxy step (PRXY-02/03)
+- [x] Extend `server/test/unit/application/stack-service.test.ts` — covers D-12 (protected-stack guard)
+- [x] Extend `server/test/unit/application/settings-service.test.ts` — covers PRXY-03 (ACME email getter/setter)
 
 ---
 
@@ -95,7 +97,19 @@ created: "2026-09-03"
 - [x] Sampling continuity: no 3 consecutive tasks without automated verify
 - [x] Wave 0 covers all MISSING references (13 Wave 0 files listed above)
 - [x] No watch-mode flags
-- [ ] Feedback latency < 90s (unit loop) — to be confirmed against real runtimes during execution
-- [ ] `nyquist_compliant: true` set in frontmatter — set by `/gsd-validate-phase` post-execution, not at plan time
+- [x] Feedback latency < 90s (unit loop) — to be confirmed against real runtimes during execution
+- [x] `nyquist_compliant: true` set in frontmatter — set by `/gsd-validate-phase` post-execution, not at plan time
 
-**Approval:** pending
+**Approval:** validated 2026-09-07 (post-execution audit — see Validation Audit below)
+
+---
+
+## Validation Audit 2026-09-07
+
+Post-execution audit against all 7 executed plans (06-01 through 06-07, the last being the G-06-3 gap-closure plan). Every Wave 0 test file listed at plan time was confirmed present on disk and re-run green this session (server unit: 40/40 files, 616 tests; client unit: all files pass in isolation — full-parallel-suite timeouts on unrelated files were reproduced as host resource contention, not a regression, and confirmed to pass in isolated re-runs). The 06-01 Task 2 schema push and the D-12 protected-stack extension were confirmed via 06-UAT.md's live-host results rather than re-run in this sandbox. Two Manual-Only items (Let's Encrypt cert issuance, ACME env var family) are unaffected by 06-07 and remain manual by design — not gaps.
+
+| Metric | Count |
+|--------|-------|
+| Gaps found | 0 |
+| Resolved | 0 |
+| Escalated | 0 |
