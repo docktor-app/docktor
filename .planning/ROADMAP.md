@@ -251,7 +251,7 @@ Plans:
   3. User can remove a proxy configuration from the UI; the routing/TLS env vars are removed from the service's compose file and it is redeployed
   4. Proxy operations are idempotent: reconfiguring an existing domain updates the service's env vars rather than creating a duplicate
 
-**Plans**: 7 plans (6/6 executed, 1 gap-closure plan pending)
+**Plans**: 7/7 plans executed (6/6 executed, 1 gap-closure plan pending)
 
 Plans:
 **Wave 1**
@@ -277,7 +277,7 @@ Plans:
 
 **Wave 6** *(gap closure — blocked on Wave 5 completion)*
 
-- [ ] 06-07-PLAN.md — G-06-3: build @docktor/shared before every test and dev entry point, pin the invalid-hostname 400 with a database-free route test, and fail loudly on a stale compiled shared
+- [x] 06-07-PLAN.md — G-06-3: build @docktor/shared before every test and dev entry point, pin the invalid-hostname 400 with a database-free route test, and fail loudly on a stale compiled shared
 
 ## Progress
 
@@ -291,4 +291,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. Notifications | 5/5 | Complete   | 2026-03-20 |
 | 4. Backup & Restore | 17/17 | Complete    | 2026-08-31 |
 | 5. Onboarding | 11/10 | Complete    | 2026-08-31 |
-| 6. Proxy Configuration | 6/6 | In Progress|  |
+| 6. Proxy Configuration | 7/7 | In Progress|  |

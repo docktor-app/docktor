@@ -1,17 +1,17 @@
 ---
-gsd_state_version: 1.0
+gsd_state_version: "1.0"
 milestone: v1.0
 current_phase: 06
 current_phase_name: Proxy Configuration
 status: Phase 02 (Observability) complete — 16/16 plans, UAT 16/18 passed (2 acknowledged skips), Nyquist validated, security-verified (0 open threats), UI-audited (18/24)
-stopped_at: Completed 06-05-PLAN.md
-last_updated: "2026-09-04T12:27:54.465Z"
-state_head: a934b21da6faa6e181a571a82e94b92d5f749d48
+stopped_at: Completed 06-07-PLAN.md
+last_updated: "2026-09-07T16:33:38.168Z"
+state_head: de67ef8e4b3d6e41f026a53e8192be32907f49a4
 progress:
   total_phases: 7
   completed_phases: 5
-  total_plans: 73
-  completed_plans: 73
+  total_plans: 74
+  completed_plans: 74
 milestone_name: milestone
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-08-30)
 ## Current Position
 
 Phase: 06 (Proxy Configuration) — EXECUTING
-Plan: 6 of 6
+Plan: 2 of 7
 
 _Phase 04 (backup-restore) gap-closure planning complete — 2 new plans (04-15, 04-16), READY TO EXECUTE. This is a re-planned already-executed phase, not the project's current focus; run `/gsd-execute-phase 04 --gaps-only` when ready to close these gaps._
 
@@ -122,6 +122,7 @@ _Phase 04 (backup-restore) gap-closure planning complete — 2 new plans (04-15,
 | Phase 06 P04 | 25min | 2 tasks | 9 files |
 | Phase 06 P06 | 50min | 2 tasks | 11 files |
 | Phase 06 P05 | 90min | 3 tasks | 13 files |
+| Phase 06 P07 | 25min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -270,6 +271,8 @@ Recent decisions affecting current work:
 - [Phase 06]: [Phase 06-05] ProxySettingsCard's Deploy Proxy Stack button uses variant="outline" not the primary/default variant — --primary is reserved for the card's one primary submit (Save Proxy Settings)
 - [Phase 06]: [Phase 06-05] client/src/routes/app/settings/components/ created as a new directory for ProxySettingsCard per CLAUDE.md's Known Refactoring Target for settings.tsx, rather than adding a fifth inline card to the monolith
 - [Phase 06]: [Phase 06-05] standardSchemaResolver(assignDomainSchema) cast to Resolver<AssignDomainInput> in proxy-tab.tsx, mirroring notifications-step.tsx's established fix for z.coerce.number() fields breaking useForm<T> generic inference
+- [Phase 06]: [Phase 06-07] Chained yarn workspace @docktor/shared build && onto every server/client test script and the root dev script instead of pretest/predev hooks — Yarn Berry does not run pre/post lifecycle scripts
+- [Phase 06]: [Phase 06-07] Parity test (shared-schema-parity.test.ts) lives in server/test/unit/, not shared/ — asserts from the module context that G-06-3 actually fooled
 
 ### Quick Tasks Completed
 
@@ -326,6 +329,7 @@ Recent decisions affecting current work:
 - [Phase 06-03] Task 3 human-check (live proxy-stack deploy on host ports 80/443, docker ps/network ls confirmation, dashboard-hiding + stop/restart/delete-refusal check) not performed live in this session — execution host is shared with real unrelated Docker workloads and STATE.md documents a prior incident (05.1-03) where a live docker compose test on this host stopped real production containers. A human on a dedicated/verified-clear host must perform this before phase UAT closes.
 - [Phase 06-06] Task 2's human-check (fresh-install browser walkthrough of the 6-step wizard, confirming Skip deploys nothing and Deploy Proxy Stack with free ports 80/443 leaves two running proxy containers) not performed live in this session — same shared-host risk documented for 06-03's D-human-check. A human on a dedicated/verified-clear host must perform this before phase UAT closes.
 - [Phase 06-05] Full-suite yarn workspace @docktor/client test / playwright test runs are unreliable on this host right now (uptime showed load avg ~85 on 6 cores, swap nearly exhausted, ps aux confirmed unrelated resident SonarQube/Immich/MySQL/MariaDB/Postgres/Tandoor workloads) — 17 vitest failures and 2 Playwright failures observed this session were all in files this plan does not touch (pre-existing flake, same class documented in 06-04-SUMMARY.md). All of this plan's own new/changed test files pass reliably in isolation and small groups; see 06-05-SUMMARY.md Issues Encountered for the full breakdown.
+- [Phase 06-07] Human-check (live DB-backed re-run of test/integration/proxy.test.ts 'returns 400 for an invalid hostname' on an unrestricted host) still not performed — same pre-existing TCP-payload-block class as 05.1-01/05.1-05/05.1-06/06-01. All database-free unit tests (40 files, 616 passed, 2 todo) and tsc --noEmit pass cleanly; G-06-3 stays open pending this live confirmation.
 
 ### Roadmap Evolution
 
@@ -333,6 +337,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-09-04T12:27:51.439Z
-Stopped at: Completed 06-05-PLAN.md
+Last session: 2026-09-07T16:33:25.158Z
+Stopped at: Completed 06-07-PLAN.md
 Resume file: None
