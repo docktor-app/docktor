@@ -308,6 +308,8 @@ Recent decisions affecting current work:
 - [minor] Upgrade dialog shows "not checked yet" for a moving-tag service that was actually checked — `.planning/todos/pending/2026-08-28-upgrade-dialog-wrong-message-for-moving-tags.md`
 - [minor] "Update available" badge shows even when there's no latestTag to point to — `.planning/todos/pending/2026-08-28-update-badge-shown-with-null-latest-tag.md`
 - [minor] Support authenticated/private container registries for update checking — `.planning/todos/pending/2026-08-28-support-authenticated-custom-registries.md`
+- [minor] Add live resource stats to stacks (CPU, memory, disk) — `.planning/todos/pending/2026-09-11-add-live-resource-stats-to-stacks-cpu-memory-disk.md`
+- [cosmetic] Add stack/service topology visualization — `.planning/todos/pending/2026-09-11-add-stack-and-service-topology-visualization.md`
 
 ### Blockers/Concerns
 
