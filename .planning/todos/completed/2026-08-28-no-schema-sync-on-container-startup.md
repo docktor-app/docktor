@@ -4,8 +4,12 @@ title: No schema sync step on container startup
 area: deployment
 severity: blocker
 files:
+
   - Dockerfile
   - docker-compose.yml
+
+completed: 2026-09-11
+status: completed
 ---
 
 ## Problem

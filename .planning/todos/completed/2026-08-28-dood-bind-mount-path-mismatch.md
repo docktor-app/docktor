@@ -4,10 +4,14 @@ title: Docker-outside-of-Docker path mismatch resolves relative bind mounts to t
 area: deployment
 severity: blocker
 files:
+
   - docker-compose.yml
   - Dockerfile
   - server/src/lib/stacks-dir.ts
   - server/src/infrastructure/docker-executor.ts
+
+completed: 2026-09-11
+status: completed
 ---
 
 ## Problem

@@ -4,8 +4,12 @@ title: Fix integration/e2e tests
 area: testing
 severity: blocker
 files:
+
   - server/package.json (test:integration script)
   - client/package.json (test:integration / Playwright script)
+
+completed: 2026-09-11
+status: completed
 ---
 
 ## Problem

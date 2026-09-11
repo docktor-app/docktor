@@ -19,6 +19,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: Backup & Restore** - Enable encrypted, versioned stack backups with manual and scheduled restore (completed 2026-08-31)
 - [x] **Phase 5: Onboarding** - Guide new installs through setup with a first-run wizard and adopt existing stacks via brownfield import (completed 2026-04-08)
 - [ ] **Phase 6: Proxy Configuration** - Configure domain and TLS for services via a Docktor-managed nginx-proxy + acme-companion stack
+- [ ] **Phase 7: Release Hardening: Data Safety and Core Workflows** - Fix backup/data-safety bugs and complete the onboarding import flow before v1.0.0
+- [ ] **Phase 8: Live State Consistency** - Make state changes (config errors, config edits, manual actions) reflect live in the UI without a manual refresh
+- [ ] **Phase 9: Deployment and Release Readiness** - Clean up deployment docs and close remaining release-process gaps for v1.0.0
 
 ## Phase Details
 
@@ -282,7 +285,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -292,3 +295,58 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 4. Backup & Restore | 17/17 | Complete    | 2026-08-31 |
 | 5. Onboarding | 11/10 | Complete    | 2026-08-31 |
 | 6. Proxy Configuration | 7/7 | In Progress|  |
+| 7. Release Hardening: Data Safety and Core Workflows | 0/0 | Not planned |  |
+| 8. Live State Consistency | 0/0 | Not planned |  |
+| 9. Deployment and Release Readiness | 0/0 | Not planned |  |
+
+### Phase 7: Release Hardening: Data Safety and Core Workflows
+
+**Goal:** Close the pre-v1.0.0 bugs that lose data, wedge a stack, or leave a shipped feature unreachable
+**Requirements**: n/a — this phase is scoped by the todo list below, not by REQUIREMENTS.md IDs
+**Depends on:** Phase 6
+**Plans:** 0 plans
+
+Scope is exactly 3 items, promoted from `.planning/todos/pending/` as release-blocking for v1.0.0:
+
+1. **[backup, major]** Backup can be triggered without a configured repo, wedging the stack in `BACKING_UP` forever — `.planning/todos/pending/2026-08-28-backup-without-config-wedges-stack.md`
+2. **[onboarding, major]** Brownfield import/adopt is unreachable after the setup wizard closes (no post-setup UI entry point) — `.planning/todos/pending/2026-08-28-setup-routes-unauthenticated-no-postsetup-import.md`
+3. **[deployment, major]** `ensureStacksDir()` cannot distinguish a real bind mount from a plain container-layer directory (silent data-loss risk for a backup tool) — `.planning/todos/pending/2026-09-03-stacks-dir-mount-point-not-verified.md`
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 7 to break down)
+
+### Phase 8: Live State Consistency
+
+**Goal:** State that is already correct on the server shows up live in the UI, without the user needing to refresh
+**Requirements**: n/a — this phase is scoped by the todo list below, not by REQUIREMENTS.md IDs
+**Depends on:** Phase 7
+**Plans:** 0 plans
+
+Scope is exactly 3 items, promoted from `.planning/todos/pending/` as release-blocking for v1.0.0 — all three are the same root theme (a state change happens correctly server-side but the UI doesn't reflect it without a manual reload):
+
+1. **[observability, major]** `config_error` state has no client-side UI indicator (backend-only today) — `.planning/todos/pending/2026-08-28-config-error-ui-indication-missing.md`
+2. **[observability, major]** Env file changes (via the app or externally) never set the config-changed badge — `.planning/todos/pending/2026-08-28-env-file-changes-dont-flag-config-changed.md`
+3. **[observability, major]** Manual stack actions (deploy/stop/restart/update/backup/restore/compose-save) don't broadcast SSE status updates — `.planning/todos/pending/2026-08-28-manual-actions-dont-broadcast-sse.md`
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 8 to break down)
+
+### Phase 9: Deployment and Release Readiness
+
+**Goal:** Deployment documentation and process match what v1.0.0 actually ships, and the remaining release-process gaps are closed
+**Requirements**: n/a — this phase is scoped by the todo list below, not by REQUIREMENTS.md IDs
+**Depends on:** Phase 8
+**Plans:** 0 plans
+
+Scope is exactly 4 items, promoted from `.planning/todos/pending/` as release-blocking for v1.0.0:
+
+1. **[docs, major]** Document deployment config: clean `.env` and `docker-compose.yml` — `.planning/todos/pending/2026-08-27-document-deployment-config-clean-env-and-docker-compose.md`
+2. **[deployment, major]** Adopt `prisma migrate` once MVP is complete — `.planning/todos/pending/2026-09-01-adopt-prisma-migrate-post-mvp.md`
+3. **[testing, major]** CI has no Windows runner — platform-divergent defects reach contributors uncaught — `.planning/todos/pending/2026-09-03-ci-has-no-windows-runner.md`
+4. **[proxy, major]** Add support for custom TLS certificates — `.planning/todos/pending/2026-09-07-add-support-for-custom-tls-certificates.md`
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 9 to break down)
