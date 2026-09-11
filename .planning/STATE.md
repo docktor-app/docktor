@@ -338,6 +338,7 @@ Recent decisions affecting current work:
 - Phase 7 added: Release Hardening — Data Safety and Core Workflows (backup-wedge bug, unreachable brownfield import, bind-mount safety check)
 - Phase 8 added: Live State Consistency (config_error UI indicator, config-changed badge on env edits, SSE broadcasts on manual actions)
 - Phase 9 added: Deployment and Release Readiness (deployment docs cleanup, prisma migrate adoption, CI Windows runner, custom TLS certs)
+- Phase 10 added: UX Redesign (service colors/log-viewer, stack detail tabs, mobile support, dashboard stats, compose/env editors, component reuse audit) — user explicitly wants this fixed for v1.0.0 despite `minor` severity classification. Excludes configurable-compose-linting (unrelated backend validation, per its own todo text).
 - Reviewed all 25 remaining `.planning/todos/pending/` items for v1.0.0 scope (2026-09-11): 3 stale "blocker" todos closed (already fixed by Phase 05.1 — DooD bind-mount, integration-test CLI resolution, startup schema-sync). Of the 10 `major`-severity items, user chose to promote all 10 into Phases 7-9 above as release-blocking. The 13 `minor` + 2 `cosmetic` items (UI redesigns, dashboard stats, registry auth, badge polish, topology viz) remain in the todo backlog as v1.1+ candidates, not release-blocking.
 
 ## Session Continuity

@@ -32,6 +32,21 @@
       "number": "6",
       "name": "Proxy Configuration",
       "status": "in_progress"
+    },
+    {
+      "number": "7",
+      "name": "Release Hardening: Data Safety and Core Workflows",
+      "status": "pending"
+    },
+    {
+      "number": "8",
+      "name": "Live State Consistency",
+      "status": "pending"
+    },
+    {
+      "number": "9",
+      "name": "Deployment and Release Readiness",
+      "status": "pending"
     }
   ],
   "next": {
@@ -39,5 +54,5 @@
     "label": "Advance to the next step",
     "reason": "Phase 6 of 7 · executing"
   },
-  "updated_at": "2026-09-11T21:38:31.747Z"
+  "updated_at": "2026-09-11T21:42:23.822Z"
 }

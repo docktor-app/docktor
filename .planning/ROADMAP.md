@@ -22,6 +22,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 7: Release Hardening: Data Safety and Core Workflows** - Fix backup/data-safety bugs and complete the onboarding import flow before v1.0.0
 - [ ] **Phase 8: Live State Consistency** - Make state changes (config errors, config edits, manual actions) reflect live in the UI without a manual refresh
 - [ ] **Phase 9: Deployment and Release Readiness** - Clean up deployment docs and close remaining release-process gaps for v1.0.0
+- [ ] **Phase 10: UX Redesign: Service Colors, Editors, and Dashboard Stats** - Redesign stack detail (colors, tabs, mobile), dashboard stats, and compose/env editors
 
 ## Phase Details
 
@@ -285,7 +286,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -298,6 +299,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. Release Hardening: Data Safety and Core Workflows | 0/0 | Not planned |  |
 | 8. Live State Consistency | 0/0 | Not planned |  |
 | 9. Deployment and Release Readiness | 0/0 | Not planned |  |
+| 10. UX Redesign: Service Colors, Editors, and Dashboard Stats | 0/0 | Not planned |  |
 
 ### Phase 7: Release Hardening: Data Safety and Core Workflows
 
@@ -350,3 +352,23 @@ Scope is exactly 4 items, promoted from `.planning/todos/pending/` as release-bl
 Plans:
 
 - [ ] TBD (run /gsd-plan-phase 9 to break down)
+
+### Phase 10: UX Redesign: Service Colors, Editors, and Dashboard Stats
+
+**Goal:** The product no longer feels "very basic" — stack detail, dashboard, and the compose/env editing experience get a real design pass
+**Requirements**: n/a — this phase is scoped by the todo list below, not by REQUIREMENTS.md IDs
+**Depends on:** Phase 9
+**Plans:** 0 plans
+
+User classified these as `minor` severity but wants them fixed for v1.0.0 regardless. Scope is 4 items, all originally split from one larger UI-redesign request (`.planning/todos/pending/2026-08-28-redesign-ui-ux-service-colors-mobile.md`'s cross-references) and promoted here as a group:
+
+1. **[ui]** Redesign UI/UX — per-service colors carried into the log viewer, stack detail tab layout, mobile support — `.planning/todos/pending/2026-08-28-redesign-ui-ux-service-colors-mobile.md`
+2. **[ui]** Redesign dashboard with richer statistics — `.planning/todos/pending/2026-08-28-redesign-dashboard-statistics.md`
+3. **[ui]** Add a sophisticated compose YAML editor and env editor (syntax highlighting, structured key=value editing) — `.planning/todos/pending/2026-08-28-add-yaml-env-editor.md`
+4. **[ui]** Audit frontend for reusable-component refactors (e.g. log-viewer reuse in the Backups tab) — `.planning/todos/pending/2026-08-28-frontend-refactor-audit.md`
+
+Not included: `.planning/todos/pending/2026-08-28-configurable-compose-linting.md` — its own todo text flags it as unrelated backend validation logic, not a UI change, despite being split out alongside these four originally.
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 10 to break down)
