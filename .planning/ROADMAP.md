@@ -13,7 +13,7 @@ Docktor's foundation (auth, stack CRUD, state machine, dashboard, detail page) i
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: MVP Completion** - Complete the three remaining blockers: settings persistence, container state poller, and live log streaming
+- [x] **Phase 1: MVP Completion** - Complete the three remaining blockers: settings persistence, container state poller, and live log streaming (completed 2026-03-11 — retroactive checkbox correction: all 7 plans and VERIFICATION.md were done, only this checkbox bookkeeping was stale)
 - [x] **Phase 2: Observability** - Detect external compose file changes and surface image update availability (completed 2026-08-28, including gap-closure plans 02-08 through 02-12)
 - [x] **Phase 3: Notifications** - Alert users on container errors, disk warnings, and backup failures via SMTP (completed 2026-03-20)
 - [x] **Phase 4: Backup & Restore** - Enable encrypted, versioned stack backups with manual and scheduled restore (completed 2026-08-31)
@@ -39,11 +39,11 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 Plans:
 
-- [ ] 01-01-PLAN.md — Test scaffolds (Wave 0 RED state for all 12 requirements)
-- [ ] 01-02-PLAN.md — Server foundation: DockerodeClient, StateBroadcaster, Settings backend
-- [ ] 01-03-PLAN.md — StatePoller job: Docker event stream + 60s reconciliation + app wiring
-- [ ] 01-04-PLAN.md — Shared settings validation schemas + cmdk/Command component install
-- [ ] 01-05-PLAN.md — State SSE route + useContainerEvents + dashboard/detail live updates
+- [x] 01-01-PLAN.md — Test scaffolds (Wave 0 RED state for all 12 requirements)
+- [x] 01-02-PLAN.md — Server foundation: DockerodeClient, StateBroadcaster, Settings backend
+- [x] 01-03-PLAN.md — StatePoller job: Docker event stream + 60s reconciliation + app wiring
+- [x] 01-04-PLAN.md — Shared settings validation schemas + cmdk/Command component install
+- [x] 01-05-PLAN.md — State SSE route + useContainerEvents + dashboard/detail live updates
 - [x] 01-06-PLAN.md — Log SSE route + LogViewer component + Logs tab
 - [x] 01-07-PLAN.md — Settings page UI + sidebar nav + router registration
 
@@ -212,7 +212,7 @@ Plans:
 **Goal:** Fix the blockers and majors surfaced during Phase 1-5 testing/UAT that block a clean, safe self-hosted deployment, so Phase 6 (Proxy Configuration) starts from a working, documented, verifiable base. Scope is exactly 10 items: 3 blockers (broken integration/e2e tests, no schema sync on container startup, Docker-outside-of-Docker bind-mount path mismatch), 6 majors (deployment config documentation, `config_error` UI, missing SSE broadcasts on manual actions, backup-without-repo wedging a stack, env edits not flagging config-changed, unreachable post-setup brownfield import) and 1 minor (restic pinned to an outdated version).
 **Requirements**: n/a — this phase is scoped by the todo list above, not by REQUIREMENTS.md IDs
 **Depends on:** Phase 5
-**Plans:** 12/12 plans executed — 8/8 original plans executed, plus 4 gap-closure plans added from UAT (05.1-09 … 05.1-12), all executed; G-05.1-4 closed
+**Plans:** 12/12 plans complete
 
 Plans:
 **Wave 1**
@@ -286,7 +286,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. MVP Completion | 6/7 | In Progress|  |
+| 1. MVP Completion | 7/7 | Complete    | 2026-03-11 |
 | 2. Observability | 16/16 | Complete    | 2026-08-30 |
 | 3. Notifications | 5/5 | Complete   | 2026-03-20 |
 | 4. Backup & Restore | 17/17 | Complete    | 2026-08-31 |
