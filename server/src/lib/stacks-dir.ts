@@ -202,8 +202,20 @@ function unescapeMountinfoField(field: string): string {
  * Fails only on positive evidence of ephemerality (decision PD-3): an
  * unreadable /proc/self/mountinfo, or no covering entry at all, means this
  * check cannot verify anything and must never brick an otherwise-working
- * deployment — those cases are handled by the remaining, non-throwing
- * branches added alongside this JSDoc in a later revision of this function.
+ * deployment — those cases warn once (matching assertStacksDirMatchesHost()'s
+ * warn-and-return shape) and return rather than throwing. The check itself
+ * can also be deliberately disabled via DOCKTOR_STACKS_MOUNT_CHECK=false,
+ * which likewise warns and returns rather than throwing.
+ *
+ * Ephemerality is judged two ways: the covering mount's filesystem type is
+ * one of EPHEMERAL_FILESYSTEM_TYPES, OR the covering mount is the
+ * container's own root ("/") while DOCKTOR_STACKS_HOST_DIR is set. The
+ * second clause matters because a deployment that sets
+ * DOCKTOR_STACKS_HOST_DIR has declared itself the containerized
+ * Docker-outside-of-Docker deployment, where the stacks volume must appear
+ * as a mount of its own — without this clause, a btrfs/zfs/xfs container
+ * root (a non-overlay storage driver) would slip past the filesystem-type
+ * test even though the volume never actually attached.
  *
  * The optional `readMountinfo` parameter (default: read the real
  * /proc/self/mountinfo) exists purely for testability — unit tests inject
@@ -215,10 +227,39 @@ export async function assertStacksDirIsMounted(
     readMountinfo: () => Promise<string> = () => readFile(MOUNTINFO_PATH, "utf-8"),
 ): Promise<void> {
     const target = getStacksDir();
-    const content = await readMountinfo();
-    const entry = findMountEntryForPath(target, content);
 
-    if (entry && EPHEMERAL_FILESYSTEM_TYPES.has(entry.filesystemType)) {
+    if (process.env.DOCKTOR_STACKS_MOUNT_CHECK === "false") {
+        console.warn(
+            `[stacks-dir] DOCKTOR_STACKS_MOUNT_CHECK=false — skipping the persistence check for "${target}". If the stacks volume is not actually mounted, everything written there will be silently lost on the next container recreation.`,
+        );
+        return;
+    }
+
+    let content: string;
+    try {
+        content = await readMountinfo();
+    } catch (err) {
+        console.warn(
+            `[stacks-dir] Could not read /proc/self/mountinfo — persistence of the stacks directory at "${target}" could not be verified. This is expected on a non-Linux host; on Linux it may indicate a hardened runtime restricting /proc access.`,
+            err,
+        );
+        return;
+    }
+
+    const entry = findMountEntryForPath(target, content);
+    if (!entry) {
+        console.warn(
+            `[stacks-dir] No mount entry covering the stacks directory at "${target}" was found — persistence could not be verified.`,
+        );
+        return;
+    }
+
+    const hostDir = process.env.DOCKTOR_STACKS_HOST_DIR;
+    const isEphemeral =
+        EPHEMERAL_FILESYSTEM_TYPES.has(entry.filesystemType) ||
+        (entry.mountPoint === "/" && !!hostDir);
+
+    if (isEphemeral) {
         throw new Error(
             `Stacks directory at "${target}" is not on a persistent filesystem: the nearest covering mount ("${entry.mountPoint}") is of type "${entry.filesystemType}", which does not survive container recreation. Everything Docktor writes there — each managed stack's docker-compose.yml, .env, and relative bind-mount data — will be silently discarded the next time this container is recreated by an image update, a "docker compose up", or a host reboot. Mount the stacks directory into the container at exactly this path: docker-compose.yml's stacks volume is driven by DOCKTOR_STACKS_HOST_DIR, which must equal DOCKTOR_STACKS_DIR. If running on ephemeral storage is deliberate, set DOCKTOR_STACKS_MOUNT_CHECK=false to downgrade this to a warning.`,
         );
