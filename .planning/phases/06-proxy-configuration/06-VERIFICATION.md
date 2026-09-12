@@ -1,10 +1,15 @@
 ---
 phase: 06-proxy-configuration
-verified: 2026-09-07T19:15:00Z
-status: human_needed
-score: 21/23 must-haves verified (2 present, behavior-unverified)
-behavior_unverified: 2
-overrides_applied: 0
+verified: 2026-09-12T00:00:00Z
+status: passed
+score: 23/23 must-haves verified (22 verified + 1 accepted override)
+behavior_unverified: 0
+overrides_applied: 1
+overrides:
+  - must_have: "DNS-based certificate issuance shows 'Secured' for a DNS-pointed domain and 'Cert failed' with a real acme-companion log line for a non-pointed domain"
+    reason: "Requires a real host with public DNS pointed at it — no such host is available in this session (matches 06-UAT.md test 2's original skip reason, unchanged). All underlying code (cert-status polling, acme-companion log tailing, badge states) is unit-tested and reviewed; only the live DNS+ACME round trip itself is untestable here."
+    accepted_by: "user"
+    accepted_at: "2026-09-12"
 covered_files:
   - ".planning/REQUIREMENTS.md"
   - ".planning/phases/06-proxy-configuration/06-01-PLAN.md"
@@ -29,7 +34,7 @@ covered_files:
   - "server/test/unit/routes/proxy-validation.test.ts"
   - "server/test/unit/shared-schema-parity.test.ts"
   - "shared/src/validation/proxy.ts"
-covered_digest: "v1:sha256:2d49f629b91878bb5922d4ac860fd6b477776f43237b32bfba9db696776e7fae"
+covered_digest: "v1:sha256:22a108ff60c24492890693172f30ed19c440ff1b9956c4b0200d87c5135b0be7"
 re_verification:
   previous_status: human_needed
   previous_score: 15/17
@@ -38,17 +43,11 @@ re_verification:
     - "Live database schema verification (previously PRESENT_BEHAVIOR_UNVERIFIED) — resolved via 06-UAT.md test 2, run on an unrestricted host, result: pass"
     - "409 duplicate-domain / 400 proxy-stack-not-deployed (previously PRESENT_BEHAVIOR_UNVERIFIED) — resolved via 06-UAT.md test 3's live run: only the invalid-hostname assertion failed (G-06-3); the other assertions in the same integration test file passed"
     - "Live proxy-stack deploy and full first-run wizard walkthrough (previously PRESENT_BEHAVIOR_UNVERIFIED) — resolved via 06-UAT.md tests 6, 8, 9, all pass"
+    - "Live DB-backed integration re-run of the invalid-hostname 400 (D4 human-check) — resolved via 06-UAT.md test 1, run on an unrestricted host after this VERIFICATION.md's original pass, result: pass. This VERIFICATION.md was stale relative to that UAT update until this re-verification pass."
   gaps_remaining: []
   regressions: []
 gaps: []
-behavior_unverified_items:
-  - truth: "The full authenticated HTTP integration round trip (test/integration/proxy.test.ts's 'returns 400 for an invalid hostname' case, plus the rest of the assignDomain/listByStack suite) re-confirms the 400 on an unrestricted host now that the build-freshness fix is in place"
-    test: "On a host with a reachable Postgres (no TCP-to-Docker-published-port block), run `yarn workspace @docktor/server test:integration test/integration/proxy.test.ts`"
-    expected: "All cases pass, including 'returns 400 for an invalid hostname' at proxy.test.ts:132 (previously 201, G-06-3)"
-    why_human: "This sandbox reproduces the exact P1001 `Can't reach database server` failure at the testcontainers `startContainer()` step — independently reproduced in this verification session, identical in signature to what 05.1-01, 05.1-05, 05.1-06, 06-01, and this phase's own prior verification and 06-07-SUMMARY all document. This is the plan's own designated D4 human-check item and is still formally open."
-  - truth: "DNS-based certificate issuance shows 'Secured' for a DNS-pointed domain and 'Cert failed' with a real acme-companion log line for a non-pointed domain"
-    test: "With the proxy stack deployed on a real host and a domain assigned with TLS on, point one test domain's DNS at the host and leave another unpointed; observe cert-status badges converge to Secured / Cert failed"
-    why_human: "No real host with public DNS was available in this or the prior UAT session (06-UAT.md test 7: skipped, unchanged by this gap-closure plan) — this class of check requires live DNS propagation and a real acme-companion run that no static analysis or sandboxed test can substitute for."
+behavior_unverified_items: []
 ---
 
 # Phase 6: Proxy Configuration — Verification Report (Re-verification after 06-07 gap closure)
@@ -175,6 +174,11 @@ Debt-marker scan (`TBD`/`FIXME`/`XXX`/`TODO`/`HACK`/`PLACEHOLDER`) across the 5 
 No must-have truth failed inspection, and no regression was found. G-06-3 is genuinely closed at the mechanism level: the build-freshness fix is demonstrated to work from a from-scratch checkout (freshness reproduced by deleting `shared/dist` entirely), and both new tests are proven — by live mutation, not just by reading them — to actually catch the exact defect class that produced G-06-3 (a stale/weakened compiled schema), from both the source side and the compiled-artifact side. The three files independently verified correct during the original debug session (`shared/src/validation/proxy.ts`, `server/src/routes/proxy.ts`, `server/src/app.ts`) remain byte-for-byte unchanged. The full server unit suite (616 tests) and `tsc --noEmit` both stay green, and a targeted client test confirms the client side still resolves the freshly-built artifact correctly — no regression from the five files 06-07 modified.
 
 The one item the plan itself could not close in this sandbox — a live, DB-backed re-run of the actual HTTP integration test that originally caught G-06-3 — remains open for the same well-documented, pre-existing environmental reason every prior 06-* session has hit, and is routed to human verification rather than a false pass or a false gap, consistent with how this project's prior VERIFICATION.md and SUMMARY.md files have handled the identical restriction. The DNS-based certificate-issuance check is likewise carried forward unchanged, unaffected by this gap-closure plan.
+
+## Acknowledged Gaps — Confirmed 2026-09-12
+
+- **Live DB-backed integration re-run (D4)** — resolved. Run on an unrestricted host after this report's original pass; `06-UAT.md` test 1 now shows `result: pass`. This report's `covered_digest` and `status` were refreshed to match (was reporting `stale` before this update).
+- **DNS-based certificate issuance on a real host** — user confirmed (2026-09-12) still cannot be tested: no real host with public DNS available. Explicitly accepted as a deferred, tracked limitation (see `overrides:` in frontmatter) rather than blocking Phase 6 indefinitely on infrastructure this project doesn't have. All underlying code (cert-status polling, acme-companion log tailing, badge states) is unit-tested and reviewed; only the live DNS+ACME round trip itself is untestable here.
 
 ---
 
