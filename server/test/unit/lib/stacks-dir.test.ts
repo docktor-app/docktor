@@ -19,6 +19,7 @@ describe("stacks-dir", () => {
     afterEach(async () => {
         delete process.env.DOCKTOR_STACKS_DIR;
         delete process.env.DOCKTOR_STACKS_HOST_DIR;
+        delete process.env.DOCKTOR_STACKS_MOUNT_CHECK;
         vi.restoreAllMocks();
         await Promise.all(
             tempRoots.splice(0).map((root) => rm(root, {recursive: true, force: true})),
@@ -235,6 +236,37 @@ describe("stacks-dir", () => {
                 filesystemType: "ext4",
             });
         });
+
+        it("matches an octal-escaped space in the mount point against the un-escaped resolved path", () => {
+            const fixture = "29 1 8:2 / /opt/my\\040stacks rw,relatime - ext4 /dev/sda2 rw";
+
+            const result = findMountEntryForPath("/opt/my stacks", fixture);
+
+            expect(result).toEqual({mountPoint: "/opt/my stacks", filesystemType: "ext4"});
+        });
+
+        it("un-escapes an octal-escaped backslash in the mount point to a single backslash", () => {
+            const fixture = "30 1 8:2 / /opt/weird\\134path rw,relatime - ext4 /dev/sda3 rw";
+
+            const result = findMountEntryForPath("/opt/weird\\path", fixture);
+
+            expect(result).toEqual({mountPoint: "/opt/weird\\path", filesystemType: "ext4"});
+        });
+
+        it("tolerates a blank line, a truncated line, and a line with no '-' separator without throwing", () => {
+            const fixture = [
+                "",
+                "1 2 3",
+                "1 2 3 4 5 6 7 8 9",
+                "29 1 8:2 / /opt/docktor rw,relatime - ext4 /dev/sda2 rw",
+            ].join("\n");
+
+            expect(() => findMountEntryForPath("/opt/docktor/stacks", fixture)).not.toThrow();
+            expect(findMountEntryForPath("/opt/docktor/stacks", fixture)).toEqual({
+                mountPoint: "/opt/docktor",
+                filesystemType: "ext4",
+            });
+        });
     });
 
     describe("assertStacksDirIsMounted", () => {
@@ -258,6 +290,85 @@ describe("stacks-dir", () => {
             const fixture = "29 1 8:2 / / rw,relatime - ext4 /dev/sda2 rw";
 
             await expect(assertStacksDirIsMounted(async () => fixture)).resolves.toBeUndefined();
+        });
+
+        it("warns once naming DOCKTOR_STACKS_MOUNT_CHECK and resolves without throwing when the check is disabled", async () => {
+            process.env.DOCKTOR_STACKS_DIR = "/opt/docktor/stacks";
+            process.env.DOCKTOR_STACKS_MOUNT_CHECK = "false";
+            const fixture = "29 1 8:2 / / rw,relatime - overlay overlay rw";
+            const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+            await expect(assertStacksDirIsMounted(async () => fixture)).resolves.toBeUndefined();
+
+            expect(warnSpy).toHaveBeenCalledTimes(1);
+            expect(warnSpy.mock.calls[0]?.[0]).toContain("DOCKTOR_STACKS_MOUNT_CHECK");
+        });
+
+        it("warns once naming /proc/self/mountinfo and resolves without throwing when the reader rejects", async () => {
+            process.env.DOCKTOR_STACKS_DIR = "/opt/docktor/stacks";
+            const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+            await expect(
+                assertStacksDirIsMounted(() => Promise.reject(new Error("EACCES"))),
+            ).resolves.toBeUndefined();
+
+            expect(warnSpy).toHaveBeenCalledTimes(1);
+            expect(warnSpy.mock.calls[0]?.[0]).toContain("/proc/self/mountinfo");
+        });
+
+        it("warns once and resolves without throwing when no mount entry covers the resolved path", async () => {
+            process.env.DOCKTOR_STACKS_DIR = "/opt/docktor/stacks";
+            const fixture = "24 29 0:22 / /sys rw,nosuid - sysfs sysfs rw";
+            const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+            await expect(assertStacksDirIsMounted(async () => fixture)).resolves.toBeUndefined();
+
+            expect(warnSpy).toHaveBeenCalledTimes(1);
+        });
+
+        it("rejects when the container's own root covers the path and DOCKTOR_STACKS_HOST_DIR is set", async () => {
+            process.env.DOCKTOR_STACKS_DIR = "/opt/docktor/stacks";
+            process.env.DOCKTOR_STACKS_HOST_DIR = "/opt/docktor/stacks";
+            const fixture = "29 1 8:2 / / rw,relatime - ext4 /dev/sda2 rw";
+
+            let thrown: Error | undefined;
+            try {
+                await assertStacksDirIsMounted(async () => fixture);
+            } catch (err) {
+                thrown = err as Error;
+            }
+
+            expect(thrown).toBeInstanceOf(Error);
+            expect(thrown?.message).toContain(path.resolve("/opt/docktor/stacks"));
+        });
+
+        it("resolves without a persistence warning when the container root covers the path and DOCKTOR_STACKS_HOST_DIR is unset", async () => {
+            process.env.DOCKTOR_STACKS_DIR = "/opt/docktor/stacks";
+            delete process.env.DOCKTOR_STACKS_HOST_DIR;
+            const fixture = "29 1 8:2 / / rw,relatime - ext4 /dev/sda2 rw";
+            const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+            await expect(assertStacksDirIsMounted(async () => fixture)).resolves.toBeUndefined();
+
+            expect(warnSpy).not.toHaveBeenCalled();
+        });
+
+        it("rejects for the deepest covering entry, not the root, when both are present", async () => {
+            process.env.DOCKTOR_STACKS_DIR = "/opt/docktor/stacks";
+            const fixture = [
+                "29 1 8:2 / / rw,relatime - ext4 /dev/sda2 rw",
+                "40 29 8:3 / /opt/docktor/stacks rw,relatime - tmpfs tmpfs rw",
+            ].join("\n");
+
+            let thrown: Error | undefined;
+            try {
+                await assertStacksDirIsMounted(async () => fixture);
+            } catch (err) {
+                thrown = err as Error;
+            }
+
+            expect(thrown).toBeInstanceOf(Error);
+            expect(thrown?.message).toContain(path.resolve("/opt/docktor/stacks"));
         });
     });
 });
