@@ -4,14 +4,14 @@ milestone: v1.0
 current_phase: 07
 current_phase_name: "Release Hardening: Data Safety and Core Workflows"
 status: Phase 05.1 (Stabilization) complete — 12/12 plans, UAT 10/10 passed, VERIFICATION.md passed (17/17 must-haves, 4 human_verification items confirmed by user 2026-09-11). ROADMAP.md Phase 1 checkbox bookkeeping corrected to match disk truth (was stale — Phase 1 has been fully executed and verified since 2026-03-11).
-stopped_at: Phase 06 complete, ready to plan Phase 07
-last_updated: "2026-09-12T08:12:09.344Z"
-state_head: a79cccc3f20a8c1992449f37d7a7a1508beb5b14
+stopped_at: Completed 07-01-PLAN.md
+last_updated: "2026-09-12T12:15:00.966Z"
+state_head: 3718e3f9d305f0c0366c1b7627062045d16e13a5
 progress:
   total_phases: 11
   completed_phases: 7
   total_plans: 76
-  completed_plans: 74
+  completed_plans: 75
 milestone_name: milestone
 ---
 
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-08-30)
 
 ## Current Position
 
-Phase: 07 (Release Hardening: Data Safety and Core Workflows) — READY TO EXECUTE
-Plan: Not started
+Phase: 07 (Release Hardening: Data Safety and Core Workflows) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -123,6 +123,7 @@ Plan: Not started
 | Phase 06 P06 | 50min | 2 tasks | 11 files |
 | Phase 06 P05 | 90min | 3 tasks | 13 files |
 | Phase 06 P07 | 25min | 2 tasks | 5 files |
+| Phase 07 P01 | 40min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -273,6 +274,8 @@ Recent decisions affecting current work:
 - [Phase 06]: [Phase 06-05] standardSchemaResolver(assignDomainSchema) cast to Resolver<AssignDomainInput> in proxy-tab.tsx, mirroring notifications-step.tsx's established fix for z.coerce.number() fields breaking useForm<T> generic inference
 - [Phase 06]: [Phase 06-07] Chained yarn workspace @docktor/shared build && onto every server/client test script and the root dev script instead of pretest/predev hooks — Yarn Berry does not run pre/post lifecycle scripts
 - [Phase 06]: [Phase 06-07] Parity test (shared-schema-parity.test.ts) lives in server/test/unit/, not shared/ — asserts from the module context that G-06-3 actually fooled
+- [Phase 07]: 07-01: mountinfo-based deepest-covering-entry match chosen over exact-match-only so a persistent parent-directory mount is recognized correctly; container-root+DOCKTOR_STACKS_HOST_DIR also treated as ephemeral to catch non-overlay storage drivers
+- [Phase 07]: 07-01: gsd_run check tdd-red-evidence is incompatible with this project's vitest TAP output (nested TAP-13 vs Node --test's flat # tests/# pass/# fail format) — RED evidence confirmed manually instead; workflow.tdd_mode is not enabled for this project
 
 ### Quick Tasks Completed
 
@@ -344,6 +347,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-09-11T21:26:39.378Z
-Stopped at: Phase 06 complete, ready to plan Phase 07
+Last session: 2026-09-12T12:14:59.765Z
+Stopped at: Completed 07-01-PLAN.md
 Resume file: None

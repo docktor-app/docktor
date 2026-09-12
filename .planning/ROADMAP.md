@@ -296,7 +296,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 4. Backup & Restore | 17/17 | Complete    | 2026-08-31 |
 | 5. Onboarding | 11/10 | Complete    | 2026-08-31 |
 | 6. Proxy Configuration | 7/7 | Complete    | 2026-09-12 |
-| 7. Release Hardening: Data Safety and Core Workflows | 0/0 | Not planned |  |
+| 7. Release Hardening: Data Safety and Core Workflows | 1/2 | In Progress|  |
 | 8. Live State Consistency | 0/0 | Not planned |  |
 | 9. Deployment and Release Readiness | 0/0 | Not planned |  |
 | 10. UX Redesign: Service Colors, Editors, and Dashboard Stats | 0/0 | Not planned |  |
@@ -306,7 +306,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 **Goal:** Close the pre-v1.0.0 bug that silently loses stack data on container recreation
 **Requirements**: n/a — this phase is scoped by the todo list below, not by REQUIREMENTS.md IDs
 **Depends on:** Phase 6
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Scope is exactly 1 item, promoted from `.planning/todos/pending/` as release-blocking for v1.0.0:
 
@@ -317,7 +317,7 @@ _Dropped 2026-09-12: "Brownfield import/adopt unreachable post-setup" was alread
 Plans:
 **Wave 1**
 
-- [ ] 07-01-PLAN.md — Mount-point persistence check in `lib/stacks-dir.ts`, wired into the boot sequence, hardened for escaped paths / unverifiable hosts / operator opt-out, and documented in `docs/deployment.md` (wave 1)
+- [x] 07-01-PLAN.md — Mount-point persistence check in `lib/stacks-dir.ts`, wired into the boot sequence, hardened for escaped paths / unverifiable hosts / operator opt-out, and documented in `docs/deployment.md` (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
