@@ -19,7 +19,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: Backup & Restore** - Enable encrypted, versioned stack backups with manual and scheduled restore (completed 2026-08-31)
 - [x] **Phase 5: Onboarding** - Guide new installs through setup with a first-run wizard and adopt existing stacks via brownfield import (completed 2026-04-08)
 - [x] **Phase 6: Proxy Configuration** - Configure domain and TLS for services via a Docktor-managed nginx-proxy + acme-companion stack (completed 2026-09-12)
-- [ ] **Phase 7: Release Hardening: Data Safety and Core Workflows** - Fix backup/data-safety bugs and complete the onboarding import flow before v1.0.0
+- [ ] **Phase 7: Release Hardening: Data Safety and Core Workflows** - Fix backup/data-safety bugs before v1.0.0
 - [ ] **Phase 8: Live State Consistency** - Make state changes (config errors, config edits, manual actions) reflect live in the UI without a manual refresh
 - [ ] **Phase 9: Deployment and Release Readiness** - Clean up deployment docs and close remaining release-process gaps for v1.0.0
 - [ ] **Phase 10: UX Redesign: Service Colors, Editors, and Dashboard Stats** - Redesign stack detail (colors, tabs, mobile), dashboard stats, and compose/env editors
@@ -303,16 +303,17 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 ### Phase 7: Release Hardening: Data Safety and Core Workflows
 
-**Goal:** Close the pre-v1.0.0 bugs that lose data, wedge a stack, or leave a shipped feature unreachable
+**Goal:** Close the pre-v1.0.0 bugs that lose data or wedge a stack
 **Requirements**: n/a — this phase is scoped by the todo list below, not by REQUIREMENTS.md IDs
 **Depends on:** Phase 6
 **Plans:** 0 plans
 
-Scope is exactly 3 items, promoted from `.planning/todos/pending/` as release-blocking for v1.0.0:
+Scope is exactly 2 items, promoted from `.planning/todos/pending/` as release-blocking for v1.0.0:
 
 1. **[backup, major]** Backup can be triggered without a configured repo, wedging the stack in `BACKING_UP` forever — `.planning/todos/pending/2026-08-28-backup-without-config-wedges-stack.md`
-2. **[onboarding, major]** Brownfield import/adopt is unreachable after the setup wizard closes (no post-setup UI entry point) — `.planning/todos/pending/2026-08-28-setup-routes-unauthenticated-no-postsetup-import.md`
-3. **[deployment, major]** `ensureStacksDir()` cannot distinguish a real bind mount from a plain container-layer directory (silent data-loss risk for a backup tool) — `.planning/todos/pending/2026-09-03-stacks-dir-mount-point-not-verified.md`
+2. **[deployment, major]** `ensureStacksDir()` cannot distinguish a real bind mount from a plain container-layer directory (silent data-loss risk for a backup tool) — `.planning/todos/pending/2026-09-03-stacks-dir-mount-point-not-verified.md`
+
+_Dropped 2026-09-12: "Brownfield import/adopt unreachable post-setup" was already shipped by Phase 05.1-07 — see `.planning/todos/completed/2026-08-28-setup-routes-unauthenticated-no-postsetup-import.md`._
 
 Plans:
 
