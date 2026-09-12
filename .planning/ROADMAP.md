@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Notifications** - Alert users on container errors, disk warnings, and backup failures via SMTP (completed 2026-03-20)
 - [x] **Phase 4: Backup & Restore** - Enable encrypted, versioned stack backups with manual and scheduled restore (completed 2026-08-31)
 - [x] **Phase 5: Onboarding** - Guide new installs through setup with a first-run wizard and adopt existing stacks via brownfield import (completed 2026-04-08)
-- [ ] **Phase 6: Proxy Configuration** - Configure domain and TLS for services via a Docktor-managed nginx-proxy + acme-companion stack
+- [x] **Phase 6: Proxy Configuration** - Configure domain and TLS for services via a Docktor-managed nginx-proxy + acme-companion stack (completed 2026-09-12)
 - [ ] **Phase 7: Release Hardening: Data Safety and Core Workflows** - Fix backup/data-safety bugs and complete the onboarding import flow before v1.0.0
 - [ ] **Phase 8: Live State Consistency** - Make state changes (config errors, config edits, manual actions) reflect live in the UI without a manual refresh
 - [ ] **Phase 9: Deployment and Release Readiness** - Clean up deployment docs and close remaining release-process gaps for v1.0.0
@@ -295,7 +295,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. Notifications | 5/5 | Complete   | 2026-03-20 |
 | 4. Backup & Restore | 17/17 | Complete    | 2026-08-31 |
 | 5. Onboarding | 11/10 | Complete    | 2026-08-31 |
-| 6. Proxy Configuration | 7/7 | In Progress|  |
+| 6. Proxy Configuration | 7/7 | Complete    | 2026-09-12 |
 | 7. Release Hardening: Data Safety and Core Workflows | 0/0 | Not planned |  |
 | 8. Live State Consistency | 0/0 | Not planned |  |
 | 9. Deployment and Release Readiness | 0/0 | Not planned |  |
