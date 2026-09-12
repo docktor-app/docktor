@@ -1,5 +1,8 @@
-import {mkdir} from "node:fs/promises";
+import {mkdir, readFile} from "node:fs/promises";
 import path from "node:path";
+
+const MOUNTINFO_PATH = "/proc/self/mountinfo";
+const EPHEMERAL_FILESYSTEM_TYPES = new Set(["overlay", "overlayfs", "tmpfs", "ramfs"]);
 
 export function getStacksDir(): string {
     return path.resolve(process.env.DOCKTOR_STACKS_DIR || "./stacks");
@@ -97,6 +100,127 @@ export function assertStacksDirMatchesHost(): void {
     if (normalizedHostDir !== containerDir) {
         throw new Error(
             `Stacks directory path mismatch: DOCKTOR_STACKS_HOST_DIR ("${normalizedHostDir}") does not match the container-side DOCKTOR_STACKS_DIR ("${containerDir}"). Docktor runs Docker-outside-of-Docker — the stacks directory must be mounted at the identical absolute path on both the host and inside this container, or relative bind mounts declared in managed stacks' compose files will be written to the wrong host location. Fix docker-compose.yml so DOCKTOR_STACKS_HOST_DIR drives both sides of the stacks volume mapping and matches DOCKTOR_STACKS_DIR.`,
+        );
+    }
+}
+
+/**
+ * A single parsed entry from /proc/self/mountinfo: the mount point path and
+ * the filesystem type backing it.
+ */
+export interface MountEntry {
+    readonly mountPoint: string;
+    readonly filesystemType: string;
+}
+
+/**
+ * Finds the mountinfo entry that covers a resolved filesystem path — either
+ * an exact match on the mount point, or the deepest mounted ancestor
+ * directory. Every path on a Linux system is covered by exactly one mount
+ * namespace entry once you walk up to "/", so this never legitimately
+ * returns null for a well-formed mountinfo listing; null is reserved for the
+ * "could not determine" case (malformed/empty content), which callers must
+ * treat as "cannot verify" rather than "not mounted".
+ *
+ * Per man 5 proc's "mountinfo" section, field index 4 (0-based) is always
+ * the mount point, but the filesystem type's index is NOT fixed — it sits
+ * immediately after a literal "-" separator, and the number of optional
+ * fields before that separator varies per line. Locating the type via
+ * `indexOf("-")` rather than a hardcoded index is required for correctness
+ * (see 07-RESEARCH.md Assumptions Log A2).
+ *
+ * Malformed lines (too few fields, no "-" separator, nothing after it) are
+ * skipped rather than thrown on — a single corrupt line must not make this
+ * function unusable for every other line in the file.
+ */
+export function findMountEntryForPath(
+    resolvedPath: string,
+    mountinfoContent: string,
+): MountEntry | null {
+    let best: MountEntry | null = null;
+
+    for (const line of mountinfoContent.split("\n")) {
+        if (!line.trim()) continue;
+
+        const fields = line.split(" ");
+        if (fields.length < 5) continue;
+
+        const separatorIndex = fields.indexOf("-");
+        if (separatorIndex === -1 || !fields[separatorIndex + 1]) continue;
+
+        const mountPoint = unescapeMountinfoField(fields[4] ?? "");
+        const filesystemType = fields[separatorIndex + 1] as string;
+        if (!mountPoint) continue;
+
+        const covers =
+            mountPoint === resolvedPath ||
+            (mountPoint === "/" && resolvedPath.startsWith("/")) ||
+            resolvedPath.startsWith(mountPoint + path.sep);
+        if (!covers) continue;
+
+        if (!best || mountPoint.length > best.mountPoint.length) {
+            best = {mountPoint, filesystemType};
+        }
+    }
+
+    return best;
+}
+
+/**
+ * Un-escapes the octal sequences /proc/self/mountinfo uses for characters
+ * that cannot appear raw in its space-delimited text format — space
+ * (\040), tab (\011), newline (\012), and backslash (\134) itself (man 5
+ * proc). Without this, a mount point containing a space (e.g.
+ * "/opt/my stacks") is reported as "/opt/my\040stacks" and never matches
+ * the real path, silently producing a false "not mounted" result.
+ */
+function unescapeMountinfoField(field: string): string {
+    return field.replace(/\\([0-7]{3})/g, (_match, oct: string) =>
+        String.fromCharCode(Number.parseInt(oct, 8)),
+    );
+}
+
+/**
+ * Verifies that the resolved stacks directory is backed by a real,
+ * persistent mount rather than a plain directory ensureStacksDir()'s mkdir
+ * happened to create inside this container's own writable overlay layer.
+ * mkdir succeeding proves the directory exists; it proves nothing about
+ * whether it survives container recreation — a bind mount that never
+ * attached leaves mkdir with nothing to do but create an ordinary directory
+ * in the overlay layer, which looks identical to a real mount until the
+ * container is recreated and everything written there vanishes with no
+ * prior error.
+ *
+ * Detection reads /proc/self/mountinfo (kernel-documented, stable ABI) and
+ * inspects the nearest covering mount's filesystem type. This is the only
+ * reliable signal available: an st.dev (device-number) comparison — the
+ * classic Unix mountpoint idiom — has a documented false-negative class for
+ * bind mounts on the same underlying filesystem as their parent, and a
+ * marker-file-on-first-boot approach is circular, since the marker itself
+ * would be silently lost in exactly the failure case it exists to detect.
+ *
+ * Fails only on positive evidence of ephemerality (decision PD-3): an
+ * unreadable /proc/self/mountinfo, or no covering entry at all, means this
+ * check cannot verify anything and must never brick an otherwise-working
+ * deployment — those cases are handled by the remaining, non-throwing
+ * branches added alongside this JSDoc in a later revision of this function.
+ *
+ * The optional `readMountinfo` parameter (default: read the real
+ * /proc/self/mountinfo) exists purely for testability — unit tests inject
+ * fixture content instead of mocking node:fs/promises, since this module is
+ * also imported by tests exercising the real filesystem via
+ * mkdir/mkdtemp/rm/stat/writeFile, which a module-level fs mock would break.
+ */
+export async function assertStacksDirIsMounted(
+    readMountinfo: () => Promise<string> = () => readFile(MOUNTINFO_PATH, "utf-8"),
+): Promise<void> {
+    const target = getStacksDir();
+    const content = await readMountinfo();
+    const entry = findMountEntryForPath(target, content);
+
+    if (entry && EPHEMERAL_FILESYSTEM_TYPES.has(entry.filesystemType)) {
+        throw new Error(
+            `Stacks directory at "${target}" is not on a persistent filesystem: the nearest covering mount ("${entry.mountPoint}") is of type "${entry.filesystemType}", which does not survive container recreation. Everything Docktor writes there — each managed stack's docker-compose.yml, .env, and relative bind-mount data — will be silently discarded the next time this container is recreated by an image update, a "docker compose up", or a host reboot. Mount the stacks directory into the container at exactly this path: docker-compose.yml's stacks volume is driven by DOCKTOR_STACKS_HOST_DIR, which must equal DOCKTOR_STACKS_DIR. If running on ephemeral storage is deliberate, set DOCKTOR_STACKS_MOUNT_CHECK=false to downgrade this to a warning.`,
         );
     }
 }
