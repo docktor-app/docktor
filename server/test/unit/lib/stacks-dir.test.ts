@@ -1,7 +1,9 @@
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {
+    assertStacksDirIsMounted,
     assertStacksDirMatchesHost,
     ensureStacksDir,
+    findMountEntryForPath,
     getComposePath,
     getEnvPath,
     getStackPath,
@@ -172,6 +174,90 @@ describe("stacks-dir", () => {
             await expect(ensureStacksDir()).rejects.toThrow(
                 new RegExp(target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
             );
+        });
+    });
+
+    describe("findMountEntryForPath", () => {
+        it("returns the entry for an exact match on the mount point", () => {
+            const fixture = [
+                "29 1 8:2 / / rw,relatime shared:1 - ext4 /dev/sda2 rw",
+                "660 29 8:2 /srv/stacks /opt/docktor/stacks rw,relatime shared:1 - ext4 /dev/sda2 rw",
+            ].join("\n");
+
+            const result = findMountEntryForPath("/opt/docktor/stacks", fixture);
+
+            expect(result).toEqual({mountPoint: "/opt/docktor/stacks", filesystemType: "ext4"});
+        });
+
+        it("returns the nearest covering ancestor entry when no exact match exists", () => {
+            const fixture = [
+                "29 1 8:2 / / rw,relatime shared:1 - ext4 /dev/sda2 rw",
+                "24 29 0:22 / /sys rw,nosuid shared:7 - sysfs sysfs rw",
+            ].join("\n");
+
+            const result = findMountEntryForPath("/opt/docktor/stacks", fixture);
+
+            expect(result).toEqual({mountPoint: "/", filesystemType: "ext4"});
+        });
+
+        it("prefers the deepest covering entry over a shallower ancestor", () => {
+            const fixture = [
+                "29 1 8:2 / / rw,relatime shared:1 - ext4 /dev/sda2 rw",
+                "40 29 8:3 / /opt/docktor rw,relatime shared:2 - ext4 /dev/sdb1 rw",
+            ].join("\n");
+
+            const result = findMountEntryForPath("/opt/docktor/stacks", fixture);
+
+            expect(result).toEqual({mountPoint: "/opt/docktor", filesystemType: "ext4"});
+        });
+
+        it("does not treat a sibling-prefix mount point as covering the target", () => {
+            const fixture = [
+                "29 1 8:2 / / rw,relatime shared:1 - ext4 /dev/sda2 rw",
+                "41 29 8:4 / /opt/docktor-other rw,relatime shared:3 - ext4 /dev/sdc1 rw",
+            ].join("\n");
+
+            const result = findMountEntryForPath("/opt/docktor-otherwise/stacks", fixture);
+
+            expect(result).toEqual({mountPoint: "/", filesystemType: "ext4"});
+        });
+
+        it("reads the filesystem type from the field after the '-' separator regardless of optional-fields count", () => {
+            const withOptionalFields = "29 1 8:2 / / rw,relatime shared:1 - ext4 /dev/sda2 rw";
+            const withoutOptionalFields = "29 1 8:2 / / rw,relatime - ext4 /dev/sda2 rw";
+
+            expect(findMountEntryForPath("/", withOptionalFields)).toEqual({
+                mountPoint: "/",
+                filesystemType: "ext4",
+            });
+            expect(findMountEntryForPath("/", withoutOptionalFields)).toEqual({
+                mountPoint: "/",
+                filesystemType: "ext4",
+            });
+        });
+    });
+
+    describe("assertStacksDirIsMounted", () => {
+        it("rejects with an Error naming the resolved stacks path when the covering entry's filesystem type is overlay", async () => {
+            process.env.DOCKTOR_STACKS_DIR = "/opt/docktor/stacks";
+            const fixture = "29 1 8:2 / / rw,relatime - overlay overlay rw";
+
+            let thrown: Error | undefined;
+            try {
+                await assertStacksDirIsMounted(async () => fixture);
+            } catch (err) {
+                thrown = err as Error;
+            }
+
+            expect(thrown).toBeInstanceOf(Error);
+            expect(thrown?.message).toContain(path.resolve("/opt/docktor/stacks"));
+        });
+
+        it("resolves without throwing when the covering entry's filesystem type is ext4", async () => {
+            process.env.DOCKTOR_STACKS_DIR = "/opt/docktor/stacks";
+            const fixture = "29 1 8:2 / / rw,relatime - ext4 /dev/sda2 rw";
+
+            await expect(assertStacksDirIsMounted(async () => fixture)).resolves.toBeUndefined();
         });
     });
 });
