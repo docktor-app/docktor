@@ -6,6 +6,8 @@ severity: major
 files:
   - server/src/application/backup-service.ts
   - server/src/routes/backups.ts
+completed: 2026-09-12
+status: completed
 ---
 
 ## Problem
@@ -49,3 +51,28 @@ TBD — two independent fixes:
    transition to `ERROR` and mark the `Backup` row `FAILED`) rather than
    leaving both permanently stuck — mirroring the `catch` block's cleanup
    behavior just below it.
+
+## Resolution
+
+Already shipped by plan 05.1-04 (`84e5900 fix(05.1-04): reject
+backup/restore requests when no repository is configured`), before this
+todo was promoted into Phase 7's scope. Verified 2026-09-12 while
+researching Phase 7:
+
+- `initiateBackup()` / `initiateRestore()` (`server/src/application/backup-service.ts`)
+  now throw `BadRequestError` before creating the `Backup` row or
+  transitioning the stack, exactly as this todo's fix #1 requested.
+- The fire-and-forget `else` branch in `server/src/routes/backups.ts`
+  now calls `abortBackup()` to resolve the stack out of `BACKING_UP`,
+  mirroring the adjacent `catch` block — exactly fix #2.
+- Full unit-test coverage exists in
+  `server/test/unit/application/backup-service.test.ts` (see
+  `abortBackup()` describe block and the "No backup repository is
+  configured" assertions).
+- A related follow-up (`84d3b0a fix(05.1): WR-05 fail fast in
+  runRestoreProcess() when backup repo becomes unconfigured mid-flight`)
+  closed an adjacent restore-path gap the same week.
+
+This todo was never archived when 05.1-04 shipped, so it survived into
+the Phase 7 promotion by mistake. Removed from Phase 7's scope
+(ROADMAP.md) and closed here instead of being (re-)planned.

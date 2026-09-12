@@ -12,7 +12,7 @@ This phase's scope is exactly two todo items promoted from the backlog. Direct i
 
 **Bug 2 (`stacks-dir-mount-point-not-verified`) is genuinely unimplemented** and is this phase's real remaining work. `ensureStacksDir()` (`server/src/lib/stacks-dir.ts:29-40`) creates the directory with `fs.mkdir(..., {recursive:true})` but has no way to tell whether the resolved path is a real mount point (host-backed, survives container recreation) versus a plain directory materialized inside the container's own writable overlay layer (silently lost on next `docker compose up`, image update, or host reboot). The prior debug investigation (`.planning/debug/resolved/stacks-dir-not-created-on-boot.md`) already recommends the fix direction: read `/proc/self/mountinfo` (or `/proc/mounts`) after `ensureStacksDir()` succeeds and confirm the resolved stacks path appears as its own mount-point entry; fail loudly (matching `ensureStacksDir()`'s own fail-fast convention) if it does not.
 
-**Primary recommendation:** Plan bug 2 as the phase's substantive work (new `lib/mount-check.ts` module, wired into `index.ts` right after `ensureStacksDir()`, with unit tests using a fixture `/proc/self/mountinfo`-style string, no new npm dependency). Plan bug 1 as a verification/closure task: confirm the existing fix's test coverage is complete against the todo's exact scenarios, then move the todo file to `.planning/todos/completed/` — do not re-implement logic that already exists.
+**Scope update (2026-09-12):** Bug 1 has been dropped from Phase 7 entirely (not just deprioritized) — its todo is closed and moved to `.planning/todos/completed/2026-08-28-backup-without-config-wedges-stack.md` with a resolution note citing the commits below. Phase 7's scope is now bug 2 only. **Primary recommendation:** Plan bug 2 as the phase's sole work item (a mount-point check co-located in `server/src/lib/stacks-dir.ts`, wired into `index.ts` right after `ensureStacksDir()`, with unit tests using a fixture `/proc/self/mountinfo`-style string, no new npm dependency). The Bug 1 sections below are retained only as evidence for why it was dropped — no plan should schedule work against them.
 
 ## Architectural Responsibility Map
 
@@ -33,8 +33,8 @@ This phase has no `REQUIREMENTS.md` IDs (confirmed: `ROADMAP.md` states "Require
 
 | ID | Description | Research Support |
 |----|-------------|------------------|
-| Bug 1 | Backup triggerable without configured repo, wedging stack in `BACKING_UP` forever | **Already fixed** — see `## Bug 1 Findings`. Plan a verification/closure task, not a re-implementation. |
-| Bug 2 | `ensureStacksDir()` cannot distinguish a real bind mount from a plain container-layer directory | **Unimplemented** — see `## Bug 2 Findings` for the concrete design (mountinfo-based check, no new dependency). |
+| Bug 1 | Backup triggerable without configured repo, wedging stack in `BACKING_UP` forever | **Already fixed, dropped from phase scope 2026-09-12** — see `## Bug 1 Findings`. Todo closed at `.planning/todos/completed/2026-08-28-backup-without-config-wedges-stack.md`. Kept in this document for evidence/traceability only — no plan should reference it as work. |
+| Bug 2 | `ensureStacksDir()` cannot distinguish a real bind mount from a plain container-layer directory | **Unimplemented — this is the phase's entire remaining scope.** See `## Bug 2 Findings` for the concrete design (mountinfo-based check, no new dependency). |
 </phase_requirements>
 
 ## Bug 1 Findings: Backup wedge — already fixed
@@ -106,8 +106,8 @@ Test coverage confirmed present in `server/test/unit/application/backup-service.
 
 - **Do not** re-plan a task that adds the `BadRequestError` guard or the `abortBackup()` wiring — both exist and are tested.
 - **The `StatePoller` unconditional-skip claim is independently confirmed** (`server/src/jobs/state-poller.ts:41-46, 210-211, 319`, read this session: `TRANSITIONAL_STATES` includes `BACKING_UP`; both the event-driven path (line 211) and the 60s reconciliation loop (line 319) `return`/`continue` unconditionally with no staleness timeout). This is still true as a general fact about the codebase — but it is no longer a live risk for *this specific* bug, since the two callers that used to leave a stack wedged in `BACKING_UP` forever (missing-repo-config on trigger, and missing-repo-config discovered only in the fire-and-forget block) are now both closed. `StatePoller`'s lack of a general self-heal timeout remains a documented, separately-tracked architectural note in `STATE.md`'s Blockers/Concerns section, not part of this phase's scope.
-- **Recommended plan shape for bug 1:** a single small verification task — (a) re-run `server/test/unit/application/backup-service.test.ts` and confirm green, (b) optionally add one additional integration-style check if the planner wants route-level (not just service-level) coverage of the `else` branch in `backups.ts` (no existing test file covers `routes/backups.ts` directly — confirmed via search this session, no `server/test/**/backups*route*` file exists), (c) move `.planning/todos/pending/2026-08-28-backup-without-config-wedges-stack.md` to `.planning/todos/completed/` with a note citing commits `84e5900`/`84d3b0a`. This should **not** consume a full plan/wave on its own — bundle it as a fast-verification task, or fold it into the same plan as bug 2's test suite.
-- **Residual gap worth flagging to the user in discuss-phase:** the fire-and-forget block's `catch`-and-`abortBackup` pattern in `backups.ts` has no dedicated route-level (Fastify inject) test — only the service-level `abortBackup()`/`initiateBackup()` methods are unit-tested. If the phase's Nyquist validation pass wants an end-to-end guarantee that a POST to `/api/stacks/:id/backup` with no repo configured returns/resolves correctly, that is new test-writing work, not new production code.
+- **Resolved 2026-09-12:** the todo has been closed and moved to `.planning/todos/completed/2026-08-28-backup-without-config-wedges-stack.md` with a resolution note citing commits `84e5900`/`84d3b0a`. Bug 1 is fully out of Phase 7's scope — no plan task should reference it.
+- **Residual gap, explicitly out of scope for Phase 7:** the fire-and-forget block's `catch`-and-`abortBackup` pattern in `backups.ts` has no dedicated route-level (Fastify inject) test — only the service-level `abortBackup()`/`initiateBackup()` methods are unit-tested. If this gap is worth closing, it belongs in a future phase or a standalone todo, not bundled into Phase 7 (which is now scoped to bug 2 only).
 
 ## Bug 2 Findings: Mount-point verification — design
 
@@ -328,10 +328,7 @@ export async function isMountPoint(targetPath: string): Promise<boolean> {
    - What's unclear: whether the *mount-point* check should follow the same discretion, or whether "not a real mount point" is dangerous enough to always hard-fail even outside DooD (a bare-metal deployment writing to a plain directory has the identical silent-data-loss risk on reinstall/redeploy, just without the container-recreation trigger).
    - Recommendation: raise this in `/gsd-discuss-phase` as a locked decision to capture in `07-CONTEXT.md` before planning — it changes whether the check needs an environment-conditional branch.
 
-2. **Does the phase want a route-level (Fastify inject) regression test added for bug 1's already-fixed behavior, or is the existing service-level coverage sufficient closure?**
-   - What we know: service-level tests fully cover `initiateBackup()`/`initiateRestore()`/`abortBackup()`.
-   - What's unclear: whether "close the todo" requires new test-writing work or just a documentation move.
-   - Recommendation: default to "documentation move only" (fast, low-risk) unless the user's discuss-phase answer indicates they want the wiring-level gap (Pitfall 3 above) closed as part of this phase.
+2. ~~Does the phase want a route-level (Fastify inject) regression test added for bug 1's already-fixed behavior?~~ **Resolved 2026-09-12:** bug 1 is dropped from Phase 7 entirely; this question no longer applies to this phase.
 
 ## Environment Availability
 
@@ -356,8 +353,6 @@ export async function isMountPoint(targetPath: string): Promise<boolean> {
 ### Phase Requirements → Test Map
 | Req ID | Behavior | Test Type | Automated Command | File Exists? |
 |--------|----------|-----------|-------------------|-------------|
-| Bug 1 (verification only) | `initiateBackup`/`initiateRestore` reject with `BadRequestError` when no repo configured, no row created, no status transition | unit | `vitest run --project unit server/test/unit/application/backup-service.test.ts` | ✅ (already exists, lines 231, 749) |
-| Bug 1 (verification only) | Fire-and-forget `else` branch calls `abortBackup()` and resolves the stack out of `BACKING_UP` | unit (service-level only) | same as above | ✅ partial — service-level covered; route-level wiring not covered (see Pitfall 3) |
 | Bug 2 | `isMountPoint()` returns `true` for a path present as its own `mountinfo` entry, `false` otherwise | unit | `vitest run --project unit server/test/unit/lib/stacks-dir.test.ts` | ❌ Wave 0 — new test cases needed against a fixture `mountinfo` string |
 | Bug 2 | Boot sequence in `index.ts` calls the new check after `ensureStacksDir()` and exits non-zero on failure | unit (of the extracted check function) or manual | same file, or manual `docker exec` verification | ❌ Wave 0 for the unit-testable part; the actual boot-sequence wiring in `index.ts` is difficult to unit-test in isolation (existing precedent: `index.ts` itself has no dedicated test file — confirmed via search this session) — recommend a manual verification step instead, consistent with how `assertStacksDirMatchesHost()`/`ensureStacksDir()`'s *wiring* into `index.ts` was also left to manual verification in prior phases (per `STATE.md`'s Phase 05.1 human-check notes) |
 
