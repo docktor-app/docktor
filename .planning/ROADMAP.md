@@ -315,8 +315,12 @@ Scope is exactly 1 item, promoted from `.planning/todos/pending/` as release-blo
 _Dropped 2026-09-12: "Brownfield import/adopt unreachable post-setup" was already shipped by Phase 05.1-07 — see `.planning/todos/completed/2026-08-28-setup-routes-unauthenticated-no-postsetup-import.md`. "Backup triggerable without configured repo, wedging BACKING_UP" was already shipped by plan 05.1-04 — see `.planning/todos/completed/2026-08-28-backup-without-config-wedges-stack.md`._
 
 Plans:
+**Wave 1**
 
 - [ ] 07-01-PLAN.md — Mount-point persistence check in `lib/stacks-dir.ts`, wired into the boot sequence, hardened for escaped paths / unverifiable hosts / operator opt-out, and documented in `docs/deployment.md` (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 07-02-PLAN.md — Real-container verification of the check plus a human review of the refusal message (wave 2, requires 07-01)
 
 ### Phase 8: Live State Consistency
