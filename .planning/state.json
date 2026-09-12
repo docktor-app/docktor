@@ -1,0 +1,63 @@
+{
+  "contract": "1.0.0",
+  "flavor": "core",
+  "milestone": "v1.0",
+  "phases": [
+    {
+      "number": "1",
+      "name": "MVP Completion",
+      "status": "complete"
+    },
+    {
+      "number": "2",
+      "name": "Observability",
+      "status": "complete"
+    },
+    {
+      "number": "3",
+      "name": "Notifications",
+      "status": "complete"
+    },
+    {
+      "number": "4",
+      "name": "Backup & Restore",
+      "status": "complete"
+    },
+    {
+      "number": "5",
+      "name": "Onboarding",
+      "status": "complete"
+    },
+    {
+      "number": "6",
+      "name": "Proxy Configuration",
+      "status": "complete"
+    },
+    {
+      "number": "7",
+      "name": "Release Hardening: Data Safety and Core Workflows",
+      "status": "pending"
+    },
+    {
+      "number": "8",
+      "name": "Live State Consistency",
+      "status": "pending"
+    },
+    {
+      "number": "9",
+      "name": "Deployment and Release Readiness",
+      "status": "pending"
+    },
+    {
+      "number": "10",
+      "name": "UX Redesign: Service Colors, Editors, and Dashboard Stats",
+      "status": "pending"
+    }
+  ],
+  "next": {
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step",
+    "reason": "Phase 07 of 11 · executing"
+  },
+  "updated_at": "2026-09-12T06:56:27.177Z"
+}
