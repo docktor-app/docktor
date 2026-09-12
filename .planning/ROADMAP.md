@@ -306,7 +306,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 **Goal:** Close the pre-v1.0.0 bug that silently loses stack data on container recreation
 **Requirements**: n/a — this phase is scoped by the todo list below, not by REQUIREMENTS.md IDs
 **Depends on:** Phase 6
-**Plans:** 0 plans
+**Plans:** 2 plans
 
 Scope is exactly 1 item, promoted from `.planning/todos/pending/` as release-blocking for v1.0.0:
 
@@ -316,7 +316,8 @@ _Dropped 2026-09-12: "Brownfield import/adopt unreachable post-setup" was alread
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 7 to break down)
+- [ ] 07-01-PLAN.md — Mount-point persistence check in `lib/stacks-dir.ts`, wired into the boot sequence, hardened for escaped paths / unverifiable hosts / operator opt-out, and documented in `docs/deployment.md` (wave 1)
+- [ ] 07-02-PLAN.md — Real-container verification of the check plus a human review of the refusal message (wave 2, requires 07-01)
 
 ### Phase 8: Live State Consistency
 
