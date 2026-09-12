@@ -149,7 +149,7 @@ export function findMountEntryForPath(
         if (separatorIndex === -1 || !fields[separatorIndex + 1]) continue;
 
         const mountPoint = unescapeMountinfoField(fields[4] ?? "");
-        const filesystemType = fields[separatorIndex + 1] as string;
+        const filesystemType = fields[separatorIndex + 1];
         if (!mountPoint) continue;
 
         const covers =
