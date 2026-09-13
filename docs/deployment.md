@@ -129,6 +129,7 @@ Every variable the server reads (`server/src`), matching `.env.example` exactly.
 | `ENCRYPTION_KEY` | **Required** | — | Encrypts SMTP passwords, SFTP keys, S3 secrets, and the restic repository password at rest. Must be exactly 64 hex characters (32 bytes) or every encrypt/decrypt call throws. |
 | `DOCKTOR_STACKS_DIR` | Required (has a working default) | `/opt/docktor/stacks` (image default) | Container-side path where managed stacks live. See [Stacks directory path](#stacks-directory-path-read-this-before-your-first-deploy) — **must exactly match `DOCKTOR_STACKS_HOST_DIR`.** |
 | `DOCKTOR_STACKS_HOST_DIR` | Required (has a working default) | `/opt/docktor/stacks` (compose default) | Host-side path of the same directory. Drives both sides of the `docker-compose.yml` stacks volume. |
+| `DOCKTOR_STACKS_MOUNT_CHECK` | Optional | enabled | The server verifies at boot that the stacks directory is backed by a real mount rather than the container's own writable layer. Setting this to `false` downgrades that refusal to a warning, for deployments deliberately running on ephemeral storage. See [Stacks directory persistence](#stacks-directory-persistence). |
 | `DOCKTOR_FS_POLLING` | Optional | auto-detected | Forces the stacks-directory file watcher into polling mode instead of native inotify. Needed on some Docker Desktop (Windows/Mac) hosts where inotify events don't propagate into the Linux container. |
 | `DOCKER_DATA_PATH` | Optional | `/var/lib/docker` (wrong for this deployment — see below) | Filesystem path the disk-space checker monitors. **Set to `/host/var/lib/docker`** for this deployment — `docker-compose.yml` mounts the host's root filesystem read-only at `/host` specifically so this check can see real host disk usage; the plain default measures this container's own tiny filesystem instead. |
 | `RESTIC_BINARY` | Optional | `restic` (resolved via PATH) | Path to the restic binary. The image installs a pinned, checksum-verified release at `/usr/local/bin/restic`, already on PATH. |
@@ -161,6 +162,53 @@ boot**, naming both paths, whenever `DOCKTOR_STACKS_HOST_DIR` is set but
 doesn't match `DOCKTOR_STACKS_DIR`. It only stays silent (with a warning) when
 `DOCKTOR_STACKS_HOST_DIR` is left unset entirely — which is why `.env.example`
 sets it by default rather than leaving it commented out.
+
+## Stacks directory persistence
+
+A matching `DOCKTOR_STACKS_DIR`/`DOCKTOR_STACKS_HOST_DIR` pair (above) proves
+the two paths agree — it does not prove the stacks volume actually mounted.
+`server/src/lib/stacks-dir.ts`'s `ensureStacksDir()` creates the container-side
+directory with `mkdir` if it's missing, and `mkdir` succeeding looks identical
+whether the bind mount attached or not: Docker's short-syntax bind-mount
+auto-creation is legacy and best-effort, and Docker Desktop's virtualized
+backends (e.g. WSL2) can diverge from native Linux dockerd for a path with no
+real host-mappable location. If the mount never attached, `mkdir` quietly
+creates an ordinary directory inside the container's own writable layer.
+Everything Docktor writes there — every managed stack's `docker-compose.yml`,
+`.env`, and relative bind-mount data — is then silently discarded the next
+time the container is recreated by an image update, a `docker compose up`, or
+a host reboot, with no error at any prior boot.
+
+To catch this, `assertStacksDirIsMounted()` runs immediately after
+`ensureStacksDir()` and reads `/proc/self/mountinfo` to find the nearest mount
+covering the resolved stacks path. The server **refuses to boot** only on
+positive evidence of ephemeral storage:
+
+- The covering mount's filesystem type is `overlay`, `overlayfs`, `tmpfs`, or
+  `ramfs`.
+- The covering mount is the container's own root (`/`) while
+  `DOCKTOR_STACKS_HOST_DIR` is set **and** the process can positively confirm
+  it is actually running inside a container (it checks for `/.dockerenv`,
+  the file Docker creates in every container) — a deployment that sets that
+  variable has declared itself the containerized Docker-outside-of-Docker
+  deployment, where the stacks volume must appear as a mount of its own; this
+  catches a never-attached volume even on a non-overlay container storage
+  driver (btrfs/zfs/xfs) that would otherwise pass the filesystem-type check
+  above. The `/.dockerenv` guard exists because "root mount +
+  `DOCKTOR_STACKS_HOST_DIR` set" alone cannot be distinguished from an
+  entirely ordinary bare-metal/VM deployment with a single-partition Linux
+  layout and no separate mount for the stacks path — without it, that
+  combination is not evidence of ephemerality and would incorrectly refuse to
+  boot a working, persistent deployment.
+
+It **warns and starts normally** whenever it cannot tell — there is no
+readable `/proc/self/mountinfo` (e.g. a non-Linux dev host, or a hardened
+runtime restricting `/proc` access), or no mount entry covers the resolved
+path at all. Inability to verify never blocks a boot.
+
+Set `DOCKTOR_STACKS_MOUNT_CHECK=false` to skip this check deliberately, for
+example when intentionally running on ephemeral storage. The skip is never
+silent — it always logs a warning naming the variable.
 
 ## Database schema
 
@@ -221,3 +269,4 @@ of this project — fixed as noted, or still requiring the workaround described.
 | 7 | The `/data` and `/backups` volumes referenced in an older version of `docker-compose.yml` don't seem to do anything | Nothing in `server/src` ever read `DOCKTOR_DATA_DIR` or `DOCKTOR_BACKUP_DIR` — those mounts were decorative | Both mounts (and the two dead env vars) were removed from `docker-compose.yml`/`.env.example` as of this guide. Backups are configured entirely in-app; see [Backups](#backups) above. |
 | 8 | An operator upgrading an existing (pre-05.1) Docktor installation sees the server refuse to boot after upgrading, naming a stacks-directory path mismatch | The canonical stacks path changed to `/opt/docktor/stacks` and there is deliberately no automatic migration of existing data to the new path | Relocate your existing stacks directory to the new canonical path (or set `DOCKTOR_STACKS_HOST_DIR`/`DOCKTOR_STACKS_DIR` to your existing host path instead of changing the data) before restarting. This is intentional — automatically moving a self-hoster's data during an upgrade is riskier than failing loudly and letting them do it deliberately. |
 | 9 | After upgrading, `docker compose up -d` fails because the env file named in `docker-compose.yml` (`.env`) is not found, or a previously-working custom stacks directory starts failing the path-mismatch check even though nothing about your setup changed | The deployment env file was renamed from `.env.local` to `.env` so Docker Compose's own top-level `${VAR}` interpolation can read it (see the callout in [Quickstart](#quickstart) step 2) | Rename your existing file in place: `mv .env.local .env`. The contents are unchanged — no values need editing, and no secrets need regenerating. |
+| 10 | The server refuses to boot with an error saying the stacks directory is not on a persistent filesystem | The stacks volume never attached, so the directory `ensureStacksDir()` created lives in the container's writable layer instead of on a real mount | Check that `docker-compose.yml`'s stacks volume is present and that `DOCKTOR_STACKS_HOST_DIR` equals `DOCKTOR_STACKS_DIR`. Confirm with `docker exec <container> cat /proc/self/mountinfo`. Only use `DOCKTOR_STACKS_MOUNT_CHECK=false` when running on ephemeral storage is intentional. |
