@@ -341,9 +341,9 @@ state; nothing currently shipped is itself deprecated.
 
 **If empty:** N/A — see table above; 3 assumptions logged, none about compliance/security/retention.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Can this phase's execution session actually reach a running Docktor instance to close the human-judgment items itself, or does it need a human handoff like 05.1 did?**
+1. **RESOLVED — see 08-01-PLAN.md planning-note PD-2.** Can this phase's execution session actually reach a running Docktor instance to close the human-judgment items itself, or does it need a human handoff like 05.1 did?
    - What we know: `docker info`, `docker compose version`, `node`, and `yarn` are all reachable in
      *this research session* (verified below) — a material difference from every 05.1 plan summary's
      documented "no running Docktor instance or browser is available in this sandboxed session."
@@ -358,7 +358,7 @@ state; nothing currently shipped is itself deprecated.
      05.1-02 D6 / 05.1-04 D7 / 05.1-06 D9's phrasing, so the human doing the check has an exact
      script to follow.
 
-2. **Should the 3 todo files in `.planning/todos/pending/` be deleted/archived, or left in place with an updated status?**
+2. **RESOLVED — see 08-01-PLAN.md planning-note PD-5.** Should the 3 todo files in `.planning/todos/pending/` be deleted/archived, or left in place with an updated status?
    - What we know: STATE.md's "Pending Todos" list still lists all 3 as open; the actual code gaps
      they describe are closed.
    - What's unclear: The project's convention for closing a todo once its promoted phase completes
