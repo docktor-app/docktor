@@ -328,7 +328,7 @@ Plans:
 **Goal:** State that is already correct on the server shows up live in the UI, without the user needing to refresh
 **Requirements**: n/a — this phase is scoped by the todo list below, not by REQUIREMENTS.md IDs
 **Depends on:** Phase 7
-**Plans:** 0 plans
+**Plans:** 1 plan
 
 Scope is exactly 3 items, promoted from `.planning/todos/pending/` as release-blocking for v1.0.0 — all three are the same root theme (a state change happens correctly server-side but the UI doesn't reflect it without a manual reload):
 
@@ -338,7 +338,7 @@ Scope is exactly 3 items, promoted from `.planning/todos/pending/` as release-bl
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 8 to break down)
+- [ ] 08-01-PLAN.md — Add the missing in-progress motion cue to the BACKING_UP/RESTORING/MIGRATING badges with a new unit test, settle this session's live reachability by measurement, hand the six stranded 05.1 human-judgment verifications to UAT, and close the three stale todos
 
 ### Phase 9: Deployment and Release Readiness
 
