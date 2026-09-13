@@ -277,6 +277,7 @@ Recent decisions affecting current work:
 - [Phase 06]: [Phase 06-07] Parity test (shared-schema-parity.test.ts) lives in server/test/unit/, not shared/ — asserts from the module context that G-06-3 actually fooled
 - [Phase 07]: 07-01: mountinfo-based deepest-covering-entry match chosen over exact-match-only so a persistent parent-directory mount is recognized correctly; container-root+DOCKTOR_STACKS_HOST_DIR also treated as ephemeral to catch non-overlay storage drivers
 - [Phase 07]: 07-01: gsd_run check tdd-red-evidence is incompatible with this project's vitest TAP output (nested TAP-13 vs Node --test's flat # tests/# pass/# fail format) — RED evidence confirmed manually instead; workflow.tdd_mode is not enabled for this project
+- [Phase 07]: Post-verification gap fix: assertStacksDirIsMounted()'s container-root+DOCKTOR_STACKS_HOST_DIR heuristic (07-01) false-positived on an ordinary persistent bare-metal/VM root filesystem, since that combination alone can't be told apart from a container's own ephemeral layer. Gated the heuristic behind a real containerization signal (`/.dockerenv`, injectable as `isContainerized` for tests) so it only fires when actually inside a container. Re-verified 6/6 (was 5/6) — confirmed the original ephemeral-storage (tmpfs/overlay) detection was not weakened by the fix.
 
 ### Quick Tasks Completed
 
