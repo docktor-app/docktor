@@ -1,8 +1,27 @@
-import {mkdir, readFile} from "node:fs/promises";
+import {access, mkdir, readFile} from "node:fs/promises";
 import path from "node:path";
 
 const MOUNTINFO_PATH = "/proc/self/mountinfo";
+const DOCKERENV_PATH = "/.dockerenv";
 const EPHEMERAL_FILESYSTEM_TYPES = new Set(["overlay", "overlayfs", "tmpfs", "ramfs"]);
+
+/**
+ * Checks for `/.dockerenv`, the file the Docker (and Podman, in Docker-
+ * compatibility mode) container runtime creates inside every container it
+ * starts. This is the only positive evidence assertStacksDirIsMounted() has
+ * that the process is actually inside a container at all, as opposed to
+ * running directly on a host whose root filesystem happens to have no
+ * dedicated mount for the stacks path — see that function's doc comment for
+ * why this check exists.
+ */
+async function defaultIsContainerized(): Promise<boolean> {
+    try {
+        await access(DOCKERENV_PATH);
+        return true;
+    } catch {
+        return false;
+    }
+}
 
 export function getStacksDir(): string {
     return path.resolve(process.env.DOCKTOR_STACKS_DIR || "./stacks");
@@ -209,22 +228,32 @@ function unescapeMountinfoField(field: string): string {
  *
  * Ephemerality is judged two ways: the covering mount's filesystem type is
  * one of EPHEMERAL_FILESYSTEM_TYPES, OR the covering mount is the
- * container's own root ("/") while DOCKTOR_STACKS_HOST_DIR is set. The
- * second clause matters because a deployment that sets
- * DOCKTOR_STACKS_HOST_DIR has declared itself the containerized
- * Docker-outside-of-Docker deployment, where the stacks volume must appear
- * as a mount of its own — without this clause, a btrfs/zfs/xfs container
- * root (a non-overlay storage driver) would slip past the filesystem-type
- * test even though the volume never actually attached.
+ * container's own root ("/") while DOCKTOR_STACKS_HOST_DIR is set AND the
+ * process can positively confirm it is actually running inside a container
+ * (via `/.dockerenv` — see isContainerized). The second clause matters
+ * because a deployment that sets DOCKTOR_STACKS_HOST_DIR has declared itself
+ * the containerized Docker-outside-of-Docker deployment, where the stacks
+ * volume must appear as a mount of its own — without this clause, a
+ * btrfs/zfs/xfs container root (a non-overlay storage driver) would slip
+ * past the filesystem-type test even though the volume never actually
+ * attached. The containerization guard on top of that exists because
+ * "root mount + DOCKTOR_STACKS_HOST_DIR set" alone is indistinguishable from
+ * an entirely ordinary bare-metal/VM deployment with a single-partition
+ * Linux layout and no separate mount for the stacks path — without positive
+ * evidence of actually being inside a container, that combination is not
+ * evidence of ephemerality at all, and treating it as such previously bricked
+ * exactly that layout (07-VERIFICATION.md gap).
  *
- * The optional `readMountinfo` parameter (default: read the real
- * /proc/self/mountinfo) exists purely for testability — unit tests inject
- * fixture content instead of mocking node:fs/promises, since this module is
+ * The optional `readMountinfo` and `isContainerized` parameters (default:
+ * read the real /proc/self/mountinfo, and check for a real /.dockerenv)
+ * exist purely for testability — unit tests inject fixture content /
+ * fixed booleans instead of mocking node:fs/promises, since this module is
  * also imported by tests exercising the real filesystem via
  * mkdir/mkdtemp/rm/stat/writeFile, which a module-level fs mock would break.
  */
 export async function assertStacksDirIsMounted(
     readMountinfo: () => Promise<string> = () => readFile(MOUNTINFO_PATH, "utf-8"),
+    isContainerized: () => Promise<boolean> = defaultIsContainerized,
 ): Promise<void> {
     const target = getStacksDir();
 
@@ -255,9 +284,10 @@ export async function assertStacksDirIsMounted(
     }
 
     const hostDir = process.env.DOCKTOR_STACKS_HOST_DIR;
+    const isContainerRootWithHostDir =
+        entry.mountPoint === "/" && !!hostDir && (await isContainerized());
     const isEphemeral =
-        EPHEMERAL_FILESYSTEM_TYPES.has(entry.filesystemType) ||
-        (entry.mountPoint === "/" && !!hostDir);
+        EPHEMERAL_FILESYSTEM_TYPES.has(entry.filesystemType) || isContainerRootWithHostDir;
 
     if (isEphemeral) {
         throw new Error(

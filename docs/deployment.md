@@ -187,11 +187,19 @@ positive evidence of ephemeral storage:
 - The covering mount's filesystem type is `overlay`, `overlayfs`, `tmpfs`, or
   `ramfs`.
 - The covering mount is the container's own root (`/`) while
-  `DOCKTOR_STACKS_HOST_DIR` is set — a deployment that sets that variable has
-  declared itself the containerized Docker-outside-of-Docker deployment,
-  where the stacks volume must appear as a mount of its own; this catches a
-  never-attached volume even on a non-overlay container storage driver
-  (btrfs/zfs/xfs) that would otherwise pass the filesystem-type check above.
+  `DOCKTOR_STACKS_HOST_DIR` is set **and** the process can positively confirm
+  it is actually running inside a container (it checks for `/.dockerenv`,
+  the file Docker creates in every container) — a deployment that sets that
+  variable has declared itself the containerized Docker-outside-of-Docker
+  deployment, where the stacks volume must appear as a mount of its own; this
+  catches a never-attached volume even on a non-overlay container storage
+  driver (btrfs/zfs/xfs) that would otherwise pass the filesystem-type check
+  above. The `/.dockerenv` guard exists because "root mount +
+  `DOCKTOR_STACKS_HOST_DIR` set" alone cannot be distinguished from an
+  entirely ordinary bare-metal/VM deployment with a single-partition Linux
+  layout and no separate mount for the stacks path — without it, that
+  combination is not evidence of ephemerality and would incorrectly refuse to
+  boot a working, persistent deployment.
 
 It **warns and starts normally** whenever it cannot tell — there is no
 readable `/proc/self/mountinfo` (e.g. a non-Linux dev host, or a hardened

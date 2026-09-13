@@ -326,20 +326,30 @@ describe("stacks-dir", () => {
             expect(warnSpy).toHaveBeenCalledTimes(1);
         });
 
-        it("rejects when the container's own root covers the path and DOCKTOR_STACKS_HOST_DIR is set", async () => {
+        it("rejects when the container's own root covers the path, DOCKTOR_STACKS_HOST_DIR is set, and the process is actually containerized", async () => {
             process.env.DOCKTOR_STACKS_DIR = "/opt/docktor/stacks";
             process.env.DOCKTOR_STACKS_HOST_DIR = "/opt/docktor/stacks";
             const fixture = "29 1 8:2 / / rw,relatime - ext4 /dev/sda2 rw";
 
             let thrown: Error | undefined;
             try {
-                await assertStacksDirIsMounted(async () => fixture);
+                await assertStacksDirIsMounted(async () => fixture, async () => true);
             } catch (err) {
                 thrown = err as Error;
             }
 
             expect(thrown).toBeInstanceOf(Error);
             expect(thrown?.message).toContain(path.resolve("/opt/docktor/stacks"));
+        });
+
+        it("resolves without throwing when the container's own root covers the path and DOCKTOR_STACKS_HOST_DIR is set, but the process is not actually containerized (07-VERIFICATION.md gap)", async () => {
+            process.env.DOCKTOR_STACKS_DIR = "/opt/docktor/stacks";
+            process.env.DOCKTOR_STACKS_HOST_DIR = "/opt/docktor/stacks";
+            const fixture = "29 1 8:2 / / rw,relatime - ext4 /dev/sda2 rw";
+
+            await expect(
+                assertStacksDirIsMounted(async () => fixture, async () => false),
+            ).resolves.toBeUndefined();
         });
 
         it("resolves without a persistence warning when the container root covers the path and DOCKTOR_STACKS_HOST_DIR is unset", async () => {
