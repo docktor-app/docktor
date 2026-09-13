@@ -1,7 +1,7 @@
 ---
 phase: "08"
 slug: "live-state-consistency"
-status: draft
+status: approved
 shadcn_initialized: true
 preset: "new-york / neutral base / lucide icons (client/components.json)"
 created: "2026-09-13"
@@ -191,6 +191,17 @@ Applicable state considerations resolved: 4 covered, 0 backstop, 2 unresolved.
 | overflow | Deploy button (`StackActions`) not disabled during `UPDATING`/`MIGRATING` — `BLOCKED_STATES` only lists `BACKING_UP`/`RESTORING`/`DEPLOYING` | ⚠ unresolved | Not one of Phase 8's 3 scoped todos; server-side `assertTransition()` still rejects the conflicting action, so this is a UX rough edge (confusing error toast), not a data-safety issue. Planner should treat as an assumption: fix only if the phase's own live-verification pass surfaces it as user-visible confusion, otherwise defer. |
 | long-text | Config-error red pill (list view) shows a fixed `config error` label, never the message itself | ⚠ unresolved | Deliberate existing design (avoids truncation/overflow in the table row) — full message is only on the detail page's `Alert`. Acceptable as-is; flagged only so a future hover-tooltip enhancement isn't treated as a Phase 8 requirement. |
 
+**Mechanical per-element probe (post-verification pass, run against all 8 named surfaces —
+config-error Alert/pill, config-changed Alert/pill, `StackStatusBadge`, `StackActions` buttons,
+SSE toasts, Compose/Env dirty-guard):** the generic `empty`/`loading`/`error`/`populated`/`partial`
+categories the classifier proposed for the pills, badges, and toasts are dismissed as not-applicable
+— every one of these elements is a synchronous, derived display of state the parent stack query has
+already fetched (no independent fetch/loading/error lifecycle of its own; that lifecycle belongs to
+`useStack`/`useStacks`, which are out of this phase's scope). Every category the classifier proposed
+that IS substantively applicable to this phase's actual scope (long-text, zero-one-many, partial,
+overflow — including the two unresolved rows above) is already represented in the table above; the
+probe surfaced no additional applicable consideration beyond those six rows.
+
 ---
 
 ## Registry Safety
@@ -205,12 +216,12 @@ No third-party registries declared or used.
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
-- [ ] Dimension 7 Inventory Provenance: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: FLAG (non-blocking — no explicit focal-point statement; acceptable given locked-scope framing)
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
+- [x] Dimension 7 Inventory Provenance: PASS
 
-**Approval:** pending
+**Approval:** APPROVED (2026-09-13)
