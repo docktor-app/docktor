@@ -19,7 +19,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: Backup & Restore** - Enable encrypted, versioned stack backups with manual and scheduled restore (completed 2026-08-31)
 - [x] **Phase 5: Onboarding** - Guide new installs through setup with a first-run wizard and adopt existing stacks via brownfield import (completed 2026-04-08)
 - [x] **Phase 6: Proxy Configuration** - Configure domain and TLS for services via a Docktor-managed nginx-proxy + acme-companion stack (completed 2026-09-12)
-- [ ] **Phase 7: Release Hardening: Data Safety and Core Workflows** - Verify managed stacks directory survives container recreation before v1.0.0
+- [x] **Phase 7: Release Hardening: Data Safety and Core Workflows** - Verify managed stacks directory survives container recreation before v1.0.0 (completed 2026-09-13)
 - [ ] **Phase 8: Live State Consistency** - Make state changes (config errors, config edits, manual actions) reflect live in the UI without a manual refresh
 - [ ] **Phase 9: Deployment and Release Readiness** - Clean up deployment docs and close remaining release-process gaps for v1.0.0
 - [ ] **Phase 10: UX Redesign: Service Colors, Editors, and Dashboard Stats** - Redesign stack detail (colors, tabs, mobile), dashboard stats, and compose/env editors
@@ -296,7 +296,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 4. Backup & Restore | 17/17 | Complete    | 2026-08-31 |
 | 5. Onboarding | 11/10 | Complete    | 2026-08-31 |
 | 6. Proxy Configuration | 7/7 | Complete    | 2026-09-12 |
-| 7. Release Hardening: Data Safety and Core Workflows | 1/2 | In Progress|  |
+| 7. Release Hardening: Data Safety and Core Workflows | 2/2 | Complete    | 2026-09-13 |
 | 8. Live State Consistency | 0/0 | Not planned |  |
 | 9. Deployment and Release Readiness | 0/0 | Not planned |  |
 | 10. UX Redesign: Service Colors, Editors, and Dashboard Stats | 0/0 | Not planned |  |
@@ -306,7 +306,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 **Goal:** Close the pre-v1.0.0 bug that silently loses stack data on container recreation
 **Requirements**: n/a — this phase is scoped by the todo list below, not by REQUIREMENTS.md IDs
 **Depends on:** Phase 6
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Scope is exactly 1 item, promoted from `.planning/todos/pending/` as release-blocking for v1.0.0:
 
@@ -321,7 +321,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 07-02-PLAN.md — Real-container verification of the check plus a human review of the refusal message (wave 2, requires 07-01)
+- [x] 07-02-PLAN.md — Real-container verification of the check plus a human review of the refusal message (wave 2, requires 07-01)
 
 ### Phase 8: Live State Consistency
 
