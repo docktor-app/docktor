@@ -4,6 +4,7 @@ title: Show config_error state in the UI (currently backend-only)
 area: observability
 severity: major
 files:
+
   - client/src/hooks/use-container-events.ts
   - client/src/hooks/use-stacks.ts
   - client/src/hooks/use-stack.ts
@@ -12,6 +13,9 @@ files:
   - server/prisma/schema/stack.prisma
   - server/src/jobs/file-watcher.ts
   - server/src/repositories/stack-repository.ts
+
+completed: 2026-09-14
+status: completed
 ---
 
 ## Problem
@@ -63,3 +67,22 @@ TBD — likely mirrors the existing `configChanged` pattern:
 Needs a short design decision first: does a config error also clear
 `configChanged`, or can both be true simultaneously? Check against the
 StackStatus state machine before implementing.
+
+## Resolution
+
+Closed by Phase 05.1 plan 05.1-06. `FileWatcher.handleFileChange()`'s catch
+branch persists `Stack.configError` and publishes `ConfigErrorEvent` over SSE
+(`server/src/jobs/file-watcher.ts:238-250`); the client handles it in
+`use-stack.ts:82-86` and `use-stacks.ts:48`; the destructive `Alert` on the
+stack detail page and the red pill in the stack list render it
+(`client/src/routes/app/stacks/[id].tsx:218-225`,
+`client/src/components/domain/stack/stack-list.tsx:31-34`). `configError` and
+`configChanged` were confirmed independent fields on `Stack`, verified against
+`stack-status-machine.ts` — both can be true simultaneously, resolving the
+design question above.
+
+Live confirmation that a YAML syntax error in a running stack's compose file
+produces the red indicator with no reload, and that fixing the file clears
+it, is tracked as this phase's UAT item V6 (`.planning/phases/
+08-live-state-consistency/08-01-SUMMARY.md`) rather than claimed here. A
+failing V6 reopens this item through normal gap closure.
