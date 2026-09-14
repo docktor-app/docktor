@@ -297,7 +297,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Onboarding | 11/10 | Complete    | 2026-08-31 |
 | 6. Proxy Configuration | 7/7 | Complete    | 2026-09-12 |
 | 7. Release Hardening: Data Safety and Core Workflows | 2/2 | Complete    | 2026-09-13 |
-| 8. Live State Consistency | 0/0 | Not planned |  |
+| 8. Live State Consistency | 1/1 | In Progress|  |
 | 9. Deployment and Release Readiness | 0/0 | Not planned |  |
 | 10. UX Redesign: Service Colors, Editors, and Dashboard Stats | 0/0 | Not planned |  |
 
@@ -328,7 +328,7 @@ Plans:
 **Goal:** State that is already correct on the server shows up live in the UI, without the user needing to refresh
 **Requirements**: n/a — this phase is scoped by the todo list below, not by REQUIREMENTS.md IDs
 **Depends on:** Phase 7
-**Plans:** 1 plan
+**Plans:** 1/1 plans executed
 
 Scope is exactly 3 items, promoted from `.planning/todos/pending/` as release-blocking for v1.0.0 — all three are the same root theme (a state change happens correctly server-side but the UI doesn't reflect it without a manual reload):
 
@@ -338,7 +338,7 @@ Scope is exactly 3 items, promoted from `.planning/todos/pending/` as release-bl
 
 Plans:
 
-- [ ] 08-01-PLAN.md — Add the missing in-progress motion cue to the BACKING_UP/RESTORING/MIGRATING badges with a new unit test, settle this session's live reachability by measurement, hand the six stranded 05.1 human-judgment verifications to UAT, and close the three stale todos
+- [x] 08-01-PLAN.md — Add the missing in-progress motion cue to the BACKING_UP/RESTORING/MIGRATING badges with a new unit test, settle this session's live reachability by measurement, hand the six stranded 05.1 human-judgment verifications to UAT, and close the three stale todos
 
 ### Phase 9: Deployment and Release Readiness
 

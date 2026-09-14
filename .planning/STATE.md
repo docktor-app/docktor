@@ -4,14 +4,14 @@ milestone: v1.0
 current_phase: 08
 current_phase_name: Live State Consistency
 status: Phase 05.1 (Stabilization) complete — 12/12 plans, UAT 10/10 passed, VERIFICATION.md passed (17/17 must-haves, 4 human_verification items confirmed by user 2026-09-11). ROADMAP.md Phase 1 checkbox bookkeeping corrected to match disk truth (was stale — Phase 1 has been fully executed and verified since 2026-03-11).
-stopped_at: Phase 08 UI-SPEC approved
-last_updated: "2026-09-14T08:12:45.070Z"
-state_head: 4e662e03aabb389fe0f0e6c58fdbf051668b1d98
+stopped_at: Completed 08-01-PLAN.md
+last_updated: "2026-09-14T08:32:29.853Z"
+state_head: f1295f55e8eb43c8b121ceea617346a7efe248d2
 progress:
   total_phases: 11
   completed_phases: 7
   total_plans: 77
-  completed_plans: 76
+  completed_plans: 77
 milestone_name: milestone
 ---
 
@@ -125,6 +125,7 @@ Plan: 1 of 1
 | Phase 06 P05 | 90min | 3 tasks | 13 files |
 | Phase 06 P07 | 25min | 2 tasks | 5 files |
 | Phase 07 P01 | 40min | 3 tasks | 4 files |
+| Phase 08 P01 | 30min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -278,6 +279,9 @@ Recent decisions affecting current work:
 - [Phase 07]: 07-01: mountinfo-based deepest-covering-entry match chosen over exact-match-only so a persistent parent-directory mount is recognized correctly; container-root+DOCKTOR_STACKS_HOST_DIR also treated as ephemeral to catch non-overlay storage drivers
 - [Phase 07]: 07-01: gsd_run check tdd-red-evidence is incompatible with this project's vitest TAP output (nested TAP-13 vs Node --test's flat # tests/# pass/# fail format) — RED evidence confirmed manually instead; workflow.tdd_mode is not enabled for this project
 - [Phase 07]: Post-verification gap fix: assertStacksDirIsMounted()'s container-root+DOCKTOR_STACKS_HOST_DIR heuristic (07-01) false-positived on an ordinary persistent bare-metal/VM root filesystem, since that combination alone can't be told apart from a container's own ephemeral layer. Gated the heuristic behind a real containerization signal (`/.dockerenv`, injectable as `isContainerized` for tests) so it only fires when actually inside a container. Re-verified 6/6 (was 5/6) — confirmed the original ephemeral-storage (tmpfs/overlay) detection was not weakened by the fix.
+- [Phase 08]: [Phase 08-01]: Branch B taken (TCP-payload block reconfirmed at both 127.0.0.1:5432 and the container's own bridge address) — no live verification pass attempted; six items handed to UAT as a self-contained script
+- [Phase 08]: [Phase 08-01]: Full client test suite flake (4 unrelated files, host contention — load avg 2-4/6 cores, swap fully allocated) not attributed to this plan's change per Task 1's own precondition; all 4 files pass 28/28 in isolation
+- [Phase 08]: [Phase 08-01]: Todos closed now (not after UAT) per plan decision PD-5 — each Resolution states a failing UAT item reopens it through normal gap closure
 
 ### Quick Tasks Completed
 
@@ -346,6 +350,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-09-13T19:47:54.014Z
-Stopped at: Phase 08 UI-SPEC approved
-Resume file: .planning/phases/08-live-state-consistency/08-UI-SPEC.md
+Last session: 2026-09-14T08:32:29.056Z
+Stopped at: Completed 08-01-PLAN.md
+Resume file: None

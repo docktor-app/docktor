@@ -236,6 +236,10 @@ None - no external service configuration required. A human on an unrestricted ho
 - STATE.md's Pending Todos list and Phase 02 blocker entry are corrected to match reality.
 - Blocker: the six-item live-verification script above (V1-V6, V7-V8) has not been executed by a human yet — this phase's UAT cannot close until that happens, matching every prior phase's precedent (05.1, 06-03, 06-06) for this same environment limitation.
 
+## Self-Check: PASSED
+
+All claimed files found on disk (`client/test/unit/components/domain/stack/stack-status-badge.test.tsx`, `client/src/components/domain/stack/stack-status-badge.tsx`, the three completed todo files, this SUMMARY.md). All claimed commit hashes found in `git log --oneline --all` (`a357b68`, `bea2e23`, `f9edc56`, `f1295f5`).
+
 ---
 *Phase: 08-live-state-consistency*
 *Completed: 2026-09-14*
