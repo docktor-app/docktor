@@ -4,14 +4,14 @@ milestone: v1.0
 current_phase: 08
 current_phase_name: Live State Consistency
 status: Phase 05.1 (Stabilization) complete — 12/12 plans, UAT 10/10 passed, VERIFICATION.md passed (17/17 must-haves, 4 human_verification items confirmed by user 2026-09-11). ROADMAP.md Phase 1 checkbox bookkeeping corrected to match disk truth (was stale — Phase 1 has been fully executed and verified since 2026-03-11).
-stopped_at: Phase 07 complete, ready to plan Phase 08
-last_updated: "2026-09-13T13:47:04.271Z"
-state_head: 7b3835755613c6885daf7eb248fc176737156009
+stopped_at: Completed 08-01-PLAN.md
+last_updated: "2026-09-14T08:32:29.853Z"
+state_head: f1295f55e8eb43c8b121ceea617346a7efe248d2
 progress:
   total_phases: 11
-  completed_phases: 8
-  total_plans: 76
-  completed_plans: 76
+  completed_phases: 7
+  total_plans: 77
+  completed_plans: 77
 milestone_name: milestone
 ---
 
@@ -22,12 +22,12 @@ milestone_name: milestone
 See: .planning/PROJECT.md (updated 2026-08-30)
 
 **Core value:** Users can deploy, monitor, and manage Docker Compose stacks through a browser UI without needing SSH or Docker CLI access.
-**Current focus:** Phase 07 — Release Hardening: Data Safety and Core Workflows
+**Current focus:** Phase 08 — Live State Consistency
 
 ## Current Position
 
-Phase: 08 — Live State Consistency
-Plan: Not started
+Phase: 08 (Live State Consistency) — EXECUTING
+Plan: 1 of 1
 
 ## Performance Metrics
 
@@ -125,6 +125,7 @@ Plan: Not started
 | Phase 06 P05 | 90min | 3 tasks | 13 files |
 | Phase 06 P07 | 25min | 2 tasks | 5 files |
 | Phase 07 P01 | 40min | 3 tasks | 4 files |
+| Phase 08 P01 | 30min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -278,6 +279,9 @@ Recent decisions affecting current work:
 - [Phase 07]: 07-01: mountinfo-based deepest-covering-entry match chosen over exact-match-only so a persistent parent-directory mount is recognized correctly; container-root+DOCKTOR_STACKS_HOST_DIR also treated as ephemeral to catch non-overlay storage drivers
 - [Phase 07]: 07-01: gsd_run check tdd-red-evidence is incompatible with this project's vitest TAP output (nested TAP-13 vs Node --test's flat # tests/# pass/# fail format) — RED evidence confirmed manually instead; workflow.tdd_mode is not enabled for this project
 - [Phase 07]: Post-verification gap fix: assertStacksDirIsMounted()'s container-root+DOCKTOR_STACKS_HOST_DIR heuristic (07-01) false-positived on an ordinary persistent bare-metal/VM root filesystem, since that combination alone can't be told apart from a container's own ephemeral layer. Gated the heuristic behind a real containerization signal (`/.dockerenv`, injectable as `isContainerized` for tests) so it only fires when actually inside a container. Re-verified 6/6 (was 5/6) — confirmed the original ephemeral-storage (tmpfs/overlay) detection was not weakened by the fix.
+- [Phase 08]: [Phase 08-01]: Branch B taken (TCP-payload block reconfirmed at both 127.0.0.1:5432 and the container's own bridge address) — no live verification pass attempted; six items handed to UAT as a self-contained script
+- [Phase 08]: [Phase 08-01]: Full client test suite flake (4 unrelated files, host contention — load avg 2-4/6 cores, swap fully allocated) not attributed to this plan's change per Task 1's own precondition; all 4 files pass 28/28 in isolation
+- [Phase 08]: [Phase 08-01]: Todos closed now (not after UAT) per plan decision PD-5 — each Resolution states a failing UAT item reopens it through normal gap closure
 
 ### Quick Tasks Completed
 
@@ -291,8 +295,6 @@ Recent decisions affecting current work:
 
 - [major] Document deployment config: clean .env and docker-compose.yml — `.planning/todos/pending/2026-08-27-document-deployment-config-clean-env-and-docker-compose.md`
 - [blocker] Fix integration/e2e tests — `.planning/todos/pending/2026-08-28-fix-integration-e2e-tests.md`
-- [major] config_error has no client-side handling or UI badge — `.planning/todos/pending/2026-08-28-config-error-ui-indication-missing.md`
-- [major] Manual stack actions (deploy/stop/restart/update/backup/restore) never broadcast SSE status updates — `.planning/todos/pending/2026-08-28-manual-actions-dont-broadcast-sse.md`
 - [minor] Service status badges show "unknown" for up to 60s after every deploy — `.planning/todos/pending/2026-08-28-container-status-unknown-after-deploy.md`
 - [blocker] No schema sync step on container startup (fresh deploy 500s on missing tables) — `.planning/todos/pending/2026-08-28-no-schema-sync-on-container-startup.md`
 - [major] No redirect to /setup wizard on first run — `.planning/todos/pending/2026-08-28-no-redirect-to-setup-wizard.md`
@@ -304,7 +306,6 @@ Recent decisions affecting current work:
 - [minor] Add configurable docker-compose linting/formatting checks — `.planning/todos/pending/2026-08-28-configurable-compose-linting.md`
 - [major] Backup can be triggered without a configured repo, wedging the stack in BACKING_UP forever — `.planning/todos/pending/2026-08-28-backup-without-config-wedges-stack.md`
 - [blocker] Setup routes (scan/adopt/migration) are unauthenticated, and post-setup import has no UI — `.planning/todos/pending/2026-08-28-setup-routes-unauthenticated-no-postsetup-import.md`
-- [major] Env file changes (via app or externally) never set the config-changed badge — `.planning/todos/pending/2026-08-28-env-file-changes-dont-flag-config-changed.md`
 - [blocker] Docker-outside-of-Docker path mismatch resolves relative bind mounts to the wrong host location (likely breaks backups too) — `.planning/todos/pending/2026-08-28-dood-bind-mount-path-mismatch.md`
 - [minor] Restic is installed via apt, pinning it to a 3+ year old version (0.14.0) — `.planning/todos/pending/2026-08-28-restic-version-pinned-too-old.md`
 - [minor] No way to manually trigger an image update check (6h/N stagger blocks re-checks after a fix ships) — `.planning/todos/pending/2026-08-28-no-manual-update-check-trigger.md`
@@ -325,7 +326,7 @@ Recent decisions affecting current work:
 - [Phase 02]: A fresh `docker compose up` could crash the server entirely on cold start — `BackupService.recoverInProgressBackups()` hitting the DB before it was ready (ECONNREFUSED) propagated through an unguarded `startJobs()`, taking down the whole process. RESOLVED 2026-08-30 (commit 302eaec): each job's startup is now individually try/caught, so one job failing no longer blocks the HTTP server or the other jobs.
 - [Phase 02]: `.env.example`'s `DOCKTOR_STACKS_DIR=./dev-data/stacks` silently overrides the correct docker-compose `/stacks` default via `.env.local`'s `env_file`, so app-created stacks can write to a non-persisted container path with no error. Not yet fixed (blocked on `.env*` file access in this session) — see `.planning/todos/pending/2026-08-30-env-example-stacks-dir-breaks-docker-compose.md`.
 - [Phase 02]: Code review + goal-backward verification flagged 3 non-blocking hygiene items, unresolved as of phase close: `routes/stacks.ts` bypasses `StackService` in a few GET handlers (layering violation, no correctness impact); `semver` is used directly but only resolves as a phantom transitive dependency; `update-checker.ts`'s `triggerUpdate()` is unreachable dead code with an unexplained `as any` cast. See `02-REVIEW.md` and `02-VERIFICATION.md` Anti-Patterns.
-- [Phase 02]: `config_error` still has no client-side UI indicator (only visible as an Event Log row) — confirmed still open by both UAT (test 18) and the UI audit (top priority fix). Deliberately out of Phase 02's scope; tracked as `.planning/todos/pending/2026-08-28-config-error-ui-indication-missing.md`.
+- [Phase 02]: `config_error` still has no client-side UI indicator (only visible as an Event Log row) — confirmed still open by both UAT (test 18) and the UI audit (top priority fix). Deliberately out of Phase 02's scope; tracked as `.planning/todos/pending/2026-08-28-config-error-ui-indication-missing.md`. RESOLVED 2026-09-14 (Phase 08 plan 08-01): client handling and both indicators (destructive `Alert` on the detail page, red pill in the stack list) shipped in Phase 05.1 plan 05.1-06; the todo was closed in Phase 08 with live confirmation tracked as UAT item V6 — see `.planning/todos/completed/2026-08-28-config-error-ui-indication-missing.md`.
 - Server integration suite (yarn workspace @docktor/server test:integration) cannot be verified to exit 0 in a network-restricted execution environment — confirmed host-level TCP-to-Docker-published-port block. A human must confirm on an unrestricted machine. See 05.1-01-SUMMARY.md and WINDOWS.md entries #1/#2.
 - [Phase 05.1-03] The execution host for this project is shared with unrelated real running Docker workloads (confirmed: a real user Memos instance at /home/raphael/docker/memos, plus other unrelated stacks). A live 'docker compose up --remove-orphans' DooD verification test on 2026-09-02 used the project-name-colliding directory 'memos' and stopped+removed the real memos-server/memos-db containers as orphans before the collision was noticed; they were restored from their own compose file with no apparent data loss (bind-mounted data untouched, Postgres reused its existing database). Any future live docker-compose E2E test on this host MUST use a randomly-generated, collision-proof project/directory name — never a plain or example-derived name like 'memos', 'app', or 'test'. See 05.1-03-SUMMARY.md Issues Encountered for full details.
 - [Phase 05.1-05] A human (or an unrestricted execution environment) must run Task 3's live cold-start check (throwaway postgres:18 + built image with /var/run/docker.sock mounted, polling GET /api/setup/status) to confirm the applied/already-current happy path and close D3 coverage — see 05.1-05-SUMMARY.md Known Limitation
@@ -349,6 +350,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-09-12T12:14:59.765Z
-Stopped at: Phase 07 complete, ready to plan Phase 08
+Last session: 2026-09-14T08:32:29.056Z
+Stopped at: Completed 08-01-PLAN.md
 Resume file: None

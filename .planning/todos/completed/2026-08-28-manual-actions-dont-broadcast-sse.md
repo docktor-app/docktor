@@ -4,11 +4,15 @@ title: Manual stack actions (deploy/stop/restart/update/backup/restore/compose-s
 area: observability
 severity: major
 files:
+
   - server/src/repositories/stack-repository.ts
   - server/src/application/stack-service.ts
   - server/src/lib/state-broadcaster.ts
   - client/src/routes/app/stacks/components/stack-actions.tsx
   - client/src/routes/app/stacks/[id].tsx
+
+completed: 2026-09-14
+status: completed
 ---
 
 ## Problem
@@ -29,6 +33,7 @@ So every `StackService` method that calls `transitionStatus` directly —
 `deployStack`, `stopStack`, `restartStack`, `updateImages`, and the
 backup/restore flows in `backup-service.ts` — is invisible to any open
 browser tab in real time. The client only learns about it via:
+
 - a single `refetch()` called from `onAction` in `stack-actions.tsx`,
   fired only after the whole server-side action (including all status
   transitions) has already finished, so the transitional state (e.g.
@@ -57,6 +62,31 @@ even call `refetch()` after a successful save (unlike
 `stack-actions.tsx`'s `onAction={refetch}` pattern) — they only clear the
 local dirty flag. So the badge is stale on the *same* page you just saved
 from, not only on other open tabs, until you manually reload.
+
+## Resolution
+
+Closed across two plans, plus the addendum. `StackService.transitionStatus()`
+(`server/src/application/stack-service.ts:545-557`) is the single choke
+point every action method (`deployStack`/`stopStack`/`restartStack`/
+`updateImages`/`upgradeServiceImage`) routes through, and it publishes
+`stack_status` after every DB write — closed in Phase 05.1 plan 05.1-02.
+`BackupService` has an equivalent broadcast at every transition
+(`initiateBackup`/`runBackup`/`initiateRestore`/`runRestoreProcess`/
+`abortBackup`) — closed in Phase 05.1 plan 05.1-04. The addendum gap
+(`handleSaveCompose()`/`handleSaveEnv()` in `[id].tsx` not calling
+`refetch()` after a successful save, and `updateStack()` not publishing
+`config_changed`) is also closed — `[id].tsx:123-145` now calls `refetch()`
+on save, and `StackService` publishes `config_changed` alongside the DB
+write.
+
+Live confirmation that both tabs see the Deploying badge and return to
+running with no reload (V1), that a cleared backup repository produces an
+error toast with no status/UI side effects (V3), and that a live backup
+moves the badge to "Backing Up" and back — pulsing, per this plan's Task 1
+fix — with no reload (V4), is tracked as this phase's UAT items V1, V3, and
+V4 (`.planning/phases/08-live-state-consistency/08-01-SUMMARY.md`) rather
+than claimed here. A failing V1, V3, or V4 reopens this item through normal
+gap closure.
 
 ## Solution
 

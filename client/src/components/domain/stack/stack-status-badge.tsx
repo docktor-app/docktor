@@ -26,6 +26,9 @@ const statusColors: Record<string, string> = {
     UPDATING: "bg-blue-500/15 text-blue-700 border-blue-500/25 animate-pulse",
     STOPPED: "bg-gray-500/15 text-gray-700 border-gray-500/25",
     DRAFT: "bg-gray-500/15 text-gray-700 border-gray-500/25",
+    BACKING_UP: "animate-pulse",
+    RESTORING: "animate-pulse",
+    MIGRATING: "animate-pulse",
 };
 
 export function StackStatusBadge({status}: Readonly<{status: string}>) {

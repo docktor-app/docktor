@@ -4,8 +4,12 @@ title: Env file changes (via app or externally) never set the config-changed bad
 area: observability
 severity: major
 files:
+
   - server/src/application/stack-service.ts
   - server/src/jobs/file-watcher.ts
+
+completed: 2026-09-14
+status: completed
 ---
 
 ## Problem
@@ -31,6 +35,7 @@ Confirmed via code — two separate gaps, one per path:
 ## Solution
 
 TBD — two independent fixes matching the two gaps:
+
 1. `updateStack()`'s `envContent` branch should also flag `configChanged`
    (env content isn't currently hashed anywhere the way compose content
    is via `lastKnownHash`/`createComposeConfig().hash` — needs its own
@@ -40,3 +45,21 @@ TBD — two independent fixes matching the two gaps:
 2. Extend `FileWatcher`'s watched/ignored filter to also cover the
    stack's `.env` file, and thread the same config-changed/config-error
    handling through `handleFileChange()` for it.
+
+## Resolution
+
+Both gaps are closed, across two plans. The app-driven write path
+(`StackService.updateStack()`'s env branch,
+`server/src/application/stack-service.ts:126-148`) unconditionally flags
+`configChanged: true` on any env write — closed in Phase 05.1 plan 05.1-02.
+The external-edit path (`FileWatcher.handleEnvChange()`,
+`server/src/jobs/file-watcher.ts:285-325`) watches `.env` via
+`WATCHED_FILENAMES` and its own independent `Stack.lastEnvHash` field,
+separate from the compose-only `lastKnownHash` — closed in Phase 05.1 plan
+05.1-06.
+
+Live confirmation that an app-driven save (V2) and an external on-disk edit
+(V5) both surface the config-changed indicator with no reload is tracked as
+this phase's UAT items V2 and V5 (`.planning/phases/
+08-live-state-consistency/08-01-SUMMARY.md`) rather than claimed here. A
+failing V2 or V5 reopens this item through normal gap closure.
