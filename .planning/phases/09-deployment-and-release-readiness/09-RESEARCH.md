@@ -431,20 +431,23 @@ function certFileBaseName(domainPattern: string): string {
 
 ## Open Questions
 
-1. **Exact `prisma migrate deploy` no-op stdout text**
+1. **(RESOLVED — see 09-03 Task 3) Exact `prisma migrate deploy` no-op stdout text**
    - What we know: the command is documented to not error and not modify anything when there's nothing pending.
    - What's unclear: the precise string `schema-sync.ts`'s outcome parser should match on, since this session had no live database to run the command against.
    - Recommendation: the implementing plan should include a task step that runs `prisma migrate deploy` against a real dev DB early, captures the actual output, and writes the outcome-classification logic against that captured text rather than an assumed string.
+   - Resolution: `09-03-PLAN.md` Task 3 captures live `migrate deploy` output and pins the classification regex to it, with an honest Branch A (live DB)/Branch B (no DB reachable, blocking-heading gap recorded) fallback — no assumed string is shipped unverified.
 
-2. **`.env.production` line-12 drift — confirm and fix if accessible**
+2. **(RESOLVED — see 09-01 Task 1) `.env.production` line-12 drift — confirm and fix if accessible**
    - What we know: `.env.example` line 3 is confirmed stale (`.env.local`); STATE.md records the same issue was previously identified for `.env.production` line 12 but never fixed due to a permission restriction in that session.
    - What's unclear: whether the current execution environment (this phase's implementation session) has write access to `.env.production` — this research session's own attempt to *read* it was blocked by the same class of protection.
    - Recommendation: the planner should include a task to attempt this fix and, if blocked again by the same access restriction, document it as a known-remaining gap in the phase's summary rather than silently skipping it.
+   - Resolution: `09-01-PLAN.md` Task 1 fixes the drift, or records a named blocking gap with the exact edit if access is still restricted — never silently skipped.
 
-3. **D-13's exact expiry-warning threshold and status representation**
+3. **(RESOLVED — see 09-07 Task 2) D-13's exact expiry-warning threshold and status representation**
    - What we know: CONTEXT.md requires a UI warning "as expiry approaches" with no specific day-count threshold given, and leaves the exact status-field design to the planner.
    - What's unclear: the specific N-day threshold (30 days is a common industry default for cert expiry warnings, but not stated anywhere in this project's requirements or CONTEXT.md).
    - Recommendation: planner picks a reasonable default (e.g. 30 days) and states it explicitly in the plan; this is a low-risk, easily-adjustable constant, not worth a full discuss-phase round-trip.
+   - Resolution: `09-07-PLAN.md` Task 2 sets `CERT_EXPIRY_WARNING_DAYS = 30` explicitly, with `expiring` as a fourth member of `certStatusSchema`.
 
 ## Environment Availability
 
