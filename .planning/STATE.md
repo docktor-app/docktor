@@ -4,14 +4,14 @@ milestone: v1.0
 current_phase: 09
 current_phase_name: Deployment and Release Readiness
 status: Phase 05.1 (Stabilization) complete — 12/12 plans, UAT 10/10 passed, VERIFICATION.md passed (17/17 must-haves, 4 human_verification items confirmed by user 2026-09-11). ROADMAP.md Phase 1 checkbox bookkeeping corrected to match disk truth (was stale — Phase 1 has been fully executed and verified since 2026-03-11).
-stopped_at: Phase 9 context gathered
-last_updated: "2026-09-15T18:32:03.046Z"
-state_head: 7aa22f5b2b34d90fbffe96cb9eb1b731a8b02625
+stopped_at: Completed 09-01-PLAN.md
+last_updated: "2026-09-16T06:15:14.767Z"
+state_head: 3fe9a96a9d10f3c483cb0dce539b5481246d6910
 progress:
   total_phases: 11
   completed_phases: 7
   total_plans: 85
-  completed_plans: 77
+  completed_plans: 78
 milestone_name: milestone
 ---
 
@@ -22,12 +22,12 @@ milestone_name: milestone
 See: .planning/PROJECT.md (updated 2026-08-30)
 
 **Core value:** Users can deploy, monitor, and manage Docker Compose stacks through a browser UI without needing SSH or Docker CLI access.
-**Current focus:** Phase 08 — Live State Consistency
+**Current focus:** Phase 09 — Deployment and Release Readiness
 
 ## Current Position
 
-Phase: 09 (Deployment and Release Readiness) — READY TO EXECUTE
-Plan: 1 of 1
+Phase: 09 (Deployment and Release Readiness) — EXECUTING
+Plan: 2 of 8
 
 ## Performance Metrics
 
@@ -126,6 +126,7 @@ Plan: 1 of 1
 | Phase 06 P07 | 25min | 2 tasks | 5 files |
 | Phase 07 P01 | 40min | 3 tasks | 4 files |
 | Phase 08 P01 | 30min | 3 tasks | 6 files |
+| Phase 09 P01 | 25min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -282,6 +283,7 @@ Recent decisions affecting current work:
 - [Phase 08]: [Phase 08-01]: Branch B taken (TCP-payload block reconfirmed at both 127.0.0.1:5432 and the container's own bridge address) — no live verification pass attempted; six items handed to UAT as a self-contained script
 - [Phase 08]: [Phase 08-01]: Full client test suite flake (4 unrelated files, host contention — load avg 2-4/6 cores, swap fully allocated) not attributed to this plan's change per Task 1's own precondition; all 4 files pass 28/28 in isolation
 - [Phase 08]: [Phase 08-01]: Todos closed now (not after UAT) per plan decision PD-5 — each Resolution states a failing UAT item reopens it through normal gap closure
+- [Phase 09]: [Phase 09-01]: Fixed .env.example's .env.local->.env header drift confirmed by 09-RESEARCH.md; found and fixed a second undocumented drift in docs/deployment.md (DOCKTOR_FS_POLLING's stated default disagreed with Dockerfile's baked ENV); closed the item-1 deployment-docs todo with a resolution tracing all 8 original defects to their fixing plans; .env.production remains blocked by a workspace secret-file access guard, exact edit recorded in 09-01-SUMMARY.md — Root-caused via a direct fact-by-fact audit of docs/deployment.md against docker-compose.yml/.env.example/Dockerfile per the plan's Task 2 mandate; the Dockerfile is the authoritative source for baked ENV defaults per CLAUDE.md and 09-RESEARCH.md's architectural map.
 
 ### Quick Tasks Completed
 
@@ -350,6 +352,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-09-15T16:50:59.697Z
-Stopped at: Phase 9 context gathered
-Resume file: .planning/phases/09-deployment-and-release-readiness/09-CONTEXT.md
+Last session: 2026-09-16T06:14:55.420Z
+Stopped at: Completed 09-01-PLAN.md
+Resume file: None
