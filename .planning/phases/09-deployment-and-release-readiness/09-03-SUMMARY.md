@@ -212,6 +212,16 @@ None — no external service configuration required. A developer with access to 
 - **Blocker for full confidence (not for 09-04's scope, but for the overall D-05 zero-touch upgrade claim):** the live baseline against a real, previously-`db push`-synced database has not been performed in any session to date for this schema shape. `.planning/WINDOWS.md` entry #10 tracks this; it must be resolved (or explicitly waived with a reason) before `/gsd-ship` per the project's `windows_enforce` gate.
 - **Concrete residual risk carried forward, as acknowledged in Task 1:** if a real self-hosted install's schema is behind the shipped schema at upgrade time, the auto-baseline will over-record it as fully applied; the drift probe (unit-tested, not yet live-observed) is the only safety net, and its own real CLI output is part of the same unverified gap above.
 
+## Self-Check: PASSED
+
+- FOUND: `server/prisma/migrations/0_init/migration.sql`
+- FOUND: `server/src/lib/schema-sync.ts`
+- FOUND: `.planning/phases/09-deployment-and-release-readiness/09-03-SUMMARY.md`
+- FOUND commit: `f2830f3` (test)
+- FOUND commit: `d38a943` (feat)
+- FOUND commit: `6f265eb` (docs — WINDOWS.md)
+- FOUND commit: `268cc64` (docs — this SUMMARY)
+
 ---
 *Phase: 09-deployment-and-release-readiness*
 *Completed: 2026-09-16*
