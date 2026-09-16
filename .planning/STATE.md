@@ -4,14 +4,14 @@ milestone: v1.0
 current_phase: 09
 current_phase_name: Deployment and Release Readiness
 status: Phase 05.1 (Stabilization) complete — 12/12 plans, UAT 10/10 passed, VERIFICATION.md passed (17/17 must-haves, 4 human_verification items confirmed by user 2026-09-11). ROADMAP.md Phase 1 checkbox bookkeeping corrected to match disk truth (was stale — Phase 1 has been fully executed and verified since 2026-03-11).
-stopped_at: Completed 09-01-PLAN.md
-last_updated: "2026-09-16T06:15:14.767Z"
-state_head: 3fe9a96a9d10f3c483cb0dce539b5481246d6910
+stopped_at: Completed 09-02-PLAN.md
+last_updated: "2026-09-16T07:10:58.955Z"
+state_head: 2977b2104baa387987249d82d4d448f4c2603db3
 progress:
   total_phases: 11
   completed_phases: 7
   total_plans: 85
-  completed_plans: 78
+  completed_plans: 79
 milestone_name: milestone
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-08-30)
 ## Current Position
 
 Phase: 09 (Deployment and Release Readiness) — EXECUTING
-Plan: 2 of 8
+Plan: 3 of 8
 
 ## Performance Metrics
 
@@ -127,6 +127,7 @@ Plan: 2 of 8
 | Phase 07 P01 | 40min | 3 tasks | 4 files |
 | Phase 08 P01 | 30min | 3 tasks | 6 files |
 | Phase 09 P01 | 25min | 2 tasks | 3 files |
+| Phase 09 P02 | 53min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -284,6 +285,9 @@ Recent decisions affecting current work:
 - [Phase 08]: [Phase 08-01]: Full client test suite flake (4 unrelated files, host contention — load avg 2-4/6 cores, swap fully allocated) not attributed to this plan's change per Task 1's own precondition; all 4 files pass 28/28 in isolation
 - [Phase 08]: [Phase 08-01]: Todos closed now (not after UAT) per plan decision PD-5 — each Resolution states a failing UAT item reopens it through normal gap closure
 - [Phase 09]: [Phase 09-01]: Fixed .env.example's .env.local->.env header drift confirmed by 09-RESEARCH.md; found and fixed a second undocumented drift in docs/deployment.md (DOCKTOR_FS_POLLING's stated default disagreed with Dockerfile's baked ENV); closed the item-1 deployment-docs todo with a resolution tracing all 8 original defects to their fixing plans; .env.production remains blocked by a workspace secret-file access guard, exact edit recorded in 09-01-SUMMARY.md — Root-caused via a direct fact-by-fact audit of docs/deployment.md against docker-compose.yml/.env.example/Dockerfile per the plan's Task 2 mandate; the Dockerfile is the authoritative source for baked ENV defaults per CLAUDE.md and 09-RESEARCH.md's architectural map.
+- [Phase 09]: [Phase 09-02]: Added cross-platform-unit CI job (windows-latest + macos-latest matrix, fail-fast:false) as sibling of build-and-test, with explicit yarn workspace @docktor/server test:unit step since root test:unit excludes the server workspace
+- [Phase 09]: [Phase 09-02]: D-07 applied as a from-scratch minimal main branch protection rule (none existed before) requiring both cross-platform-unit checks; user accepted windows-latest being required despite currently failing on 3 real platform bugs
+- [Phase 09]: [Phase 09-02]: 3 genuine Windows-only unit test failures (stacks-dir.ts mount detection, brownfield-scanner.ts path separators, proxy-cert-poller.ts mock/timezone assertion) found by the first real CI run are out of this plan's scope and filed as a new todo rather than fixed inline; they now block all merges to main via the required windows-latest check
 
 ### Quick Tasks Completed
 
@@ -318,6 +322,7 @@ Recent decisions affecting current work:
 - [minor] Support authenticated/private container registries for update checking — `.planning/todos/pending/2026-08-28-support-authenticated-custom-registries.md`
 - [minor] Add live resource stats to stacks (CPU, memory, disk) — `.planning/todos/pending/2026-09-11-add-live-resource-stats-to-stacks-cpu-memory-disk.md`
 - [cosmetic] Add stack/service topology visualization — `.planning/todos/pending/2026-09-11-add-stack-and-service-topology-visualization.md`
+- [blocker] Windows CI check fails on real platform bugs — blocks all merges to main — `.planning/todos/pending/2026-09-16-windows-ci-check-fails-on-real-platform-bugs.md`
 
 ### Blockers/Concerns
 
@@ -340,6 +345,7 @@ Recent decisions affecting current work:
 - [Phase 06-06] Task 2's human-check (fresh-install browser walkthrough of the 6-step wizard, confirming Skip deploys nothing and Deploy Proxy Stack with free ports 80/443 leaves two running proxy containers) not performed live in this session — same shared-host risk documented for 06-03's D-human-check. A human on a dedicated/verified-clear host must perform this before phase UAT closes.
 - [Phase 06-05] Full-suite yarn workspace @docktor/client test / playwright test runs are unreliable on this host right now (uptime showed load avg ~85 on 6 cores, swap nearly exhausted, ps aux confirmed unrelated resident SonarQube/Immich/MySQL/MariaDB/Postgres/Tandoor workloads) — 17 vitest failures and 2 Playwright failures observed this session were all in files this plan does not touch (pre-existing flake, same class documented in 06-04-SUMMARY.md). All of this plan's own new/changed test files pass reliably in isolation and small groups; see 06-05-SUMMARY.md Issues Encountered for the full breakdown.
 - [Phase 06-07] Human-check (live DB-backed re-run of test/integration/proxy.test.ts 'returns 400 for an invalid hostname' on an unrestricted host) still not performed — same pre-existing TCP-payload-block class as 05.1-01/05.1-05/05.1-06/06-01. All database-free unit tests (40 files, 616 passed, 2 todo) and tsc --noEmit pass cleanly; G-06-3 stays open pending this live confirmation.
+- [Phase 09-02] cross-platform-unit (windows-latest) is a required status check on main and is currently FAILING for real reasons (3 genuine Windows platform bugs in stacks-dir.ts, brownfield-scanner.ts, proxy-cert-poller.ts) — no PR, including this phase's own draft PR #6, can merge to main until fixed. See .planning/todos/pending/2026-09-16-windows-ci-check-fails-on-real-platform-bugs.md
 
 ### Roadmap Evolution
 
@@ -352,6 +358,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-09-16T06:14:55.420Z
-Stopped at: Completed 09-01-PLAN.md
+Last session: 2026-09-16T07:10:57.533Z
+Stopped at: Completed 09-02-PLAN.md
 Resume file: None

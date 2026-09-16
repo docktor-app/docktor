@@ -149,6 +149,10 @@ None - no external service configuration required. (Task 2's branch-protection c
 - **Blocker for this branch and every future PR:** `cross-platform-unit (windows-latest)` is both required and currently red. Draft PR #6 (and any subsequent PR) cannot merge to `main` until the 3 Windows bugs above are fixed or the check otherwise passes. This is the immediate next actionable item, tracked in the new todo.
 - The pre-existing ubuntu `build-and-test` Playwright flake (`auth.spec.ts:85`) is unrelated to this plan's scope but is also currently failing on the same PR — worth investigating separately since it affects the existing, previously-passing required check too.
 
+## Self-Check: PASSED
+
+All claimed files exist on disk (`.github/workflows/ci.yml`, `.planning/todos/completed/2026-09-03-ci-has-no-windows-runner.md`, `.planning/todos/pending/2026-09-16-windows-ci-check-fails-on-real-platform-bugs.md`, this SUMMARY.md) and the old pending-todo path is confirmed absent. All claimed commits (`4ce8f8f`, `eebceff`, `2977b21`) exist in `git log --all`. Branch protection contexts independently re-verified against the live GitHub API before this SUMMARY was written.
+
 ---
 *Phase: 09-deployment-and-release-readiness*
 *Completed: 2026-09-16*
