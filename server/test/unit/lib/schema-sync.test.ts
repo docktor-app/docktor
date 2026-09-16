@@ -173,7 +173,7 @@ describe("syncDatabaseSchema", () => {
                 if (argv.includes("diff")) {
                     return {code: 0, stdout: "", stderr: ""};
                 }
-                return {code: 0, stdout: "No pending migrations to apply.", stderr: ""};
+                return {code: 0, stdout: "Applied 1 migration.", stderr: ""};
             });
 
             const result = await syncDatabaseSchema({runCli, acquireLock});
