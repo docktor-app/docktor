@@ -5,6 +5,7 @@ import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {CertificateService} from "../../../src/application/certificate-service.js";
 import {BadRequestError, ConflictError, NotFoundError} from "../../../src/lib/errors.js";
 import {encrypt} from "../../../src/lib/crypto.js";
+import {Prisma} from "../../../src/generated/prisma/client.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = path.resolve(__dirname, "../../fixtures/certs");
@@ -42,6 +43,12 @@ function createFakeCertRepo(initialRows: FakeRow[] = []) {
     let counter = rows.length;
 
     const create = vi.fn(async (data: Omit<FakeRow, "id" | "createdAt" | "updatedAt">) => {
+        if (rows.some((row) => row.domainPattern === data.domainPattern)) {
+            throw new Prisma.PrismaClientKnownRequestError(
+                "Unique constraint failed on the fields: (`domainPattern`)",
+                {code: "P2002", clientVersion: "test"},
+            );
+        }
         const row: FakeRow = {
             id: `cert-${++counter}`,
             createdAt: new Date(),
@@ -169,6 +176,31 @@ describe("CertificateService", () => {
             const [, content] = fs.writeCertificateFiles.mock.calls[0];
             expect(content.certificate).toBe(leafCert);
             expect(content.caBundle).toBe(caBundle);
+        });
+
+        it("throws ConflictError (not a raw Prisma error) when a certificate for the domain pattern already exists, and never writes a file", async () => {
+            const repo = createFakeCertRepo([
+                {
+                    id: "cert-1",
+                    domainPattern: "*.example.com",
+                    privateKey: encrypt(leafKey),
+                    certificate: leafCert,
+                    caBundle: null,
+                    expiresAt: new Date("2030-01-01"),
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                },
+            ]);
+            const fs = createFakeFs();
+            const {service} = buildService(repo, fs);
+
+            const error = await service
+                .create({domainPattern: "*.example.com", certificatePem: leafCert, privateKeyPem: leafKey})
+                .catch((e) => e);
+
+            expect(error).toBeInstanceOf(ConflictError);
+            expect((error as Error).message).toContain("*.example.com");
+            expect(fs.writeCertificateFiles).not.toHaveBeenCalled();
         });
 
         it("deletes the just-created row and rethrows when the filesystem write rejects", async () => {

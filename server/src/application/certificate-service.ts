@@ -61,13 +61,23 @@ export class CertificateService {
         // caller's input into encrypt(), and its only other appearance
         // (below) is the single decrypt() call immediately before the file
         // write (T-09-28).
-        const row = await this.certRepo.create({
-            domainPattern: input.domainPattern,
-            privateKey: encrypt(input.privateKeyPem),
-            certificate: input.certificatePem,
-            caBundle: input.caBundlePem ?? null,
-            expiresAt,
-        });
+        let row: Awaited<ReturnType<typeof this.certRepo.create>>;
+        try {
+            row = await this.certRepo.create({
+                domainPattern: input.domainPattern,
+                privateKey: encrypt(input.privateKeyPem),
+                certificate: input.certificatePem,
+                caBundle: input.caBundlePem ?? null,
+                expiresAt,
+            });
+        } catch (err) {
+            if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+                throw new ConflictError(
+                    `A certificate for domain pattern "${input.domainPattern}" already exists`,
+                );
+            }
+            throw err;
+        }
 
         try {
             const baseName = certFileBaseName(input.domainPattern);
