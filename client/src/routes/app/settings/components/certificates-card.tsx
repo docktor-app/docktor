@@ -63,6 +63,11 @@ export function CertificatesCard() {
     const [bundleFile, setBundleFile] = useState<File | null>(null);
     const [deleteTarget, setDeleteTarget] = useState<Certificate | null>(null);
     const [deleteError, setDeleteError] = useState<string | null>(null);
+    // Distinct from "certificates === [] " (zero certificates uploaded) — a
+    // fetch failure (network error, 401, 500) must not be rendered as the
+    // friendly empty-state copy, or a user who genuinely has certificates
+    // sees "you have none" instead of a retry affordance (09-REVIEW.md IN-02).
+    const [loadError, setLoadError] = useState<string | null>(null);
 
     const certFileInputRef = useRef<HTMLInputElement>(null);
     const keyFileInputRef = useRef<HTMLInputElement>(null);
@@ -73,24 +78,25 @@ export function CertificatesCard() {
         defaultValues: {domainPattern: ""},
     });
 
+    async function fetchCertificates(isCancelled: () => boolean = () => false) {
+        setLoading(true);
+        setLoadError(null);
+        try {
+            const data = await getCertificates();
+            if (isCancelled()) return;
+            setCertificates(data);
+        } catch (err) {
+            if (!isCancelled()) {
+                setLoadError(err instanceof Error ? err.message : "Failed to load certificates");
+            }
+        } finally {
+            if (!isCancelled()) setLoading(false);
+        }
+    }
+
     useEffect(() => {
         let cancelled = false;
-
-        async function load() {
-            setLoading(true);
-            try {
-                const data = await getCertificates();
-                if (cancelled) return;
-                setCertificates(data);
-            } catch {
-                // silently fail — mirrors proxy-settings-card.tsx's load effect
-                if (!cancelled) setCertificates([]);
-            } finally {
-                if (!cancelled) setLoading(false);
-            }
-        }
-
-        void load();
+        void fetchCertificates(() => cancelled);
         return () => {
             cancelled = true;
         };
@@ -168,12 +174,27 @@ export function CertificatesCard() {
                     <CardTitle>Certificates</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                    {loading || certificates === null ? (
+                    {loading ? (
                         <div className="space-y-2">
                             <Skeleton className="h-9 w-full" />
                             <Skeleton className="h-9 w-full" />
                         </div>
-                    ) : certificates.length === 0 ? (
+                    ) : loadError ? (
+                        <Alert variant="destructive">
+                            <AlertTriangle className="h-4 w-4" />
+                            <AlertDescription className="flex items-center justify-between gap-4">
+                                <span>Failed to load certificates: {loadError}</span>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => void fetchCertificates()}
+                                >
+                                    Retry
+                                </Button>
+                            </AlertDescription>
+                        </Alert>
+                    ) : certificates === null || certificates.length === 0 ? (
                         <p className="text-sm text-muted-foreground">
                             No certificates uploaded yet. Once you upload one here, it becomes available to
                             select as a domain's certificate source when assigning a domain to a service.

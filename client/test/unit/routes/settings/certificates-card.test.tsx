@@ -90,6 +90,22 @@ describe("CertificatesCard", () => {
         expect(screen.queryByRole("table")).not.toBeInTheDocument();
     });
 
+    it("renders a retry affordance rather than the empty state when the initial load fails", async () => {
+        mockGetCertificates.mockRejectedValueOnce(new Error("Network error"));
+
+        render(<CertificatesCard />);
+
+        expect(await screen.findByText(/failed to load certificates: network error/i)).toBeInTheDocument();
+        expect(screen.queryByText(/no certificates uploaded yet/i)).not.toBeInTheDocument();
+
+        mockGetCertificates.mockResolvedValueOnce([makeCertificate({domainPattern: "recovered.example.com"})]);
+        const user = userEvent.setup();
+        await user.click(screen.getByRole("button", {name: "Retry"}));
+
+        expect(await screen.findByText("recovered.example.com")).toBeInTheDocument();
+        expect(mockGetCertificates).toHaveBeenCalledTimes(2);
+    });
+
     it("shows a warning indicator only for a certificate expiring within the warning window", async () => {
         const soon = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString();
         const later = new Date(Date.now() + 200 * 24 * 60 * 60 * 1000).toISOString();
