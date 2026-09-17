@@ -16,9 +16,19 @@ export async function apiFetch<T>(
     path: string,
     options?: RequestInit,
 ): Promise<T> {
-    const headers: Record<string, string> = {
-        ...options?.headers as Record<string, string>,
-    };
+    // `RequestInit["headers"]` (HeadersInit) legally also accepts a Headers
+    // instance or a [string, string][] tuple array, not only a plain object
+    // — an `as Record<string, string>` cast on it silently produces broken
+    // headers for either of those shapes (spreading a Headers instance's own
+    // enumerable properties yields {}; spreading a tuple array yields
+    // numeric-indexed keys). `new Headers(...)` normalizes all three shapes
+    // uniformly, so build the record explicitly instead of casting.
+    const headers: Record<string, string> = {};
+    if (options?.headers) {
+        for (const [key, value] of new Headers(options.headers).entries()) {
+            headers[key] = value;
+        }
+    }
     const hasCallerContentType = Object.keys(headers).some(
         (key) => key.toLowerCase() === "content-type",
     );

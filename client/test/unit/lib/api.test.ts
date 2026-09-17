@@ -99,7 +99,40 @@ describe("apiFetch", () => {
 
         const call = vi.mocked(globalThis.fetch).mock.calls[0];
         const sentHeaders = (call[1] as RequestInit).headers as Record<string, string>;
-        expect(sentHeaders["Content-Type"]).toBe("text/plain");
+        // Header names are normalized case-insensitively (via the Headers
+        // API, per WR-03) rather than preserving the caller's exact casing —
+        // HTTP header names are case-insensitive, so this is an equivalent,
+        // not a different, request.
+        const contentTypeEntry = Object.entries(sentHeaders).find(
+            ([key]) => key.toLowerCase() === "content-type",
+        );
+        expect(contentTypeEntry?.[1]).toBe("text/plain");
+    });
+
+    it("normalizes a Headers instance passed as options.headers into a plain record", async () => {
+        mockFetch({ok: true, status: 200, json: () => Promise.resolve({})});
+
+        const suppliedHeaders = new Headers();
+        suppliedHeaders.set("X-Custom", "value");
+        await apiFetch("/api/test", {method: "POST", body: "raw", headers: suppliedHeaders});
+
+        const call = vi.mocked(globalThis.fetch).mock.calls[0];
+        const sentHeaders = (call[1] as RequestInit).headers as Record<string, string>;
+        expect(sentHeaders["x-custom"]).toBe("value");
+    });
+
+    it("normalizes a tuple-array HeadersInit passed as options.headers into a plain record", async () => {
+        mockFetch({ok: true, status: 200, json: () => Promise.resolve({})});
+
+        await apiFetch("/api/test", {
+            method: "POST",
+            body: "raw",
+            headers: [["X-Custom", "value"]],
+        });
+
+        const call = vi.mocked(globalThis.fetch).mock.calls[0];
+        const sentHeaders = (call[1] as RequestInit).headers as Record<string, string>;
+        expect(sentHeaders["x-custom"]).toBe("value");
     });
 
     it("returns undefined for 204 responses", async () => {
