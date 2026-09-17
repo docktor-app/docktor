@@ -4,14 +4,14 @@ milestone: v1.0
 current_phase: 09
 current_phase_name: Deployment and Release Readiness
 status: Phase 05.1 (Stabilization) complete — 12/12 plans, UAT 10/10 passed, VERIFICATION.md passed (17/17 must-haves, 4 human_verification items confirmed by user 2026-09-11). ROADMAP.md Phase 1 checkbox bookkeeping corrected to match disk truth (was stale — Phase 1 has been fully executed and verified since 2026-03-11).
-stopped_at: Completed 09-03-PLAN.md
-last_updated: "2026-09-16T08:10:22.330Z"
-state_head: 268cc64c33a0bb7557e70df754429a610824907a
+stopped_at: Completed 09-04-PLAN.md
+last_updated: "2026-09-17T08:25:37.441Z"
+state_head: 594fbae4b097cbb7c31fa9dbc1ccc91902f1ed60
 progress:
   total_phases: 11
   completed_phases: 6
   total_plans: 85
-  completed_plans: 80
+  completed_plans: 81
 milestone_name: milestone
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-08-30)
 ## Current Position
 
 Phase: 09 (Deployment and Release Readiness) — EXECUTING
-Plan: 4 of 8
+Plan: 5 of 8
 
 ## Performance Metrics
 
@@ -129,6 +129,7 @@ Plan: 4 of 8
 | Phase 09 P01 | 25min | 2 tasks | 3 files |
 | Phase 09 P02 | 53min | 3 tasks | 4 files |
 | Phase 09 P03 | 35min | 3 tasks | 5 files |
+| Phase 09 P04 | 30min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -292,6 +293,8 @@ Recent decisions affecting current work:
 - [Phase 09]: [Phase 09-03]: Task 1 checkpoint (developer-confirmed): proceed with Prisma migrate cutover (D-02), replace not supplement the guarded db push step (D-04), and unattended D-05 auto-baseline with a post-baseline drift probe as the mitigation instead of an interactive boot prompt
 - [Phase 09]: [Phase 09-03]: buildDriftProbeArgv() resolves the schema directory as a sibling of the already-resolved prisma.config.ts path (no second candidate search); needsBaseline()/hasApplicationTables() consume a narrow QueryFn port added to the acquired LockAcquisitionResult rather than the raw pg.Client
 - [Phase 09]: [Phase 09-03]: DOCKTOR_DB_AUTO_MIGRATE is the new opt-out; DOCKTOR_DB_AUTO_PUSH=false is honoured as a deprecated alias only when the new var is unset, with a console.warn naming both variables
+- [Phase 09]: [Phase 09-04]: Verified migrations-in-image by actually building the server-build Docker stage and running ls inside the resulting image, rather than relying only on static .dockerignore/COPY analysis
+- [Phase 09]: [Phase 09-04]: docs/deployment.md's Database schema section carries an explicit live-verification note since 09-03's SUMMARY recorded Branch B — the automatic upgrade baseline is unit-tested but not yet exercised against a live database
 
 ### Quick Tasks Completed
 
@@ -363,6 +366,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-09-16T08:10:21.136Z
-Stopped at: Completed 09-03-PLAN.md
+Last session: 2026-09-17T08:25:17.759Z
+Stopped at: Completed 09-04-PLAN.md
 Resume file: None
