@@ -1,5 +1,6 @@
 import type {FastifyPluginAsyncZod} from "fastify-type-provider-zod";
 import multipart from "@fastify/multipart";
+import {z} from "zod";
 import {createCertificateSchema} from "@docktor/shared";
 import {requireAuth} from "../lib/auth-middleware.js";
 import {certificateService} from "../application/index.js";
@@ -10,6 +11,11 @@ import {BadRequestError} from "../lib/errors.js";
 // (T-09-32) for this route's file-upload surface.
 export const CERT_UPLOAD_MAX_BYTES = 64 * 1024;
 
+// @fastify/multipart's own code for a file exceeding limits.fileSize.
+const MULTIPART_FILE_TOO_LARGE_CODE = "FST_REQ_FILE_TOO_LARGE";
+
+const certificateParamsSchema = z.object({id: z.string()});
+
 const certificateRoutes: FastifyPluginAsyncZod = async (app) => {
     app.addHook("onRequest", requireAuth);
 
@@ -19,16 +25,33 @@ const certificateRoutes: FastifyPluginAsyncZod = async (app) => {
         limits: {fileSize: CERT_UPLOAD_MAX_BYTES, files: 3, fields: 2},
     });
 
+    app.get("/api/certificates", async () => {
+        return certificateService.listAll();
+    });
+
     app.post("/api/certificates", async (request, reply) => {
         const fields: Record<string, string> = {};
         const files: Record<string, Buffer> = {};
 
-        for await (const part of request.parts()) {
-            if (part.type === "file") {
-                files[part.fieldname] = await part.toBuffer();
-            } else {
-                fields[part.fieldname] = String(part.value);
+        try {
+            for await (const part of request.parts()) {
+                if (part.type === "file") {
+                    files[part.fieldname] = await part.toBuffer();
+                } else {
+                    fields[part.fieldname] = String(part.value);
+                }
             }
+        } catch (err) {
+            // server/src/app.ts's global error handler only maps AppError
+            // subclasses, Zod validation errors, and error.name === "ZodError"
+            // to a client-facing status — any other error (including this
+            // one, which @fastify/multipart gives a real statusCode: 413)
+            // falls through to a generic 500. Mapped explicitly here so an
+            // over-limit upload is a 4xx, not an unhandled-looking 500.
+            if (err && typeof err === "object" && "code" in err && err.code === MULTIPART_FILE_TOO_LARGE_CODE) {
+                throw new BadRequestError("Uploaded file exceeds the certificate upload size limit");
+            }
+            throw err;
         }
 
         // A multipart body cannot use the {schema: {body: zodSchema}}
@@ -57,6 +80,15 @@ const certificateRoutes: FastifyPluginAsyncZod = async (app) => {
 
         return reply.status(201).send(created);
     });
+
+    app.delete(
+        "/api/certificates/:id",
+        {schema: {params: certificateParamsSchema}},
+        async (request, reply) => {
+            await certificateService.delete(request.params.id);
+            return reply.status(204).send();
+        },
+    );
 };
 
 export default certificateRoutes;

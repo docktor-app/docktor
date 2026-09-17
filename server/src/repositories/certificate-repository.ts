@@ -44,6 +44,24 @@ export class CertificateRepository {
         return prisma.certificate.findMany({orderBy: {createdAt: "asc"}});
     }
 
+    /**
+     * Resolves the domains still referencing this certificate through the
+     * Prisma relation the Certificate row already owns (its back-relation
+     * to ProxyConfig), selecting only the referencing rows' domain values.
+     * Lives on this repository rather than ProxyRepository so this plan
+     * never edits server/src/repositories/proxy-repository.ts (plan
+     * 09-07's file). Kept thin and free of business logic per this
+     * project's repository rule — the decision to refuse a delete belongs
+     * to CertificateService.
+     */
+    async findReferencingDomains(id: string): Promise<string[]> {
+        const cert = await prisma.certificate.findUnique({
+            where: {id},
+            select: {proxyConfigs: {select: {domain: true}}},
+        });
+        return (cert?.proxyConfigs ?? []).map((row) => row.domain);
+    }
+
     async delete(id: string) {
         return prisma.certificate.delete({where: {id}});
     }

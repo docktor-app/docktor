@@ -1,4 +1,4 @@
-import {BadRequestError} from "../lib/errors.js";
+import {BadRequestError, ConflictError} from "../lib/errors.js";
 import {decrypt, encrypt} from "../lib/crypto.js";
 import {certFileBaseName} from "../domain/certificate-naming.js";
 import {
@@ -7,6 +7,7 @@ import {
     parseCertificate,
     validateCertKeyPair,
 } from "../domain/certificate-validation.js";
+import {Prisma} from "../generated/prisma/client.js";
 import type {CertificateDto, CertificateRepository} from "../repositories/certificate-repository.js";
 import type {CertificateFilesystem} from "../infrastructure/certificate-filesystem.js";
 
@@ -19,8 +20,11 @@ export interface CreateCertificateInput {
 
 export class CertificateService {
     constructor(
-        private readonly certRepo: Pick<CertificateRepository, "create" | "toDto" | "delete">,
-        private readonly fs: Pick<CertificateFilesystem, "writeCertificateFiles">,
+        private readonly certRepo: Pick<
+            CertificateRepository,
+            "create" | "toDto" | "delete" | "findAll" | "findByIdOrThrow" | "findReferencingDomains"
+        >,
+        private readonly fs: Pick<CertificateFilesystem, "writeCertificateFiles" | "removeCertificateFiles">,
     ) {}
 
     /**
@@ -82,5 +86,53 @@ export class CertificateService {
         }
 
         return this.certRepo.toDto(row);
+    }
+
+    /**
+     * Returns every certificate's metadata-only serialisation, ordered by
+     * creation. Never reads, decrypts, or returns the key, the certificate
+     * PEM, or the bundle (T-09-29).
+     */
+    async listAll(): Promise<CertificateDto[]> {
+        const rows = await this.certRepo.findAll();
+        return rows.map((row) => this.certRepo.toDto(row));
+    }
+
+    /**
+     * Deletes a certificate. Refuses — rather than cascading or orphaning —
+     * when any proxy configuration still references it (T-09-37): a proxy
+     * configuration whose certificate file has just been deleted would
+     * leave its domain serving nothing, silently. The database's own
+     * restricted relation is a backstop for a race this check misses; that
+     * failure is translated into the same client-facing error rather than
+     * escaping as a raw database error.
+     */
+    async delete(id: string): Promise<void> {
+        const row = await this.certRepo.findByIdOrThrow(id);
+
+        const referencingDomains = await this.certRepo.findReferencingDomains(id);
+        if (referencingDomains.length > 0) {
+            throw new ConflictError(
+                `Certificate for "${row.domainPattern}" is still referenced by: ${referencingDomains.join(", ")} — detach these domains before deleting it`,
+            );
+        }
+
+        const baseName = certFileBaseName(row.domainPattern);
+        await this.fs.removeCertificateFiles(baseName);
+
+        try {
+            await this.certRepo.delete(id);
+        } catch (err) {
+            throw this.translateCertificateDeleteError(err);
+        }
+    }
+
+    private translateCertificateDeleteError(err: unknown): Error {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") {
+            return new ConflictError(
+                "Certificate is still referenced by a proxy configuration — refusing to delete it",
+            );
+        }
+        return err instanceof Error ? err : new Error(String(err));
     }
 }
