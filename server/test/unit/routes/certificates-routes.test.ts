@@ -201,6 +201,40 @@ describe("POST /api/certificates", () => {
         expect(res.statusCode).toBeLessThan(500);
         expect(create).not.toHaveBeenCalled();
     });
+
+    it("maps an over-limit file count (more than 3 file parts) to a 4xx client error, not a 500", async () => {
+        const {payload, headers} = buildMultipartBody(
+            {domainPattern: "*.example.com"},
+            {
+                certificate: {filename: "cert.pem", content: "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----"},
+                privateKey: {filename: "key.pem", content: "-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----"},
+                caBundle: {filename: "bundle.pem", content: "-----BEGIN CERTIFICATE-----\nbundle\n-----END CERTIFICATE-----"},
+                extra: {filename: "extra.pem", content: "-----BEGIN CERTIFICATE-----\nextra\n-----END CERTIFICATE-----"},
+            },
+        );
+
+        const res = await app.inject({method: "POST", url: CERT_URL, payload, headers});
+
+        expect(res.statusCode).toBeGreaterThanOrEqual(400);
+        expect(res.statusCode).toBeLessThan(500);
+        expect(create).not.toHaveBeenCalled();
+    });
+
+    it("maps an over-limit field count (more than 2 non-file fields) to a 4xx client error, not a 500", async () => {
+        const {payload, headers} = buildMultipartBody(
+            {domainPattern: "*.example.com", extraFieldOne: "a", extraFieldTwo: "b"},
+            {
+                certificate: {filename: "cert.pem", content: "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----"},
+                privateKey: {filename: "key.pem", content: "-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----"},
+            },
+        );
+
+        const res = await app.inject({method: "POST", url: CERT_URL, payload, headers});
+
+        expect(res.statusCode).toBeGreaterThanOrEqual(400);
+        expect(res.statusCode).toBeLessThan(500);
+        expect(create).not.toHaveBeenCalled();
+    });
 });
 
 describe("GET /api/certificates", () => {

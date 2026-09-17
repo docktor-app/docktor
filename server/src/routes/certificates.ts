@@ -11,8 +11,27 @@ import {BadRequestError} from "../lib/errors.js";
 // (T-09-32) for this route's file-upload surface.
 export const CERT_UPLOAD_MAX_BYTES = 64 * 1024;
 
-// @fastify/multipart's own code for a file exceeding limits.fileSize.
-const MULTIPART_FILE_TOO_LARGE_CODE = "FST_REQ_FILE_TOO_LARGE";
+// @fastify/multipart's own codes for exceeding any of the three limits
+// configured below (fileSize, files, fields) — all three are reachable from
+// the same limits config and all three carry a real statusCode: 413 on the
+// underlying error, so all three must be mapped, not just the file-size one.
+//
+// FST_FILES_LIMIT and FST_FIELDS_LIMIT are the codes @fastify/multipart's own
+// event handlers construct, but empirically (verified against the installed
+// @fastify/multipart + @fastify/busboy versions) that error races the
+// currently-awaited `part.toBuffer()` call for the *previous*, within-limit
+// part: busboy's `cleanup()` calls `request.unpipe(bb)` before the file
+// stream this route is already awaiting has finished, so the error actually
+// observed by the `for await` loop below is Node's own
+// ERR_STREAM_PREMATURE_CLOSE, not the multipart-specific code. Both are
+// mapped so this route degrades gracefully regardless of which one a given
+// runtime/timing produces.
+const MULTIPART_LIMIT_CODES = new Set([
+    "FST_REQ_FILE_TOO_LARGE",
+    "FST_FILES_LIMIT",
+    "FST_FIELDS_LIMIT",
+    "ERR_STREAM_PREMATURE_CLOSE",
+]);
 
 const certificateParamsSchema = z.object({id: z.string()});
 
@@ -44,12 +63,14 @@ const certificateRoutes: FastifyPluginAsyncZod = async (app) => {
         } catch (err) {
             // server/src/app.ts's global error handler only maps AppError
             // subclasses, Zod validation errors, and error.name === "ZodError"
-            // to a client-facing status — any other error (including this
-            // one, which @fastify/multipart gives a real statusCode: 413)
-            // falls through to a generic 500. Mapped explicitly here so an
+            // to a client-facing status — any other error (including these,
+            // which @fastify/multipart gives a real statusCode: 413) falls
+            // through to a generic 500. Mapped explicitly here so an
             // over-limit upload is a 4xx, not an unhandled-looking 500.
-            if (err && typeof err === "object" && "code" in err && err.code === MULTIPART_FILE_TOO_LARGE_CODE) {
-                throw new BadRequestError("Uploaded file exceeds the certificate upload size limit");
+            if (err && typeof err === "object" && "code" in err && MULTIPART_LIMIT_CODES.has(err.code as string)) {
+                throw new BadRequestError(
+                    "Certificate upload exceeded an upload limit (file size, file count, or field count)",
+                );
             }
             throw err;
         }
