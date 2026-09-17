@@ -4,14 +4,14 @@ milestone: v1.0
 current_phase: 09
 current_phase_name: Deployment and Release Readiness
 status: Phase 05.1 (Stabilization) complete — 12/12 plans, UAT 10/10 passed, VERIFICATION.md passed (17/17 must-haves, 4 human_verification items confirmed by user 2026-09-11). ROADMAP.md Phase 1 checkbox bookkeeping corrected to match disk truth (was stale — Phase 1 has been fully executed and verified since 2026-03-11).
-stopped_at: Completed 09-06-PLAN.md
-last_updated: "2026-09-17T09:03:26.053Z"
-state_head: 112be6bad25aaa65d225e063baf9c23748d28fe9
+stopped_at: Completed 09-07-PLAN.md
+last_updated: "2026-09-17T13:48:25.778Z"
+state_head: 7e92e83017f4a575926ae76416fcdf5d3304164d
 progress:
   total_phases: 11
   completed_phases: 6
   total_plans: 85
-  completed_plans: 83
+  completed_plans: 84
 milestone_name: milestone
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-08-30)
 ## Current Position
 
 Phase: 09 (Deployment and Release Readiness) — EXECUTING
-Plan: 7 of 8
+Plan: 8 of 8
 
 ## Performance Metrics
 
@@ -132,6 +132,7 @@ Plan: 7 of 8
 | Phase 09 P04 | 30min | 2 tasks | 5 files |
 | Phase 09 P05 | 30min | 3 tasks | 5 files |
 | Phase 09 P06 | 1h | 3 tasks | 17 files |
+| Phase 09 P07 | 35min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -303,6 +304,8 @@ Recent decisions affecting current work:
 - [Phase 09]: [Phase 09]: [Phase 09-06]: certificate-service.ts's constructor Pick<> grew incrementally across Task 2 (create-only) and Task 3 (adds findAll/findByIdOrThrow/findReferencingDomains/removeCertificateFiles) rather than over-provisioning the interface up front
 - [Phase 09]: [Phase 09]: [Phase 09-06]: CertificateFilesystem owns leaf+CA-bundle concatenation, not the service — the service passes the leaf certificate and optional bundle through as separate fields to writeCertificateFiles
 - [Phase 09]: [Phase 09]: [Phase 09-06]: app.ts's global error handler does not map @fastify/multipart's RequestFileTooLargeError (statusCode 413, not an AppError) to a 4xx on its own — routes/certificates.ts explicitly catches FST_REQ_FILE_TOO_LARGE and re-throws BadRequestError
+- [Phase 09]: [Phase 09]: [Phase 09-07]: renderProxyEnvForService's issuance-host filter is TLS-enabled AND certSource==='acme' — the single place ACME suppression happens; no second code path for custom rows
+- [Phase 09]: [Phase 09]: [Phase 09-07]: ProxyCertPoller.reconcile() splits into reconcileAcmeRows()/reconcileCustomRows() sharing one applyStatus() choke point; custom rows resolve their file via the linked Certificate's own domainPattern (certFileBaseName), never ProxyConfig.domain, and a missing file classifies failed not pending
 
 ### Quick Tasks Completed
 
@@ -376,6 +379,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-09-17T09:03:25.123Z
-Stopped at: Completed 09-06-PLAN.md
+Last session: 2026-09-17T13:48:24.954Z
+Stopped at: Completed 09-07-PLAN.md
 Resume file: None
