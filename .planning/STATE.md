@@ -4,14 +4,14 @@ milestone: v1.0
 current_phase: 09
 current_phase_name: Deployment and Release Readiness
 status: Phase 05.1 (Stabilization) complete — 12/12 plans, UAT 10/10 passed, VERIFICATION.md passed (17/17 must-haves, 4 human_verification items confirmed by user 2026-09-11). ROADMAP.md Phase 1 checkbox bookkeeping corrected to match disk truth (was stale — Phase 1 has been fully executed and verified since 2026-03-11).
-stopped_at: Completed 09-07-PLAN.md
-last_updated: "2026-09-17T13:48:25.778Z"
-state_head: 7e92e83017f4a575926ae76416fcdf5d3304164d
+stopped_at: Completed 09-08-PLAN.md (last plan of Phase 09 — ready for verification)
+last_updated: "2026-09-17T18:44:36.767Z"
+state_head: a96378c0fc08c10434335833b401079d00377c21
 progress:
   total_phases: 11
   completed_phases: 6
   total_plans: 85
-  completed_plans: 84
+  completed_plans: 85
 milestone_name: milestone
 ---
 
@@ -133,6 +133,7 @@ Plan: 8 of 8
 | Phase 09 P05 | 30min | 3 tasks | 5 files |
 | Phase 09 P06 | 1h | 3 tasks | 17 files |
 | Phase 09 P07 | 35min | 3 tasks | 7 files |
+| Phase 09 P08 | 1h35m | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -306,6 +307,8 @@ Recent decisions affecting current work:
 - [Phase 09]: [Phase 09]: [Phase 09-06]: app.ts's global error handler does not map @fastify/multipart's RequestFileTooLargeError (statusCode 413, not an AppError) to a 4xx on its own — routes/certificates.ts explicitly catches FST_REQ_FILE_TOO_LARGE and re-throws BadRequestError
 - [Phase 09]: [Phase 09]: [Phase 09-07]: renderProxyEnvForService's issuance-host filter is TLS-enabled AND certSource==='acme' — the single place ACME suppression happens; no second code path for custom rows
 - [Phase 09]: [Phase 09]: [Phase 09-07]: ProxyCertPoller.reconcile() splits into reconcileAcmeRows()/reconcileCustomRows() sharing one applyStatus() choke point; custom rows resolve their file via the linked Certificate's own domainPattern (certFileBaseName), never ProxyConfig.domain, and a missing file classifies failed not pending
+- [Phase 09]: [Phase 09]: [Phase 09-08]: proxy-tab.tsx's automatic-source Select label reads 'Automatic (Let's Encrypt)' (not bare 'Automatic') to avoid exact-text collision with the per-domain listing's own 'Automatic' cell, both on screen simultaneously once any config exists
+- [Phase 09]: [Phase 09]: [Phase 09-08]: certificate-source validity rules (custom requires certificateId, acme forbids it, custom requires tlsEnabled) stay entirely in assignDomainSchema's superRefine — proxy-tab.tsx only surfaces the resulting field messages, never re-implements the pairing logic
 
 ### Quick Tasks Completed
 
@@ -367,6 +370,7 @@ Recent decisions affecting current work:
 - [Phase 09-03] No live database has been baselined by any session to date for this schema shape — TCP connects to localhost:5432 (docktor-db-dev) but the Postgres protocol handshake never completes (confirmed via prisma migrate status P1001 and a raw pg.Client timeout), same block class as 05.1-01/05.1-05/05.1-06/06-01/06-07/08-01. migrate deploy's real no-op stdout is unverified against schema-sync.ts's classification regex. A developer on an unrestricted host must run the 4-command sequence in 09-03-SUMMARY.md. Tracked as WINDOWS.md entry #10 (open).
 - [Phase 09-05] No live database has the add_certificate migration applied (Branch B taken, same TCP-to-Postgres-protocol block class as 09-03/05.1-01/05.1-05/05.1-06/06-01/06-07/08-01) — the certSource='acme' backfill onto pre-existing ProxyConfig rows is unverified. A developer on an unrestricted host must run yarn db:migrate then verify. Tracked as WINDOWS.md entry #11 (open), compounds with entry #10 from 09-03.
 - [Phase 09-06] Live end-to-end proof that an uploaded certificate lands on the mounted proxy-stack certificates directory under the filename nginx-proxy resolves (against a real running proxy stack) is unverified in this session — proven only via source-level containment/naming logic and unit tests with mocked filesystem I/O. A developer on an unrestricted host should perform one live upload through the API and confirm nginx-proxy serves it. See 09-06-SUMMARY.md coverage item D7.
+- [Phase 09-08] Custom-certificate feature has never been exercised against a live nginx-proxy/acme-companion deployment (uploaded cert serving real HTTPS, no ACME issuance attempt) — WINDOWS.md entry #12 (open), compounds entries #10/#11 (Prisma migrate baseline/certSource backfill never applied to a live database). A developer on an unrestricted host must complete both before scope item 4 is fully proven in production; Phase 09 is otherwise fully executed (8/8 plans) and ready for verification.
 
 ### Roadmap Evolution
 
@@ -379,6 +383,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-09-17T13:48:24.954Z
-Stopped at: Completed 09-07-PLAN.md
+Last session: 2026-09-17T18:44:24.249Z
+Stopped at: Completed 09-08-PLAN.md (last plan of Phase 09 — ready for verification)
 Resume file: None
