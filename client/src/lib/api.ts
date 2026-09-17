@@ -19,7 +19,15 @@ export async function apiFetch<T>(
     const headers: Record<string, string> = {
         ...options?.headers as Record<string, string>,
     };
-    if (options?.body) {
+    const hasCallerContentType = Object.keys(headers).some(
+        (key) => key.toLowerCase() === "content-type",
+    );
+    // A FormData body must reach fetch with no Content-Type header: the
+    // browser generates one itself containing the multipart boundary.
+    // Setting it manually here produces a body the server cannot parse
+    // into parts — the failure looks like a missing-field error, not a
+    // header problem, which is why this exclusion exists.
+    if (options?.body && !(options.body instanceof FormData) && !hasCallerContentType) {
         headers["Content-Type"] = "application/json";
     }
 

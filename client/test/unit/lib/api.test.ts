@@ -62,6 +62,46 @@ describe("apiFetch", () => {
         );
     });
 
+    it("sets no Content-Type header when the body is a FormData instance", async () => {
+        mockFetch({ok: true, status: 200, json: () => Promise.resolve({})});
+
+        const form = new FormData();
+        form.append("domainPattern", "example.com");
+        await apiFetch("/api/test", {method: "POST", body: form});
+
+        const call = vi.mocked(globalThis.fetch).mock.calls[0];
+        const sentHeaders = (call[1] as RequestInit).headers as Record<string, string>;
+        // Case-insensitive check — a differently-cased header must not pass unnoticed.
+        const hasContentType = Object.keys(sentHeaders).some(
+            (key) => key.toLowerCase() === "content-type",
+        );
+        expect(hasContentType).toBe(false);
+    });
+
+    it("sets no Content-Type header when no body is provided", async () => {
+        mockFetch({ok: true, status: 200, json: () => Promise.resolve({})});
+
+        await apiFetch("/api/test");
+
+        const call = vi.mocked(globalThis.fetch).mock.calls[0];
+        const sentHeaders = (call[1] as RequestInit).headers as Record<string, string>;
+        expect(Object.keys(sentHeaders)).toHaveLength(0);
+    });
+
+    it("honours an explicit caller-supplied Content-Type header instead of overwriting it", async () => {
+        mockFetch({ok: true, status: 200, json: () => Promise.resolve({})});
+
+        await apiFetch("/api/test", {
+            method: "POST",
+            body: "raw text",
+            headers: {"Content-Type": "text/plain"},
+        });
+
+        const call = vi.mocked(globalThis.fetch).mock.calls[0];
+        const sentHeaders = (call[1] as RequestInit).headers as Record<string, string>;
+        expect(sentHeaders["Content-Type"]).toBe("text/plain");
+    });
+
     it("returns undefined for 204 responses", async () => {
         mockFetch({ok: true, status: 204});
 
