@@ -12,6 +12,9 @@ import {ResticExecutor} from "../infrastructure/restic-executor.js";
 import {BackupService} from "./backup-service.js";
 import {ProxyRepository} from "../repositories/proxy-repository.js";
 import {ProxyService} from "./proxy-service.js";
+import {CertificateRepository} from "../repositories/certificate-repository.js";
+import {CertificateService} from "./certificate-service.js";
+import {certificateFilesystem} from "../infrastructure/certificate-filesystem.js";
 import {stateEventBroadcaster} from "../lib/state-broadcaster.js";
 import {dockerodeClient} from "../infrastructure/dockerode-client.js";
 import type {BackupStackRepo} from "./backup-service.js";
@@ -63,3 +66,5 @@ export const backupService = new BackupService(
 export {getBackupBroadcaster, getBackupLogBuffer} from "./backup-service.js";
 
 export const proxyService = new ProxyService(new ProxyRepository(), repo, fs, stackService, settingsService, dockerodeClient);
+
+export const certificateService = new CertificateService(new CertificateRepository(), certificateFilesystem);
