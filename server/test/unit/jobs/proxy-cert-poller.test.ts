@@ -1,5 +1,5 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
-import {ProxyCertPoller} from "../../../../src/jobs/proxy-cert-poller.js";
+import {CERT_EXPIRY_WARNING_DAYS, classifyCertificateExpiry, ProxyCertPoller} from "../../../../src/jobs/proxy-cert-poller.js";
 
 function createMockDockerodeClient() {
     return {
@@ -10,7 +10,7 @@ function createMockDockerodeClient() {
 
 function createMockRepo() {
     return {
-        findAll: vi.fn(),
+        findAllForCertPolling: vi.fn(),
         updateCertStatus: vi.fn(),
     };
 }
@@ -24,6 +24,7 @@ function createMockBroadcaster() {
 function createMockFs() {
     return {
         access: vi.fn(),
+        readFile: vi.fn(),
     };
 }
 
@@ -34,6 +35,8 @@ function tlsRow(overrides: Partial<{
     domain: string;
     tlsEnabled: boolean;
     certStatus: string;
+    certSource: string;
+    certificate: {domainPattern: string; expiresAt: Date} | null;
 }> = {}) {
     return {
         id: "cfg-1",
@@ -42,8 +45,34 @@ function tlsRow(overrides: Partial<{
         domain: "app.example.com",
         tlsEnabled: true,
         certStatus: "pending",
+        certSource: "acme",
+        certificate: null,
         ...overrides,
     };
+}
+
+/** A custom-sourced row linked to a Certificate with the given domain pattern/expiry. */
+function customTlsRow(overrides: Partial<{
+    id: string;
+    stackId: string;
+    serviceName: string;
+    domain: string;
+    certStatus: string;
+    domainPattern: string;
+    expiresAt: Date | null;
+}> = {}) {
+    return tlsRow({
+        id: overrides.id ?? "cfg-custom-1",
+        stackId: overrides.stackId ?? "stack-1",
+        serviceName: overrides.serviceName ?? "web",
+        domain: overrides.domain ?? "cloud.example.com",
+        certStatus: overrides.certStatus ?? "pending",
+        certSource: "custom",
+        certificate: {
+            domainPattern: overrides.domainPattern ?? "cloud.example.com",
+            expiresAt: overrides.expiresAt ?? null,
+        },
+    });
 }
 
 const ACME_CONTAINER = {
@@ -69,7 +98,7 @@ describe("ProxyCertPoller", () => {
 
     describe("reconcile — TLS-disabled rows", () => {
         it("ignores rows with tlsEnabled: false entirely (never probes fs or writes)", async () => {
-            repo.findAll.mockResolvedValue([tlsRow({tlsEnabled: false})]);
+            repo.findAllForCertPolling.mockResolvedValue([tlsRow({tlsEnabled: false})]);
 
             await poller.reconcile();
 
@@ -82,7 +111,7 @@ describe("ProxyCertPoller", () => {
     describe("reconcile — issued", () => {
         it("reports issued and persists+publishes when the *.crt file exists and status changed", async () => {
             const row = tlsRow({certStatus: "pending"});
-            repo.findAll.mockResolvedValue([row]);
+            repo.findAllForCertPolling.mockResolvedValue([row]);
             fs.access.mockImplementation(async (p: string) => {
                 if (p === poller["certsDir"]) return;
                 if (p.endsWith(`${row.domain}.crt`)) return;
@@ -108,7 +137,7 @@ describe("ProxyCertPoller", () => {
 
         it("reports issued when the fullchain.pem path exists instead of the .crt path", async () => {
             const row = tlsRow({certStatus: "pending"});
-            repo.findAll.mockResolvedValue([row]);
+            repo.findAllForCertPolling.mockResolvedValue([row]);
             fs.access.mockImplementation(async (p: string) => {
                 if (p === poller["certsDir"]) return;
                 if (p.endsWith(`${row.domain}/fullchain.pem`)) return;
@@ -127,7 +156,7 @@ describe("ProxyCertPoller", () => {
     describe("reconcile — no publish/write when unchanged", () => {
         it("triggers neither updateCertStatus nor publish when computed status equals stored status", async () => {
             const row = tlsRow({certStatus: "issued"});
-            repo.findAll.mockResolvedValue([row]);
+            repo.findAllForCertPolling.mockResolvedValue([row]);
             fs.access.mockImplementation(async (p: string) => {
                 if (p.endsWith(`${row.domain}.crt`)) return;
                 if (p === poller["certsDir"]) return; // certs dir probe
@@ -144,7 +173,7 @@ describe("ProxyCertPoller", () => {
     describe("reconcile — unreadable certs directory", () => {
         it("leaves every row untouched, publishes nothing, and logs once when the certs directory read throws", async () => {
             const rows = [tlsRow({id: "cfg-1"}), tlsRow({id: "cfg-2", domain: "other.example.com"})];
-            repo.findAll.mockResolvedValue(rows);
+            repo.findAllForCertPolling.mockResolvedValue(rows);
             fs.access.mockRejectedValue(new Error("EACCES: permission denied"));
             const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
@@ -161,7 +190,7 @@ describe("ProxyCertPoller", () => {
     describe("reconcile — pending vs failed", () => {
         it("yields pending (not failed) when no cert file exists and no matching error line is found", async () => {
             const row = tlsRow({certStatus: "issued"}); // was issued, now missing -> should NOT flip to failed
-            repo.findAll.mockResolvedValue([row]);
+            repo.findAllForCertPolling.mockResolvedValue([row]);
             fs.access.mockImplementation(async (p: string) => {
                 if (p === poller["certsDir"]) return; // dir probe succeeds
                 throw new Error("ENOENT");
@@ -182,7 +211,7 @@ describe("ProxyCertPoller", () => {
 
         it("yields failed with the matching acme-companion log line stored as certMessage", async () => {
             const row = tlsRow({certStatus: "pending", domain: "broken.example.com"});
-            repo.findAll.mockResolvedValue([row]);
+            repo.findAllForCertPolling.mockResolvedValue([row]);
             fs.access.mockImplementation(async (p: string) => {
                 if (p === poller["certsDir"]) return;
                 throw new Error("ENOENT");
@@ -206,7 +235,7 @@ describe("ProxyCertPoller", () => {
     describe("reconcile — log tail fetch discipline", () => {
         it("fetches the log tail zero times when every TLS-enabled row already has a certificate file", async () => {
             const row = tlsRow();
-            repo.findAll.mockResolvedValue([row]);
+            repo.findAllForCertPolling.mockResolvedValue([row]);
             fs.access.mockImplementation(async (p: string) => {
                 if (p.endsWith(`${row.domain}.crt`)) return;
                 if (p === poller["certsDir"]) return;
@@ -223,7 +252,7 @@ describe("ProxyCertPoller", () => {
                 tlsRow({id: "cfg-1", domain: "a.example.com"}),
                 tlsRow({id: "cfg-2", domain: "b.example.com"}),
             ];
-            repo.findAll.mockResolvedValue(rows);
+            repo.findAllForCertPolling.mockResolvedValue(rows);
             fs.access.mockImplementation(async (p: string) => {
                 if (p === poller["certsDir"]) return;
                 throw new Error("ENOENT");
@@ -240,7 +269,7 @@ describe("ProxyCertPoller", () => {
     describe("reconcile — no .key file access", () => {
         it("never passes a path ending in .key to the filesystem port", async () => {
             const row = tlsRow();
-            repo.findAll.mockResolvedValue([row]);
+            repo.findAllForCertPolling.mockResolvedValue([row]);
             fs.access.mockImplementation(async (p: string) => {
                 if (p.endsWith(`${row.domain}.crt`)) return;
                 if (p === poller["certsDir"]) return;
@@ -262,5 +291,202 @@ describe("ProxyCertPoller", () => {
                 poller.stop();
             }).not.toThrow();
         });
+    });
+
+    describe("reconcile — custom-sourced rows (D-11/D-13)", () => {
+        it("never fetches the container log tail for a custom-sourced row, even when its certificate file is missing", async () => {
+            const row = customTlsRow();
+            repo.findAllForCertPolling.mockResolvedValue([row]);
+            fs.access.mockImplementation(async (p: string) => {
+                if (p === poller["certsDir"]) return;
+                throw new Error("ENOENT");
+            });
+
+            await poller.reconcile();
+
+            expect(docker.getLogTail).not.toHaveBeenCalled();
+            expect(docker.listContainers).not.toHaveBeenCalled();
+        });
+
+        it("resolves a wildcard certificate's file from the linked certificate's own domain pattern (wildcard label stripped), never from the row's own routing hostname", async () => {
+            const row = customTlsRow({
+                domain: "cloud.example.com",
+                domainPattern: "*.example.com",
+                expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+            });
+            repo.findAllForCertPolling.mockResolvedValue([row]);
+            fs.access.mockImplementation(async (p: string) => {
+                if (p === poller["certsDir"]) return;
+                if (p.endsWith("example.com.crt")) return;
+                throw new Error("ENOENT");
+            });
+            fs.readFile.mockResolvedValue("dummy-pem-content");
+
+            await poller.reconcile();
+
+            const accessedPaths = fs.access.mock.calls.map((call: unknown[]) => String(call[0]));
+            expect(accessedPaths.some((p: string) => p.endsWith("example.com.crt"))).toBe(true);
+            expect(accessedPaths.some((p: string) => p.includes("cloud.example.com"))).toBe(false);
+            expect(repo.updateCertStatus).toHaveBeenCalledWith(
+                row.id,
+                expect.objectContaining({certStatus: "issued"}),
+            );
+        });
+
+        it("classifies a custom row with a present file and a far-off expiry as issued", async () => {
+            const row = customTlsRow({
+                domainPattern: "cloud.example.com",
+                expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+            });
+            repo.findAllForCertPolling.mockResolvedValue([row]);
+            fs.access.mockImplementation(async (p: string) => {
+                if (p === poller["certsDir"]) return;
+                if (p.endsWith("cloud.example.com.crt")) return;
+                throw new Error("ENOENT");
+            });
+            fs.readFile.mockResolvedValue("dummy-pem-content");
+
+            await poller.reconcile();
+
+            expect(repo.updateCertStatus).toHaveBeenCalledWith(
+                row.id,
+                expect.objectContaining({certStatus: "issued"}),
+            );
+        });
+
+        it("classifies a custom row with a present file and an expiry inside the warning window as expiring, with a message naming the expiry date", async () => {
+            const expiresAt = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+            const row = customTlsRow({certStatus: "issued", domainPattern: "cloud.example.com", expiresAt});
+            repo.findAllForCertPolling.mockResolvedValue([row]);
+            fs.access.mockImplementation(async (p: string) => {
+                if (p === poller["certsDir"]) return;
+                if (p.endsWith("cloud.example.com.crt")) return;
+                throw new Error("ENOENT");
+            });
+            fs.readFile.mockResolvedValue("dummy-pem-content");
+
+            await poller.reconcile();
+
+            expect(repo.updateCertStatus).toHaveBeenCalledWith(
+                row.id,
+                expect.objectContaining({
+                    certStatus: "expiring",
+                    certMessage: expect.stringContaining(expiresAt.toISOString().slice(0, 10)),
+                }),
+            );
+            expect(broadcaster.publish).toHaveBeenCalledWith(
+                expect.objectContaining({status: "expiring"}),
+            );
+        });
+
+        it("classifies a custom row with a present file and an already-past expiry as failed, with a message naming the expiry date", async () => {
+            const expiresAt = new Date(Date.now() - 24 * 60 * 60 * 1000);
+            const row = customTlsRow({certStatus: "issued", domainPattern: "cloud.example.com", expiresAt});
+            repo.findAllForCertPolling.mockResolvedValue([row]);
+            fs.access.mockImplementation(async (p: string) => {
+                if (p === poller["certsDir"]) return;
+                if (p.endsWith("cloud.example.com.crt")) return;
+                throw new Error("ENOENT");
+            });
+            fs.readFile.mockResolvedValue("dummy-pem-content");
+
+            await poller.reconcile();
+
+            expect(repo.updateCertStatus).toHaveBeenCalledWith(
+                row.id,
+                expect.objectContaining({
+                    certStatus: "failed",
+                    certMessage: expect.stringContaining(expiresAt.toISOString().slice(0, 10)),
+                }),
+            );
+        });
+
+        it("classifies a custom row with a missing file as failed (not pending), with a message saying the file is absent", async () => {
+            const row = customTlsRow({domainPattern: "cloud.example.com"});
+            repo.findAllForCertPolling.mockResolvedValue([row]);
+            fs.access.mockImplementation(async (p: string) => {
+                if (p === poller["certsDir"]) return;
+                throw new Error("ENOENT");
+            });
+
+            await poller.reconcile();
+
+            expect(repo.updateCertStatus).toHaveBeenCalledWith(
+                row.id,
+                expect.objectContaining({certStatus: "failed"}),
+            );
+            const call = repo.updateCertStatus.mock.calls[0];
+            expect(String(call[1].certMessage)).toMatch(/not found/i);
+        });
+
+        it("publishes an event whose status is one of the four vocabulary members on a custom-row status change", async () => {
+            const row = customTlsRow({domainPattern: "cloud.example.com"});
+            repo.findAllForCertPolling.mockResolvedValue([row]);
+            fs.access.mockImplementation(async (p: string) => {
+                if (p === poller["certsDir"]) return;
+                throw new Error("ENOENT");
+            });
+
+            await poller.reconcile();
+
+            expect(broadcaster.publish).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    type: "proxy_cert_status",
+                    status: expect.stringMatching(/^(pending|issued|failed|expiring)$/),
+                }),
+            );
+        });
+
+        it("never passes a path ending in .key to the filesystem port across a mixed ACME + custom reconcile", async () => {
+            const acme = tlsRow({id: "cfg-acme", domain: "app.example.com"});
+            const custom = customTlsRow({id: "cfg-custom", domainPattern: "cloud.example.com"});
+            repo.findAllForCertPolling.mockResolvedValue([acme, custom]);
+            fs.access.mockImplementation(async (p: string) => {
+                if (p === poller["certsDir"]) return;
+                if (p.endsWith(`${acme.domain}.crt`)) return;
+                if (p.endsWith("cloud.example.com.crt")) return;
+                throw new Error("ENOENT");
+            });
+            fs.readFile.mockResolvedValue("dummy-pem-content");
+
+            await poller.reconcile();
+
+            for (const call of fs.access.mock.calls) {
+                expect(String(call[0]).endsWith(".key")).toBe(false);
+            }
+            for (const call of fs.readFile.mock.calls) {
+                expect(String(call[0]).endsWith(".key")).toBe(false);
+            }
+        });
+    });
+});
+
+describe("classifyCertificateExpiry", () => {
+    it("returns issued for a not-after date comfortably beyond the warning window", () => {
+        const now = new Date("2026-01-01T00:00:00Z");
+        const validTo = new Date("2026-06-01T00:00:00Z");
+
+        expect(classifyCertificateExpiry(validTo, now, CERT_EXPIRY_WARNING_DAYS)).toBe("issued");
+    });
+
+    it("returns expiring for a not-after date inside the warning window", () => {
+        const now = new Date("2026-01-01T00:00:00Z");
+        const validTo = new Date("2026-01-10T00:00:00Z");
+
+        expect(classifyCertificateExpiry(validTo, now, CERT_EXPIRY_WARNING_DAYS)).toBe("expiring");
+    });
+
+    it("returns expiring at exactly the warning-window boundary", () => {
+        const now = new Date("2026-01-01T00:00:00Z");
+        const validTo = new Date(now.getTime() + CERT_EXPIRY_WARNING_DAYS * 24 * 60 * 60 * 1000);
+
+        expect(classifyCertificateExpiry(validTo, now, CERT_EXPIRY_WARNING_DAYS)).toBe("expiring");
+    });
+
+    it("returns failed for a not-after date already in the past", () => {
+        const now = new Date("2026-01-01T00:00:00Z");
+        const validTo = new Date("2025-12-01T00:00:00Z");
+
+        expect(classifyCertificateExpiry(validTo, now, CERT_EXPIRY_WARNING_DAYS)).toBe("failed");
     });
 });
