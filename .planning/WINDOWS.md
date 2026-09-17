@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 3
+open_count: 4
 waived_count: 0
 fixed_count: 7
-total_count: 10
-last_updated: 2026-09-16T08:06:44.168Z
+total_count: 11
+last_updated: 2026-09-17T08:36:50.295Z
 ---
 
 # Broken Windows Ledger
@@ -25,6 +25,7 @@ last_updated: 2026-09-16T08:06:44.168Z
 | 8 | 05.1 | unrun-verify | server/prisma/schema/stack.prisma |  | yarn db:push could not apply the two new fields (configError, lastEnvHash) to the live dev database — same documented host-level TCP-to-Docker-published-port block as 05.1-01/05.1-05 (raw TCP connects to docktor-db-dev:5432 but the Postgres protocol handshake never completes). yarn db:generate succeeded (schema is syntactically valid), and both workspaces type-check clean against the regenerated Prisma client. | open |  | 2026-09-02T09:31:39.036Z |  |
 | 9 | 05.1 | unrun-verify | server/test/integration/imports.test.ts |  | New imports.test.ts (401 rejection x4, scan+adopt round-trip, T-05-09 410 regression guard) could not execute in this sandbox — same confirmed environmental P1001 TCP-to-Docker-published-Postgres-port block documented in 05.1-01/05.1-05 SUMMARYs. Code reviewed against passing sibling test files (stacks.test.ts, setup-wizard-flow.test.ts) but never run to green. | fixed |  | 2026-09-02T10:06:02.732Z | 2026-09-11T21:28:54.285Z |
 | 10 | 09 | unrun-verify | server/src/lib/schema-sync.ts |  | Task 3 of 09-03-PLAN.md: live baselining (migrate resolve --applied 0_init, migrate deploy x2, migrate diff drift probe) against the dev DB could not run — TCP connect to localhost:5432 succeeds but the Postgres protocol handshake never completes (same class as 05.1-01/05.1-05/05.1-06/06-01/06-07/08-01/WINDOWS #1/#8, confirmed independently via raw pg.Client and prisma migrate status, both P1001/timeout). migrate deploy's real no-op stdout text is therefore still unverified against the classification regex in schema-sync.ts. A developer on an unrestricted host must run the 4-command sequence recorded in 09-03-SUMMARY.md. | open |  | 2026-09-16T08:06:44.168Z |  |
+| 11 | 09 | unrun-verify | server/prisma/migrations/20260917083545_add_certificate/migration.sql |  | Plan 09-05 Task 3 Branch B: migration generated without a database (from-schema-copy diff technique, matches 09-03's entry #10 precedent) — TCP connect to localhost:5432 succeeds but the Postgres wire-protocol handshake never completes (confirmed via prisma migrate status P1001 and a raw pg.Client 8s timeout, same class as 05.1-01/05.1-05/05.1-06/06-01/06-07/08-01/09-03). No live database has this migration applied; the certSource backfill onto pre-existing ProxyConfig rows is therefore unverified. A developer on an unrestricted host must run: yarn db:migrate (will detect this migration as already written and pending) then verify every existing ProxyConfig row has certSource='acme' and migration history shows 0_init followed by this migration. | open |  | 2026-09-17T08:36:50.295Z |  |
 
 ````json
 [
@@ -146,6 +147,18 @@ last_updated: 2026-09-16T08:06:44.168Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-16T08:06:44.168Z",
+    "resolved_at": null
+  },
+  {
+    "id": 11,
+    "kind": "unrun-verify",
+    "phase": "09",
+    "file": "server/prisma/migrations/20260917083545_add_certificate/migration.sql",
+    "line": null,
+    "description": "Plan 09-05 Task 3 Branch B: migration generated without a database (from-schema-copy diff technique, matches 09-03's entry #10 precedent) — TCP connect to localhost:5432 succeeds but the Postgres wire-protocol handshake never completes (confirmed via prisma migrate status P1001 and a raw pg.Client 8s timeout, same class as 05.1-01/05.1-05/05.1-06/06-01/06-07/08-01/09-03). No live database has this migration applied; the certSource backfill onto pre-existing ProxyConfig rows is therefore unverified. A developer on an unrestricted host must run: yarn db:migrate (will detect this migration as already written and pending) then verify every existing ProxyConfig row has certSource='acme' and migration history shows 0_init followed by this migration.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T08:36:50.295Z",
     "resolved_at": null
   }
 ]
