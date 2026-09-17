@@ -9,6 +9,7 @@ import {getStackPath} from "../lib/stacks-dir.js"
 import {ACME_COMPANION_CONTAINER_NAME, PROXY_CERTS_SUBPATH} from "../lib/proxy-stack-compose.js"
 import {certFileBaseName} from "../domain/certificate-naming.js"
 import {certificateExpiry, parseCertificate} from "../domain/certificate-validation.js"
+import {CERTIFICATE_EXPIRY_WARNING_DAYS} from "@docktor/shared"
 
 // Fixed id of the Docktor-managed proxy stack — mirrors PROXY_STACK_ID in
 // application/proxy-service.ts. Redeclared locally (not imported from that
@@ -65,11 +66,13 @@ export interface ProxyCertPollerFs {
     readFile(path: string): Promise<string>
 }
 
-// D-13: thirty days is the common industry default and enough runway for a
-// human to obtain and upload a replacement certificate by hand — custom
-// certificates have no automatic renewal, so silence here is a real outage
-// waiting to happen. Research explicitly left the exact number to this plan.
-export const CERT_EXPIRY_WARNING_DAYS = 30
+// Re-exported under this job's pre-existing local name so this module's
+// public surface (and the test importing it) is unchanged — the single
+// source of truth is now @docktor/shared's CERTIFICATE_EXPIRY_WARNING_DAYS,
+// which the client's "expiring soon" badge imports too, so the two can never
+// drift apart (previously duplicated as two independent literals — see
+// 09-REVIEW.md IN-01).
+export const CERT_EXPIRY_WARNING_DAYS = CERTIFICATE_EXPIRY_WARNING_DAYS
 
 /**
  * Pure, clock-injectable classification of a certificate's expiry against a

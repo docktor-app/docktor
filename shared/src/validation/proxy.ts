@@ -88,3 +88,11 @@ export type CreateCertificateInput = z.infer<typeof createCertificateSchema>;
 // with this enum.
 export const certStatusSchema = z.enum(["pending", "issued", "failed", "expiring"]);
 export type CertStatus = z.infer<typeof certStatusSchema>;
+
+// D-13: thirty days is the common industry default and enough runway for a
+// human to obtain and upload a replacement certificate by hand — custom
+// certificates have no automatic renewal, so silence here is a real outage
+// waiting to happen. Shared so the server poller's classification and the
+// client's "expiring soon" badge can never drift apart (previously
+// duplicated as two independent literals — see 09-REVIEW.md IN-01).
+export const CERTIFICATE_EXPIRY_WARNING_DAYS = 30;

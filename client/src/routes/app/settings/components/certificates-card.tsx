@@ -3,7 +3,11 @@ import {useForm} from "react-hook-form";
 import {standardSchemaResolver} from "@hookform/resolvers/standard-schema";
 import {toast} from "sonner";
 import {AlertTriangle, Trash2} from "lucide-react";
-import {createCertificateSchema, type CreateCertificateInput} from "@docktor/shared";
+import {
+    CERTIFICATE_EXPIRY_WARNING_DAYS,
+    createCertificateSchema,
+    type CreateCertificateInput,
+} from "@docktor/shared";
 
 import {
     deleteCertificate,
@@ -30,12 +34,6 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-
-// Matches server/src/jobs/proxy-cert-poller.ts's CERT_EXPIRY_WARNING_DAYS —
-// kept as its own constant here (rather than imported) since this is a
-// client-only formatting concern, but the number itself must stay in sync
-// with the poller's own threshold for the two warnings to agree.
-const CERTIFICATE_EXPIRY_WARNING_DAYS = 30;
 
 function formatExpiry(expiresAt: string | null): string {
     if (!expiresAt) return "Unknown";

@@ -1,6 +1,7 @@
 import {describe, expect, it} from "vitest";
 import {
     assignDomainSchema,
+    CERTIFICATE_EXPIRY_WARNING_DAYS,
     certSourceSchema,
     certStatusSchema,
     createCertificateSchema,
@@ -149,5 +150,14 @@ describe("assignDomainSchema — certSource/certificateId pairing rules", () => 
 describe("hostnamePattern — unchanged by this plan", () => {
     it("still rejects a wildcard directly", () => {
         expect(hostnamePattern.test("*.example.com")).toBe(false);
+    });
+});
+
+describe("CERTIFICATE_EXPIRY_WARNING_DAYS", () => {
+    it("is a single shared source of truth for the server poller and client badge threshold", () => {
+        // Both consumers import this literal directly rather than
+        // redeclaring it (see 09-REVIEW.md IN-01) — this test just pins the
+        // value itself so a change is a deliberate, reviewed edit.
+        expect(CERTIFICATE_EXPIRY_WARNING_DAYS).toBe(30);
     });
 });
