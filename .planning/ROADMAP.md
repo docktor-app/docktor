@@ -298,7 +298,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Proxy Configuration | 7/7 | Complete    | 2026-09-12 |
 | 7. Release Hardening: Data Safety and Core Workflows | 2/2 | Complete    | 2026-09-13 |
 | 8. Live State Consistency | 1/1 | In Progress|  |
-| 9. Deployment and Release Readiness | 5/8 | In Progress|  |
+| 9. Deployment and Release Readiness | 6/8 | In Progress|  |
 | 10. UX Redesign: Service Colors, Editors, and Dashboard Stats | 0/0 | Not planned |  |
 
 ### Phase 7: Release Hardening: Data Safety and Core Workflows
@@ -345,7 +345,7 @@ Plans:
 **Goal:** Deployment documentation and process match what v1.0.0 actually ships, and the remaining release-process gaps are closed
 **Requirements**: n/a — this phase is scoped by the todo list below, not by REQUIREMENTS.md IDs
 **Depends on:** Phase 8
-**Plans:** 5/8 plans executed
+**Plans:** 6/8 plans executed
 
 Scope is exactly 4 items, promoted from `.planning/todos/pending/` as release-blocking for v1.0.0:
 
@@ -368,7 +368,7 @@ Plans:
 
 **Wave 3** *(blocked on 09-05)*
 
-- [ ] 09-06-PLAN.md — Item 4 tracer: certificate upload end to end — validation, encryption at rest, on-disk materialisation, authenticated multipart routes
+- [x] 09-06-PLAN.md — Item 4 tracer: certificate upload end to end — validation, encryption at rest, on-disk materialisation, authenticated multipart routes
 
 **Wave 4** *(blocked on 09-06)*
 
