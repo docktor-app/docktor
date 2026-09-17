@@ -346,6 +346,32 @@ describe("ProxyService.assignDomain — certificate source (D-11)", () => {
         expect((result as any).certificateId).toBe("cert-1");
     });
 
+    it("throws BadRequestError and writes no compose file when certSource is custom but no certificateId is given", async () => {
+        const certRepo = createMockCertRepo();
+        const {service, repo, fs} = buildService(
+            createFakeProxyRepo(),
+            createMockStackRepo(),
+            createFakeFs("services:\n  web:\n    image: nginx:latest\n"),
+            createMockStackService(),
+            createMockSettings(),
+            createMockDocker(),
+            certRepo,
+        );
+
+        await expect(
+            service.assignDomain("web-stack", "web", {
+                domain: "app.example.com",
+                internalPort: 8080,
+                tlsEnabled: true,
+                certSource: "custom",
+            } as any),
+        ).rejects.toBeInstanceOf(BadRequestError);
+
+        expect(certRepo.findByIdOrThrow).not.toHaveBeenCalled();
+        expect(fs.writeCompose).not.toHaveBeenCalled();
+        expect(repo.create).not.toHaveBeenCalled();
+    });
+
     it("throws a not-found error and writes no compose file when the referenced certificate id is unknown", async () => {
         const certRepo = createMockCertRepo();
         certRepo.findByIdOrThrow.mockRejectedValue(new NotFoundError('Certificate "missing-cert" not found'));

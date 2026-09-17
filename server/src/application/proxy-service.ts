@@ -223,7 +223,10 @@ export class ProxyService {
             // confirmed before anything is created so an unknown id fails
             // loudly before the compose file (or any row) is touched.
             const certSource = input.certSource ?? "acme";
-            if (certSource === "custom" && input.certificateId) {
+            if (certSource === "custom") {
+                if (!input.certificateId) {
+                    throw new BadRequestError("certificateId is required when certSource is custom");
+                }
                 await this.certRepo.findByIdOrThrow(input.certificateId);
             }
             const certificateId = certSource === "custom" ? (input.certificateId ?? null) : null;
