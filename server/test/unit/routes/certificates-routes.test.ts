@@ -156,4 +156,116 @@ describe("POST /api/certificates", () => {
         expect(res.statusCode).toBe(401);
         expect(create).not.toHaveBeenCalled();
     });
+
+    it("returns 400 without calling the service when the certificate file part is missing", async () => {
+        const {payload, headers} = buildMultipartBody(
+            {domainPattern: "*.example.com"},
+            {
+                privateKey: {filename: "key.pem", content: "-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----"},
+            },
+        );
+
+        const res = await app.inject({method: "POST", url: CERT_URL, payload, headers});
+
+        expect(res.statusCode).toBe(400);
+        expect(create).not.toHaveBeenCalled();
+    });
+
+    it("returns 400 without calling the service when the privateKey file part is missing", async () => {
+        const {payload, headers} = buildMultipartBody(
+            {domainPattern: "*.example.com"},
+            {
+                certificate: {filename: "cert.pem", content: "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----"},
+            },
+        );
+
+        const res = await app.inject({method: "POST", url: CERT_URL, payload, headers});
+
+        expect(res.statusCode).toBe(400);
+        expect(create).not.toHaveBeenCalled();
+    });
+
+    it("maps an over-limit file upload to a 4xx client error, not a 500", async () => {
+        const oversizedContent = "A".repeat(70 * 1024); // exceeds CERT_UPLOAD_MAX_BYTES (64 KiB)
+        const {payload, headers} = buildMultipartBody(
+            {domainPattern: "*.example.com"},
+            {
+                certificate: {filename: "cert.pem", content: oversizedContent},
+                privateKey: {filename: "key.pem", content: "-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----"},
+            },
+        );
+
+        const res = await app.inject({method: "POST", url: CERT_URL, payload, headers});
+
+        expect(res.statusCode).toBeGreaterThanOrEqual(400);
+        expect(res.statusCode).toBeLessThan(500);
+        expect(create).not.toHaveBeenCalled();
+    });
+});
+
+describe("GET /api/certificates", () => {
+    let app: Awaited<ReturnType<typeof buildTestApp>>;
+
+    beforeEach(async () => {
+        app = await buildTestApp();
+    });
+
+    afterEach(async () => {
+        requireAuth.mockClear();
+        requireAuth.mockImplementation(async () => undefined);
+        listAll.mockClear();
+        await app.close();
+    });
+
+    it("returns 200 with an array whose serialised body contains none of privateKey, caBundle, or BEGIN", async () => {
+        listAll.mockResolvedValueOnce([
+            {
+                id: "cert1",
+                domainPattern: "*.example.com",
+                expiresAt: "2027-01-01T00:00:00.000Z",
+                createdAt: "2026-01-01T00:00:00.000Z",
+                updatedAt: "2026-01-01T00:00:00.000Z",
+            },
+        ]);
+
+        const res = await app.inject({method: "GET", url: CERT_URL});
+
+        expect(res.statusCode).toBe(200);
+        expect(Array.isArray(res.json())).toBe(true);
+        expect(res.body).not.toContain("privateKey");
+        expect(res.body).not.toContain("caBundle");
+        expect(res.body).not.toContain("BEGIN");
+    });
+});
+
+describe("DELETE /api/certificates/:id", () => {
+    let app: Awaited<ReturnType<typeof buildTestApp>>;
+
+    beforeEach(async () => {
+        app = await buildTestApp();
+    });
+
+    afterEach(async () => {
+        requireAuth.mockClear();
+        requireAuth.mockImplementation(async () => undefined);
+        del.mockClear();
+        await app.close();
+    });
+
+    it("returns 204 with an empty body on success", async () => {
+        const res = await app.inject({method: "DELETE", url: `${CERT_URL}/cert1`});
+
+        expect(res.statusCode).toBe(204);
+        expect(res.body).toBe("");
+        expect(del).toHaveBeenCalledWith("cert1");
+    });
+
+    it("surfaces the service's ConflictError as a 409", async () => {
+        const {ConflictError} = await import("../../../src/lib/errors.js");
+        del.mockRejectedValueOnce(new ConflictError("Certificate is still referenced by: app.example.com"));
+
+        const res = await app.inject({method: "DELETE", url: `${CERT_URL}/cert1`});
+
+        expect(res.statusCode).toBe(409);
+    });
 });
