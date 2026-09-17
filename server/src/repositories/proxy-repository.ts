@@ -8,6 +8,8 @@ export class ProxyRepository {
         domain: string;
         internalPort: number;
         tlsEnabled: boolean;
+        certSource: string;
+        certificateId?: string | null;
     }) {
         return prisma.proxyConfig.create({data});
     }
@@ -47,7 +49,13 @@ export class ProxyRepository {
 
     async updateConfig(
         id: string,
-        data: {domain?: string; internalPort?: number; tlsEnabled?: boolean},
+        data: {
+            domain?: string;
+            internalPort?: number;
+            tlsEnabled?: boolean;
+            certSource?: string;
+            certificateId?: string | null;
+        },
     ) {
         return prisma.proxyConfig.update({where: {id}, data});
     }

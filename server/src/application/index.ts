@@ -65,6 +65,16 @@ export const backupService = new BackupService(
 
 export {getBackupBroadcaster, getBackupLogBuffer} from "./backup-service.js";
 
-export const proxyService = new ProxyService(new ProxyRepository(), repo, fs, stackService, settingsService, dockerodeClient);
+const certificateRepositoryInstance = new CertificateRepository();
 
-export const certificateService = new CertificateService(new CertificateRepository(), certificateFilesystem);
+export const proxyService = new ProxyService(
+    new ProxyRepository(),
+    repo,
+    fs,
+    stackService,
+    settingsService,
+    dockerodeClient,
+    certificateRepositoryInstance,
+);
+
+export const certificateService = new CertificateService(certificateRepositoryInstance, certificateFilesystem);
