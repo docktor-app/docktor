@@ -1,5 +1,7 @@
+import {readFileSync} from "node:fs";
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import {CERT_EXPIRY_WARNING_DAYS, classifyCertificateExpiry, ProxyCertPoller} from "../../../../src/jobs/proxy-cert-poller.js";
+import {certificateExpiry, parseCertificate} from "../../../../src/domain/certificate-validation.js";
 
 function createMockDockerodeClient() {
     return {
@@ -488,5 +490,32 @@ describe("classifyCertificateExpiry", () => {
         const validTo = new Date("2025-12-01T00:00:00Z");
 
         expect(classifyCertificateExpiry(validTo, now, CERT_EXPIRY_WARNING_DAYS)).toBe("failed");
+    });
+});
+
+describe("classifyCertificateExpiry — proof against the real fixture certificate's own not-after date (Task 3)", () => {
+    it("classifies issued/expiring/failed at three clock points derived from server/test/fixtures/certs/leaf.crt's real notAfter, not a hand-written date", () => {
+        // This is the genuine 09-06 self-signed fixture used throughout the
+        // certificate feature's tests — parsed with the same production
+        // helper (parseCertificate/certificateExpiry) the poller itself
+        // uses, so the boundaries below are derived from real X.509 content
+        // and would catch a date-unit or timezone mistake a hand-written
+        // literal date could not.
+        const pem = readFileSync(
+            new URL("../../fixtures/certs/leaf.crt", import.meta.url),
+            "utf-8",
+        );
+        const parsed = parseCertificate(pem);
+        expect(parsed.ok).toBe(true);
+        if (!parsed.ok) throw new Error("fixture certificate failed to parse");
+        const notAfter = certificateExpiry(parsed.cert);
+
+        const comfortablyBefore = new Date(notAfter.getTime() - 60 * 24 * 60 * 60 * 1000);
+        const insideWindow = new Date(notAfter.getTime() - 10 * 24 * 60 * 60 * 1000);
+        const afterExpiry = new Date(notAfter.getTime() + 24 * 60 * 60 * 1000);
+
+        expect(classifyCertificateExpiry(notAfter, comfortablyBefore, CERT_EXPIRY_WARNING_DAYS)).toBe("issued");
+        expect(classifyCertificateExpiry(notAfter, insideWindow, CERT_EXPIRY_WARNING_DAYS)).toBe("expiring");
+        expect(classifyCertificateExpiry(notAfter, afterExpiry, CERT_EXPIRY_WARNING_DAYS)).toBe("failed");
     });
 });

@@ -1,4 +1,5 @@
 import {describe, expect, it, vi} from "vitest";
+import {parseDocument} from "yaml";
 import {PROXY_STACK_ID, ProxyService} from "../../../src/application/proxy-service.js";
 import {BadRequestError, ConflictError, NotFoundError} from "../../../src/lib/errors.js";
 import {Prisma} from "../../../src/generated/prisma/client.js";
@@ -816,6 +817,76 @@ describe("ProxyService.updateProxySettingsAndSync (PRXY-03)", () => {
 
         expect(fs.writeCompose).not.toHaveBeenCalled();
         expect(stackService.deployStack).not.toHaveBeenCalled();
+    });
+});
+
+describe("ProxyService — end-to-end suppression proof against real compose YAML (D-11, Task 3)", () => {
+    it("writes no LETSENCRYPT_HOST key at all — proven by parsing the real rendered document, not a string search — when every TLS-enabled row is custom-sourced", async () => {
+        const {service, fs} = buildService(
+            createFakeProxyRepo(),
+            createMockStackRepo(),
+            createFakeFs("services:\n  web:\n    image: nginx:latest\n"),
+        );
+
+        await service.assignDomain("web-stack", "web", {
+            domain: "cloud.example.com",
+            internalPort: 8080,
+            tlsEnabled: true,
+            certSource: "custom",
+            certificateId: "cert-1",
+        } as any);
+
+        // Real YAML round-trip: fs.content is exactly what setServiceProxyEnv
+        // (the real compose editor, never mocked) wrote. Parse it with the
+        // same "yaml" package the editor itself uses and assert an absence
+        // on the parsed document tree — this cannot pass on a truncated or
+        // coincidentally-matching string read the way `.not.toContain(...)`
+        // theoretically could.
+        const doc = parseDocument(fs.content);
+        expect(doc.hasIn(["services", "web", "environment", "LETSENCRYPT_HOST"])).toBe(false);
+        // Suppression is issuance-only — routing must still be present.
+        expect(doc.hasIn(["services", "web", "environment", "VIRTUAL_HOST"])).toBe(true);
+        expect(String(doc.getIn(["services", "web", "environment", "VIRTUAL_HOST"]))).toBe("cloud.example.com");
+    });
+
+    it("writes an issuance value containing every ACME-sourced domain and excluding the custom-sourced one for a mixed service", async () => {
+        const {service, fs} = buildService(
+            createFakeProxyRepo(),
+            createMockStackRepo(),
+            createFakeFs("services:\n  web:\n    image: nginx:latest\n"),
+        );
+
+        await service.assignDomain("web-stack", "web", {
+            domain: "acme-a.example.com",
+            internalPort: 8080,
+            tlsEnabled: true,
+            certSource: "acme",
+        } as any);
+        await service.assignDomain("web-stack", "web", {
+            domain: "acme-b.example.com",
+            internalPort: 8080,
+            tlsEnabled: true,
+            certSource: "acme",
+        } as any);
+        await service.assignDomain("web-stack", "web", {
+            domain: "custom.example.com",
+            internalPort: 8080,
+            tlsEnabled: true,
+            certSource: "custom",
+            certificateId: "cert-1",
+        } as any);
+
+        const doc = parseDocument(fs.content);
+        expect(doc.hasIn(["services", "web", "environment", "LETSENCRYPT_HOST"])).toBe(true);
+        const issuanceValue = String(doc.getIn(["services", "web", "environment", "LETSENCRYPT_HOST"]));
+        expect(issuanceValue).toContain("acme-a.example.com");
+        expect(issuanceValue).toContain("acme-b.example.com");
+        expect(issuanceValue).not.toContain("custom.example.com");
+
+        const routingValue = String(doc.getIn(["services", "web", "environment", "VIRTUAL_HOST"]));
+        expect(routingValue).toContain("acme-a.example.com");
+        expect(routingValue).toContain("acme-b.example.com");
+        expect(routingValue).toContain("custom.example.com");
     });
 });
 
