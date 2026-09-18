@@ -1,4 +1,5 @@
 import {readFileSync} from "node:fs";
+import path from "node:path";
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import {CERT_EXPIRY_WARNING_DAYS, classifyCertificateExpiry, ProxyCertPoller} from "../../../../src/jobs/proxy-cert-poller.js";
 import {certificateExpiry, parseCertificate} from "../../../../src/domain/certificate-validation.js";
@@ -140,9 +141,23 @@ describe("ProxyCertPoller", () => {
         it("reports issued when the fullchain.pem path exists instead of the .crt path", async () => {
             const row = tlsRow({certStatus: "pending"});
             repo.findAllForCertPolling.mockResolvedValue([row]);
+            // Windows CI fix: the production candidate is built via
+            // path.join(this.certsDir, domain, "fullchain.pem")
+            // (proxy-cert-poller.ts's hasCertificateFile), which joins with
+            // the host-native separator — "\\" on win32. A hardcoded
+            // "${domain}/fullchain.pem" suffix here never matched that
+            // candidate on a windows-latest CI runner, so this mock always
+            // threw ENOENT for it, hasCertificateFile() always returned
+            // false, the computed status stayed "pending" (equal to the
+            // row's already-"pending" stored status), and
+            // repo.updateCertStatus was never called at all — the exact
+            // "Number of calls: 0" failure this test previously produced on
+            // Windows. Building the expected suffix the same way production
+            // does keeps the two in lockstep on every platform.
+            const fullchainSuffix = path.join(row.domain, "fullchain.pem");
             fs.access.mockImplementation(async (p: string) => {
                 if (p === poller["certsDir"]) return;
-                if (p.endsWith(`${row.domain}/fullchain.pem`)) return;
+                if (p.endsWith(fullchainSuffix)) return;
                 throw new Error("ENOENT");
             });
 
