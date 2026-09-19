@@ -4,14 +4,14 @@ milestone: v1.0
 current_phase: 08
 current_phase_name: Live State Consistency
 status: Phase 05.1 (Stabilization) complete — 12/12 plans, UAT 10/10 passed, VERIFICATION.md passed (17/17 must-haves, 4 human_verification items confirmed by user 2026-09-11). ROADMAP.md Phase 1 checkbox bookkeeping corrected to match disk truth (was stale — Phase 1 has been fully executed and verified since 2026-03-11).
-stopped_at: Completed 08-02-PLAN.md
-last_updated: "2026-09-19T22:19:04.419Z"
-state_head: 418aa97f0913e9bcc53819d2f60eef6f47978b3d
+stopped_at: Completed 08-03-PLAN.md
+last_updated: "2026-09-19T22:39:05.816Z"
+state_head: a706fc7c633c8ecfc4d5f3424f916ba0ce97c3f6
 progress:
   total_phases: 11
   completed_phases: 8
   total_plans: 88
-  completed_plans: 86
+  completed_plans: 87
 milestone_name: milestone
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-09-19)
 ## Current Position
 
 Phase: 08 (Live State Consistency) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 
 ## Performance Metrics
 
@@ -136,6 +136,7 @@ Plan: 2 of 4
 | Phase 09 P07 | 35min | 3 tasks | 7 files |
 | Phase 09 P08 | 1h35m | 3 tasks | 15 files |
 | Phase 08 P02 | 25min | 2 tasks | 5 files |
+| Phase 08 P03 | 18min | 1 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -313,6 +314,8 @@ Recent decisions affecting current work:
 - [Phase 09]: [Phase 09]: [Phase 09-08]: certificate-source validity rules (custom requires certificateId, acme forbids it, custom requires tlsEnabled) stay entirely in assignDomainSchema's superRefine — proxy-tab.tsx only surfaces the resulting field messages, never re-implements the pairing logic
 - [Phase 08]: [Phase 08-02]: ConfigChangedEvent.source made required (not optional) — every publisher must declare its origin explicitly, so a future third publisher can't silently ship an untagged broadcast
 - [Phase 08]: [Phase 08-02]: clearConfigError(id) in updateStack's compose branch is unconditional on hashChanged — a successful parse is positive evidence of validity regardless of whether the content actually differs from lastKnownHash
+- [Phase 08]: [Phase 08-03]: ConfigChangedEvent.source is required (not optional), matching the server-side field from companion plan 08-02, so a future third publisher cannot ship an untagged event that silently no-ops the toast unnoticed
+- [Phase 08]: [Phase 08-03]: every pre-existing config_changed test literal not asserting toast behavior was tagged source: "app" (not "external") per plan guidance, keeping the silent-refresh path exercised across the broadest set of scenarios
 
 ### Quick Tasks Completed
 
@@ -370,6 +373,7 @@ Recent decisions affecting current work:
 - [Phase 09-08] Custom-certificate feature live end-to-end (real nginx-proxy/acme-companion, real HTTPS, no ACME issuance attempt): RESOLVED 2026-09-19 — developer confirmed live via 09-UAT.md tests 39/46 against the same real instance. WINDOWS.md entry #12 can be closed; #10/#11 (the db-push upgrade path specifically) remain the only open Phase 09 live-verification gap.
 - [Phase 09, live UAT 2026-09-19] Also found and fixed: `server/src/lib/auth.ts`'s `trustedOrigins` never read the Settings/wizard "Base URL" field, so setting it through the setup wizard silently did nothing — users following the documented setup flow hit an unexplained "Invalid origin" login failure on a real deployment. Fixed in commit a5bfeaf to merge BETTER_AUTH_URL (env) and the Settings baseUrl (DB) dynamically, per-request, no restart required. Unit tested (server/test/unit/lib/auth.test.ts).
 - [Phase 09, live UAT 2026-09-19] Also found: `.env.example` never documents `POSTGRES_PASSWORD` even though `docker-compose.yml`'s own comment says to set it there and the `db` container refuses to boot without it — not yet filed as a todo or fixed; worth a follow-up.
+- [Phase 08-03] yarn workspace @docktor/client test:unit showed 5 unrelated test files (proxy-tab.test.tsx, certificates-card.test.tsx, service-upgrade-dialog.test.tsx, stack-actions.test.tsx, stack-detail-page.test.tsx) timing out at 15000ms under severe host contention (uptime load avg 86, swap exhausted) — same pre-existing flake class as Phase 06-05/08-01; none touch this plans scope; this plans own two test files pass 28/28 in isolation. A human should re-confirm the full suite on an unloaded host.
 
 ### Roadmap Evolution
 
@@ -382,6 +386,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-09-19T22:19:03.796Z
-Stopped at: Completed 08-02-PLAN.md
+Last session: 2026-09-19T22:39:05.130Z
+Stopped at: Completed 08-03-PLAN.md
 Resume file: None
