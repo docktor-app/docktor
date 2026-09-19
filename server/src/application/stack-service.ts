@@ -1,7 +1,8 @@
 import type {CreateStackInput, UpdateStackInput} from "@docktor/shared";
 import {slugify} from "../lib/slugify.js";
 import {BadRequestError, ConflictError, NotFoundError} from "../lib/errors.js";
-import {createComposeConfig} from "../domain/compose-config.js";
+import {createComposeConfig, type ComposeConfig} from "../domain/compose-config.js";
+import {hashComposeContent} from "../lib/compose-parser.js";
 import {assertTransition, TransitionError,} from "../domain/stack-status-machine.js";
 import {detectNoUpdates, toImageRef, type ImageDigestComparison} from "../domain/image-update-detection.js";
 import {ComposeEditError, getServiceImageTag, setServiceImageTag} from "../lib/compose-editor.js";
@@ -104,12 +105,33 @@ export class StackService {
         const stack = await this.repo.findByIdOrThrow(id);
 
         if (input.composeContent !== undefined) {
+            // YAML-first: the file on disk must reflect exactly what the user
+            // submitted, valid or not, so a failed parse below never loses
+            // their edit — the write always happens before the parse attempt.
             await this.fs.writeCompose(id, input.composeContent);
-            const composeConfig = createComposeConfig(input.composeContent);
+
+            let composeConfig: ComposeConfig;
+            try {
+                composeConfig = createComposeConfig(input.composeContent);
+            } catch (err) {
+                // parseComposeContent() throws a raw Error on invalid YAML,
+                // not an AppError subclass — translate it into a typed 400
+                // carrying the parser's own message (mirrors file-watcher.ts's
+                // handleFileChange() catch for this exact same exception),
+                // instead of letting it fall through to Fastify's generic
+                // 500 catch-all (G-08-6).
+                throw new BadRequestError(err instanceof Error ? err.message : String(err));
+            }
+
             const hashChanged = composeConfig.hash !== stack.lastKnownHash;
             // Don't update service records yet - wait until deployment
             // This keeps service records in sync with what's actually running
             await this.repo.setConfigChanged(id, hashChanged);
+            // A successful parse is positive evidence the file on disk is
+            // valid — clear any stale configError (from a prior external
+            // edit or a prior invalid app save) even when this particular
+            // save didn't change the hash.
+            await this.repo.clearConfigError(id);
             // Update the hash so we can track changes, and announce the
             // change to every open tab. A same-hash save must not announce
             // anything — setConfigChanged(false) above already says nothing
@@ -139,6 +161,14 @@ export class StackService {
             // FileWatcher's compose change detection, and corrupting it
             // would make external compose tampering undetectable.
             await this.repo.setConfigChanged(id, true);
+            // Mirrors the compose branch's repo.updateStackHash: keeps
+            // Stack.lastEnvHash in sync with exactly what was just written
+            // (or the hash of "" on removal), so FileWatcher.handleEnvChange's
+            // later chokidar reconcile of this same write compares against a
+            // hash that already matches and is a no-op instead of firing a
+            // second, genuinely-misclassified external config_changed
+            // broadcast (G-08-2's compounding bug).
+            await this.repo.updateEnvHash({stackId: id, hash: hashComposeContent(input.envContent)});
             // No compose hash to report for an env-only write; reuse the
             // stack's current lastKnownHash so the event shape stays
             // uniform with file-watcher.ts's ConfigChangedEvent. Every
