@@ -297,7 +297,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Onboarding | 11/10 | Complete    | 2026-08-31 |
 | 6. Proxy Configuration | 7/7 | Complete    | 2026-09-12 |
 | 7. Release Hardening: Data Safety and Core Workflows | 2/2 | Complete    | 2026-09-13 |
-| 8. Live State Consistency | 1/4 | In Progress|  |
+| 8. Live State Consistency | 2/4 | In Progress|  |
 | 9. Deployment and Release Readiness | 8/8 | Complete    | 2026-09-19 |
 | 10. UX Redesign: Service Colors, Editors, and Dashboard Stats | 0/0 | Not planned |  |
 
@@ -328,7 +328,7 @@ Plans:
 **Goal:** State that is already correct on the server shows up live in the UI, without the user needing to refresh
 **Requirements**: n/a — this phase is scoped by the todo list below, not by REQUIREMENTS.md IDs
 **Depends on:** Phase 7
-**Plans:** 4 plans (1 executed, 3 gap closure — UAT diagnosed 3 issues against the live-executed plan)
+**Plans:** 2/4 plans executed (1 executed, 3 gap closure — UAT diagnosed 3 issues against the live-executed plan)
 
 Scope is exactly 3 items, promoted from `.planning/todos/pending/` as release-blocking for v1.0.0 — all three are the same root theme (a state change happens correctly server-side but the UI doesn't reflect it without a manual reload):
 
@@ -342,7 +342,7 @@ Plans:
 
 **Gap closure (UAT)** *(all three independent — one parallel wave)*
 
-- [ ] 08-02-PLAN.md — G-08-2 (server half) + G-08-6: tag config_changed broadcasts with source app/external, fix updateStack's unguarded compose parse (typed 400 + clearConfigError), sync lastEnvHash on app-driven env saves
+- [x] 08-02-PLAN.md — G-08-2 (server half) + G-08-6: tag config_changed broadcasts with source app/external, fix updateStack's unguarded compose parse (typed 400 + clearConfigError), sync lastEnvHash on app-driven env saves
 - [ ] 08-03-PLAN.md — G-08-2 (client half): gate the "changed externally" toast on event.source instead of firing for every config_changed event
 - [ ] 08-04-PLAN.md — G-08-7: promote BACKING_UP to the blue-plus-pulse treatment per the user's live UAT answer, leaving RESTORING/MIGRATING gray
 

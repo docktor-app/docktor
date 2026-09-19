@@ -1,18 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_phase: 8
+current_phase: 08
 current_phase_name: Live State Consistency
 status: Phase 05.1 (Stabilization) complete — 12/12 plans, UAT 10/10 passed, VERIFICATION.md passed (17/17 must-haves, 4 human_verification items confirmed by user 2026-09-11). ROADMAP.md Phase 1 checkbox bookkeeping corrected to match disk truth (was stale — Phase 1 has been fully executed and verified since 2026-03-11).
-stopped_at: Phase 09 complete and verified. Phase 8 is the next incomplete phase by roadmap order — already fully executed (1/1 plans) with VERIFICATION.md passed, but blocked on 8 human_needed UAT items (two-browser-tab live SSE checks) that need a reachable running instance, not fresh planning. Resume via /gsd-verify-work 8, not /gsd-plan-phase 8.
-last_updated: "2026-09-19T18:40:22.545Z"
-state_head: 0589df54696e06017beebde58abeeef00544d9c4
+stopped_at: Completed 08-02-PLAN.md
+last_updated: "2026-09-19T22:19:04.419Z"
+state_head: 418aa97f0913e9bcc53819d2f60eef6f47978b3d
 progress:
   total_phases: 11
   completed_phases: 8
-  total_plans: 85
-  completed_plans: 85
-  percent: 80
+  total_plans: 88
+  completed_plans: 86
 milestone_name: milestone
 ---
 
@@ -23,12 +22,12 @@ milestone_name: milestone
 See: .planning/PROJECT.md (updated 2026-09-19)
 
 **Core value:** Users can deploy, monitor, and manage Docker Compose stacks through a browser UI without needing SSH or Docker CLI access.
-**Current focus:** Phase 8 — Live State Consistency (resume UAT; already executed, awaiting live human verification)
+**Current focus:** Phase 08 — Live State Consistency
 
 ## Current Position
 
-Phase: 8 — Live State Consistency
-Plan: Not started
+Phase: 08 (Live State Consistency) — EXECUTING
+Plan: 2 of 4
 
 ## Performance Metrics
 
@@ -136,6 +135,7 @@ Plan: Not started
 | Phase 09 P06 | 1h | 3 tasks | 17 files |
 | Phase 09 P07 | 35min | 3 tasks | 7 files |
 | Phase 09 P08 | 1h35m | 3 tasks | 15 files |
+| Phase 08 P02 | 25min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -311,6 +311,8 @@ Recent decisions affecting current work:
 - [Phase 09]: [Phase 09]: [Phase 09-07]: ProxyCertPoller.reconcile() splits into reconcileAcmeRows()/reconcileCustomRows() sharing one applyStatus() choke point; custom rows resolve their file via the linked Certificate's own domainPattern (certFileBaseName), never ProxyConfig.domain, and a missing file classifies failed not pending
 - [Phase 09]: [Phase 09]: [Phase 09-08]: proxy-tab.tsx's automatic-source Select label reads 'Automatic (Let's Encrypt)' (not bare 'Automatic') to avoid exact-text collision with the per-domain listing's own 'Automatic' cell, both on screen simultaneously once any config exists
 - [Phase 09]: [Phase 09]: [Phase 09-08]: certificate-source validity rules (custom requires certificateId, acme forbids it, custom requires tlsEnabled) stay entirely in assignDomainSchema's superRefine — proxy-tab.tsx only surfaces the resulting field messages, never re-implements the pairing logic
+- [Phase 08]: [Phase 08-02]: ConfigChangedEvent.source made required (not optional) — every publisher must declare its origin explicitly, so a future third publisher can't silently ship an untagged broadcast
+- [Phase 08]: [Phase 08-02]: clearConfigError(id) in updateStack's compose branch is unconditional on hashChanged — a successful parse is positive evidence of validity regardless of whether the content actually differs from lastKnownHash
 
 ### Quick Tasks Completed
 
@@ -380,6 +382,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-09-19T18:45:40.000Z
-Stopped at: Phase 09 complete and verified (09-VERIFICATION.md passed 8/8, 09-VALIDATION.md nyquist_compliant). Phase 8 is next by roadmap order, but it's already executed — resume its stalled UAT (/gsd-verify-work 8), not a fresh plan/discuss cycle.
+Last session: 2026-09-19T22:19:03.796Z
+Stopped at: Completed 08-02-PLAN.md
 Resume file: None
