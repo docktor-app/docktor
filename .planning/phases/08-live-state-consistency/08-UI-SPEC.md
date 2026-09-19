@@ -136,18 +136,22 @@ Phase 8):**
 | Healthy / running | `RUNNING`, `HEALTHY` | Green (`bg-green-500/15 text-green-700 border-green-500/25`) | `stack-status-badge.tsx` (existing, unchanged) |
 | Error | `ERROR`, `UNHEALTHY` | Red (`bg-red-500/15 text-red-700 border-red-500/25`) | existing, unchanged |
 | Stopped / draft | `STOPPED`, `DRAFT` | Gray (`bg-gray-500/15 text-gray-700 border-gray-500/25`) | existing, unchanged |
-| **In progress (action)** | `DEPLOYING`, `UPDATING` | Blue + `animate-pulse` (`bg-blue-500/15 text-blue-700 border-blue-500/25 animate-pulse`) | existing, unchanged |
-| **In progress (maintenance) — GAP** | `BACKING_UP`, `RESTORING`, `MIGRATING` | Currently plain `outline` variant, **no color, no motion** — inconsistent with the identical "something is happening right now" semantics of `DEPLOYING`/`UPDATING` | **Fix required by this phase**: add `animate-pulse` (motion only, keep the existing gray/`outline` look — do not switch these to blue, which is reserved for user-initiated deploy/update actions vs. these maintenance operations) to `statusColors` in `stack-status-badge.tsx`: `BACKING_UP: "animate-pulse"`, `RESTORING: "animate-pulse"`, `MIGRATING: "animate-pulse"` |
+| **In progress (action)** | `DEPLOYING`, `UPDATING`, `BACKING_UP` | Blue + `animate-pulse` (`bg-blue-500/15 text-blue-700 border-blue-500/25 animate-pulse`) | `DEPLOYING`/`UPDATING` existing, unchanged. `BACKING_UP` promoted from gray/`outline` to this bucket by plan 08-04 (UAT gap G-08-7) — superseding this document's original lock below, per the user's live V7 judgement-call answer ("change it also to blue") |
+| **In progress (maintenance)** | `RESTORING`, `MIGRATING` | Gray/`outline` + `animate-pulse` (motion only, no color) — reads as "in progress" without claiming the user-initiated-action blue reserved for `DEPLOYING`/`UPDATING`/`BACKING_UP` | Shipped by plan 08-01 (`animate-pulse` added to `statusColors` in `stack-status-badge.tsx`); `BACKING_UP` was originally grouped here too but moved to the row above by 08-04 |
 | Config changed (independent flag, not a `StackStatus`) | `stack.configChanged` | Yellow (`bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200` — pill in `stack-list.tsx`; `Alert` with matching yellow override in `[id].tsx`) | existing, unchanged |
 | Config error (independent flag, not a `StackStatus`) | `stack.configError` | Red (`bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200` pill; destructive `Alert` variant on detail page) | existing, unchanged |
 
-Rationale for the fix: this phase's entire purpose is making already-correct server state show up
-live. Once `BackupService`'s `stack_status` broadcasts are confirmed live end-to-end (05.1-04,
-pending this phase's human verification), a user watching the stack list during a live backup/
-restore/migration will see the badge change to `BACKING_UP`/`RESTORING`/`MIGRATING` in real time —
-and with no motion cue, a static badge reads as "stuck," not "working." Do not invent a new color for
-this — reuse the existing pulse mechanism exactly as `DEPLOYING`/`UPDATING` already do, changing only
-the presence of `animate-pulse`, never the badge's variant or base color.
+Rationale for the original fix: this phase's entire purpose is making already-correct server state
+show up live. Once `BackupService`'s `stack_status` broadcasts were confirmed live end-to-end
+(05.1-04, via this phase's UAT), a user watching the stack list during a live backup/restore/
+migration sees the badge change to `BACKING_UP`/`RESTORING`/`MIGRATING` in real time — and with no
+motion cue, a static badge reads as "stuck," not "working." The initial fix (plan 08-01) reused the
+existing pulse mechanism without changing color for all three states.
+
+**Post-shipment amendment (plan 08-04, UAT gap G-08-7):** the live UAT pass asked the exact
+judgement question this document anticipated (V7: "is gray, not blue, the right distinction?") and
+the user answered "change it also to blue" for `BACKING_UP` specifically. `RESTORING`/`MIGRATING`
+were explicitly out of scope for that answer and remain gray/`outline` + pulse.
 
 ---
 
