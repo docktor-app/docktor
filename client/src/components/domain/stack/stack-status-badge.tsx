@@ -12,7 +12,7 @@ const statusConfig: Record<
     STOPPED: {label: "Stopped", variant: "secondary"},
     ERROR: {label: "Error", variant: "destructive"},
     UPDATING: {label: "Updating", variant: "default"},
-    BACKING_UP: {label: "Backing Up", variant: "outline"},
+    BACKING_UP: {label: "Backing Up", variant: "default"},
     RESTORING: {label: "Restoring", variant: "outline"},
     MIGRATING: {label: "Migrating", variant: "outline"},
 };
@@ -26,7 +26,7 @@ const statusColors: Record<string, string> = {
     UPDATING: "bg-blue-500/15 text-blue-700 border-blue-500/25 animate-pulse",
     STOPPED: "bg-gray-500/15 text-gray-700 border-gray-500/25",
     DRAFT: "bg-gray-500/15 text-gray-700 border-gray-500/25",
-    BACKING_UP: "animate-pulse",
+    BACKING_UP: "bg-blue-500/15 text-blue-700 border-blue-500/25 animate-pulse",
     RESTORING: "animate-pulse",
     MIGRATING: "animate-pulse",
 };
