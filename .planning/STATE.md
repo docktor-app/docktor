@@ -4,14 +4,14 @@ milestone: v1.0
 current_phase: 08
 current_phase_name: Live State Consistency
 status: Phase 05.1 (Stabilization) complete — 12/12 plans, UAT 10/10 passed, VERIFICATION.md passed (17/17 must-haves, 4 human_verification items confirmed by user 2026-09-11). ROADMAP.md Phase 1 checkbox bookkeeping corrected to match disk truth (was stale — Phase 1 has been fully executed and verified since 2026-03-11).
-stopped_at: Completed 08-03-PLAN.md
-last_updated: "2026-09-19T22:39:05.816Z"
-state_head: a706fc7c633c8ecfc4d5f3424f916ba0ce97c3f6
+stopped_at: Completed 08-04-PLAN.md
+last_updated: "2026-09-19T22:51:14.463Z"
+state_head: 5d21894d4575e86745516478b57daf7f76a1378e
 progress:
   total_phases: 11
   completed_phases: 8
   total_plans: 88
-  completed_plans: 87
+  completed_plans: 88
 milestone_name: milestone
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-09-19)
 ## Current Position
 
 Phase: 08 (Live State Consistency) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 
 ## Performance Metrics
 
@@ -137,6 +137,7 @@ Plan: 3 of 4
 | Phase 09 P08 | 1h35m | 3 tasks | 15 files |
 | Phase 08 P02 | 25min | 2 tasks | 5 files |
 | Phase 08 P03 | 18min | 1 tasks | 4 files |
+| Phase 08 P04 | 15min | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -316,6 +317,7 @@ Recent decisions affecting current work:
 - [Phase 08]: [Phase 08-02]: clearConfigError(id) in updateStack's compose branch is unconditional on hashChanged — a successful parse is positive evidence of validity regardless of whether the content actually differs from lastKnownHash
 - [Phase 08]: [Phase 08-03]: ConfigChangedEvent.source is required (not optional), matching the server-side field from companion plan 08-02, so a future third publisher cannot ship an untagged event that silently no-ops the toast unnoticed
 - [Phase 08]: [Phase 08-03]: every pre-existing config_changed test literal not asserting toast behavior was tagged source: "app" (not "external") per plan guidance, keeping the silent-refresh path exercised across the broadest set of scenarios
+- [Phase 08]: [Phase 08]: [Phase 08-04]: BACKING_UP's statusColors entry set byte-identical to DEPLOYING/UPDATING's existing string (not a near-duplicate) so all three blue-pulsing statuses share one literal value; RESTORING and MIGRATING deliberately left untouched per G-08-7's scoped root_cause
 
 ### Quick Tasks Completed
 
@@ -386,6 +388,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-09-19T22:39:05.130Z
-Stopped at: Completed 08-03-PLAN.md
+Last session: 2026-09-19T22:51:13.824Z
+Stopped at: Completed 08-04-PLAN.md
 Resume file: None
