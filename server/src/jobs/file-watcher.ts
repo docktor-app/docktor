@@ -270,6 +270,7 @@ export class FileWatcher {
             type: "config_changed",
             stackId: stack.id,
             newHash,
+            source: "external",
         })
     }
 
@@ -321,6 +322,7 @@ export class FileWatcher {
             type: "config_changed",
             stackId: stack.id,
             newHash,
+            source: "external",
         })
     }
 

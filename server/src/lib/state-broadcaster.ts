@@ -26,6 +26,12 @@ export interface ConfigChangedEvent {
     type: "config_changed"
     stackId: string
     newHash: string
+    // Distinguishes an app-initiated save (StackService.publishConfigChanged,
+    // always "app") from a genuine external edit (FileWatcher's two publish
+    // call sites, always "external") — closes G-08-2's server half so the
+    // client can gate its "changed externally" toast on this field instead
+    // of showing it unconditionally for every config_changed broadcast.
+    source: "app" | "external"
 }
 
 export interface ConfigErrorEvent {

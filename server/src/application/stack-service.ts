@@ -556,10 +556,16 @@ export class StackService {
         }
     }
 
-    /** Same non-throwing guard as transitionStatus(), for config_changed. */
+    /**
+     * Same non-throwing guard as transitionStatus(), for config_changed.
+     * This is the sole app-initiated call site (both updateStack() branches
+     * route through it), so the app-origin tag below is a hardcoded literal,
+     * not a parameter — FileWatcher's two publish call sites are the only
+     * other caller of this event and always tag "external".
+     */
     private publishConfigChanged(id: string, newHash: string): void {
         try {
-            this.broadcaster.publish({type: "config_changed", stackId: id, newHash});
+            this.broadcaster.publish({type: "config_changed", stackId: id, newHash, source: "app"});
         } catch (err) {
             console.error(`[StackService] failed to publish config_changed for "${id}":`, err);
         }
