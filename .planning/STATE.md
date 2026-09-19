@@ -4,7 +4,7 @@ milestone: v1.0
 current_phase: 8
 current_phase_name: Live State Consistency
 status: Phase 05.1 (Stabilization) complete — 12/12 plans, UAT 10/10 passed, VERIFICATION.md passed (17/17 must-haves, 4 human_verification items confirmed by user 2026-09-11). ROADMAP.md Phase 1 checkbox bookkeeping corrected to match disk truth (was stale — Phase 1 has been fully executed and verified since 2026-03-11).
-stopped_at: Phase 09 complete, ready to plan Phase 8
+stopped_at: Phase 09 complete and verified. Phase 8 is the next incomplete phase by roadmap order — already fully executed (1/1 plans) with VERIFICATION.md passed, but blocked on 8 human_needed UAT items (two-browser-tab live SSE checks) that need a reachable running instance, not fresh planning. Resume via /gsd-verify-work 8, not /gsd-plan-phase 8.
 last_updated: "2026-09-19T18:40:22.545Z"
 state_head: 0589df54696e06017beebde58abeeef00544d9c4
 progress:
@@ -20,10 +20,10 @@ milestone_name: milestone
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-30)
+See: .planning/PROJECT.md (updated 2026-09-19)
 
 **Core value:** Users can deploy, monitor, and manage Docker Compose stacks through a browser UI without needing SSH or Docker CLI access.
-**Current focus:** Phase 09 — Deployment and Release Readiness
+**Current focus:** Phase 8 — Live State Consistency (resume UAT; already executed, awaiting live human verification)
 
 ## Current Position
 
@@ -322,20 +322,14 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- [major] Document deployment config: clean .env and docker-compose.yml — `.planning/todos/pending/2026-08-27-document-deployment-config-clean-env-and-docker-compose.md`
-- [blocker] Fix integration/e2e tests — `.planning/todos/pending/2026-08-28-fix-integration-e2e-tests.md`
+*Re-synced against .planning/todos/pending/ on disk 2026-09-19 — all Phase 09-related items (deployment docs, prisma migrate, Windows CI runner + its follow-up platform-bugs todo, custom TLS certs) plus several older blockers/majors were confirmed closed (moved to completed/) and removed from this list, which had drifted out of sync with the real pending/ directory.*
+
 - [minor] Service status badges show "unknown" for up to 60s after every deploy — `.planning/todos/pending/2026-08-28-container-status-unknown-after-deploy.md`
-- [blocker] No schema sync step on container startup (fresh deploy 500s on missing tables) — `.planning/todos/pending/2026-08-28-no-schema-sync-on-container-startup.md`
-- [major] No redirect to /setup wizard on first run — `.planning/todos/pending/2026-08-28-no-redirect-to-setup-wizard.md`
 - [minor] Redesign UI/UX — service colors, tab layout, mobile support — `.planning/todos/pending/2026-08-28-redesign-ui-ux-service-colors-mobile.md`
 - [minor] Add a sophisticated compose YAML editor and env editor — `.planning/todos/pending/2026-08-28-add-yaml-env-editor.md`
 - [minor] Redesign dashboard with richer statistics — `.planning/todos/pending/2026-08-28-redesign-dashboard-statistics.md`
 - [minor] Audit frontend for reusable-component refactors — `.planning/todos/pending/2026-08-28-frontend-refactor-audit.md`
-- [major] Add support for custom TLS certificates — `.planning/todos/pending/2026-09-07-add-support-for-custom-tls-certificates.md`
 - [minor] Add configurable docker-compose linting/formatting checks — `.planning/todos/pending/2026-08-28-configurable-compose-linting.md`
-- [major] Backup can be triggered without a configured repo, wedging the stack in BACKING_UP forever — `.planning/todos/pending/2026-08-28-backup-without-config-wedges-stack.md`
-- [blocker] Setup routes (scan/adopt/migration) are unauthenticated, and post-setup import has no UI — `.planning/todos/pending/2026-08-28-setup-routes-unauthenticated-no-postsetup-import.md`
-- [blocker] Docker-outside-of-Docker path mismatch resolves relative bind mounts to the wrong host location (likely breaks backups too) — `.planning/todos/pending/2026-08-28-dood-bind-mount-path-mismatch.md`
 - [minor] Restic is installed via apt, pinning it to a 3+ year old version (0.14.0) — `.planning/todos/pending/2026-08-28-restic-version-pinned-too-old.md`
 - [minor] No way to manually trigger an image update check (6h/N stagger blocks re-checks after a fix ships) — `.planning/todos/pending/2026-08-28-no-manual-update-check-trigger.md`
 - [minor] "Update available" only shown per-service, never at the stack level — `.planning/todos/pending/2026-08-28-update-available-badge-missing-at-stack-level.md`
@@ -345,7 +339,6 @@ Recent decisions affecting current work:
 - [minor] Support authenticated/private container registries for update checking — `.planning/todos/pending/2026-08-28-support-authenticated-custom-registries.md`
 - [minor] Add live resource stats to stacks (CPU, memory, disk) — `.planning/todos/pending/2026-09-11-add-live-resource-stats-to-stacks-cpu-memory-disk.md`
 - [cosmetic] Add stack/service topology visualization — `.planning/todos/pending/2026-09-11-add-stack-and-service-topology-visualization.md`
-- [blocker] Windows CI check fails on real platform bugs — blocks all merges to main — `.planning/todos/pending/2026-09-16-windows-ci-check-fails-on-real-platform-bugs.md`
 
 ### Blockers/Concerns
 
@@ -368,11 +361,13 @@ Recent decisions affecting current work:
 - [Phase 06-06] Task 2's human-check (fresh-install browser walkthrough of the 6-step wizard, confirming Skip deploys nothing and Deploy Proxy Stack with free ports 80/443 leaves two running proxy containers) not performed live in this session — same shared-host risk documented for 06-03's D-human-check. A human on a dedicated/verified-clear host must perform this before phase UAT closes.
 - [Phase 06-05] Full-suite yarn workspace @docktor/client test / playwright test runs are unreliable on this host right now (uptime showed load avg ~85 on 6 cores, swap nearly exhausted, ps aux confirmed unrelated resident SonarQube/Immich/MySQL/MariaDB/Postgres/Tandoor workloads) — 17 vitest failures and 2 Playwright failures observed this session were all in files this plan does not touch (pre-existing flake, same class documented in 06-04-SUMMARY.md). All of this plan's own new/changed test files pass reliably in isolation and small groups; see 06-05-SUMMARY.md Issues Encountered for the full breakdown.
 - [Phase 06-07] Human-check (live DB-backed re-run of test/integration/proxy.test.ts 'returns 400 for an invalid hostname' on an unrestricted host) still not performed — same pre-existing TCP-payload-block class as 05.1-01/05.1-05/05.1-06/06-01. All database-free unit tests (40 files, 616 passed, 2 todo) and tsc --noEmit pass cleanly; G-06-3 stays open pending this live confirmation.
-- [Phase 09-02] cross-platform-unit (windows-latest) is a required status check on main and is currently FAILING for real reasons (3 genuine Windows platform bugs in stacks-dir.ts, brownfield-scanner.ts, proxy-cert-poller.ts) — no PR, including this phase's own draft PR #6, can merge to main until fixed. See .planning/todos/pending/2026-09-16-windows-ci-check-fails-on-real-platform-bugs.md
-- [Phase 09-03] No live database has been baselined by any session to date for this schema shape — TCP connects to localhost:5432 (docktor-db-dev) but the Postgres protocol handshake never completes (confirmed via prisma migrate status P1001 and a raw pg.Client timeout), same block class as 05.1-01/05.1-05/05.1-06/06-01/06-07/08-01. migrate deploy's real no-op stdout is unverified against schema-sync.ts's classification regex. A developer on an unrestricted host must run the 4-command sequence in 09-03-SUMMARY.md. Tracked as WINDOWS.md entry #10 (open).
-- [Phase 09-05] No live database has the add_certificate migration applied (Branch B taken, same TCP-to-Postgres-protocol block class as 09-03/05.1-01/05.1-05/05.1-06/06-01/06-07/08-01) — the certSource='acme' backfill onto pre-existing ProxyConfig rows is unverified. A developer on an unrestricted host must run yarn db:migrate then verify. Tracked as WINDOWS.md entry #11 (open), compounds with entry #10 from 09-03.
-- [Phase 09-06] Live end-to-end proof that an uploaded certificate lands on the mounted proxy-stack certificates directory under the filename nginx-proxy resolves (against a real running proxy stack) is unverified in this session — proven only via source-level containment/naming logic and unit tests with mocked filesystem I/O. A developer on an unrestricted host should perform one live upload through the API and confirm nginx-proxy serves it. See 09-06-SUMMARY.md coverage item D7.
-- [Phase 09-08] Custom-certificate feature has never been exercised against a live nginx-proxy/acme-companion deployment (uploaded cert serving real HTTPS, no ACME issuance attempt) — WINDOWS.md entry #12 (open), compounds entries #10/#11 (Prisma migrate baseline/certSource backfill never applied to a live database). A developer on an unrestricted host must complete both before scope item 4 is fully proven in production; Phase 09 is otherwise fully executed (8/8 plans) and ready for verification.
+- [Phase 09-02] cross-platform-unit (windows-latest) required-status-check history: RESOLVED — confirmed live green (all four jobs, including both platform matrices) by the 09-VERIFICATION.md goal-backward pass on 2026-09-19 (gh run view on the latest run). The 3 platform bugs that caused the original failure were fixed in a prior session (see git history: e470278, 12dcf58, 5c0d63a).
+- [Phase 09-03] Fresh-database migrate-deploy path: RESOLVED 2026-09-19 — live cold-start UAT (a genuine docker-compose deployment, Postgres volume cleared) found a real bug (schema-sync.ts's `prisma migrate deploy` silently created zero tables because `prisma.config.ts` never set `migrations.path`), fixed in commit 374b46b, and re-verified live: both `0_init` and `add_certificate` applied cleanly. **Still open:** the separate `db push`-era upgrade/auto-baseline branch (`needsBaseline`+`hasApplicationTables`→`migrate resolve --applied`) remains unexercised live — no such pre-migration install exists to test against yet. Tracked as WINDOWS.md entry #10, deliberately deferred by the developer in 09-UAT.md tests 12/26 as low-risk until a real v1.0.0 upgrade scenario exists.
+- [Phase 09-05] certSource='acme' backfill: same status as 09-03 above — the migration itself now applies live and cleanly (confirmed 2026-09-19), but the backfill onto *pre-existing* ProxyConfig rows (the upgrade scenario) is still unverified since no pre-09-05 database exists to backfill. Tracked as WINDOWS.md entry #11, same deferred status as #10.
+- [Phase 09-06] Live end-to-end certificate-on-disk placement: RESOLVED 2026-09-19 — developer confirmed live via 09-UAT.md test 33 against a real instance with a real domain.
+- [Phase 09-08] Custom-certificate feature live end-to-end (real nginx-proxy/acme-companion, real HTTPS, no ACME issuance attempt): RESOLVED 2026-09-19 — developer confirmed live via 09-UAT.md tests 39/46 against the same real instance. WINDOWS.md entry #12 can be closed; #10/#11 (the db-push upgrade path specifically) remain the only open Phase 09 live-verification gap.
+- [Phase 09, live UAT 2026-09-19] Also found and fixed: `server/src/lib/auth.ts`'s `trustedOrigins` never read the Settings/wizard "Base URL" field, so setting it through the setup wizard silently did nothing — users following the documented setup flow hit an unexplained "Invalid origin" login failure on a real deployment. Fixed in commit a5bfeaf to merge BETTER_AUTH_URL (env) and the Settings baseUrl (DB) dynamically, per-request, no restart required. Unit tested (server/test/unit/lib/auth.test.ts).
+- [Phase 09, live UAT 2026-09-19] Also found: `.env.example` never documents `POSTGRES_PASSWORD` even though `docker-compose.yml`'s own comment says to set it there and the `db` container refuses to boot without it — not yet filed as a todo or fixed; worth a follow-up.
 
 ### Roadmap Evolution
 
@@ -385,6 +380,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-09-17T18:44:24.249Z
-Stopped at: Phase 09 complete, ready to plan Phase 8
+Last session: 2026-09-19T18:45:40.000Z
+Stopped at: Phase 09 complete and verified (09-VERIFICATION.md passed 8/8, 09-VALIDATION.md nyquist_compliant). Phase 8 is next by roadmap order, but it's already executed — resume its stalled UAT (/gsd-verify-work 8), not a fresh plan/discuss cycle.
 Resume file: None
