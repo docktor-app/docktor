@@ -899,6 +899,24 @@ describe("StackService", () => {
             );
         });
 
+        it("tags an app-initiated compose save's config_changed broadcast source: \"app\" (G-08-2)", async () => {
+            await service.updateStack("my-app", {
+                composeContent: "services:\n  web:\n    image: nginx\n",
+            });
+
+            expect(broadcaster.publish).toHaveBeenCalledWith(
+                expect.objectContaining({type: "config_changed", stackId: "my-app", source: "app"}),
+            );
+        });
+
+        it("tags an app-initiated env save's config_changed broadcast source: \"app\" (G-08-2)", async () => {
+            await service.updateStack("my-app", {envContent: "FOO=bar"});
+
+            expect(broadcaster.publish).toHaveBeenCalledWith(
+                expect.objectContaining({type: "config_changed", stackId: "my-app", source: "app"}),
+            );
+        });
+
         it("does not publish and clears configChanged when the compose hash equals lastKnownHash", async () => {
             const {createComposeConfig} = await import("../../../src/domain/compose-config.js");
             const composeContent = "services:\n  web:\n    image: nginx\n";

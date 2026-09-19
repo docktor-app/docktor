@@ -333,6 +333,21 @@ describe("FileWatcher", () => {
             );
         });
 
+        it("tags the config_changed broadcast source: \"external\" (G-08-2)", async () => {
+            const fakePath = "/stacks/my-stack/docker-compose.yml";
+            const fakeStack = {id: "stack-1", composeFilePath: fakePath, hash: "old-hash"};
+            mockRepo.findStackByPath.mockResolvedValue(fakeStack);
+            mockRepo.updateStackHash.mockResolvedValue(undefined);
+            mockRepo.createStackEvent.mockResolvedValue(undefined);
+            mockHashContent.mockReturnValue("new-computed-hash");
+
+            await (fileWatcher as any).handleFileChange(fakePath);
+
+            expect(mockBroadcaster.publish).toHaveBeenCalledWith(
+                expect.objectContaining({type: "config_changed", source: "external"}),
+            );
+        });
+
         it("broadcasts config_error SSE event with message via broadcaster.publish", async () => {
             const fakePath = "/stacks/my-stack/docker-compose.yml";
             const fakeStack = {id: "stack-1", composeFilePath: fakePath, hash: "old-hash"};
@@ -551,6 +566,18 @@ describe("FileWatcher", () => {
 
             expect(mockBroadcaster.publish).toHaveBeenCalledWith(
                 expect.objectContaining({type: "config_changed", stackId: "stack-1"}),
+            );
+        });
+
+        it("tags the config_changed broadcast source: \"external\" (G-08-2)", async () => {
+            mockRepo.findStackByPath.mockResolvedValue(fakeStack);
+            mockReadFile.mockResolvedValue("DB_PASSWORD=secret");
+            mockHashContent.mockReturnValue("new-env-hash");
+
+            await (fileWatcher as any).handleEnvChange(envPath);
+
+            expect(mockBroadcaster.publish).toHaveBeenCalledWith(
+                expect.objectContaining({type: "config_changed", stackId: "stack-1", source: "external"}),
             );
         });
 
