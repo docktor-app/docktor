@@ -4,8 +4,13 @@ title: Audit frontend for reusable-component refactors
 area: ui
 severity: minor
 files:
+
   - client/src/components/domain/stack/log-viewer.tsx
   - client/src/routes/app/stacks/[id].tsx
+
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-09-20
 ---
 
 ## Problem

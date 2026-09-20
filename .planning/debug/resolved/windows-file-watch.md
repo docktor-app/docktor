@@ -1,8 +1,8 @@
 ---
-status: awaiting_human_verify
+status: resolved
 trigger: "Investigate why chokidar file watching doesn't work on Windows for docker-compose.yml changes."
 created: 2026-03-16T00:00:00Z
-updated: 2026-03-16T00:07:00Z
+updated: 2026-09-20T00:00:00Z
 ---
 
 ## Current Focus
@@ -59,3 +59,9 @@ verification: After adding usePolling option, modify docker-compose.yml on Windo
 
 files_changed:
 - server/src/jobs/file-watcher.ts
+
+---
+
+## Resolution (2026-09-20T00:00:00Z)
+
+Fixed: `file-watcher.ts` enables `usePolling`/`interval: 1000` when `process.platform === "win32"` (with a `DOCKTOR_FS_POLLING" override). Verified against current `main`.

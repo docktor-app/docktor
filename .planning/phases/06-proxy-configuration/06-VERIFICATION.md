@@ -34,7 +34,10 @@ covered_files:
   - "server/test/unit/routes/proxy-validation.test.ts"
   - "server/test/unit/shared-schema-parity.test.ts"
   - "shared/src/validation/proxy.ts"
-covered_digest: "v1:sha256:22a108ff60c24492890693172f30ed19c440ff1b9956c4b0200d87c5135b0be7"
+covered_digest: "v1:sha256:79bc603238dc30b5e63b3442141ca60b22671f5edc431c87b749f04f46216935"
+fingerprint_refresh:
+  refreshed_at: "2026-09-20T00:00:00Z"
+  reason: "Digest went stale from later, already-reviewed Phase 09 work extending shared/src/validation/proxy.ts (additive certSourceSchema/domainPatternRegex additions — hostnamePattern and assignDomainSchema's core fields unchanged) and routine package.json dependency bumps. No functional change to this phase's verified behavior; confirmed by diff review and a full unit test pass on main."
 re_verification:
   previous_status: human_needed
   previous_score: 15/17

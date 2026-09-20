@@ -4,7 +4,12 @@ title: Restic is installed via apt, pinning it to a 3+ year old version (0.14.0)
 area: deployment
 severity: minor
 files:
+
   - Dockerfile
+
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-09-20
 ---
 
 ## Problem

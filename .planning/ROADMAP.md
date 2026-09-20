@@ -2,7 +2,7 @@
 
 ## Overview
 
-Docktor's foundation (auth, stack CRUD, state machine, dashboard, detail page) is fully shipped. This roadmap covers Milestone 2: completing the product from functional to compelling. The path begins with the three remaining MVP blockers (settings, container state poller, live log streaming), then extends the platform with observability, notifications, backup/restore, onboarding, and proxy configuration — each phase delivering a complete, independently verifiable capability.
+Docktor's foundation (auth, stack CRUD, state machine, dashboard, detail page) is fully shipped. This roadmap covers the path to v1.0.0: completing the product from functional to compelling. Phases 1-9 are complete — observability, notifications, backup/restore, onboarding, proxy configuration, and release hardening are all shipped and live-verified. v1.0.0 itself has not shipped yet; remaining phases toward that release are being scoped from the accumulated backlog in `.planning/todos/pending/`.
 
 ## Phases
 
@@ -22,7 +22,6 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 7: Release Hardening: Data Safety and Core Workflows** - Verify managed stacks directory survives container recreation before v1.0.0 (completed 2026-09-13)
 - [x] **Phase 8: Live State Consistency** - Make state changes (config errors, config edits, manual actions) reflect live in the UI without a manual refresh (completed 2026-09-20)
 - [x] **Phase 9: Deployment and Release Readiness** - Clean up deployment docs and close remaining release-process gaps for v1.0.0 (completed 2026-09-19)
-- [ ] **Phase 10: UX Redesign: Service Colors, Editors, and Dashboard Stats** - Redesign stack detail (colors, tabs, mobile), dashboard stats, and compose/env editors
 
 ## Phase Details
 
@@ -299,7 +298,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. Release Hardening: Data Safety and Core Workflows | 2/2 | Complete    | 2026-09-13 |
 | 8. Live State Consistency | 4/4 | Complete    | 2026-09-20 |
 | 9. Deployment and Release Readiness | 8/8 | Complete    | 2026-09-19 |
-| 10. UX Redesign: Service Colors, Editors, and Dashboard Stats | 0/0 | Not planned |  |
 
 ### Phase 7: Release Hardening: Data Safety and Core Workflows
 
@@ -383,23 +381,3 @@ Plans:
 **Wave 5** *(blocked on 09-06 and 09-07)*
 
 - [x] 09-08-PLAN.md — Item 4 client: multipart-capable API helper, Settings certificates card, certificate-source choice, expiring badge, close the TLS todo
-
-### Phase 10: UX Redesign: Service Colors, Editors, and Dashboard Stats
-
-**Goal:** The product no longer feels "very basic" — stack detail, dashboard, and the compose/env editing experience get a real design pass
-**Requirements**: n/a — this phase is scoped by the todo list below, not by REQUIREMENTS.md IDs
-**Depends on:** Phase 9
-**Plans:** 0 plans
-
-User classified these as `minor` severity but wants them fixed for v1.0.0 regardless. Scope is 4 items, all originally split from one larger UI-redesign request (`.planning/todos/pending/2026-08-28-redesign-ui-ux-service-colors-mobile.md`'s cross-references) and promoted here as a group:
-
-1. **[ui]** Redesign UI/UX — per-service colors carried into the log viewer, stack detail tab layout, mobile support — `.planning/todos/pending/2026-08-28-redesign-ui-ux-service-colors-mobile.md`
-2. **[ui]** Redesign dashboard with richer statistics — `.planning/todos/pending/2026-08-28-redesign-dashboard-statistics.md`
-3. **[ui]** Add a sophisticated compose YAML editor and env editor (syntax highlighting, structured key=value editing) — `.planning/todos/pending/2026-08-28-add-yaml-env-editor.md`
-4. **[ui]** Audit frontend for reusable-component refactors (e.g. log-viewer reuse in the Backups tab) — `.planning/todos/pending/2026-08-28-frontend-refactor-audit.md`
-
-Not included: `.planning/todos/pending/2026-08-28-configurable-compose-linting.md` — its own todo text flags it as unrelated backend validation logic, not a UI change, despite being split out alongside these four originally.
-
-Plans:
-
-- [ ] TBD (run /gsd-plan-phase 10 to break down)

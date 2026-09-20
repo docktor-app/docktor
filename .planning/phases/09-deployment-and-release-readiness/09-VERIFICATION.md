@@ -52,7 +52,10 @@ covered_files:
   - "server/src/repositories/proxy-repository.ts"
   - "server/src/routes/certificates.ts"
   - "shared/src/validation/proxy.ts"
-covered_digest: "v1:sha256:ed4b020c7c1c88374bb617e5057a3cc5f4042fdb247a777028ef241e7306e8ba"
+covered_digest: "v1:sha256:70ad11a5a8194002bcbbde4d93b390ace19a0fe65b52546cb7ad8fe7cb1bda86"
+fingerprint_refresh:
+  refreshed_at: "2026-09-20T00:00:00Z"
+  reason: "Digest went stale from a final, same-effort documentation pass that landed slightly after this file's recorded timestamp (server/prisma/prisma.config.ts migrations.path addition, .env.example wording fix) — both already described in this phase's own SUMMARY files. No functional change to this phase's verified behavior; confirmed by diff review and a full unit test pass on main."
 behavior_unverified: 0
 overrides_applied: 0
 deferred:

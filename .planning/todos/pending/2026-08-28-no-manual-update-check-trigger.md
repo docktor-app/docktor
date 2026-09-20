@@ -4,8 +4,13 @@ title: No way to manually trigger an image update check
 area: observability
 severity: minor
 files:
+
   - server/src/jobs/update-checker.ts
   - server/src/routes/stacks.ts
+
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-09-20
 ---
 
 ## Problem

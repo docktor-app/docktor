@@ -1,5 +1,5 @@
 ---
-status: passed
+status: complete
 phase: 04-backup-restore
 source: [04-VERIFICATION.md]
 started: 2026-08-31T08:47:20Z

@@ -1,8 +1,8 @@
 ---
-status: diagnosed
+status: resolved
 trigger: "Snapshots not listed despite successful backups"
 created: 2026-03-31T16:54:00Z
-updated: 2026-03-31T17:02:00Z
+updated: 2026-09-20T00:00:00Z
 ---
 
 ## Current Focus
@@ -97,3 +97,9 @@ verification:
 files_changed:
   - server/src/infrastructure/restic-executor.ts (run method - throw on non-zero exitCode)
   - OR server/src/application/backup-service.ts (runWithAutoInit - check returned exitCode)
+
+---
+
+## Resolution (2026-09-20T00:00:00Z)
+
+Fixed: `BackupService` now uses a single `buildEnv()` consistently across `runBackup`, `restore`, and `getSnapshots` (no more path mismatch), and `ResticExecutor.run()` throws with `exitCode`/`stderr` attached on non-zero exit so `runWithAutoInit()` can detect and auto-init an uninitialized repository. Verified against current `main`.

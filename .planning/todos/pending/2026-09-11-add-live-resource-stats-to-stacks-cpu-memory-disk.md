@@ -4,8 +4,13 @@ title: Add live resource stats to stacks (CPU, memory, disk)
 area: observability
 severity: minor
 files:
+
   - client/src/routes/app/stacks/[id].tsx
   - client/src/routes/app/dashboard.tsx
+
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-09-20
 ---
 
 ## Problem

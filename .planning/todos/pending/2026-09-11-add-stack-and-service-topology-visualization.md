@@ -4,6 +4,9 @@ title: Add stack/service topology visualization
 area: ui
 severity: cosmetic
 files: []
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-09-20
 ---
 
 ## Problem

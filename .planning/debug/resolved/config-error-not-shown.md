@@ -1,8 +1,8 @@
 ---
-status: reopened
+status: resolved
 trigger: "Investigate why invalid YAML errors and validation restrictions are not being detected or shown."
 created: 2026-03-16T00:00:00Z
-updated: 2026-08-28T00:00:00Z
+updated: 2026-09-20T00:00:00Z
 ---
 
 ## Reopened 2026-08-28 (plan 02-08 Task 3 checkpoint)
@@ -109,3 +109,9 @@ verification: After fix, test with:
   4. Valid compose with services (should work normally)
 
 files_changed: []
+
+---
+
+## Resolution (2026-09-20T00:00:00Z)
+
+Fixed: all four gaps closed — `ConfigErrorEvent` is in the `StateEvent` union (`use-container-events.ts`), `use-stack.ts`/`use-stacks.ts` branch on `config_error`, `Stack.configError` is a persisted column (`stack.prisma`), and UI badges render it in `stack-list.tsx` and `stacks/[id].tsx`. Verified against current `main`.

@@ -1,8 +1,8 @@
 ---
-status: diagnosed
+status: resolved
 trigger: "Investigate issue: update-images-no-updates-toast-missing — Clicking \"Update Images\" in the stack detail page, when no service images had a newer version to pull, does not show the \"images are already up to date\" toast. User hypothesizes it's related to the update-available badge not being removed when there is no newer image."
 created: 2026-08-28T00:00:00Z
-updated: 2026-08-28T00:00:00Z
+updated: 2026-09-20T00:00:00Z
 ---
 
 ## Current Focus
@@ -84,3 +84,9 @@ root_cause: "server/src/application/stack-service.ts updateImages() (lines 269-2
 fix: "not applied — diagnose-only session (goal: find_root_cause_only)"
 verification: "not applicable — no fix applied"
 files_changed: []
+
+---
+
+## Resolution (2026-09-20T00:00:00Z)
+
+Fixed: the old substring-heuristic toast logic was replaced with `detectNoUpdates()` in `domain/image-update-detection.ts`, using positive digest-comparison evidence before/after pull. Verified against current `main`.

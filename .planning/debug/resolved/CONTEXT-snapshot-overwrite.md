@@ -1,3 +1,10 @@
+---
+status: resolved
+trigger: "Snapshots appear to be overwritten on each backup instead of accumulating in the restic repository (circular backup: repo backs up itself)."
+created: 2026-04-01T00:00:00Z
+updated: 2026-09-20T00:00:00Z
+---
+
 # Phase Context: Fix Restic Snapshot Overwriting Issue
 
 **Date:** 2026-04-01
@@ -397,3 +404,9 @@ This issue was surfaced during UAT testing (Phase 04). Multiple test scenarios r
 3. Further investigation: Even after fixing exit code handling, snapshots were being overwritten → led to discovery of circular backup issue
 
 **Lesson:** Restic's behavior with circular backups is **silent failure** — it doesn't error, it just creates bloated snapshots that get pruned. This made root cause diagnosis difficult. The fix is simple once identified, but the symptoms were subtle.
+
+---
+
+## Resolution (2026-09-20T00:00:00Z)
+
+Fixed: `server/src/infrastructure/restic-executor.ts` `buildBackupArgs()` now excludes `${stackPath}/backups` (and `/logs`) from the backup args, closing the circular-backup issue. Verified against current `main`.

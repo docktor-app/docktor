@@ -1,8 +1,8 @@
 ---
-status: diagnosed
+status: resolved
 trigger: "Investigate why config changes (version, ports) in docker-compose.yml are not reflected in UI or database."
 created: 2026-03-16T00:00:00Z
-updated: 2026-03-16T00:05:00Z
+updated: 2026-09-20T00:00:00Z
 ---
 
 ## Current Focus
@@ -60,3 +60,9 @@ verification:
 files_changed:
   - server/src/jobs/file-watcher.ts (add replaceServices call after parse validation)
   - May need to import createComposeConfig from domain/compose-config.ts
+
+---
+
+## Resolution (2026-09-20T00:00:00Z)
+
+Fixed: `server/src/jobs/file-watcher.ts` now calls `repo.syncServicesFromCompose()` after parsing a changed compose file, before updating the hash, so service metadata is actually synced instead of only flipping `configChanged`. Verified against current `main`.

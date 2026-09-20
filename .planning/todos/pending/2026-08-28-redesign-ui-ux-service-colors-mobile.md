@@ -4,8 +4,13 @@ title: Redesign UI/UX — service colors, tab layout, mobile support
 area: ui
 severity: minor
 files:
+
   - client/src/routes/app/stacks/[id].tsx
   - client/src/components/domain/stack/log-viewer.tsx
+
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-09-20
 ---
 
 ## Problem

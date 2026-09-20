@@ -1,8 +1,8 @@
 ---
-status: awaiting_human_verify
+status: resolved
 trigger: "Investigate why DockerExecutor.manifestInspect() is returning null, blocking all update detection."
 created: 2026-03-16T00:00:00Z
-updated: 2026-03-16T00:13:00Z
+updated: 2026-09-20T00:00:00Z
 ---
 
 ## Current Focus
@@ -233,3 +233,9 @@ verification: |
   - Logs will reveal actual imageRef values and Docker error messages
   - User can fix the root cause (missing images, auth, malformed refs)
   - Update detection will work once valid, accessible images are used
+
+---
+
+## Resolution (2026-09-20T00:00:00Z)
+
+Fixed: the described logging additions and the explicit `Image not found in registry: ${imageRef}` error message are present in `update-checker.ts`/`docker-executor.ts`, matching the session's fix. Verified against current `main`.

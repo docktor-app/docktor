@@ -4,8 +4,13 @@ title: Add a sophisticated compose YAML editor and env editor
 area: ui
 severity: minor
 files:
+
   - client/src/routes/app/stacks/[id].tsx
   - client/src/routes/app/stacks/create.tsx
+
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-09-20
 ---
 
 ## Problem

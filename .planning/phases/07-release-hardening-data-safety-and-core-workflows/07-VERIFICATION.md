@@ -9,12 +9,15 @@ covered_files:
   - ".planning/phases/07-release-hardening-data-safety-and-core-workflows/07-02-PLAN.md"
   - ".planning/phases/07-release-hardening-data-safety-and-core-workflows/07-02-SUMMARY.md"
   - ".planning/phases/07-release-hardening-data-safety-and-core-workflows/07-REVIEW.md"
-  - ".planning/todos/pending/2026-09-03-stacks-dir-mount-point-not-verified.md"
+  - ".planning/todos/completed/2026-09-03-stacks-dir-mount-point-not-verified.md"
   - "docs/deployment.md"
   - "server/src/index.ts"
   - "server/src/lib/stacks-dir.ts"
   - "server/test/unit/lib/stacks-dir.test.ts"
-covered_digest: "v1:sha256:0206b21a507259b35371bbd65ed8e38ecd726e2dc5bb5aa3fc1fa662299b8826"
+covered_digest: "v1:sha256:ac5b9917ebb28d4d6ec0548a69bd01de69db9973f96c6324391984516f0b99c9"
+fingerprint_refresh:
+  refreshed_at: "2026-09-20T00:00:00Z"
+  reason: "Digest went stale: the covered todo file moved from todos/pending/ to todos/completed/ (its own resolution, not a regression), and server/src/index.ts + server/src/lib/stacks-dir.ts gained later, additive Windows-compatibility fixes (mountinfo POSIX-separator handling, Prisma migrate-deploy log wording) from Phase 09. No functional change to this phase's verified behavior; confirmed by diff review and a full unit test pass on main."
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:

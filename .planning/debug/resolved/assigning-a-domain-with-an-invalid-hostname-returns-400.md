@@ -1,8 +1,8 @@
 ---
-status: diagnosed
+status: resolved
 trigger: "G-06-3: Assigning a domain with an invalid hostname to a service's proxy config should return HTTP 400, but the integration test shows it returns 201 (the domain is accepted and a compose write happens) instead."
 created: 2026-09-07T00:00:00Z
-updated: 2026-09-07T00:00:00Z
+updated: 2026-09-20T00:00:00Z
 ---
 
 ## Current Focus
@@ -99,3 +99,9 @@ root_cause: "@docktor/server imports assignDomainSchema from @docktor/shared, wh
 fix: (not applied — find_root_cause_only mode)
 verification: "Reproduced the exact symptom (201 instead of 400, same response shape) by simulating a stale shared/dist build; restored and reconfirmed correct 400 behavior. Could not replay the original failing DB-backed integration test end-to-end due to a pre-existing sandbox environmental block (Prisma P1001 / TCP-payload-block), documented separately in STATE.md and reconfirmed independently in this session."
 files_changed: []
+
+---
+
+## Resolution (2026-09-20T00:00:00Z)
+
+Fix landed alongside the shared-build pipeline: server test/dev entry points now run `yarn workspace @docktor/shared build` first, so the up-to-date `hostnamePattern` validation in `shared/src/validation/proxy.ts` is actually in effect during tests. Verified against current `main`.

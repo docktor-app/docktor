@@ -1,8 +1,8 @@
 ---
-status: diagnosed
+status: resolved
 trigger: "config-changed-sse-looks-like-refresh: On the stack detail page, when a compose file change is detected and a config_changed SSE event fires, the UI update looks like a full page refresh rather than a smooth in-place update of just the changed data."
 created: 2026-08-28T16:10:00Z
-updated: 2026-08-28T16:10:00Z
+updated: 2026-09-20T00:00:00Z
 ---
 
 ## Current Focus
@@ -59,3 +59,9 @@ fix: (not applied — goal is find_root_cause_only; diagnosis handed back to cal
 verification: (not applicable — diagnose-only mode)
 files_changed: []
 
+
+---
+
+## Resolution (2026-09-20T00:00:00Z)
+
+Fixed: `client/src/hooks/use-stack.ts` now distinguishes an `initial` vs `background` fetch mode — only `initial` toggles `loading`; background SSE-triggered refetches set a separate `isRefreshing` flag, so the stack detail page no longer remounts to a skeleton on live updates. Verified against current `main`.

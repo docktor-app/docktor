@@ -1,8 +1,8 @@
 ---
-status: diagnosed
+status: resolved
 trigger: "Failed backup logs not displaying"
 created: 2026-03-31T00:00:00Z
-updated: 2026-03-31T00:17:00Z
+updated: 2026-09-20T00:00:00Z
 ---
 
 ## Current Focus
@@ -86,3 +86,9 @@ verification: After running db push, trigger a backup (or view an existing one) 
 
 files_changed:
   - Database schema (PostgreSQL Backup table - adds logLines TEXT[] column)
+
+---
+
+## Resolution (2026-09-20T00:00:00Z)
+
+Fixed: `logLines TEXT[]` column is present in both the Prisma schema (`backup.prisma`) and the init migration (`0_init/migration.sql`) — schema and DB agree. Verified against current `main`.

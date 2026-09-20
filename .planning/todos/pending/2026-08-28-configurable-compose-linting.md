@@ -4,13 +4,19 @@ title: Add configurable docker-compose linting/formatting checks
 area: validation
 severity: minor
 files:
+
   - server/src/infrastructure/compose-analyzer.ts
+
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-09-20
 ---
 
 ## Problem
 
 User feedback: wants Docktor to enforce docker-compose conventions,
 configurably, e.g.:
+
 - Only directory-based (bind mount) volumes allowed, if the check is
   enabled — the project already has a "bind mounts only, no named Docker
   volumes" convention (per CLAUDE.md: "all data in ./volumes/ subdir"),

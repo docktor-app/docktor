@@ -47,17 +47,12 @@
       "number": "9",
       "name": "Deployment and Release Readiness",
       "status": "complete"
-    },
-    {
-      "number": "10",
-      "name": "UX Redesign: Service Colors, Editors, and Dashboard Stats",
-      "status": "pending"
     }
   ],
   "next": {
-    "command": "/gsd:plan-phase 10",
-    "label": "Plan Phase 10 (pending roadmap rework)",
-    "reason": "Phases 1-9 complete · Phase 10 has 0 plans"
+    "command": "/gsd:new-milestone",
+    "label": "Start a new milestone",
+    "reason": "All phases complete — start a new milestone"
   },
-  "updated_at": "2026-09-20T00:00:00.000Z"
+  "updated_at": "2026-09-20T08:29:16.714Z"
 }

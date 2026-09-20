@@ -4,7 +4,12 @@ title: Support authenticated/private container registries for update checking
 area: observability
 severity: minor
 files:
+
   - server/src/infrastructure/registry-client.ts
+
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-09-20
 ---
 
 ## Problem

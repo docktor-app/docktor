@@ -8,12 +8,22 @@ covered_files:
   - .planning/STATE.md
   - .planning/phases/08-live-state-consistency/08-01-PLAN.md
   - .planning/phases/08-live-state-consistency/08-01-SUMMARY.md
+  - .planning/phases/08-live-state-consistency/08-02-PLAN.md
+  - .planning/phases/08-live-state-consistency/08-02-SUMMARY.md
+  - .planning/phases/08-live-state-consistency/08-03-PLAN.md
+  - .planning/phases/08-live-state-consistency/08-03-SUMMARY.md
+  - .planning/phases/08-live-state-consistency/08-04-PLAN.md
+  - .planning/phases/08-live-state-consistency/08-04-SUMMARY.md
+  - .planning/phases/08-live-state-consistency/08-UAT.md
   - .planning/todos/completed/2026-08-28-config-error-ui-indication-missing.md
   - .planning/todos/completed/2026-08-28-env-file-changes-dont-flag-config-changed.md
   - .planning/todos/completed/2026-08-28-manual-actions-dont-broadcast-sse.md
   - client/src/components/domain/stack/stack-status-badge.tsx
   - client/test/unit/components/domain/stack/stack-status-badge.test.tsx
-covered_digest: "v1:sha256:8423dc86e40f4bf71b23f0852e6c298c03b57399115f7491d79d3c68aa7ae68f"
+covered_digest: "v1:sha256:7933870609ba811c1a9c571dd8c0822dbedd0ea347d5fa7582f1f093ce4faa84"
+fingerprint_refresh:
+  refreshed_at: "2026-09-20T00:00:00Z"
+  reason: "Digest went stale from routine STATE.md/REQUIREMENTS.md bookkeeping edits made during the v1.0 milestone-close pass (Phase 10 removal, debug-session resolution, UAT status corrections), and covered_files was missing the 08-02/08-03/08-04 gap-closure plans and 08-UAT.md that this same VERIFICATION.md's own body already documents — added them so the declared fingerprint actually matches the phase's real, on-disk scope. No functional change to this phase's verified behavior."
 behavior_unverified: 0
 overrides_applied: 0
 behavior_unverified_items: []

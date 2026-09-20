@@ -4,7 +4,12 @@ title: Redesign dashboard with richer statistics
 area: ui
 severity: minor
 files:
+
   - client/src/routes/app/dashboard.tsx
+
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-09-20
 ---
 
 ## Problem

@@ -4,8 +4,13 @@ title: Stale ImageUpdateCheck rows are never pruned when a service's tag changes
 area: observability
 severity: cosmetic
 files:
+
   - server/src/jobs/update-checker.ts
   - server/src/repositories/image-update-check-repository.ts
+
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-09-20
 ---
 
 ## Problem

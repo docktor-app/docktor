@@ -4,9 +4,14 @@ title: Upgrade dialog shows "not checked yet" for a moving-tag service that was 
 area: ui
 severity: minor
 files:
+
   - server/src/jobs/update-checker.ts
   - server/src/routes/stacks.ts
   - client/src/routes/app/stacks/components/service-upgrade-dialog.tsx
+
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-09-20
 ---
 
 ## Problem

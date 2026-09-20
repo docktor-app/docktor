@@ -4,8 +4,13 @@ title: Service status badges show "unknown" for up to 60s after deploy/redeploy
 area: observability
 severity: minor
 files:
+
   - server/src/jobs/state-poller.ts
   - server/src/repositories/stack-repository.ts
+
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-09-20
 ---
 
 ## Problem
@@ -45,6 +50,7 @@ absent from the DB until reconcile runs, not just unbroadcast.
 ## Solution
 
 TBD — options to consider:
+
 - After a successful `deployStack()`/`updateImages()`, proactively inspect
   and write the fresh `containerState`/`healthStatus` for each service
   (mirroring what `StatePoller.reconcile()` already does for one project)

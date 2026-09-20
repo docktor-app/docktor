@@ -4,7 +4,12 @@ title: "\"Update available\" badge shows even when there's no latestTag to point
 area: ui
 severity: minor
 files:
+
   - client/src/routes/app/stacks/components/services-tab.tsx
+
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-09-20
 ---
 
 ## Problem

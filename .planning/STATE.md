@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_phase: 10
-current_phase_name: UX Redesign: Service Colors, Editors, and Dashboard Stats
-status: Phase 08 (Live State Consistency) complete — 4/4 plans, UAT 8 items (4 pass, 3 issues closed via gap-closure plans 08-02/03/04, 1 deferred), VERIFICATION.md passed. Post-close quality gates run: 08-VALIDATION.md (Nyquist, 0 gaps), 08-SECURITY.md (10/10 threats closed), 08-UI-REVIEW.md (20/24, stale UI-SPEC contradiction found and fixed). Phases 1-9 all complete. Phase 10 has 0 plans — awaiting roadmap rework before planning.
-stopped_at: Completed phase 08 close-out (VALIDATION/SECURITY/UI-REVIEW/VERIFICATION); branch merging to main for roadmap rework
-last_updated: "2026-09-20T00:00:00.000Z"
-state_head: 86986c4
+current_phase: null
+current_phase_name: null
+status: "Phases 1-9 all complete, tested, and reviewed. 11 stale debug sessions verified fixed against current main and moved to .planning/debug/resolved/; 04-UAT.md and 08-UAT.md status fields corrected to terminal (complete/resolved) to match their already-closed gaps; Phase 10 (UX Redesign, 0 plans, never started) dropped as a leftover placeholder. 15 pending todos acknowledged for this milestone close and kept in .planning/todos/pending/ for a follow-up roadmap discussion. v1.0.0 has not shipped — milestone v1.0 stays open; ROADMAP.md is being reworked to scope the remaining phases toward that release."
+stopped_at: Milestone bookkeeping cleanup complete; awaiting roadmap rework discussion (new phases toward v1.0.0)
+last_updated: "2026-09-20T08:29:16.674Z"
+state_head: 2365fa1bc215cca61f39a43397e0a0e5555b74ba
 progress:
-  total_phases: 11
+  total_phases: 9
   completed_phases: 9
-  total_plans: 91
-  completed_plans: 91
+  total_plans: 88
+  completed_plans: 88
 milestone_name: milestone
 ---
 
@@ -19,15 +19,14 @@ milestone_name: milestone
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-19)
+See: .planning/PROJECT.md (updated 2026-09-20)
 
 **Core value:** Users can deploy, monitor, and manage Docker Compose stacks through a browser UI without needing SSH or Docker CLI access.
-**Current focus:** Phase 10 — UX Redesign (pending roadmap rework)
+**Current focus:** Reworking ROADMAP.md toward v1.0.0 — no active phase
 
 ## Current Position
 
-Phase: 08 (Live State Consistency) — COMPLETE
-Plan: 4 of 4 (all complete)
+Phase: none active — Phases 1-9 all COMPLETE
 
 ## Performance Metrics
 

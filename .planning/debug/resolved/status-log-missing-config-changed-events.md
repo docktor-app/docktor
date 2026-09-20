@@ -1,8 +1,8 @@
 ---
-status: diagnosed
+status: resolved
 trigger: "Investigate issue: status-log-missing-config-changed-events — config_changed StackEvents are broadcast via SSE and persisted to the database, but they don't show up in the stack detail page's Status Log UI — only in server logs."
 created: 2026-08-28T16:30:00Z
-updated: 2026-08-28T16:45:00Z
+updated: 2026-09-20T00:00:00Z
 ---
 
 ## Current Focus
@@ -135,3 +135,9 @@ root_cause: |
 fix: (not applied — goal is find_root_cause_only)
 verification: (not applicable — diagnosis only)
 files_changed: []
+
+---
+
+## Resolution (2026-09-20T00:00:00Z)
+
+Fixed: new `GET /api/stacks/:id/events` route, `use-stack-events.ts` hook, and a dedicated `EventLogCard` component now surface StackEvents in the UI, separate from the pre-existing Status Log. Verified against current `main`.

@@ -36,45 +36,21 @@ Users can deploy, monitor, and manage Docker Compose stacks through a browser UI
 - ✓ Database schema managed via real Prisma migrations (`migrate deploy`), with zero-touch auto-baselining of a pre-migration `db push` install — Validated in Phase 09: Deployment and Release Readiness
 - ✓ CI runs typecheck + unit tests on Windows and macOS (in addition to Linux), required on `main` branch protection — Validated in Phase 09: Deployment and Release Readiness
 - ✓ User can upload a custom TLS certificate (with private key and optional CA bundle) per domain as an alternative to automatic ACME issuance, including wildcard support and an expiry warning — Validated in Phase 09: Deployment and Release Readiness
+- ✓ Container state poller (event-driven + 60s reconciliation) and live per-service SSE log streaming with ANSI rendering and auto-reconnect — Validated in Phase 01: MVP Completion
+- ✓ Settings page (instance name, base URL, timezone) persisted in DB — Validated in Phase 01: MVP Completion
+- ✓ SMTP notification on backup failure, with per-trigger enable/disable — Validated in Phase 03: Notifications
+- ✓ Restic-backed backup & restore: repository config, manual trigger, per-stack cron scheduling, retention policy, snapshot restore — Validated in Phase 04: Backup & Restore
+- ✓ First-run setup wizard (account, settings, optional backup/notification/proxy config, optional brownfield scan) — Validated in Phase 05: Onboarding
+- ✓ Brownfield import: host filesystem scan, compatibility assessment, adopt-in-place, and full migration wizard (stop → copy → convert volumes → rewrite paths → restart, with rollback) — Validated in Phase 05: Onboarding
+- ✓ Docktor-managed `nginx-proxy` + `acme-companion` reverse proxy: per-service domain/TLS configuration, idempotent apply/remove, ACME settings in Settings — Validated in Phase 06: Proxy Configuration
+- ✓ Managed stacks directory persists correctly across container recreation (single-variable-driven host/container mount, startup assertion) — Validated in Phase 07: Release Hardening
+- ✓ State changes (config errors, config edits, manual deploy/stop/restart/update actions) reflect live in the UI via SSE without a manual refresh — Validated in Phase 08: Live State Consistency
 
 ### Active
 
-<!-- Current scope. Building toward these. -->
+<!-- Current scope. Building toward v1.0.0 — roadmap being reworked; see ROADMAP.md. -->
 
-**MVP Completion:**
-- [ ] Container state poller runs every 15s, updating stack/service status from `docker inspect`
-- [ ] Live container log streaming via SSE (per-service, combined view with service-name prefixes)
-- [ ] Basic settings page: instance name, base URL, timezone — stored in DB Settings model
-
-**Post-MVP — Reliability & Observability:**
-- [x] File watcher detects external compose edits (chokidar + 60s polling fallback), flags "config changed" — Validated in Phase 02: Observability
-- [x] Update checker polls registries for newer images (semver/digest comparison), exposes update button — Validated in Phase 02: Observability
-
-**Post-MVP — Notifications:**
-- [x] SMTP notification for stack entering ERROR or UNHEALTHY state — Validated in Phase 03: Notifications
-- [x] SMTP notification for disk space warnings (below 10% or 2 GB) — Validated in Phase 03: Notifications
-- [ ] SMTP notification for backup failures — Deferred to Phase 04: Backup & Restore
-- [x] Per-trigger enable/disable in Settings — Validated in Phase 03: Notifications
-
-**Post-MVP — Backup & Restore:**
-- [ ] User can configure restic repository (local path, SFTP, S3) and password via Settings
-- [ ] User can trigger a manual backup for a stack
-- [ ] Backup scheduling via per-stack cron expressions
-- [ ] Configurable retention policies (daily/weekly/monthly)
-- [ ] User can restore a stack from a restic snapshot
-
-**Post-MVP — First-Run Wizard:**
-- [ ] On first boot with no user, show wizard: account creation, base config, optional backup + notification config
-- [ ] Optional brownfield scan step in wizard
-
-**Post-MVP — Brownfield Import:**
-- [ ] Scan host filesystem for `docker-compose.yml` files with compatibility assessment
-- [ ] Adopt-in-place: register an existing directory as a stack without moving anything
-- [ ] Full migration wizard: stop → copy → convert volumes → rewrite paths → restart with rollback support
-
-**Post-MVP — Proxy Configuration:**
-- [ ] Docktor-managed `nginx-proxy` + `acme-companion` integration: configure domain/port/TLS exposure per service by writing routing env vars into its compose config
-- [ ] Raw Nginx config generation for advanced users
+(No active requirements yet — next phases are being scoped from the accumulated backlog in `.planning/todos/pending/`.)
 
 ### Out of Scope
 
@@ -89,10 +65,12 @@ Users can deploy, monitor, and manage Docker Compose stacks through a browser UI
 
 ## Context
 
-Brownfield project with significant existing implementation. The foundation (auth, CRUD, state machine, dashboard, detail
-page, create page) is fully built. The three remaining MVP items have partial implementations in untracked files
-(`server/src/jobs/state-poller.ts`, `client/src/hooks/use-log-stream.ts`, settings routes/UI). These should be completed
-before starting post-MVP phases.
+All planned v1 functionality is shipped and live-verified: real-time observability, notifications, encrypted
+backup/restore, first-run onboarding with brownfield import, proxy/TLS configuration, and release-hardening work
+(durable stacks-directory persistence, real Prisma migrations, cross-platform CI, custom TLS certificates, and
+live SSE-driven UI state consistency). ~54K LOC across server/client/shared. v1.0.0 has not shipped yet — the
+roadmap is being reworked to fold in the accumulated backlog (`.planning/todos/pending/`) before defining the
+phases that close it out.
 
 Key architectural constraints:
 - Single Fastify process: API + background jobs + SSE + static files (no separate frontend server in production)
@@ -112,16 +90,16 @@ Key architectural constraints:
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Single Fastify process (not Next.js) | Needs persistent background jobs + SSE streams; Next.js doesn't support this well | — Pending |
-| YAML-first (file = source of truth) | Supports external edits via SSH; DB is cache not master | — Pending |
-| Bind mounts only (no named volumes) | Simplifies backup (one dir per stack), transparency, portability | — Pending |
-| PostgreSQL via Prisma | Robust production DB, multi-file schema, type-safe queries | — Pending |
-| SSE for log streaming (not WebSockets) | Simpler unidirectional streaming; sufficient for log display | — Pending |
-| Restic for backups | Encrypted, deduplicated, supports local/SFTP/S3 targets | — Pending |
+| Single Fastify process (not Next.js) | Needs persistent background jobs + SSE streams; Next.js doesn't support this well | ✓ Good — validated across Phases 1-9 |
+| YAML-first (file = source of truth) | Supports external edits via SSH; DB is cache not master | ✓ Good — FileWatcher (Phase 02) and config-error surfacing (Phase 08) both depend on this |
+| Bind mounts only (no named volumes) | Simplifies backup (one dir per stack), transparency, portability | ✓ Good — enabled restic backup design in Phase 04 |
+| PostgreSQL via Prisma | Robust production DB, multi-file schema, type-safe queries | ✓ Good — cut over to real `prisma migrate deploy` in Phase 09 |
+| SSE for log streaming (not WebSockets) | Simpler unidirectional streaming; sufficient for log display | ✓ Good — reused for state/backup/proxy-cert streams beyond logs |
+| Restic for backups | Encrypted, deduplicated, supports local/SFTP/S3 targets | ✓ Good — Shipped Phase 04; pinned to a checksum-verified release in Phase 05.1 |
 | Digest-based update detection (not pull-output text scraping) | Docker Compose CLI's stdout/stderr vocabulary for "already up to date" isn't a stable interface; comparing local image digests before/after pull is | Shipped Phase 02 — resolved UAT gap G-02-11 |
 | `nginx-proxy` + `acme-companion` for reverse proxy (not Nginx Proxy Manager) | NPM's REST API is officially undocumented (community-reverse-engineered only); `nginx-proxy`/`acme-companion` are Docker-socket-reactive, need no external API integration, and fit the existing YAML-first/event-driven architecture | Shipped Phase 06 |
 | Cut over from schemaless `prisma db push` to real `prisma migrate deploy`, with automatic baselining of an existing `db push` install | `db push` has no migration history, no rollback path, and no audit trail — untenable for a v1.0.0 release that self-hosters will upgrade in place | Shipped Phase 09 |
 | Certificate-source field (`acme` \| `custom`) promoted onto every `ProxyConfig` row, not left implicit from a certificate link's presence/absence | A future third source, or a row with no explicit opinion, must never be ambiguous about who issues its certificate | Shipped Phase 09 |
 
 ---
-*Last updated: 2026-09-19 after Phase 09 completion*
+*Last updated: 2026-09-20 after Phases 1-9 completion review (roadmap rework in progress toward v1.0.0)*
