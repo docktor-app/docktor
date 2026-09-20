@@ -33,6 +33,9 @@ Users can deploy, monitor, and manage Docker Compose stacks through a browser UI
 - ✓ File watcher detects external compose edits (chokidar + 60s polling fallback), flags "config changed" — Validated in Phase 02: Observability
 - ✓ Update checker polls registries for newer images (semver/date/digest comparison), exposes per-service upgrade with a version picker — Validated in Phase 02: Observability
 - ✓ StackEvent audit trail (config_changed, config_error, update_available) queryable per stack and shown in a dedicated Event Log card, distinct from the status-transition log — Validated in Phase 02: Observability (emerged from UAT gap G-02-16)
+- ✓ Database schema managed via real Prisma migrations (`migrate deploy`), with zero-touch auto-baselining of a pre-migration `db push` install — Validated in Phase 09: Deployment and Release Readiness
+- ✓ CI runs typecheck + unit tests on Windows and macOS (in addition to Linux), required on `main` branch protection — Validated in Phase 09: Deployment and Release Readiness
+- ✓ User can upload a custom TLS certificate (with private key and optional CA bundle) per domain as an alternative to automatic ACME issuance, including wildcard support and an expiry warning — Validated in Phase 09: Deployment and Release Readiness
 
 ### Active
 
@@ -116,7 +119,9 @@ Key architectural constraints:
 | SSE for log streaming (not WebSockets) | Simpler unidirectional streaming; sufficient for log display | — Pending |
 | Restic for backups | Encrypted, deduplicated, supports local/SFTP/S3 targets | — Pending |
 | Digest-based update detection (not pull-output text scraping) | Docker Compose CLI's stdout/stderr vocabulary for "already up to date" isn't a stable interface; comparing local image digests before/after pull is | Shipped Phase 02 — resolved UAT gap G-02-11 |
-| `nginx-proxy` + `acme-companion` for reverse proxy (not Nginx Proxy Manager) | NPM's REST API is officially undocumented (community-reverse-engineered only); `nginx-proxy`/`acme-companion` are Docker-socket-reactive, need no external API integration, and fit the existing YAML-first/event-driven architecture | — Pending (Phase 6) |
+| `nginx-proxy` + `acme-companion` for reverse proxy (not Nginx Proxy Manager) | NPM's REST API is officially undocumented (community-reverse-engineered only); `nginx-proxy`/`acme-companion` are Docker-socket-reactive, need no external API integration, and fit the existing YAML-first/event-driven architecture | Shipped Phase 06 |
+| Cut over from schemaless `prisma db push` to real `prisma migrate deploy`, with automatic baselining of an existing `db push` install | `db push` has no migration history, no rollback path, and no audit trail — untenable for a v1.0.0 release that self-hosters will upgrade in place | Shipped Phase 09 |
+| Certificate-source field (`acme` \| `custom`) promoted onto every `ProxyConfig` row, not left implicit from a certificate link's presence/absence | A future third source, or a row with no explicit opinion, must never be ambiguous about who issues its certificate | Shipped Phase 09 |
 
 ---
-*Last updated: 2026-08-30 after Phase 02 completion*
+*Last updated: 2026-09-19 after Phase 09 completion*

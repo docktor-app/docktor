@@ -85,7 +85,7 @@ describe("useStackEvents", () => {
         expect(result.current.events).toEqual(initialEvents);
 
         act(() => {
-            capturedHandler!({type: "config_changed", stackId: "my-app"});
+            capturedHandler!({type: "config_changed", stackId: "my-app", source: "app"});
         });
 
         await waitFor(() => expect(result.current.isRefreshing).toBe(true));
@@ -181,7 +181,7 @@ describe("useStackEvents", () => {
         mockGetStackEvents.mockClear();
 
         act(() => {
-            capturedHandler!({type: "config_changed", stackId: "other-app"});
+            capturedHandler!({type: "config_changed", stackId: "other-app", source: "app"});
         });
 
         expect(mockGetStackEvents).not.toHaveBeenCalled();
@@ -198,7 +198,7 @@ describe("useStackEvents", () => {
         await waitFor(() => expect(result.current.loading).toBe(false));
 
         act(() => {
-            capturedHandler!({type: "config_changed", stackId: "my-app"});
+            capturedHandler!({type: "config_changed", stackId: "my-app", source: "app"});
         });
 
         await waitFor(() => expect(result.current.isRefreshing).toBe(false));

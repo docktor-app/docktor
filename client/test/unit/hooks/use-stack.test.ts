@@ -103,7 +103,7 @@ describe("useStack", () => {
         expect(result.current.isRefreshing).toBe(false);
 
         act(() => {
-            capturedHandler!({type: "config_changed", stackId: "my-app"});
+            capturedHandler!({type: "config_changed", stackId: "my-app", source: "app"});
         });
 
         await waitFor(() => expect(result.current.isRefreshing).toBe(true));
@@ -129,7 +129,7 @@ describe("useStack", () => {
         await waitFor(() => expect(mockGetStack).toHaveBeenCalledTimes(1));
 
         act(() => {
-            capturedHandler!({type: "config_changed", stackId: "my-app"});
+            capturedHandler!({type: "config_changed", stackId: "my-app", source: "external"});
         });
 
         expect(toast.warning).toHaveBeenCalledWith(
@@ -138,6 +138,36 @@ describe("useStack", () => {
                 className: expect.stringContaining("yellow"),
             }),
         );
+    });
+
+    it("does not show a toast for an app-initiated (source: \"app\") config_changed event, but still refreshes silently", async () => {
+        const initialStack = {id: "my-app", displayName: "My App v1"};
+        const updatedStack = {id: "my-app", displayName: "My App v2"};
+        mockGetStack.mockResolvedValueOnce(initialStack as any);
+        const refresh = deferred<any>();
+        mockGetStack.mockReturnValueOnce(refresh.promise);
+
+        const {result} = renderHook(() => useStack("my-app"));
+
+        await waitFor(() => expect(result.current.loading).toBe(false));
+        expect(result.current.stack).toEqual(initialStack);
+        expect(result.current.isRefreshing).toBe(false);
+
+        act(() => {
+            capturedHandler!({type: "config_changed", stackId: "my-app", source: "app"});
+        });
+
+        await waitFor(() => expect(result.current.isRefreshing).toBe(true));
+        expect(toast.warning).not.toHaveBeenCalled();
+
+        await act(async () => {
+            refresh.resolve(updatedStack);
+            await refresh.promise;
+        });
+
+        await waitFor(() => expect(result.current.isRefreshing).toBe(false));
+        expect(result.current.stack).toEqual(updatedStack);
+        expect(toast.warning).not.toHaveBeenCalled();
     });
 
     it("a config_error event sets isRefreshing while in flight and never touches loading or error", async () => {
@@ -248,7 +278,7 @@ describe("useStack", () => {
         mockGetStack.mockClear();
 
         act(() => {
-            capturedHandler!({type: "config_changed", stackId: "other-app"});
+            capturedHandler!({type: "config_changed", stackId: "other-app", source: "app"});
         });
 
         expect(mockGetStack).not.toHaveBeenCalled();
@@ -263,7 +293,7 @@ describe("useStack", () => {
         await waitFor(() => expect(result.current.loading).toBe(false));
 
         act(() => {
-            capturedHandler!({type: "config_changed", stackId: "my-app"});
+            capturedHandler!({type: "config_changed", stackId: "my-app", source: "app"});
         });
 
         await waitFor(() => expect(result.current.isRefreshing).toBe(false));
@@ -340,7 +370,7 @@ describe("useStack — mounted tree survives a config_changed event", () => {
         expect(firstNode.textContent).toBe("My App v1");
 
         act(() => {
-            capturedHandler!({type: "config_changed", stackId: "my-app"});
+            capturedHandler!({type: "config_changed", stackId: "my-app", source: "app"});
         });
 
         await waitFor(() => expect(screen.getByTestId("probe-stack").textContent).toBe("My App v2"));

@@ -28,13 +28,12 @@ describe("StackStatusBadge", () => {
         expect(badge).toHaveAttribute("data-slot", "badge");
     });
 
-    it("applies animate-pulse to BACKING_UP without promoting it to the blue action color", () => {
+    it("applies the blue action treatment to BACKING_UP, matching DEPLOYING (G-08-7)", () => {
         render(<StackStatusBadge status="BACKING_UP" />);
         const badge = screen.getByText("Backing Up");
+        expect(badge.className).toContain("bg-blue-500/15");
         expect(badge.className).toContain("animate-pulse");
-        expect(badge).toHaveAttribute("data-variant", "outline");
-        expect(badge.className).not.toContain("bg-blue-500");
-        expect(badge.className).not.toContain("text-blue-700");
+        expect(badge).toHaveAttribute("data-variant", "default");
     });
 
     it("applies animate-pulse to RESTORING without promoting it to the blue action color", () => {

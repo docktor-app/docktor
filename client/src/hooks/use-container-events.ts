@@ -22,9 +22,13 @@ export interface StackStatusEvent {
     stackStatus: string
 }
 
+// source is structurally identical to server/src/lib/state-broadcaster.ts's
+// ConfigChangedEvent.source — this file is a hand-maintained mirror of the
+// server's StateEvent union, so field names must stay byte-identical.
 export interface ConfigChangedEvent {
     type: "config_changed"
     stackId: string
+    source: "app" | "external"
 }
 
 export interface ConfigErrorEvent {

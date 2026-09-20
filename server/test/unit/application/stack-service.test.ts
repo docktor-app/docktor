@@ -16,6 +16,8 @@ function createMockRepo() {
         recordDeployment: vi.fn(),
         clearConfigChanged: vi.fn(),
         updateStackHash: vi.fn(),
+        updateEnvHash: vi.fn(),
+        clearConfigError: vi.fn(),
         delete: vi.fn(),
     };
 }
@@ -899,6 +901,24 @@ describe("StackService", () => {
             );
         });
 
+        it("tags an app-initiated compose save's config_changed broadcast source: \"app\" (G-08-2)", async () => {
+            await service.updateStack("my-app", {
+                composeContent: "services:\n  web:\n    image: nginx\n",
+            });
+
+            expect(broadcaster.publish).toHaveBeenCalledWith(
+                expect.objectContaining({type: "config_changed", stackId: "my-app", source: "app"}),
+            );
+        });
+
+        it("tags an app-initiated env save's config_changed broadcast source: \"app\" (G-08-2)", async () => {
+            await service.updateStack("my-app", {envContent: "FOO=bar"});
+
+            expect(broadcaster.publish).toHaveBeenCalledWith(
+                expect.objectContaining({type: "config_changed", stackId: "my-app", source: "app"}),
+            );
+        });
+
         it("does not publish and clears configChanged when the compose hash equals lastKnownHash", async () => {
             const {createComposeConfig} = await import("../../../src/domain/compose-config.js");
             const composeContent = "services:\n  web:\n    image: nginx\n";
@@ -910,6 +930,7 @@ describe("StackService", () => {
             expect(repo.setConfigChanged).toHaveBeenCalledWith("my-app", false);
             expect(repo.updateStackHash).not.toHaveBeenCalled();
             expect(broadcaster.publish).not.toHaveBeenCalled();
+            expect(repo.clearConfigError).toHaveBeenCalledWith("my-app");
         });
 
         it("touches neither configChanged nor the broadcaster for a metadata-only update", async () => {
@@ -917,6 +938,56 @@ describe("StackService", () => {
 
             expect(repo.setConfigChanged).not.toHaveBeenCalled();
             expect(broadcaster.publish).not.toHaveBeenCalled();
+        });
+
+        it("throws BadRequestError carrying the parser's message instead of an unguarded raw Error for invalid compose content", async () => {
+            await expect(
+                service.updateStack("my-app", {composeContent: "foo: bar"}),
+            ).rejects.toThrow(BadRequestError);
+            await expect(
+                service.updateStack("my-app", {composeContent: "foo: bar"}),
+            ).rejects.toThrow("Compose file missing 'services' key");
+        });
+
+        it("still writes the invalid content to disk (YAML-first) but touches neither configChanged, clearConfigError, nor the broadcaster before rejecting", async () => {
+            await expect(
+                service.updateStack("my-app", {composeContent: "foo: bar"}),
+            ).rejects.toThrow(BadRequestError);
+
+            expect(fs.writeCompose).toHaveBeenCalledWith("my-app", "foo: bar");
+            expect(repo.setConfigChanged).not.toHaveBeenCalled();
+            expect(repo.clearConfigError).not.toHaveBeenCalled();
+            expect(broadcaster.publish).not.toHaveBeenCalled();
+        });
+
+        it("calls repo.clearConfigError on a successful compose save that changes the hash", async () => {
+            await service.updateStack("my-app", {
+                composeContent: "services:\n  web:\n    image: nginx\n",
+            });
+
+            expect(repo.clearConfigError).toHaveBeenCalledWith("my-app");
+        });
+
+        it("calls repo.updateEnvHash with the hash of the written env content, mirroring the compose branch's updateStackHash", async () => {
+            const {hashComposeContent} = await import("../../../src/lib/compose-parser.js");
+
+            await service.updateStack("my-app", {envContent: "FOO=bar"});
+
+            expect(repo.updateEnvHash).toHaveBeenCalledWith({
+                stackId: "my-app",
+                hash: hashComposeContent("FOO=bar"),
+            });
+        });
+
+        it("calls repo.updateEnvHash with the hash of empty content when the env file is removed", async () => {
+            const {hashComposeContent} = await import("../../../src/lib/compose-parser.js");
+
+            await service.updateStack("my-app", {envContent: ""});
+
+            expect(repo.updateEnvHash).toHaveBeenCalledWith({
+                stackId: "my-app",
+                hash: hashComposeContent(""),
+            });
         });
     });
 });

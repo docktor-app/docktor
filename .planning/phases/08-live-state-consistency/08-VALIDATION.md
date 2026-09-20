@@ -3,9 +3,9 @@ phase: "08"
 slug: "live-state-consistency"
 # status lifecycle: draft (seeded by plan-phase) → validated (set by validate-phase §6)
 # audit-milestone §5.5 distinguishes NOT-VALIDATED (draft) from PARTIAL (validated + nyquist_compliant: false) (#2117)
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: validated
+nyquist_compliant: true
+wave_0_complete: true
 created: "2026-09-13"
 ---
 
@@ -23,63 +23,81 @@ created: "2026-09-13"
 | **Config file** | `server/vitest.config.ts`, `client/vitest.config.ts`, `client/playwright.config.ts` |
 | **Quick run command** | `yarn workspace @docktor/server test:unit` / `yarn workspace @docktor/client test` |
 | **Full suite command** | `yarn test` (root, `yarn workspaces foreach -A run test`) |
-| **Estimated runtime** | ~60-90 seconds (unit tiers only; this phase adds no new integration/e2e infra) |
+| **Estimated runtime** | ~60-90 seconds (unit tiers only) |
 
 ---
 
 ## Sampling Rate
 
-- **After every task commit:** Run `yarn workspace @docktor/client test -- stack-status-badge` (once created)
+- **After every task commit:** Run the task's own `<automated>` command (all 7 tasks across the phase's 4 plans carry one)
 - **After every plan wave:** Run `yarn test`
-- **Before `/gsd-verify-work`:** Full suite must be green, plus all 6 recorded `human_judgment: true` items explicitly closed (self-verified live, or a documented human-verify checkpoint)
+- **Before `/gsd-verify-work`:** Full suite must be green, plus manual items closed via live human UAT
 - **Max feedback latency:** ~90 seconds (unit suite)
 
 ---
 
 ## Per-Task Verification Map
 
-| Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
-|---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 08-01-01 | 01 | 1 | Todo: config_error UI indicator | — / N/A | N/A — already shipped, verification only | unit | `yarn workspace @docktor/server test:unit -- file-watcher stack-service` | ✅ | ⬜ pending |
-| 08-01-02 | 01 | 1 | Todo: config_error client handling | — / N/A | N/A | unit | `yarn workspace @docktor/client test -- use-stack use-stacks` | ✅ | ⬜ pending |
-| 08-01-03 | 01 | 1 | Todo: env-file config-changed flagging | — / N/A | N/A | unit | `yarn workspace @docktor/server test:unit -- file-watcher` | ✅ | ⬜ pending |
-| 08-01-04 | 01 | 1 | Todo: manual-action stack_status broadcast | — / N/A | N/A | unit | `yarn workspace @docktor/server test:unit -- stack-service backup-service` | ✅ | ⬜ pending |
-| 08-01-05 | 01 | 1 | Todo: handleSaveCompose/handleSaveEnv refetch | — / N/A | N/A | unit | `yarn workspace @docktor/client test -- stack-detail-page` | ✅ | ⬜ pending |
-| 08-02-01 | 02 | 1 | UI-SPEC: BACKING_UP/RESTORING/MIGRATING animate-pulse | — / N/A | N/A — CSS-only, no new attack surface | unit | `yarn workspace @docktor/client test -- stack-status-badge` | ❌ W0 | ⬜ pending |
-| 08-03-01 | 03 | 2 | Human-judgment: D6/05.1-02 live cross-tab SSE proof | — / N/A | N/A | manual / human_judgment | none automatable (see RESEARCH.md Pitfall 2) | n/a | ⬜ pending |
-| 08-03-02 | 03 | 2 | Human-judgment: D9/05.1-06 live config-error/config-changed proof | — / N/A | N/A | manual / human_judgment | none automatable | n/a | ⬜ pending |
-| 08-03-03 | 03 | 2 | Human-judgment: D7/05.1-04 live backup badge round-trip | — / N/A | N/A | manual / human_judgment | none automatable | n/a | ⬜ pending |
+This table was reconstructed against the phase's actual, current plan set (08-01 through 08-04 — the original draft referenced stale task IDs from an earlier planning iteration and did not match any PLAN.md on disk).
 
-*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
+| Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
+|---------|------|------|-------------|-----------|-------------------|-------------|--------|
+| 08-01-T1 | 01 | 1 | UI-SPEC: maintenance-state badge `animate-pulse` (tracer) | unit (TDD) | `yarn workspace @docktor/client test test/unit/components/domain/stack/stack-status-badge.test.tsx` | ✅ | ✅ green |
+| 08-01-T2 | 01 | 1 | Diagnostic: live-reachability probe for six stranded verification items (handed to UAT) | automated (docker/TCP probe) | `docker info`; raw Postgres SSLRequest probe against loopback + bridge address | ✅ (evidence in 08-01-SUMMARY.md) | ✅ recorded |
+| 08-01-T3 | 01 | 1 | Close 3 stale todos, make STATE.md accurate | automated (grep on STATE.md) | inline grep checks | ✅ | ✅ green |
+| 08-02-T1 | 02 | 1 | Closes G-08-2 (server half) — tag `config_changed` broadcasts with `source: "app"\|"external"` | unit (TDD, RED→GREEN) | `yarn workspace @docktor/server test test/unit/jobs/file-watcher.test.ts test/unit/application/stack-service.test.ts` | ✅ | ✅ green |
+| 08-02-T2 | 02 | 1 | Closes G-08-6 (blocker) + compounding bug — guard `updateStack`'s compose parse, sync env hash | unit (TDD, RED→GREEN) | `yarn workspace @docktor/server test test/unit/application/stack-service.test.ts`; `test:unit`; `yarn typecheck` | ✅ | ✅ green (721 passed) |
+| 08-03-T1 | 03 | 1 | Closes G-08-2 (client half) — gate "changed externally" toast on `event.source` | unit (TDD, RED→GREEN) | `yarn workspace @docktor/client test test/unit/hooks/use-stack.test.ts test/unit/hooks/use-stack-events.test.ts`; `test:unit`; `yarn typecheck` | ✅ | ✅ green (17/17, 11/11) |
+| 08-04-T1 | 04 | 1 | Closes G-08-7 (cosmetic) — promote `BACKING_UP` to blue+pulse per live V7 answer | unit (TDD, RED→GREEN) | `yarn workspace @docktor/client test test/unit/components/domain/stack/stack-status-badge.test.tsx`; `test:unit`; `yarn typecheck` | ✅ | ✅ green (24/24) |
+
+*Status: ✅ green · ❌ red · ⚠️ flaky*
+
+**Sampling continuity:** No 3 consecutive tasks lack an `<automated>` command — every task in every plan (08-01 through 08-04) has one. Nyquist requirement satisfied without gaps; no auditor dispatch or generated test files were needed.
 
 ---
 
 ## Wave 0 Requirements
 
-- [ ] `client/test/unit/components/domain/stack/stack-status-badge.test.tsx` — new file; covers the `animate-pulse` fix for `BACKING_UP`/`RESTORING`/`MIGRATING`, and regression-locks that `DEPLOYING`/`UPDATING` stay blue+pulse while the maintenance trio stay `outline`/gray+pulse (no color change). Same pattern as existing `cert-status-badge.test.tsx`.
-- [ ] No shared fixtures needed — pure presentational-component test, one render per status string.
-- [ ] Framework install: none — Vitest + Testing Library already configured for `client/`.
+All satisfied — `client/test/unit/components/domain/stack/stack-status-badge.test.tsx` existed from plan 08-01 and was extended (not recreated) by plan 08-04 for the `BACKING_UP` color promotion.
 
 ---
 
 ## Manual-Only Verifications
 
-| Behavior | Requirement | Why Manual | Test Instructions |
-|----------|-------------|------------|-------------------|
-| Deploy/update badge visible live in a second browser tab without reload, mid-action | Todo: manual-actions-dont-broadcast-sse (D6/05.1-02) | Playwright's `client/test/integration/fixtures.ts` route-guard stubs `**/api/events` to an empty stream — hermetic by design, cannot exercise a real SSE round-trip (RESEARCH.md Pitfall 2) | Open two browser tabs on the same stack detail page; trigger Deploy/Update in tab A; confirm the status badge updates in tab B without a manual reload, within the SSE broadcast latency |
-| config-changed badge appears after an external `.env` edit (outside the app) with no reload | Todo: env-file-changes-dont-flag-config-changed (D9/05.1-06) | Same hermetic-Playwright limitation; requires a real filesystem watcher + real running instance | Edit the stack's `.env` file directly on disk (not via the app UI); confirm the config-changed badge appears within `FileWatcher`'s detection window with no reload |
-| config_error red indicator appears/clears live on YAML syntax error injection/fix | Todo: config-error-ui-indication-missing (D9/05.1-06) | Same hermetic-Playwright limitation | Introduce a YAML syntax error into a running stack's compose file; confirm the red `Alert`/pill appears without reload; fix the syntax; confirm it clears without reload |
-| Backup-badge live round-trip (initiate → BACKING_UP badge visible → complete → badge clears) | Todo: manual-actions-dont-broadcast-sse (D7/05.1-04) | Same hermetic-Playwright limitation | Trigger a backup on a running stack; confirm the `BACKING_UP` badge (with pulse, once 08-02-01 lands) appears without reload and clears on completion |
+All four items below were originally hermetic-Playwright-unreachable (real SSE / real filesystem watcher required — see RESEARCH.md Pitfall 2) and were **closed via live human UAT** recorded in `08-UAT.md`, after the three code gaps below were fixed by this phase's gap-closure plans:
+
+| Behavior | Requirement | UAT Test | Result |
+|----------|-------------|----------|--------|
+| Deploy/update badge visible live in a second browser tab without reload | manual-actions-dont-broadcast-sse | V1 | pass |
+| Compose/env save in tab A does not spuriously show "changed externally" toast in tab B (G-08-2) | env-file-changes-dont-flag-config-changed | V2 | pass (after 08-02/08-03 fix; originally `issue`, major) |
+| Backup badge live round-trip with pulse | manual-actions-dont-broadcast-sse | V3, V4 | pass |
+| config-changed badge on external `.env` edit, no reload | env-file-changes-dont-flag-config-changed | V5 | pass |
+| config_error red indicator on YAML syntax error, no 500 on save (G-08-6) | config-error-ui-indication-missing | V6 | pass (after 08-02 fix; originally `issue`, blocker) |
+| `BACKING_UP` badge color judgement (G-08-7) | UI-SPEC live answer | V7 | pass (after 08-04 fix; originally `issue`, cosmetic) |
+
+V8 (Deploy button clickability during UPDATING/MIGRATING) was explicitly deferred by the user to a follow-up todo — out of this phase's scope, not a validation gap.
+
+---
+
+## Validation Audit 2026-09-20
+
+| Metric | Count |
+|--------|-------|
+| Gaps found | 0 |
+| Resolved | 0 (none needed — all 7 tasks across 4 plans already carry automated verify commands) |
+| Escalated | 0 |
+
+Reconstructed the Per-Task Map against the phase's actual current plan set (the prior draft referenced non-existent task IDs from a stale planning iteration). Cross-referenced the three UAT gaps (G-08-2, G-08-6, G-08-7) against their closing plans (08-02, 08-03, 08-04) and confirmed each has RED→GREEN TDD commits with passing tests. Confirmed the post-merge full-suite run (5 unrelated files failed under host contention — load average 20-33 on the sampling host, verified pre-existing via isolated re-run: all 45 tests in those 5 files pass 45/45 when run without contention) does not implicate any file this phase's plans touched.
 
 ---
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 90s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references (none — Wave 0 file already existed)
+- [x] No watch-mode flags
+- [x] Feedback latency < 90s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** validated 2026-09-20

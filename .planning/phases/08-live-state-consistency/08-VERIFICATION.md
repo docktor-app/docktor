@@ -1,7 +1,7 @@
 ---
 phase: 08-live-state-consistency
-verified: 2026-09-14T00:00:00Z
-status: human_needed
+verified: 2026-09-20T00:00:00Z
+status: passed
 score: 7/7 must-haves verified
 covered_files:
   - .planning/REQUIREMENTS.md
@@ -47,9 +47,32 @@ human_verification:
 # Phase 8: Live State Consistency Verification Report
 
 **Phase Goal:** State that is already correct on the server shows up live in the UI, without the user needing to refresh
-**Verified:** 2026-09-14
-**Status:** human_needed
-**Re-verification:** No — initial verification
+**Verified:** 2026-09-20
+**Status:** passed
+**Re-verification:** Yes — supersedes the 2026-09-14 `human_needed` pass below now that live human UAT has actually run (`08-UAT.md`) and its gaps are closed
+
+## Post-UAT Update (2026-09-20)
+
+The `human_needed` verification below was superseded by a live human UAT pass recorded in
+`08-UAT.md`: all 8 items (V1-V8) were executed live by the user. Results: **4 passed outright**
+(V1, V3, V4, V5), **3 issues found and fixed**, **1 explicitly deferred**:
+
+| Item | Result | Resolution |
+|------|--------|------------|
+| V1, V3, V4, V5 | pass | No action needed |
+| V2 (major) — false "changed externally" toast on own-tab save | issue → fixed | Closed by gap-closure plans 08-02 (server `source` discriminator) + 08-03 (client toast gating) |
+| V6 (blocker) — 500 error saving invalid compose YAML | issue → fixed | Closed by gap-closure plan 08-02 (typed `BadRequestError` guard) |
+| V7 (cosmetic, judgement) — is gray the right distinction for `BACKING_UP`? | issue → user said "change it also to blue" | Closed by gap-closure plan 08-04; `08-UI-SPEC.md` amended to match |
+| V8 (judgement) — Deploy button clickability during UPDATING/MIGRATING | skipped | Explicitly deferred by the user to a follow-up todo — out of this phase's scope |
+
+All three gap-closure plans (08-02, 08-03, 08-04) are complete with RED→GREEN TDD commits,
+passing tests, and were additionally covered by this phase's post-gap-closure quality gates:
+`08-VALIDATION.md` (Nyquist: 0 gaps, all 7 tasks across 4 plans have automated verify),
+`08-SECURITY.md` (10/10 threats closed, threats_open: 0), and `08-UI-REVIEW.md` (20/24,
+code-only audit — stale UI-SPEC contradiction found and fixed in the same session).
+
+**Phase 8 is complete.** The 2026-09-14 verification pass below remains as the historical
+record of the first plan (08-01) before UAT and gap closure.
 
 ## Goal Achievement
 
