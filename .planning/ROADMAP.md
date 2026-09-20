@@ -20,7 +20,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 5: Onboarding** - Guide new installs through setup with a first-run wizard and adopt existing stacks via brownfield import (completed 2026-04-08)
 - [x] **Phase 6: Proxy Configuration** - Configure domain and TLS for services via a Docktor-managed nginx-proxy + acme-companion stack (completed 2026-09-12)
 - [x] **Phase 7: Release Hardening: Data Safety and Core Workflows** - Verify managed stacks directory survives container recreation before v1.0.0 (completed 2026-09-13)
-- [ ] **Phase 8: Live State Consistency** - Make state changes (config errors, config edits, manual actions) reflect live in the UI without a manual refresh
+- [x] **Phase 8: Live State Consistency** - Make state changes (config errors, config edits, manual actions) reflect live in the UI without a manual refresh (completed 2026-09-20)
 - [x] **Phase 9: Deployment and Release Readiness** - Clean up deployment docs and close remaining release-process gaps for v1.0.0 (completed 2026-09-19)
 - [ ] **Phase 10: UX Redesign: Service Colors, Editors, and Dashboard Stats** - Redesign stack detail (colors, tabs, mobile), dashboard stats, and compose/env editors
 
@@ -297,7 +297,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Onboarding | 11/10 | Complete    | 2026-08-31 |
 | 6. Proxy Configuration | 7/7 | Complete    | 2026-09-12 |
 | 7. Release Hardening: Data Safety and Core Workflows | 2/2 | Complete    | 2026-09-13 |
-| 8. Live State Consistency | 4/4 | In Progress|  |
+| 8. Live State Consistency | 4/4 | Complete    | 2026-09-20 |
 | 9. Deployment and Release Readiness | 8/8 | Complete    | 2026-09-19 |
 | 10. UX Redesign: Service Colors, Editors, and Dashboard Stats | 0/0 | Not planned |  |
 
