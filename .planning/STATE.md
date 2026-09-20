@@ -1,14 +1,14 @@
 ---
 gsd_state_version: "1.0"
-milestone: v1.0
+milestone: v0.1.0
 current_phase: null
 current_phase_name: null
-status: "Phases 1-9 all complete, tested, and reviewed. 11 stale debug sessions verified fixed against current main and moved to .planning/debug/resolved/; 04-UAT.md and 08-UAT.md status fields corrected to terminal (complete/resolved) to match their already-closed gaps; Phase 10 (UX Redesign, 0 plans, never started) dropped as a leftover placeholder. 15 pending todos acknowledged for this milestone close and kept in .planning/todos/pending/ for a follow-up roadmap discussion. v1.0.0 has not shipped — milestone v1.0 stays open; ROADMAP.md is being reworked to scope the remaining phases toward that release."
-stopped_at: Milestone bookkeeping cleanup complete; awaiting roadmap rework discussion (new phases toward v1.0.0)
-last_updated: "2026-09-20T08:29:16.674Z"
+status: "Phases 1-9 all complete, tested, and reviewed. Product tracking moved to GitHub Issues (docktor-app/docktor): the vision doc (docs/vision.md scope) and all .planning/todos/pending/ items were triaged into 49 GitHub issues, native Issue Types adopted (Bug/Feature/Chore/Documentation/Task), and CLAUDE.md documents the process (including a project-specific override redirecting gsd-capture's add-todo to GitHub issues instead of .planning/todos/). User curated 23 issues into GitHub milestone 'v0.1.0 - First Release' (renamed from the working 'v1.0.0' label since this is the first release). ROADMAP.md Phases 10-15 now scope that milestone, sourced 1:1 from those 23 issues (Requirements fields list GitHub issue numbers, not REQ-IDs — REQUIREMENTS.md is frozen at its already-complete v1.0 content and not being extended for new work). Phase 14 (Backend Architecture Refactor, from issue #16) is intentionally open-ended and flagged as needing /gsd-discuss-phase before /gsd-plan-phase."
+stopped_at: Roadmap for v0.1.0 written (Phases 10-15); ready for /gsd-plan-phase on 10-13 (independent, any order) and /gsd-discuss-phase on 14
+last_updated: "2026-09-20T11:06:50.165Z"
 state_head: 2365fa1bc215cca61f39a43397e0a0e5555b74ba
 progress:
-  total_phases: 9
+  total_phases: 15
   completed_phases: 9
   total_plans: 88
   completed_plans: 88
@@ -22,11 +22,11 @@ milestone_name: milestone
 See: .planning/PROJECT.md (updated 2026-09-20)
 
 **Core value:** Users can deploy, monitor, and manage Docker Compose stacks through a browser UI without needing SSH or Docker CLI access.
-**Current focus:** Reworking ROADMAP.md toward v1.0.0 — no active phase
+**Current focus:** Plan and execute Phases 10-15 toward v0.1.0 (first public release)
 
 ## Current Position
 
-Phase: none active — Phases 1-9 all COMPLETE
+Phase: none active — Phases 1-9 COMPLETE; Phases 10-15 roadmapped, none planned yet
 
 ## Performance Metrics
 

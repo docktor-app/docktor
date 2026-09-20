@@ -1,7 +1,7 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v1.0",
+  "milestone": "v0.1.0",
   "phases": [
     {
       "number": "1",
@@ -47,12 +47,42 @@
       "number": "9",
       "name": "Deployment and Release Readiness",
       "status": "complete"
+    },
+    {
+      "number": "10",
+      "name": "Compose Safety and Templates",
+      "status": "pending"
+    },
+    {
+      "number": "11",
+      "name": "Update Checker Reliability",
+      "status": "pending"
+    },
+    {
+      "number": "12",
+      "name": "Health, Uptime and Disk Visibility",
+      "status": "pending"
+    },
+    {
+      "number": "13",
+      "name": "Access Hardening",
+      "status": "pending"
+    },
+    {
+      "number": "14",
+      "name": "Backend Architecture Refactor",
+      "status": "pending"
+    },
+    {
+      "number": "15",
+      "name": "Release Readiness for v0.1.0",
+      "status": "pending"
     }
   ],
   "next": {
-    "command": "/gsd:new-milestone",
-    "label": "Start a new milestone",
-    "reason": "All phases complete — start a new milestone"
+    "command": "/gsd:plan-phase 10",
+    "label": "Plan Phase 10 (Compose Safety and Templates)",
+    "reason": "Phases 1-9 complete · Phases 10-13 have no interdependency and can be planned in any order · Phase 14 needs /gsd:discuss-phase 14 first (open-ended scope) · Phase 15 depends on 10-14"
   },
-  "updated_at": "2026-09-20T08:29:16.714Z"
+  "updated_at": "2026-09-20T11:06:50.165Z"
 }

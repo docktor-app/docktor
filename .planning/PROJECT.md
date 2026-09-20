@@ -48,9 +48,16 @@ Users can deploy, monitor, and manage Docker Compose stacks through a browser UI
 
 ### Active
 
-<!-- Current scope. Building toward v1.0.0 — roadmap being reworked; see ROADMAP.md. -->
+<!-- Current scope. Building toward v0.1.0 (first public release) — see ROADMAP.md Phases 10-15. -->
 
-(No active requirements yet — next phases are being scoped from the accumulated backlog in `.planning/todos/pending/`.)
+Scope is now tracked in GitHub Issues (`docktor-app/docktor`, milestone "v0.1.0 - First Release"), not as REQ-IDs here — see CLAUDE.md "Issue Tracking". Phases 10-15 in ROADMAP.md cover:
+
+- [ ] Compose diff-before-apply, dangerous-config warnings, port-conflict detection, git-based templates — Phase 10 (#18, #19, #20, #21)
+- [ ] Update-checker/status bug fixes and cleanup — Phase 11 (#29, #31, #32, #33, #34)
+- [ ] HTTP health probes + history, uptime view, disk usage view — Phase 12 (#23, #24, #27)
+- [ ] TOTP 2FA and auth-endpoint hardening — Phase 13 (#45, #46)
+- [ ] Backend architecture refactor (scope TBD via discuss-phase) — Phase 14 (#16)
+- [ ] Docs, demo instance, license decision, image publishing, community health files — Phase 15 (#7, #11, #17, #42, #53, #54, #55, #57)
 
 ### Out of Scope
 
@@ -68,9 +75,9 @@ Users can deploy, monitor, and manage Docker Compose stacks through a browser UI
 All planned v1 functionality is shipped and live-verified: real-time observability, notifications, encrypted
 backup/restore, first-run onboarding with brownfield import, proxy/TLS configuration, and release-hardening work
 (durable stacks-directory persistence, real Prisma migrations, cross-platform CI, custom TLS certificates, and
-live SSE-driven UI state consistency). ~54K LOC across server/client/shared. v1.0.0 has not shipped yet — the
-roadmap is being reworked to fold in the accumulated backlog (`.planning/todos/pending/`) before defining the
-phases that close it out.
+live SSE-driven UI state consistency). ~54K LOC across server/client/shared. v0.1.0 (the first public release)
+has not shipped yet — ROADMAP.md Phases 10-15 scope the remaining work, sourced from GitHub issues curated into
+the "v0.1.0 - First Release" milestone in `docktor-app/docktor`.
 
 Key architectural constraints:
 - Single Fastify process: API + background jobs + SSE + static files (no separate frontend server in production)
@@ -102,4 +109,4 @@ Key architectural constraints:
 | Certificate-source field (`acme` \| `custom`) promoted onto every `ProxyConfig` row, not left implicit from a certificate link's presence/absence | A future third source, or a row with no explicit opinion, must never be ambiguous about who issues its certificate | Shipped Phase 09 |
 
 ---
-*Last updated: 2026-09-20 after Phases 1-9 completion review (roadmap rework in progress toward v1.0.0)*
+*Last updated: 2026-09-20 — Phases 1-9 completion review, GitHub issue tracking adopted, ROADMAP.md Phases 10-15 scoped toward v0.1.0 (first public release)*

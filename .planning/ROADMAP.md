@@ -2,7 +2,7 @@
 
 ## Overview
 
-Docktor's foundation (auth, stack CRUD, state machine, dashboard, detail page) is fully shipped. This roadmap covers the path to v1.0.0: completing the product from functional to compelling. Phases 1-9 are complete — observability, notifications, backup/restore, onboarding, proxy configuration, and release hardening are all shipped and live-verified. v1.0.0 itself has not shipped yet; remaining phases toward that release are being scoped from the accumulated backlog in `.planning/todos/pending/`.
+Docktor's foundation (auth, stack CRUD, state machine, dashboard, detail page) is fully shipped. This roadmap covers the path to **v0.1.0** (the first public release): completing the product from functional to compelling. Phases 1-9 are complete — observability, notifications, backup/restore, onboarding, proxy configuration, and release hardening are all shipped and live-verified. Phases 10-15 scope the remaining v0.1.0 work, sourced from GitHub issues in `docktor-app/docktor` milestone "v0.1.0 - First Release" (see CLAUDE.md "Issue Tracking" for how work is tracked going forward — GitHub Issues are now the source of truth for product scope, not `.planning/todos/` or `REQUIREMENTS.md`).
 
 ## Phases
 
@@ -21,7 +21,13 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 6: Proxy Configuration** - Configure domain and TLS for services via a Docktor-managed nginx-proxy + acme-companion stack (completed 2026-09-12)
 - [x] **Phase 7: Release Hardening: Data Safety and Core Workflows** - Verify managed stacks directory survives container recreation before v1.0.0 (completed 2026-09-13)
 - [x] **Phase 8: Live State Consistency** - Make state changes (config errors, config edits, manual actions) reflect live in the UI without a manual refresh (completed 2026-09-20)
-- [x] **Phase 9: Deployment and Release Readiness** - Clean up deployment docs and close remaining release-process gaps for v1.0.0 (completed 2026-09-19)
+- [x] **Phase 9: Deployment and Release Readiness** - Clean up deployment docs and close remaining release-process gaps for v1.0.0 (completed 2026-09-19)
+- [ ] **Phase 10: Compose Safety and Templates** - Diff-before-apply, dangerous-config warnings, port-conflict detection, and git-based stack templates ([#18](https://github.com/docktor-app/docktor/issues/18), [#19](https://github.com/docktor-app/docktor/issues/19), [#20](https://github.com/docktor-app/docktor/issues/20), [#21](https://github.com/docktor-app/docktor/issues/21))
+- [ ] **Phase 11: Update Checker Reliability** - Fix misleading update badges, wrong upgrade-dialog messaging, slow post-deploy status, and stale database rows ([#29](https://github.com/docktor-app/docktor/issues/29), [#31](https://github.com/docktor-app/docktor/issues/31), [#32](https://github.com/docktor-app/docktor/issues/32), [#33](https://github.com/docktor-app/docktor/issues/33), [#34](https://github.com/docktor-app/docktor/issues/34))
+- [ ] **Phase 12: Health, Uptime and Disk Visibility** - HTTP health probes with history, per-stack uptime, and disk usage per stack/volume ([#23](https://github.com/docktor-app/docktor/issues/23), [#24](https://github.com/docktor-app/docktor/issues/24), [#27](https://github.com/docktor-app/docktor/issues/27))
+- [ ] **Phase 13: Access Hardening** - TOTP 2FA and an auth-endpoint security audit (rate limiting, CSRF, cookies) ([#45](https://github.com/docktor-app/docktor/issues/45), [#46](https://github.com/docktor-app/docktor/issues/46))
+- [ ] **Phase 14: Backend Architecture Refactor** - Server-side architecture improvements without changing external API behavior — needs `/gsd-discuss-phase 14` to scope before planning ([#16](https://github.com/docktor-app/docktor/issues/16))
+- [ ] **Phase 15: Release Readiness for v0.1.0** - Docs, demo instance, license decision, published images, hardened startup, community health files — closes the milestone ([#7](https://github.com/docktor-app/docktor/issues/7), [#11](https://github.com/docktor-app/docktor/issues/11), [#17](https://github.com/docktor-app/docktor/issues/17), [#42](https://github.com/docktor-app/docktor/issues/42), [#53](https://github.com/docktor-app/docktor/issues/53), [#54](https://github.com/docktor-app/docktor/issues/54), [#55](https://github.com/docktor-app/docktor/issues/55), [#57](https://github.com/docktor-app/docktor/issues/57))
 
 ## Phase Details
 
@@ -381,3 +387,114 @@ Plans:
 **Wave 5** *(blocked on 09-06 and 09-07)*
 
 - [x] 09-08-PLAN.md — Item 4 client: multipart-capable API helper, Settings certificates card, certificate-source choice, expiring badge, close the TLS todo
+
+### Phase 10: Compose Safety and Templates
+
+**Goal:** Creating and editing a stack comes with real safety nets — a preview of what changes before it's applied, warnings on dangerous or convention-violating configuration, upfront port-conflict detection, and a git-based template to start from instead of a blank compose file.
+**Requirements**: GitHub issues [#18](https://github.com/docktor-app/docktor/issues/18), [#19](https://github.com/docktor-app/docktor/issues/19), [#20](https://github.com/docktor-app/docktor/issues/20), [#21](https://github.com/docktor-app/docktor/issues/21) — not tracked in REQUIREMENTS.md; see CLAUDE.md "Issue Tracking"
+**Depends on:** Phase 9 (independent of Phases 11-14 — can be planned/executed in any order relative to them)
+**Success Criteria** (what must be TRUE):
+
+  1. Saving a compose or `.env` edit shows a diff and requires explicit confirmation before it's applied (#18)
+  2. User can create a stack from a git-based template; a default official template repo is configured out of the box and additional repos can be added (#19)
+  3. A compose file with `privileged: true`, a Docker-socket mount, or a host bind mount outside the stack directory triggers a confirmation dialog before it's applied; configurable checks flag named-volume usage, inlined env vars, and a `.env` file with no `env_file` reference — all warn, none block (#20)
+  4. Deploying a stack whose compose file requests a host port already in use surfaces which stack or process holds it, without blocking deploy (#21)
+
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 10 to break down)
+
+### Phase 11: Update Checker Reliability
+
+**Goal:** Update detection and container status reporting are accurate everywhere they're shown — no misleading badges, no stale database rows, no unnecessary "unknown" status windows.
+**Requirements**: GitHub issues [#29](https://github.com/docktor-app/docktor/issues/29), [#31](https://github.com/docktor-app/docktor/issues/31), [#32](https://github.com/docktor-app/docktor/issues/32), [#33](https://github.com/docktor-app/docktor/issues/33), [#34](https://github.com/docktor-app/docktor/issues/34)
+**Depends on:** Phase 9 (independent of Phases 10, 12-14)
+**Success Criteria** (what must be TRUE):
+
+  1. "Update available" is shown aggregated at the stack level (stack list, dashboard, detail header), not just per-service (#31)
+  2. The "update available" badge visually distinguishes a concrete newer tag from a moving-tag digest change, never implying a pickable version that doesn't exist (#32)
+  3. The upgrade dialog shows a distinct, correct message for moving-tag services instead of the misleading "not checked yet" (#33)
+  4. Service status reflects reality within a few seconds after a deploy/update, not up to 60s (#34)
+  5. `ImageUpdateCheck` rows for retired image+tag combinations are pruned (#29)
+
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 11 to break down)
+
+### Phase 12: Health, Uptime and Disk Visibility
+
+**Goal:** Users can see whether a stack is actually healthy over time and how much disk it's consuming, without reading raw logs or guessing.
+**Requirements**: GitHub issues [#23](https://github.com/docktor-app/docktor/issues/23), [#24](https://github.com/docktor-app/docktor/issues/24), [#27](https://github.com/docktor-app/docktor/issues/27)
+**Depends on:** Phase 9 (independent of Phases 10, 11, 13, 14; internally #24 depends on #23's health-status history)
+**Success Criteria** (what must be TRUE):
+
+  1. A stack/service can optionally be configured with an HTTP health-probe URL, feeding into the same status model as Docker-healthcheck-derived status (#23)
+  2. Health-status transitions are retained as history, visible per stack and per service (#23)
+  3. Each stack shows an uptime percentage and an incident list over a retention window (#24)
+  4. Disk usage is viewable per stack and per volume, sortable, with a total (#27)
+
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 12 to break down)
+
+### Phase 13: Access Hardening
+
+**Goal:** Authentication is treated as a real security boundary, matching the risk of Docktor's Docker-socket access.
+**Requirements**: GitHub issues [#45](https://github.com/docktor-app/docktor/issues/45), [#46](https://github.com/docktor-app/docktor/issues/46)
+**Depends on:** Phase 9 (independent of Phases 10-12, 14)
+**Success Criteria** (what must be TRUE):
+
+  1. User can enable mandatory-capable TOTP two-factor authentication, with recovery codes issued on enrollment (#45)
+  2. Auth endpoints (login, password reset, etc.) have rate limiting (#46)
+  3. CSRF protection and session-cookie security defaults (httpOnly/sameSite/secure) are verified or closed on the existing better-auth integration (#46)
+
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 13 to break down)
+
+### Phase 14: Backend Architecture Refactor
+
+**Goal:** [Needs scoping — run `/gsd-discuss-phase 14` before `/gsd-plan-phase 14`] Improve the server's internal architecture (event-driven patterns, DDD/hexagonal layering, a reconsideration of cron-based job handling, dead-code removal) without changing external API behavior or breaking integration tests.
+**Requirements**: GitHub issue [#16](https://github.com/docktor-app/docktor/issues/16) — the issue itself is a discussion prompt, not a concrete spec; success criteria here are placeholders pending discussion
+**Depends on:** Phase 9 (independent of Phases 10-13; no other phase's success criteria assume this refactor has landed, since #16 explicitly keeps API endpoints unchanged)
+**Success Criteria** (what must be TRUE) — **draft, confirm during discuss-phase:**
+
+  1. TBD — concrete architectural target(s) chosen from #16's open list (event-driven architecture / DDD & hexagonal layering / job-handling reconsideration / dead-code removal)
+  2. No existing API endpoint's request/response contract changes
+  3. Existing integration tests pass unmodified
+
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 14 to break down)
+
+### Phase 15: Release Readiness for v0.1.0
+
+**Goal:** Docktor is safe and appealing to point strangers at for the first public release — accurate documentation, a live demo, a decided license, published images, a hardened startup path, and community health files.
+**Requirements**: GitHub issues [#7](https://github.com/docktor-app/docktor/issues/7), [#11](https://github.com/docktor-app/docktor/issues/11), [#17](https://github.com/docktor-app/docktor/issues/17), [#42](https://github.com/docktor-app/docktor/issues/42), [#53](https://github.com/docktor-app/docktor/issues/53), [#54](https://github.com/docktor-app/docktor/issues/54), [#55](https://github.com/docktor-app/docktor/issues/55), [#57](https://github.com/docktor-app/docktor/issues/57)
+**Depends on:** Phases 10, 11, 12, 13, 14 (the documentation and demo work here should describe what's actually shipped, so this phase closes the milestone)
+**Success Criteria** (what must be TRUE):
+
+  1. Startup fails loudly (blocking) on a missing required env var and warns (non-blocking) on a missing optional one — e.g. `ENCRYPTION_KEY` for backups (#7)
+  2. Docker images are built and published on release tags and on `main`-branch commits (#11)
+  3. Documentation covers the app's purpose, features, setup, and usage (#17)
+  4. Restic is pinned to a specific current release via explicit binary download, not `apt-get install` (#42)
+  5. A public demo instance is live and resets hourly (#53)
+  6. README has screenshots and a short GIF (#54)
+  7. `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, and issue/PR templates exist (#55)
+  8. Project license is decided and a `LICENSE` file reflecting it is added (#57)
+
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 15 to break down)
