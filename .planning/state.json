@@ -50,39 +50,44 @@
     },
     {
       "number": "10",
-      "name": "Compose Safety and Templates",
-      "status": "pending"
-    },
-    {
-      "number": "11",
-      "name": "Update Checker Reliability",
-      "status": "pending"
-    },
-    {
-      "number": "12",
-      "name": "Health, Uptime and Disk Visibility",
-      "status": "pending"
-    },
-    {
-      "number": "13",
-      "name": "Access Hardening",
-      "status": "pending"
-    },
-    {
-      "number": "14",
       "name": "Backend Architecture Refactor",
       "status": "pending"
     },
     {
+      "number": "11",
+      "name": "UI Rework",
+      "status": "pending"
+    },
+    {
+      "number": "12",
+      "name": "Compose Safety and Templates",
+      "status": "pending"
+    },
+    {
+      "number": "13",
+      "name": "Update Checker Reliability",
+      "status": "pending"
+    },
+    {
+      "number": "14",
+      "name": "Health, Uptime and Disk Visibility",
+      "status": "pending"
+    },
+    {
       "number": "15",
+      "name": "Access Hardening",
+      "status": "pending"
+    },
+    {
+      "number": "16",
       "name": "Release Readiness for v0.1.0",
       "status": "pending"
     }
   ],
   "next": {
-    "command": "/gsd:plan-phase 10",
-    "label": "Plan Phase 10 (Compose Safety and Templates)",
-    "reason": "Phases 1-9 complete · Phases 10-13 have no interdependency and can be planned in any order · Phase 14 needs /gsd:discuss-phase 14 first (open-ended scope) · Phase 15 depends on 10-14"
+    "command": "/gsd:discuss-phase 10",
+    "label": "Discuss Phase 10 (Backend Architecture Refactor)",
+    "reason": "Phases 1-9 complete · Phases 10 (backend) and 11 (UI) are both open-ended issues sequenced first so Phases 12/14/15's new code lands on the reworked structure instead of needing rework — each needs /gsd:discuss-phase before /gsd:plan-phase · 10 and 11 are independent (separate server/client tracks, can run in parallel) · Phase 13 (bug fixes only) carries low rework risk and can run anytime · Phase 16 depends on 10-15"
   },
-  "updated_at": "2026-09-20T11:06:50.165Z"
+  "updated_at": "2026-09-22T00:00:00.000Z"
 }

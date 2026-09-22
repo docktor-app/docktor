@@ -3,12 +3,12 @@ gsd_state_version: "1.0"
 milestone: v0.1.0
 current_phase: null
 current_phase_name: null
-status: "Phases 1-9 all complete, tested, and reviewed. Product tracking moved to GitHub Issues (docktor-app/docktor): the vision doc (docs/vision.md scope) and all .planning/todos/pending/ items were triaged into 49 GitHub issues, native Issue Types adopted (Bug/Feature/Chore/Documentation/Task), and CLAUDE.md documents the process (including a project-specific override redirecting gsd-capture's add-todo to GitHub issues instead of .planning/todos/). User curated 23 issues into GitHub milestone 'v0.1.0 - First Release' (renamed from the working 'v1.0.0' label since this is the first release). ROADMAP.md Phases 10-15 now scope that milestone, sourced 1:1 from those 23 issues (Requirements fields list GitHub issue numbers, not REQ-IDs — REQUIREMENTS.md is frozen at its already-complete v1.0 content and not being extended for new work). Phase 14 (Backend Architecture Refactor, from issue #16) is intentionally open-ended and flagged as needing /gsd-discuss-phase before /gsd-plan-phase."
-stopped_at: Roadmap for v0.1.0 written (Phases 10-15); ready for /gsd-plan-phase on 10-13 (independent, any order) and /gsd-discuss-phase on 14
-last_updated: "2026-09-20T11:06:50.165Z"
+status: "Phases 1-9 all complete, tested, and reviewed. Product tracking moved to GitHub Issues (docktor-app/docktor): the vision doc (docs/vision.md scope) and all .planning/todos/pending/ items were triaged into 49 GitHub issues, native Issue Types adopted (Bug/Feature/Chore/Documentation/Task), and CLAUDE.md documents the process (including a project-specific override redirecting gsd-capture's add-todo to GitHub issues instead of .planning/todos/). User curated 23 issues (later 24, adding #15 UI Rework) into GitHub milestone 'v0.1.0 - First Release' (renamed from the working 'v1.0.0' label since this is the first release). ROADMAP.md Phases 10-16 now scope that milestone, sourced 1:1 from those issues (Requirements fields list GitHub issue numbers, not REQ-IDs — REQUIREMENTS.md is frozen at its already-complete v1.0 content and not being extended for new work). Per user request, Phase 10 (Backend Architecture Refactor, #16) and Phase 11 (UI Rework, #15) were resequenced to run BEFORE the feature phases that add new server/client code (12, 14, 15), so that new work lands on the reworked structure instead of needing rework afterward — both are independent of each other (separate server/client tracks) and both are intentionally open-ended, flagged as needing /gsd-discuss-phase before /gsd-plan-phase. Phase 13 (Update Checker Reliability — narrow bug fixes, not new architecture) carries low rework risk and can run anytime."
+stopped_at: Roadmap for v0.1.0 written and resequenced (Phases 10-16); ready for /gsd-discuss-phase on 10 and 11 (can run in parallel), /gsd-plan-phase 13 anytime
+last_updated: "2026-09-22T00:00:00.000Z"
 state_head: 2365fa1bc215cca61f39a43397e0a0e5555b74ba
 progress:
-  total_phases: 15
+  total_phases: 16
   completed_phases: 9
   total_plans: 88
   completed_plans: 88
@@ -19,14 +19,14 @@ milestone_name: milestone
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-20)
+See: .planning/PROJECT.md (updated 2026-09-22)
 
 **Core value:** Users can deploy, monitor, and manage Docker Compose stacks through a browser UI without needing SSH or Docker CLI access.
-**Current focus:** Plan and execute Phases 10-15 toward v0.1.0 (first public release)
+**Current focus:** Discuss/plan and execute Phases 10-16 toward v0.1.0 (first public release), starting with the backend/UI refactors (10, 11)
 
 ## Current Position
 
-Phase: none active — Phases 1-9 COMPLETE; Phases 10-15 roadmapped, none planned yet
+Phase: none active — Phases 1-9 COMPLETE; Phases 10-16 roadmapped, none planned yet
 
 ## Performance Metrics
 
