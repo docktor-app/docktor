@@ -391,22 +391,38 @@ Plans:
 
 ### Phase 10: Backend Architecture Refactor
 
-**Goal:** [Needs scoping — run `/gsd-discuss-phase 10` before `/gsd-plan-phase 10`] Improve the server's internal architecture (event-driven patterns, DDD/hexagonal layering, a reconsideration of cron-based job handling, dead-code removal) without changing external API behavior or breaking integration tests. Sequenced before Phases 12/14/15 so their new server-side code (template service, health-probe jobs, 2FA/rate-limiting) lands on the refactored structure instead of needing rework afterward.
-**Requirements**: GitHub issue [#16](https://github.com/docktor-app/docktor/issues/16) — the issue itself is a discussion prompt, not a concrete spec; success criteria here are placeholders pending discussion
+**Goal:** Improve the server's internal architecture — DDD/hexagonal layering with explicit ports, a formal Job abstraction and registry, an in-process domain-event bus, and a dedicated dead-code audit — without changing external API behavior or breaking integration tests. Sequenced before Phases 12/14/15 so their new server-side code (template service, health-probe jobs, 2FA/rate-limiting) lands on the refactored structure instead of needing rework afterward.
+**Requirements**: GitHub issue [#16](https://github.com/docktor-app/docktor/issues/16), scoped into 18 decisions (D-01 through D-18) in `.planning/phases/10-backend-architecture-refactor/10-CONTEXT.md`
 **Depends on:** Phase 9
 
 Independent of Phase 11 (separate server/client tracks — can run in parallel). Later phases that add new server-side code should follow this one; see their own "Depends on" entries.
-**Success Criteria** (what must be TRUE) — **draft, confirm during discuss-phase:**
+**Success Criteria** (what must be TRUE):
 
-  1. TBD — concrete architectural target(s) chosen from #16's open list (event-driven architecture / DDD & hexagonal layering / job-handling reconsideration / dead-code removal)
+  1. Every decision D-01 through D-18 is implemented and traceable to an artifact in the tree and a passing check
   2. No existing API endpoint's request/response contract changes
-  3. Existing integration tests pass unmodified
+  3. Existing integration tests (`server/test/integration/`, 5 files) pass unmodified
+  4. CLAUDE.md's layering rules are enforced by an automated architecture fitness test rather than by review
+  5. All three of D-15's side-effect categories — notifications, the `StackEvent` audit trail, and status/config broadcasts — reach their consumers through the in-process domain-event bus, with the SSE stream a browser observes unchanged (D-18)
 
-**Plans:** 0 plans
+**Plans:** 15 plans
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 10 to break down)
+- [ ] 10-01-PLAN.md — Layering contract proven end-to-end on the notification service: `repositories/index.ts`, the first port, the architecture fitness test
+- [ ] 10-02-PLAN.md — Named port interfaces for the four infrastructure dependencies D-07 lists explicitly
+- [ ] 10-03-PLAN.md — The domain-event bus: event catalog, port, and in-memory implementation with per-subscriber failure isolation
+- [ ] 10-04-PLAN.md — The `Job` lifecycle contract, the two job kinds, and the health-tracking registry
+- [ ] 10-05-PLAN.md — Ports for the remaining six infrastructure classes, plus the fitness rule that keeps the convention true
+- [ ] 10-06-PLAN.md — Application services depend on ports only; pure business rules move down into `domain/`
+- [ ] 10-07-PLAN.md — All seven background jobs adopt the `Job` contract; `jobs/index.ts` becomes a registry
+- [ ] 10-08-PLAN.md — `routes/stacks.ts` stops reaching past its layer; a new `LogService`
+- [ ] 10-09-PLAN.md — The settings, notifications, setup and imports routes stop reaching past their layer
+- [ ] 10-10-PLAN.md — `routes/backups.ts` cleaned, plus the routes rule in the fitness test
+- [ ] 10-11-PLAN.md — Status and configuration broadcasts move onto the bus; the live-state broadcaster becomes a subscriber (D-15 item 3)
+- [ ] 10-12-PLAN.md — Notifications move onto the bus; a subscriber composes them (D-15 item 1)
+- [ ] 10-13-PLAN.md — The `StackEvent` audit trail moves onto the bus, plus one ordered subscriber registration (D-15 item 2)
+- [ ] 10-14-PLAN.md — The dedicated dead-code audit: the unreachable update-trigger method, the dead `src/services/` directory, and the workspace sweep (D-03, D-11)
+- [ ] 10-15-PLAN.md — Phase gate: automated gate, decision-coverage table, live-database integration run, and the five deferred human checks
 
 ### Phase 11: UI Rework
 
