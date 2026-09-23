@@ -33,6 +33,25 @@ export class SettingsRepository {
         return prisma.setting.findMany()
     }
 
+    // WR-07 concurrency guard: an exclusive insert of a lock row. `key` is
+    // the table's primary key, so Postgres guarantees only one concurrent
+    // insert of the same key can ever succeed — every losing caller's insert
+    // rejects with a uniqueness violation. That rejection MUST propagate to
+    // the caller unchanged: no try/catch, no rejection handler, no upsert
+    // fallback here. The caller (OnboardingService) is the sole place that
+    // decides what a losing insert means.
+    async insertExclusive(key: string, value: string): Promise<void> {
+        await prisma.setting.create({data: {key, value}})
+    }
+
+    // Releases a lock row acquired via insertExclusive(). Tolerates an
+    // already-absent row (e.g. a second release attempt, or a row that was
+    // never created) so the release side of an acquire/release pair can
+    // always run unconditionally from a `finally` block.
+    async deleteIfPresent(key: string): Promise<void> {
+        await prisma.setting.delete({where: {key}}).catch(() => {})
+    }
+
     // Convenience alias for plan interface compatibility
     async get(key: string): Promise<string | null> {
         const record = await this.findByKey(key)

@@ -8,6 +8,20 @@ function createMockSettingsRepo() {
         upsert: vi.fn(),
         get: vi.fn(),
         getMany: vi.fn(),
+        insertExclusive: vi.fn(),
+        deleteIfPresent: vi.fn(),
+    };
+}
+
+function createMockUserRepo() {
+    return {
+        count: vi.fn(),
+    };
+}
+
+function createMockScanner() {
+    return {
+        scan: vi.fn(),
     };
 }
 
@@ -51,6 +65,8 @@ describe("OnboardingService", () => {
     let mockCrypto: ReturnType<typeof createMockCrypto>;
     let mockFsLib: ReturnType<typeof createMockFsLib>;
     let mockProxy: ReturnType<typeof createMockProxy>;
+    let mockUserRepo: ReturnType<typeof createMockUserRepo>;
+    let mockScanner: ReturnType<typeof createMockScanner>;
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -60,6 +76,8 @@ describe("OnboardingService", () => {
         mockCrypto = createMockCrypto();
         mockFsLib = createMockFsLib();
         mockProxy = createMockProxy();
+        mockUserRepo = createMockUserRepo();
+        mockScanner = createMockScanner();
     });
 
     describe("handleWizardStep1 (WIZ-02)", () => {
@@ -302,6 +320,124 @@ describe("OnboardingService", () => {
             await expect(service.handleWizardStep6({acmeEmail: ""})).rejects.toThrow(
                 "Failed to deploy the proxy stack: exit code 1: network docktor_proxy not found",
             );
+        });
+    });
+
+    describe("hasAnyUser (setup-completeness check)", () => {
+        function buildService() {
+            return new OnboardingService(
+                mockAuthClient as any,
+                mockSettingsRepo as any,
+                mockCrypto as any,
+                mockStackRepo as any,
+                mockProxy as any,
+                mockFsLib as any,
+                mockUserRepo as any,
+                mockScanner as any,
+            );
+        }
+
+        it("reports complete when at least one user exists", async () => {
+            mockUserRepo.count.mockResolvedValue(1);
+            const service = buildService();
+
+            await expect(service.hasAnyUser()).resolves.toBe(true);
+        });
+
+        it("reports incomplete when no user exists", async () => {
+            mockUserRepo.count.mockResolvedValue(0);
+            const service = buildService();
+
+            await expect(service.hasAnyUser()).resolves.toBe(false);
+        });
+    });
+
+    describe("createAdminWithLock (WR-07 concurrency guard)", () => {
+        function buildService() {
+            return new OnboardingService(
+                mockAuthClient as any,
+                mockSettingsRepo as any,
+                mockCrypto as any,
+                mockStackRepo as any,
+                mockProxy as any,
+                mockFsLib as any,
+                mockUserRepo as any,
+                mockScanner as any,
+            );
+        }
+
+        it("creates the admin and releases the lock on success", async () => {
+            mockSettingsRepo.insertExclusive.mockResolvedValue(undefined);
+            mockSettingsRepo.deleteIfPresent.mockResolvedValue(undefined);
+            mockAuthClient.signUpEmail.mockResolvedValue({
+                user: {id: "user-1", email: "admin@example.com", name: "admin"},
+                token: "session-token-123",
+            });
+            const service = buildService();
+
+            const result = await service.createAdminWithLock({
+                email: "admin@example.com",
+                password: "password123",
+            });
+
+            expect(result.sessionToken).toBe("session-token-123");
+            expect(mockSettingsRepo.insertExclusive).toHaveBeenCalledWith(
+                "setup.step1Lock",
+                expect.any(String),
+            );
+            expect(mockSettingsRepo.deleteIfPresent).toHaveBeenCalledWith("setup.step1Lock");
+        });
+
+        it("produces the same refusal the route produced when the exclusive insert rejects (a losing concurrent request)", async () => {
+            mockSettingsRepo.insertExclusive.mockRejectedValue(new Error("Unique constraint failed"));
+            const service = buildService();
+
+            await expect(
+                service.createAdminWithLock({email: "admin@example.com", password: "password123"}),
+            ).rejects.toThrow(BadRequestError);
+            await expect(
+                service.createAdminWithLock({email: "admin@example.com", password: "password123"}),
+            ).rejects.toThrow("Setup already complete");
+
+            // A losing request must never reach signUpEmail
+            expect(mockAuthClient.signUpEmail).not.toHaveBeenCalled();
+            // Nor should it attempt to release a lock it never acquired
+            expect(mockSettingsRepo.deleteIfPresent).not.toHaveBeenCalled();
+        });
+
+        it("releases the lock even when the wrapped call throws", async () => {
+            mockSettingsRepo.insertExclusive.mockResolvedValue(undefined);
+            mockSettingsRepo.deleteIfPresent.mockResolvedValue(undefined);
+            mockAuthClient.signUpEmail.mockRejectedValue(new Error("signUpEmail exploded"));
+            const service = buildService();
+
+            await expect(
+                service.createAdminWithLock({email: "admin@example.com", password: "password123"}),
+            ).rejects.toThrow("signUpEmail exploded");
+
+            expect(mockSettingsRepo.deleteIfPresent).toHaveBeenCalledWith("setup.step1Lock");
+        });
+    });
+
+    describe("scan (brownfield scan delegation)", () => {
+        it("delegates to the injected scanner port", async () => {
+            const scanResult = {found: [], errors: []};
+            mockScanner.scan.mockResolvedValue(scanResult);
+            const service = new OnboardingService(
+                mockAuthClient as any,
+                mockSettingsRepo as any,
+                mockCrypto as any,
+                mockStackRepo as any,
+                mockProxy as any,
+                mockFsLib as any,
+                mockUserRepo as any,
+                mockScanner as any,
+            );
+
+            const result = await service.scan(["/opt/stacks"]);
+
+            expect(mockScanner.scan).toHaveBeenCalledWith(["/opt/stacks"]);
+            expect(result).toBe(scanResult);
         });
     });
 });
