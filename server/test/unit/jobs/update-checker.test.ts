@@ -4,7 +4,6 @@ import {
     compareVersions,
     getNextImageToCheck,
     splitImageRef,
-    buildImageRefFromService,
     selectUpgradeCandidates,
     selectLatestTag,
 } from "../../../../src/jobs/update-checker.js";
@@ -197,22 +196,9 @@ describe("UpdateChecker", () => {
         });
     });
 
-    describe("buildImageRefFromService() (UPD-02 imageless filter)", () => {
-        it("returns null for a build-only service with no image", () => {
-            expect(buildImageRefFromService("", null)).toBeNull();
-            expect(buildImageRefFromService("   ", null)).toBeNull();
-            expect(buildImageRefFromService(null, null)).toBeNull();
-            expect(buildImageRefFromService(undefined, undefined)).toBeNull();
-        });
-
-        it("reconstructs a canonical tag-qualified ref matching findAllImageRefs' spelling", () => {
-            expect(buildImageRefFromService("nginx", "1.25")).toBe("nginx:1.25");
-        });
-
-        it("defaults to :latest when no tag is stored", () => {
-            expect(buildImageRefFromService("nginx", null)).toBe("nginx:latest");
-        });
-    });
+    // buildImageRefFromService() moved to domain/image-update-detection.ts
+    // (10-08 Task 1) — its tests moved with it, to
+    // test/unit/domain/image-update-detection.test.ts.
 
     describe("selectUpgradeCandidates() (UPD-01)", () => {
         it("returns only tags comparing newer than 1.25, ordered newest first, dropping moving and non-version tags", () => {

@@ -13,7 +13,7 @@ import {stackService} from "../application/index.js";
 import {prisma} from "../lib/db.js";
 import {dockerodeClient} from "../infrastructure/dockerode-client.js";
 import {processDockerLogChunk, type LogLineEvent} from "../lib/docker-log-parser.js";
-import {buildImageRefFromService} from "../jobs/update-checker.js";
+import {buildImageRefFromService} from "../domain/image-update-detection.js";
 import {imageUpdateCheckRepository} from "../repositories/image-update-check-repository.js";
 import {NotFoundError} from "../lib/errors.js";
 

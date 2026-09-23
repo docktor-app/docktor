@@ -5,6 +5,7 @@ import {registryClient, RegistryUnavailableError} from "../infrastructure/regist
 import type {RegistryClientPort} from "../application/ports/registry-client-port.js"
 import type {StateBroadcaster} from "../lib/state-broadcaster.js"
 import {stateEventBroadcaster} from "../lib/state-broadcaster.js"
+import {buildImageRefFromService} from "../domain/image-update-detection.js"
 import {IntervalJob} from "./job.js"
 
 // Tags with no version-ordered meaning — a moving tag always points at
@@ -25,23 +26,6 @@ export function normalizeImageRef(imageRef: string): string {
         .replace(/^docker\.io\//, "")
     if (!ref.includes(":")) ref = ref + ":latest"
     return ref
-}
-
-/**
- * Reconstructs the canonical imageRef for a service's stored image + tag
- * columns, using the same spelling as `findAllImageRefs()` so callers that
- * need to look up an ImageUpdateCheck row for a specific service (e.g. the
- * stack detail route's badge lookup) always agree with what was persisted.
- * Returns null for build-only services (no image), which must be excluded
- * from the checked image set rather than producing a guaranteed-failure ref.
- */
-export function buildImageRefFromService(
-    image: string | null | undefined,
-    imageTag: string | null | undefined,
-): string | null {
-    if (!image || !image.trim()) return null
-    const ref = imageTag ? `${image}:${imageTag}` : image
-    return normalizeImageRef(ref)
 }
 
 /**
