@@ -140,7 +140,7 @@ export async function buildApp() {
         });
 
         app.addHook("onClose", async () => {
-            stopJobs();
+            await stopJobs();
             app.log.info("Jobs stopped");
         });
     }

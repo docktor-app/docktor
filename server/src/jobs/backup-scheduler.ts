@@ -1,4 +1,5 @@
 import cron from "node-cron"
+import type {Job, JobHealthReporter, JobKind} from "./job.js"
 
 // ─── Dependency interfaces ────────────────────────────────────────────────────
 
@@ -28,8 +29,18 @@ export interface BackupSchedulerSettings {
 
 // ─── BackupScheduler ──────────────────────────────────────────────────────────
 
-export class BackupScheduler {
+// PD-6: this job's schedules are per-stack and dynamic (one cron task per
+// stack, created/destroyed at runtime by upsert()/remove()), so it
+// implements Job directly rather than extending IntervalJob or WatcherJob —
+// neither base class's single schedule handle fits an N-task job. The
+// per-stack task map stays internal; the registry only ever sees name/kind
+// and the four Job lifecycle members.
+export class BackupScheduler implements Job {
+    readonly name = "BackupScheduler"
+    readonly kind: JobKind = "dynamic"
+
     private tasks = new Map<string, cron.ScheduledTask>()
+    private healthReporter: JobHealthReporter | null = null
 
     constructor(
         private readonly service: BackupSchedulerService,
@@ -37,6 +48,14 @@ export class BackupScheduler {
         private readonly settings: BackupSchedulerSettings,
         private readonly backupRepo: BackupSchedulerBackupRepo,
     ) {}
+
+    setHealthReporter(reporter: JobHealthReporter): void {
+        this.healthReporter = reporter
+    }
+
+    async start(): Promise<void> {
+        await this.loadAll()
+    }
 
     /**
      * Creates or replaces a cron task for the given stack.
@@ -107,12 +126,18 @@ export class BackupScheduler {
 
     /**
      * Invokes backup for a stack on schedule. Errors are logged and swallowed
-     * to prevent cron task crashes.
+     * to prevent cron task crashes. Reports at the scheduler level (a "run"
+     * once the tick has fired the initiateBackup call, an "error" only when
+     * that call itself throws) — the only honest reading of a single
+     * last-run/last-error field shared across every stack's cron task.
      */
     private async runScheduledBackup(stackId: string): Promise<void> {
         try {
             const result = await this.service.initiateBackup(stackId, "SCHEDULED")
-            if (!result) return
+            if (!result) {
+                this.healthReporter?.recordRun(this.name)
+                return
+            }
 
             // Fire-and-forget: fetch required args and run backup asynchronously
             // Pattern matches routes/backups.ts lines 36-56
@@ -150,8 +175,11 @@ export class BackupScheduler {
                     }
                 }
             })()
+
+            this.healthReporter?.recordRun(this.name)
         } catch (err) {
             console.error(`[BackupScheduler] Scheduled backup failed for stack ${stackId}:`, err)
+            this.healthReporter?.recordError(this.name, err)
         }
     }
 }
@@ -178,12 +206,29 @@ async function createProductionScheduler(): Promise<BackupScheduler> {
     )
 }
 
-export const backupScheduler = {
+let _healthReporter: JobHealthReporter | null = null
+
+// A Job facade over the lazily-constructed production BackupScheduler,
+// plus the upsert()/remove() members routes call at runtime to create and
+// destroy a single stack's schedule — the lazy construction itself (not
+// this facade) is what keeps db.ts and the rest of the production
+// dependency chain out of the unit-test module graph.
+export const backupScheduler: Job & {
+    upsert(stackId: string, cronExpr: string): void
+    remove(stackId: string): void
+} = {
+    name: "BackupScheduler",
+    kind: "dynamic",
     start: async () => {
         _scheduler = await createProductionScheduler()
-        await _scheduler.loadAll()
+        if (_healthReporter) _scheduler.setHealthReporter(_healthReporter)
+        await _scheduler.start()
     },
     stop: () => _scheduler?.stop(),
+    setHealthReporter: (reporter: JobHealthReporter) => {
+        _healthReporter = reporter
+        _scheduler?.setHealthReporter(reporter)
+    },
     upsert: (stackId: string, cronExpr: string) => _scheduler?.upsert(stackId, cronExpr),
     remove: (stackId: string) => _scheduler?.remove(stackId),
 }
