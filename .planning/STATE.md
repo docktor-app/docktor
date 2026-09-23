@@ -2,16 +2,17 @@
 gsd_state_version: "1.0"
 milestone: v0.1.0
 current_phase: 10
-current_phase_name: backend-architecture-refactor
+current_phase_name: Backend Architecture Refactor
+current_plan: 2
 status: "Phases 1-9 all complete, tested, and reviewed. Product tracking moved to GitHub Issues (docktor-app/docktor): the vision doc (docs/vision.md scope) and all .planning/todos/pending/ items were triaged into 49 GitHub issues, native Issue Types adopted (Bug/Feature/Chore/Documentation/Task), and CLAUDE.md documents the process (including a project-specific override redirecting gsd-capture's add-todo to GitHub issues instead of .planning/todos/). User curated 23 issues (later 24, adding #15 UI Rework) into GitHub milestone 'v0.1.0 - First Release' (renamed from the working 'v1.0.0' label since this is the first release). ROADMAP.md Phases 10-16 now scope that milestone, sourced 1:1 from those issues (Requirements fields list GitHub issue numbers, not REQ-IDs — REQUIREMENTS.md is frozen at its already-complete v1.0 content and not being extended for new work). Per user request, Phase 10 (Backend Architecture Refactor, #16) and Phase 11 (UI Rework, #15) were resequenced to run BEFORE the feature phases that add new server/client code (12, 14, 15), so that new work lands on the reworked structure instead of needing rework afterward — both are independent of each other (separate server/client tracks) and both are intentionally open-ended, flagged as needing /gsd-discuss-phase before /gsd-plan-phase. Phase 13 (Update Checker Reliability — narrow bug fixes, not new architecture) carries low rework risk and can run anytime."
-stopped_at: Phase 10 context gathered
-last_updated: "2026-09-23T08:35:20.282Z"
-state_head: 681e1cbda73830b244cd642d94483d999699fcd8
+stopped_at: Completed 10-01-PLAN.md
+last_updated: "2026-09-23T09:08:42.893Z"
+state_head: 9f64b1fdbe840f7d51f1a8052a50639e7a9ca8f7
 progress:
   total_phases: 17
   completed_phases: 9
   total_plans: 103
-  completed_plans: 88
+  completed_plans: 89
 milestone_name: milestone
 ---
 
@@ -22,11 +23,13 @@ milestone_name: milestone
 See: .planning/PROJECT.md (updated 2026-09-22)
 
 **Core value:** Users can deploy, monitor, and manage Docker Compose stacks through a browser UI without needing SSH or Docker CLI access.
-**Current focus:** Discuss/plan and execute Phases 10-16 toward v0.1.0 (first public release), starting with the backend/UI refactors (10, 11)
+**Current focus:** Phase 10 — Backend Architecture Refactor
 
 ## Current Position
 
-Phase: 10 (backend-architecture-refactor) — READY TO EXECUTE
+Phase: 10 (Backend Architecture Refactor) — EXECUTING
+Current Plan: 2
+Total Plans in Phase: 15
 
 ## Performance Metrics
 
@@ -137,6 +140,7 @@ Phase: 10 (backend-architecture-refactor) — READY TO EXECUTE
 | Phase 08 P02 | 25min | 2 tasks | 5 files |
 | Phase 08 P03 | 18min | 1 tasks | 4 files |
 | Phase 08 P04 | 15min | 1 tasks | 2 files |
+| Phase 10-backend-architecture-refactor P01 | 22min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -317,6 +321,9 @@ Recent decisions affecting current work:
 - [Phase 08]: [Phase 08-03]: ConfigChangedEvent.source is required (not optional), matching the server-side field from companion plan 08-02, so a future third publisher cannot ship an untagged event that silently no-ops the toast unnoticed
 - [Phase 08]: [Phase 08-03]: every pre-existing config_changed test literal not asserting toast behavior was tagged source: "app" (not "external") per plan guidance, keeping the silent-refresh path exercised across the broadest set of scenarios
 - [Phase 08]: [Phase 08]: [Phase 08-04]: BACKING_UP's statusColors entry set byte-identical to DEPLOYING/UPDATING's existing string (not a near-duplicate) so all three blue-pulsing statuses share one literal value; RESTORING and MIGRATING deliberately left untouched per G-08-7's scoped root_cause
+- [Phase 10]: [Phase 10-01]: SmtpClientPort.sendMail(config, message) takes the full SmtpConfig on every call so notify() and testSmtp() share one transport operation shape, not two divergent paths
+- [Phase 10]: [Phase 10-01]: settingsRepository singleton added directly to settings-repository.ts (matching the other 6 repos), keeping repositories/index.ts a pure re-export list with no new-instance exceptions
+- [Phase 10]: [Phase 10-01]: application/index.ts keeps its original export names (settingsRepository, repo, certificateRepositoryInstance) now pointing at repositories/index.ts singletons, so out-of-scope route files needed zero edits
 
 ### Quick Tasks Completed
 
@@ -387,6 +394,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-09-22T19:29:03.701Z
-Stopped at: Phase 10 context gathered
-Resume file: .planning/phases/10-backend-architecture-refactor/10-CONTEXT.md
+Last session: 2026-09-23T09:08:41.573Z
+Stopped at: Completed 10-01-PLAN.md
+Resume file: None

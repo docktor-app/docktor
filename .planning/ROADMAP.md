@@ -404,12 +404,12 @@ Independent of Phase 11 (separate server/client tracks — can run in parallel).
   4. CLAUDE.md's layering rules are enforced by an automated architecture fitness test rather than by review
   5. All three of D-15's side-effect categories — notifications, the `StackEvent` audit trail, and status/config broadcasts — reach their consumers through the in-process domain-event bus, with the SSE stream a browser observes unchanged (D-18)
 
-**Plans:** 15 plans
+**Plans:** 1/15 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 10-01-PLAN.md — Layering contract proven end-to-end on the notification service: `repositories/index.ts`, the first port, the architecture fitness test
+- [x] 10-01-PLAN.md — Layering contract proven end-to-end on the notification service: `repositories/index.ts`, the first port, the architecture fitness test
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
