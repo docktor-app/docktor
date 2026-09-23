@@ -1,10 +1,14 @@
-import {beforeEach, describe, expect, it, vi} from "vitest";
+import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {SettingsService} from "../../../../src/application/settings-service.js";
+import {decrypt} from "../../../../src/lib/crypto.js";
+
+const TEST_ENCRYPTION_KEY = "6f041205371c049506aeecc56ed00a5ff53665015953d7cfa7d0fa9dc3bc5cca";
 
 function createMockSettingsRepository() {
     return {
         findByKey: vi.fn(),
         upsert: vi.fn(),
+        upsertEncrypted: vi.fn(),
         findAll: vi.fn(),
         getMany: vi.fn(),
     };
@@ -18,6 +22,11 @@ describe("SettingsService", () => {
         vi.clearAllMocks();
         mockRepo = createMockSettingsRepository();
         service = new SettingsService(mockRepo as any);
+        process.env.ENCRYPTION_KEY = TEST_ENCRYPTION_KEY;
+    });
+
+    afterEach(() => {
+        delete process.env.ENCRYPTION_KEY;
     });
 
     describe("getSetting (SET-01)", () => {
@@ -164,6 +173,162 @@ describe("SettingsService", () => {
             ).rejects.toThrow();
 
             expect(mockRepo.upsert).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("upsertEncryptedSetting (encrypted-write path)", () => {
+        it("encrypts the plaintext before writing and sets the encrypted flag via repo.upsertEncrypted", async () => {
+            mockRepo.upsertEncrypted.mockResolvedValue(undefined);
+
+            await service.upsertEncryptedSetting("smtp.password", "super-secret");
+
+            expect(mockRepo.upsertEncrypted).toHaveBeenCalledTimes(1);
+            const [key, storedValue] = mockRepo.upsertEncrypted.mock.calls[0];
+            expect(key).toBe("smtp.password");
+            expect(storedValue).not.toBe("super-secret");
+            expect(decrypt(storedValue)).toBe("super-secret");
+            // Plain upsert is never used for a secret write
+            expect(mockRepo.upsert).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("saveSmtpConfig (grouped SMTP write)", () => {
+        it("writes the five plain fields via repo.upsert, with the encrypted flag unset", async () => {
+            mockRepo.upsert.mockResolvedValue(undefined);
+            mockRepo.upsertEncrypted.mockResolvedValue(undefined);
+
+            await service.saveSmtpConfig({
+                host: "smtp.example.com",
+                port: 587,
+                encryption: "starttls",
+                username: "user",
+                password: "",
+                from: "noreply@example.com",
+            });
+
+            expect(mockRepo.upsert).toHaveBeenCalledWith("smtp.host", "smtp.example.com");
+            expect(mockRepo.upsert).toHaveBeenCalledWith("smtp.port", "587");
+            expect(mockRepo.upsert).toHaveBeenCalledWith("smtp.encryption", "starttls");
+            expect(mockRepo.upsert).toHaveBeenCalledWith("smtp.username", "user");
+            expect(mockRepo.upsert).toHaveBeenCalledWith("smtp.from", "noreply@example.com");
+        });
+
+        it("does not write the password setting when the password is blank — leaves the stored password untouched", async () => {
+            mockRepo.upsert.mockResolvedValue(undefined);
+
+            await service.saveSmtpConfig({
+                host: "smtp.example.com",
+                port: 587,
+                encryption: "starttls",
+                username: "user",
+                password: "",
+                from: "noreply@example.com",
+            });
+
+            expect(mockRepo.upsertEncrypted).not.toHaveBeenCalled();
+            const upsertedKeys = mockRepo.upsert.mock.calls.map((call) => call[0]);
+            expect(upsertedKeys).not.toContain("smtp.password");
+        });
+
+        it("encrypts and writes the password via repo.upsertEncrypted when a password is provided", async () => {
+            mockRepo.upsert.mockResolvedValue(undefined);
+            mockRepo.upsertEncrypted.mockResolvedValue(undefined);
+
+            await service.saveSmtpConfig({
+                host: "smtp.example.com",
+                port: 587,
+                encryption: "starttls",
+                username: "user",
+                password: "hunter2",
+                from: "noreply@example.com",
+            });
+
+            expect(mockRepo.upsertEncrypted).toHaveBeenCalledTimes(1);
+            const [key, storedValue] = mockRepo.upsertEncrypted.mock.calls[0];
+            expect(key).toBe("smtp.password");
+            expect(storedValue).not.toBe("hunter2");
+            expect(decrypt(storedValue)).toBe("hunter2");
+        });
+    });
+
+    describe("getMaskedSmtpConfig", () => {
+        it("masks the password to a boolean hasPassword flag", async () => {
+            mockRepo.getMany.mockResolvedValue({
+                "smtp.host": "smtp.example.com",
+                "smtp.port": "587",
+                "smtp.encryption": "starttls",
+                "smtp.username": "user",
+                "smtp.password": "encrypted-value",
+                "smtp.from": "noreply@example.com",
+            });
+
+            const result = await service.getMaskedSmtpConfig();
+
+            expect(result).toEqual({
+                host: "smtp.example.com",
+                port: 587,
+                encryption: "starttls",
+                username: "user",
+                hasPassword: true,
+                from: "noreply@example.com",
+            });
+        });
+
+        it("returns hasPassword: false and defaults when nothing is stored", async () => {
+            mockRepo.getMany.mockResolvedValue({});
+
+            const result = await service.getMaskedSmtpConfig();
+
+            expect(result).toEqual({
+                host: "",
+                port: 587,
+                encryption: "starttls",
+                username: "",
+                hasPassword: false,
+                from: "",
+            });
+        });
+    });
+
+    describe("getNotificationTriggers / updateNotificationTriggers", () => {
+        it("returns defaults when nothing is stored", async () => {
+            mockRepo.getMany.mockResolvedValue({});
+
+            const result = await service.getNotificationTriggers();
+
+            expect(result).toEqual({
+                stackError: true,
+                diskWarning: true,
+                diskThresholdPercent: 10,
+                diskThresholdBytes: 2147483648,
+            });
+        });
+
+        it("returns stored values", async () => {
+            mockRepo.getMany.mockResolvedValue({
+                "notify.stackError": "false",
+                "notify.diskWarning": "false",
+                "disk.thresholdPercent": "20",
+                "disk.thresholdBytes": "1000000",
+            });
+
+            const result = await service.getNotificationTriggers();
+
+            expect(result).toEqual({
+                stackError: false,
+                diskWarning: false,
+                diskThresholdPercent: 20,
+                diskThresholdBytes: 1000000,
+            });
+        });
+
+        it("upserts only the keys present in the argument", async () => {
+            mockRepo.upsert.mockResolvedValue(undefined);
+
+            await service.updateNotificationTriggers({stackError: false});
+
+            expect(mockRepo.upsert).toHaveBeenCalledWith("notify.stackError", "false");
+            expect(mockRepo.upsert).toHaveBeenCalledTimes(1);
         });
     });
 });

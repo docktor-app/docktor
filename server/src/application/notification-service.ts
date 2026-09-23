@@ -114,4 +114,8 @@ export class NotificationService {
     async getSmtpConfig(): Promise<SmtpConfig | null> {
         return this.settings.getSmtpConfig()
     }
+
+    async getRecent(limit: number = 100): Promise<Awaited<ReturnType<NotificationRepository["findRecent"]>>> {
+        return this.repo.findRecent(limit)
+    }
 }

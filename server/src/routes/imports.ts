@@ -2,7 +2,6 @@ import type {FastifyPluginAsyncZod} from "fastify-type-provider-zod";
 import {z} from "zod";
 import {requireAuth} from "../lib/auth-middleware.js";
 import {onboardingService} from "../application/onboarding-service.js";
-import {brownfieldScanner} from "../infrastructure/brownfield-scanner.js";
 import {migrationService} from "../application/migration-service.js";
 import {wizardStep5Schema} from "@docktor/shared";
 
@@ -25,7 +24,7 @@ const importRoutes: FastifyPluginAsyncZod = async (app) => {
         },
         async (request) => {
             const {directories} = request.body;
-            const result = await brownfieldScanner.scan(directories);
+            const result = await onboardingService.scan(directories);
             return result;
         },
     );

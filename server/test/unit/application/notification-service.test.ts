@@ -13,6 +13,7 @@ function createMockRepo() {
         markEmailSent: vi.fn(),
         findLastDiskAlert: vi.fn(),
         setDiskAlertActive: vi.fn(),
+        findRecent: vi.fn(),
     }
 }
 
@@ -185,6 +186,26 @@ describe("NotificationService", () => {
                 subject: "Docktor — SMTP test",
                 text: "SMTP configuration is working correctly.",
             })
+        })
+    })
+
+    describe("getRecent", () => {
+        it("delegates to repo.findRecent with a default limit of 100", async () => {
+            const rows = [{id: "notif-1", type: "stack_error", stack: {id: "s1", displayName: "Stack 1"}}]
+            repo.findRecent.mockResolvedValue(rows)
+
+            const result = await service.getRecent()
+
+            expect(repo.findRecent).toHaveBeenCalledWith(100)
+            expect(result).toBe(rows)
+        })
+
+        it("forwards an explicit limit through to repo.findRecent", async () => {
+            repo.findRecent.mockResolvedValue([])
+
+            await service.getRecent(25)
+
+            expect(repo.findRecent).toHaveBeenCalledWith(25)
         })
     })
 })
