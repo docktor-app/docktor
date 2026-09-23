@@ -9,6 +9,7 @@ import {
     proxyRepository,
     certificateRepository,
     userRepository,
+    imageUpdateCheckRepository,
 } from "../repositories/index.js";
 import {StackService} from "./stack-service.js";
 import {SettingsService} from "./settings-service.js";
@@ -17,10 +18,12 @@ import {ResticExecutor} from "../infrastructure/restic-executor.js";
 import {BackupService} from "./backup-service.js";
 import {ProxyService} from "./proxy-service.js";
 import {CertificateService} from "./certificate-service.js";
+import {LogService, type LogServiceStackReadPort} from "./log-service.js";
 import {certificateFilesystem} from "../infrastructure/certificate-filesystem.js";
 import {stateEventBroadcaster} from "../lib/state-broadcaster.js";
 import {dockerodeClient} from "../infrastructure/dockerode-client.js";
 import {smtpClient} from "../infrastructure/smtp-client.js";
+import {NotFoundError} from "../lib/errors.js";
 import type {BackupStackRepo} from "./backup-service.js";
 import type {StackStatus} from "../generated/prisma/enums.js";
 
@@ -31,7 +34,7 @@ const docker = new DockerExecutor();
 export {settingsRepository};
 export const settingsService = new SettingsService(settingsRepository);
 
-export const stackService = new StackService(repo, fs, docker, stackEventRepository, stateEventBroadcaster, settingsService);
+export const stackService = new StackService(repo, fs, docker, stackEventRepository, stateEventBroadcaster, settingsService, imageUpdateCheckRepository);
 export const notificationService = new NotificationService(
     notificationRepository,
     settingsService,
@@ -84,3 +87,21 @@ export const proxyService = new ProxyService(
 );
 
 export const certificateService = new CertificateService(certificateRepositoryInstance, certificateFilesystem);
+
+// Adapter: StackRepository.findByIdWithRelations() throws NotFoundError for
+// an unknown stack; LogService's port resolves to null instead, so the
+// service is free to raise its own NotFoundError with the exact literal
+// message text the log route always sent, rather than the repository's
+// id-interpolated one.
+const logServiceStackRepo: LogServiceStackReadPort = {
+    findByIdWithRelations: async (id: string) => {
+        try {
+            return await repo.findByIdWithRelations(id);
+        } catch (err) {
+            if (err instanceof NotFoundError) return null;
+            throw err;
+        }
+    },
+};
+
+export const logService = new LogService(dockerodeClient, logServiceStackRepo);
