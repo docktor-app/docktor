@@ -1,6 +1,7 @@
 import {execFile} from "node:child_process";
 import {promisify} from "node:util";
 import {getStackPath} from "../lib/stacks-dir.js";
+import type {DockerExecutorPort} from "../application/ports/docker-executor-port.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -11,7 +12,7 @@ export interface ContainerStatus {
     ports: string;
 }
 
-export class DockerExecutor {
+export class DockerExecutor implements DockerExecutorPort {
     private async composeExec(
         stackId: string,
         args: string[],
