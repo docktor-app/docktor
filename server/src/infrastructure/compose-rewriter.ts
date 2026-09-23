@@ -1,4 +1,5 @@
 import {parse as parseYaml, stringify as stringifyYaml} from "yaml";
+import type {ComposeRewriterPort} from "../application/ports/compose-rewriter-port.js";
 
 export interface VolumeSelection {
 	originalPath: string;
@@ -12,7 +13,7 @@ export interface RewriteResult {
 	envVars: Record<string, string>;
 }
 
-export class ComposeRewriter {
+export class ComposeRewriter implements ComposeRewriterPort {
 	/**
 	 * Rewrite compose file:
 	 * 1. Update volume paths based on selections

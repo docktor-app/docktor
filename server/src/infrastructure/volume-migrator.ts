@@ -1,8 +1,9 @@
 import {spawn} from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
+import type {VolumeMigratorPort} from "../application/ports/volume-migrator-port.js";
 
-export class VolumeMigrator {
+export class VolumeMigrator implements VolumeMigratorPort {
 	/**
 	 * Copy data from Docker named volume to bind mount directory
 	 * Uses: docker run --rm -v volumeName:/source -v destPath:/dest alpine cp -a /source/. /dest/

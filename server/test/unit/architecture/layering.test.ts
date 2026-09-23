@@ -104,6 +104,72 @@ describe("architecture: layering", () => {
         });
     }
 
+    describe("every infrastructure class implements a named port (D-07, 10-05)", () => {
+        const INFRASTRUCTURE_DIR = path.join(SRC_ROOT, "infrastructure");
+        const PORTS_DIR = path.join(SRC_ROOT, "application", "ports");
+
+        // Line-anchored so a mention inside a comment or a string literal
+        // can never satisfy the rule — only a real top-level "export class"
+        // declaration line is inspected. Captures the class name and, when
+        // present, the port name from its "implements <Name>Port" clause.
+        const CLASS_DECLARATION_PATTERN = /^export class ([A-Za-z0-9]+)(?:\s+extends\s+[A-Za-z0-9]+)?(?:\s+implements\s+([A-Za-z0-9]+))?\b/;
+
+        // Converts a PascalCase port name (e.g. "DockerExecutorPort") to the
+        // kebab-case file name convention every port file already follows
+        // (e.g. "docker-executor-port.ts") — matches the class-name to
+        // file-name convention every port created in 10-01/10-02/10-03/10-05
+        // follows, independent of the implementing class's own name (see
+        // EventBusPort/InMemoryEventBus from 10-03, where the class name
+        // doesn't match the file name but the port name does).
+        function kebabCase(name: string): string {
+            return name.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
+        }
+
+        const infraFiles = fs
+            .readdirSync(INFRASTRUCTURE_DIR)
+            .filter((f) => f.endsWith(".ts"))
+            .map((f) => path.join(INFRASTRUCTURE_DIR, f));
+
+        for (const file of infraFiles) {
+            const content = fs.readFileSync(file, "utf-8");
+            const classLines = content.split("\n").filter((line) => /^export class /.test(line));
+
+            it(`${relative(file)} declares at least one exported class`, () => {
+                expect(
+                    classLines.length,
+                    `${relative(file)} has no top-level "export class" declaration`,
+                ).toBeGreaterThan(0);
+            });
+
+            for (const line of classLines) {
+                const match = CLASS_DECLARATION_PATTERN.exec(line);
+                const className = match?.[1] ?? "(unparsed)";
+
+                // Typed errors in the lib/errors.ts AppError hierarchy (e.g.
+                // RegistryUnavailableError) are exported alongside their
+                // infrastructure class but are not ports — callers catch
+                // them by identity (T-10-17), so they're exempt from this
+                // rule rather than being forced into a port they don't need.
+                if (className.endsWith("Error")) continue;
+
+                it(`${relative(file)}'s ${className} implements a named port`, () => {
+                    const portName = match?.[2];
+                    expect(
+                        portName,
+                        `${relative(file)}: "export class ${className}" has no "implements <Name>Port" clause`,
+                    ).toMatch(/Port$/);
+
+                    const portFileName = `${kebabCase(portName as string)}.ts`;
+                    const portFilePath = path.join(PORTS_DIR, portFileName);
+                    expect(
+                        fs.existsSync(portFilePath),
+                        `${relative(file)}: "${className}" declares "implements ${portName}" but server/src/application/ports/${portFileName} does not exist`,
+                    ).toBe(true);
+                });
+            }
+        }
+    });
+
     describe("every repository singleton is published from repositories/index.ts (D-09)", () => {
         const repoFiles = fs
             .readdirSync(REPOSITORIES_DIR)
