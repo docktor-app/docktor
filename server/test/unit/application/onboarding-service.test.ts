@@ -439,5 +439,36 @@ describe("OnboardingService", () => {
             expect(mockScanner.scan).toHaveBeenCalledWith(["/opt/stacks"]);
             expect(result).toBe(scanResult);
         });
+
+        it("routes/setup.ts and routes/imports.ts reach the same injected scanner port — never two different scan behaviours (T-10-16)", async () => {
+            // Both route files call this one OnboardingService instance's
+            // scan() method (there is only ever one onboardingService
+            // singleton); calling it twice through the same instance, as the
+            // two routes each independently do at request time, must always
+            // resolve through the exact same injected scanner — never a
+            // second, divergently-configured scanner instance.
+            const setupRouteScanResult = {found: [{path: "/opt/stacks/app"}], errors: []};
+            const importsRouteScanResult = {found: [{path: "/opt/other/app"}], errors: []};
+            mockScanner.scan
+                .mockResolvedValueOnce(setupRouteScanResult)
+                .mockResolvedValueOnce(importsRouteScanResult);
+            const service = new OnboardingService(
+                mockAuthClient as any,
+                mockSettingsRepo as any,
+                mockCrypto as any,
+                mockStackRepo as any,
+                mockProxy as any,
+                mockFsLib as any,
+                mockUserRepo as any,
+                mockScanner as any,
+            );
+
+            const fromSetupRoute = await service.scan(["/opt/stacks"]);
+            const fromImportsRoute = await service.scan(["/opt/other"]);
+
+            expect(mockScanner.scan).toHaveBeenCalledTimes(2);
+            expect(fromSetupRoute).toBe(setupRouteScanResult);
+            expect(fromImportsRoute).toBe(importsRouteScanResult);
+        });
     });
 });
