@@ -13,16 +13,17 @@ import {
     renderProxyStackCompose,
 } from "../lib/proxy-stack-compose.js";
 import {createComposeConfig} from "../domain/compose-config.js";
+import {decideDomainAssignment, filterUnadoptedDomains, resolveCertificateBinding} from "../domain/proxy-idempotency.js";
 import {withKeyedLock} from "../lib/keyed-mutex.js";
 import {Prisma} from "../generated/prisma/client.js";
 import type {AssignDomainInput} from "@docktor/shared";
 import type {ProxyRepository} from "../repositories/proxy-repository.js";
 import type {CertificateRepository} from "../repositories/certificate-repository.js";
 import type {StackRepository} from "../repositories/stack-repository.js";
-import type {StackFilesystem} from "../infrastructure/stack-filesystem.js";
+import type {StackFilesystemPort} from "./ports/stack-filesystem-port.js";
 import type {StackService} from "./stack-service.js";
 import type {ProxySettings, SettingsService} from "./settings-service.js";
-import type {DockerodeClient} from "../infrastructure/dockerode-client.js";
+import type {DockerodeClientPort} from "./ports/dockerode-client-port.js";
 import type {StackStatus} from "../generated/prisma/enums.js";
 
 // Fixed id, not user-chosen — the proxy stack is a singleton Docktor-managed
@@ -35,10 +36,10 @@ export class ProxyService {
     constructor(
         private readonly proxyRepo: ProxyRepository,
         private readonly stackRepo: Pick<StackRepository, "findByIdOrThrow" | "findById" | "exists" | "create">,
-        private readonly fs: Pick<StackFilesystem, "readCompose" | "writeCompose" | "createDirectory">,
+        private readonly fs: StackFilesystemPort,
         private readonly stackService: Pick<StackService, "deployStack">,
         private readonly settings: Pick<SettingsService, "getProxySettings" | "updateProxySettings">,
-        private readonly docker: Pick<DockerodeClient, "listContainers">,
+        private readonly docker: DockerodeClientPort,
         private readonly certRepo: Pick<CertificateRepository, "findByIdOrThrow">,
     ) {}
 
@@ -222,23 +223,19 @@ export class ProxyService {
             // custom source must name a certificate that actually exists,
             // confirmed before anything is created so an unknown id fails
             // loudly before the compose file (or any row) is touched.
-            const certSource = input.certSource ?? "acme";
+            const {certSource, certificateId} = resolveCertificateBinding(input.certSource, input.certificateId);
             if (certSource === "custom") {
-                if (!input.certificateId) {
-                    throw new BadRequestError("certificateId is required when certSource is custom");
-                }
-                await this.certRepo.findByIdOrThrow(input.certificateId);
+                await this.certRepo.findByIdOrThrow(certificateId as string);
             }
-            const certificateId = certSource === "custom" ? (input.certificateId ?? null) : null;
 
             await this.adoptUnmanagedDomains(stackId, serviceName, input.internalPort);
 
             const existingForService = await this.proxyRepo.findByStackAndService(stackId, serviceName);
-            const existingRow = existingForService.find((row) => row.domain === input.domain);
+            const decision = decideDomainAssignment(existingForService, serviceName, input.domain, input.internalPort);
 
             let result: ProxyConfigRow;
-            if (existingRow) {
-                result = await this.proxyRepo.updateConfig(existingRow.id, {
+            if (decision.action === "reuse") {
+                result = await this.proxyRepo.updateConfig(decision.existingRowId, {
                     internalPort: input.internalPort,
                     tlsEnabled: input.tlsEnabled,
                     certSource,
@@ -249,21 +246,11 @@ export class ProxyService {
                 // the whole service's port — nginx-proxy permits only one
                 // VIRTUAL_PORT per container, so every other row for the
                 // pair moves to the new port too.
-                const rowsToRepoint = existingForService.filter(
-                    (row) => row.id !== existingRow.id && row.internalPort !== input.internalPort,
-                );
-                for (const row of rowsToRepoint) {
+                for (const rowId of decision.repointRowIds) {
                     // eslint-disable-next-line no-await-in-loop
-                    await this.proxyRepo.updateConfig(row.id, {internalPort: input.internalPort});
+                    await this.proxyRepo.updateConfig(rowId, {internalPort: input.internalPort});
                 }
             } else {
-                const conflictingPort = existingForService.find((row) => row.internalPort !== input.internalPort);
-                if (conflictingPort) {
-                    throw new BadRequestError(
-                        `Service "${serviceName}" is already proxied on port ${conflictingPort.internalPort} — all domains for one service must share the same internal port`,
-                    );
-                }
-
                 try {
                     result = await this.proxyRepo.create({
                         stackId,
@@ -282,7 +269,7 @@ export class ProxyService {
             try {
                 await this.syncServiceComposeProxy(stackId, serviceName);
             } catch (err) {
-                if (!existingRow) {
+                if (decision.action === "create") {
                     await this.proxyRepo.delete(result.id).catch(() => {});
                 }
                 throw err;
@@ -402,9 +389,9 @@ export class ProxyService {
         const parsedPort = fileEnv.virtualPort ? Number.parseInt(fileEnv.virtualPort, 10) : Number.NaN;
         const internalPort = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : fallbackPort;
 
-        for (const domain of fileDomains) {
-            if (existingDomains.has(domain)) continue;
+        const domainsToAdopt = filterUnadoptedDomains(fileDomains, existingDomains);
 
+        for (const domain of domainsToAdopt) {
             try {
                 // eslint-disable-next-line no-await-in-loop
                 await this.proxyRepo.create({
