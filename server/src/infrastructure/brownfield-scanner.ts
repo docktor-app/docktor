@@ -7,6 +7,7 @@ import {
     type AnalysisResult,
     type CompatibilityLevel,
 } from "./compose-analyzer.js";
+import type {BrownfieldScannerPort} from "../application/ports/brownfield-scanner-port.js";
 
 export interface DiscoveredStack {
     path: string;
@@ -24,7 +25,7 @@ export interface ScanResult {
     skippedDirectories: number;
 }
 
-export class BrownfieldScanner {
+export class BrownfieldScanner implements BrownfieldScannerPort {
     // WR-10: "compose.yml" (no docker- prefix) is a valid Compose file name
     // too — Docker Compose's own resolution order is compose.yaml ->
     // compose.yml -> docker-compose.yaml -> docker-compose.yml.
