@@ -1,18 +1,21 @@
-import {StackRepository} from "../repositories/stack-repository.js";
 import {StackFilesystem} from "../infrastructure/stack-filesystem.js";
 import {DockerExecutor} from "../infrastructure/docker-executor.js";
-import {stackEventRepository} from "../repositories/stack-event-repository.js";
+import {
+    stackRepository,
+    stackEventRepository,
+    settingsRepository,
+    notificationRepository,
+    backupRepository,
+    proxyRepository,
+    certificateRepository,
+    userRepository,
+} from "../repositories/index.js";
 import {StackService} from "./stack-service.js";
-import {SettingsRepository} from "../repositories/settings-repository.js";
 import {SettingsService} from "./settings-service.js";
-import {NotificationRepository} from "../repositories/notification-repository.js";
 import {NotificationService} from "./notification-service.js";
-import {BackupRepository} from "../repositories/backup-repository.js";
 import {ResticExecutor} from "../infrastructure/restic-executor.js";
 import {BackupService} from "./backup-service.js";
-import {ProxyRepository} from "../repositories/proxy-repository.js";
 import {ProxyService} from "./proxy-service.js";
-import {CertificateRepository} from "../repositories/certificate-repository.js";
 import {CertificateService} from "./certificate-service.js";
 import {certificateFilesystem} from "../infrastructure/certificate-filesystem.js";
 import {stateEventBroadcaster} from "../lib/state-broadcaster.js";
@@ -20,18 +23,19 @@ import {dockerodeClient} from "../infrastructure/dockerode-client.js";
 import type {BackupStackRepo} from "./backup-service.js";
 import type {StackStatus} from "../generated/prisma/enums.js";
 
-const repo = new StackRepository();
+const repo = stackRepository;
 const fs = new StackFilesystem();
 const docker = new DockerExecutor();
 
-export const settingsRepository = new SettingsRepository();
+export {settingsRepository};
 export const settingsService = new SettingsService(settingsRepository);
 
 export const stackService = new StackService(repo, fs, docker, stackEventRepository, stateEventBroadcaster, settingsService);
 export const notificationService = new NotificationService(
-    new NotificationRepository(),
+    notificationRepository,
     settingsService,
     stateEventBroadcaster,
+    userRepository,
 );
 
 // Adapter: StackRepository -> BackupStackRepo interface
@@ -54,7 +58,7 @@ const backupStackRepo: BackupStackRepo = {
 
 export const backupService = new BackupService(
     new ResticExecutor(),
-    new BackupRepository(),
+    backupRepository,
     backupStackRepo,
     settingsService,
     notificationService,
@@ -65,10 +69,10 @@ export const backupService = new BackupService(
 
 export {getBackupBroadcaster, getBackupLogBuffer} from "./backup-service.js";
 
-const certificateRepositoryInstance = new CertificateRepository();
+const certificateRepositoryInstance = certificateRepository;
 
 export const proxyService = new ProxyService(
-    new ProxyRepository(),
+    proxyRepository,
     repo,
     fs,
     stackService,

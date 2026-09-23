@@ -2,15 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { NotificationService } from "../../../src/application/notification-service.js"
 
 // Use vi.hoisted so these refs are available in the vi.mock factory (which is hoisted to top)
-const {mockVerify, mockSendMail, mockCreateTransport, mockPrismaUserFindMany} = vi.hoisted(() => {
+const {mockVerify, mockSendMail, mockCreateTransport} = vi.hoisted(() => {
     const mockVerify = vi.fn()
     const mockSendMail = vi.fn()
     const mockCreateTransport = vi.fn().mockReturnValue({
         verify: mockVerify,
         sendMail: mockSendMail,
     })
-    const mockPrismaUserFindMany = vi.fn()
-    return {mockVerify, mockSendMail, mockCreateTransport, mockPrismaUserFindMany}
+    return {mockVerify, mockSendMail, mockCreateTransport}
 })
 
 // Mock nodemailer at module level so ESM imports are intercepted correctly
@@ -20,14 +19,11 @@ vi.mock("nodemailer", () => ({
     },
 }))
 
-// Mock prisma to avoid DATABASE_URL requirement
-vi.mock("../../../src/lib/db.js", () => ({
-    prisma: {
-        user: {
-            findMany: mockPrismaUserFindMany,
-        },
-    },
-}))
+function createMockUsers(emails: string[] = ["user@example.com"]) {
+    return {
+        findAllEmails: vi.fn().mockResolvedValue(emails),
+    }
+}
 
 function createMockRepo() {
     return {
@@ -58,6 +54,7 @@ describe("NotificationService", () => {
     let repo: ReturnType<typeof createMockRepo>
     let settings: ReturnType<typeof createMockSettings>
     let broadcaster: ReturnType<typeof createMockBroadcaster>
+    let users: ReturnType<typeof createMockUsers>
 
     beforeEach(() => {
         vi.clearAllMocks()
@@ -68,12 +65,12 @@ describe("NotificationService", () => {
             verify: mockVerify,
             sendMail: mockSendMail,
         })
-        // Default: mock one user for email sending
-        mockPrismaUserFindMany.mockResolvedValue([{ email: "user@example.com" }])
         repo = createMockRepo()
         settings = createMockSettings()
         broadcaster = createMockBroadcaster()
-        service = new NotificationService(repo as any, settings as any, broadcaster as any)
+        // Default: two-address recipient list, derived solely from the injected UserReadPort stub
+        users = createMockUsers(["user1@example.com", "user2@example.com"])
+        service = new NotificationService(repo as any, settings as any, broadcaster as any, users as any)
     })
 
     describe("notify", () => {
@@ -132,6 +129,13 @@ describe("NotificationService", () => {
             })
 
             expect(repo.markEmailSent).toHaveBeenCalledWith("notif-2")
+            // Recipient list must come from the injected UserReadPort stub, not a Prisma query
+            expect(users.findAllEmails).toHaveBeenCalled()
+            expect(mockSendMail).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    to: "user1@example.com, user2@example.com",
+                }),
+            )
         })
 
         it("logs to DB but does not send email when SMTP is not configured", async () => {

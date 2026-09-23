@@ -1,6 +1,5 @@
 import nodemailer from "nodemailer"
 import {decrypt} from "../lib/crypto.js"
-import {prisma} from "../lib/db.js"
 import type {NotificationRepository} from "../repositories/notification-repository.js"
 import type {StateBroadcaster} from "../lib/state-broadcaster.js"
 
@@ -29,11 +28,22 @@ export interface NotificationSettings {
     getSmtpConfig(): Promise<SmtpConfig | null>
 }
 
+/**
+ * Read port for recipient-email resolution. Declared here rather than
+ * importing the concrete UserRepository, so this service stays
+ * unit-testable with a plain object and the dependency arrow keeps
+ * pointing inward (application depends on a port, not on repositories/).
+ */
+export interface UserReadPort {
+    findAllEmails(): Promise<string[]>
+}
+
 export class NotificationService {
     constructor(
         private readonly repo: NotificationRepository,
         private readonly settings: NotificationSettings,
         private readonly broadcaster: StateBroadcaster,
+        private readonly users: UserReadPort,
     ) {}
 
     async notify(event: NotificationEvent): Promise<void> {
@@ -73,8 +83,8 @@ export class NotificationService {
             return
         }
 
-        const users = await prisma.user.findMany({select: {email: true}})
-        if (users.length === 0) {
+        const emails = await this.users.findAllEmails()
+        if (emails.length === 0) {
             console.log("[NotificationService] No users found, skipping email")
             return
         }
@@ -83,7 +93,7 @@ export class NotificationService {
             const transport = this.createTransport(smtpConfig)
             await transport.sendMail({
                 from: smtpConfig.from,
-                to: users.map((u) => u.email).join(", "),
+                to: emails.join(", "),
                 subject: event.subject,
                 text: event.message,
             })
