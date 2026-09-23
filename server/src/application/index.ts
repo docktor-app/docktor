@@ -20,6 +20,7 @@ import {CertificateService} from "./certificate-service.js";
 import {certificateFilesystem} from "../infrastructure/certificate-filesystem.js";
 import {stateEventBroadcaster} from "../lib/state-broadcaster.js";
 import {dockerodeClient} from "../infrastructure/dockerode-client.js";
+import {smtpClient} from "../infrastructure/smtp-client.js";
 import type {BackupStackRepo} from "./backup-service.js";
 import type {StackStatus} from "../generated/prisma/enums.js";
 
@@ -36,6 +37,7 @@ export const notificationService = new NotificationService(
     settingsService,
     stateEventBroadcaster,
     userRepository,
+    smtpClient,
 );
 
 // Adapter: StackRepository -> BackupStackRepo interface

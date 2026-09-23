@@ -1,24 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { NotificationService } from "../../../src/application/notification-service.js"
 
-// Use vi.hoisted so these refs are available in the vi.mock factory (which is hoisted to top)
-const {mockVerify, mockSendMail, mockCreateTransport} = vi.hoisted(() => {
-    const mockVerify = vi.fn()
-    const mockSendMail = vi.fn()
-    const mockCreateTransport = vi.fn().mockReturnValue({
-        verify: mockVerify,
-        sendMail: mockSendMail,
-    })
-    return {mockVerify, mockSendMail, mockCreateTransport}
-})
-
-// Mock nodemailer at module level so ESM imports are intercepted correctly
-vi.mock("nodemailer", () => ({
-    default: {
-        createTransport: mockCreateTransport,
-    },
-}))
-
 function createMockUsers(emails: string[] = ["user@example.com"]) {
     return {
         findAllEmails: vi.fn().mockResolvedValue(emails),
@@ -49,28 +31,29 @@ function createMockBroadcaster() {
     }
 }
 
+function createMockSmtpClient() {
+    return {
+        sendMail: vi.fn().mockResolvedValue(undefined),
+    }
+}
+
 describe("NotificationService", () => {
     let service: NotificationService
     let repo: ReturnType<typeof createMockRepo>
     let settings: ReturnType<typeof createMockSettings>
     let broadcaster: ReturnType<typeof createMockBroadcaster>
     let users: ReturnType<typeof createMockUsers>
+    let smtpClient: ReturnType<typeof createMockSmtpClient>
 
     beforeEach(() => {
         vi.clearAllMocks()
-        // Reset transport mock to default resolved state
-        mockVerify.mockResolvedValue(true)
-        mockSendMail.mockResolvedValue({ messageId: "123" })
-        mockCreateTransport.mockReturnValue({
-            verify: mockVerify,
-            sendMail: mockSendMail,
-        })
         repo = createMockRepo()
         settings = createMockSettings()
         broadcaster = createMockBroadcaster()
         // Default: two-address recipient list, derived solely from the injected UserReadPort stub
         users = createMockUsers(["user1@example.com", "user2@example.com"])
-        service = new NotificationService(repo as any, settings as any, broadcaster as any, users as any)
+        smtpClient = createMockSmtpClient()
+        service = new NotificationService(repo as any, settings as any, broadcaster as any, users as any, smtpClient as any)
     })
 
     describe("notify", () => {
@@ -131,9 +114,12 @@ describe("NotificationService", () => {
             expect(repo.markEmailSent).toHaveBeenCalledWith("notif-2")
             // Recipient list must come from the injected UserReadPort stub, not a Prisma query
             expect(users.findAllEmails).toHaveBeenCalled()
-            expect(mockSendMail).toHaveBeenCalledWith(
+            expect(smtpClient.sendMail).toHaveBeenCalledWith(
+                expect.objectContaining({ host: "smtp.example.com" }),
                 expect.objectContaining({
                     to: "user1@example.com, user2@example.com",
+                    subject: "Stack Error",
+                    text: "Stack my-stack entered ERROR state",
                 }),
             )
         })
@@ -165,7 +151,7 @@ describe("NotificationService", () => {
                 recipient: "to@example.com",
             })
             repo.create.mockResolvedValue({ id: "notif-4" })
-            mockSendMail.mockRejectedValue(new Error("SMTP connection refused"))
+            smtpClient.sendMail.mockRejectedValue(new Error("SMTP connection refused"))
 
             // Should not throw even when sendMail fails
             await expect(
@@ -194,8 +180,7 @@ describe("NotificationService", () => {
 
             // For valid config, testSmtp should not throw
             await expect(service.testSmtp(smtpConfig)).resolves.not.toThrow()
-            expect(mockSendMail).toHaveBeenCalledWith({
-                from: "noreply@example.com",
+            expect(smtpClient.sendMail).toHaveBeenCalledWith(smtpConfig, {
                 to: "admin@example.com",
                 subject: "Docktor — SMTP test",
                 text: "SMTP configuration is working correctly.",

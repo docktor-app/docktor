@@ -1,7 +1,7 @@
-import nodemailer from "nodemailer"
 import {decrypt} from "../lib/crypto.js"
 import type {NotificationRepository} from "../repositories/notification-repository.js"
 import type {StateBroadcaster} from "../lib/state-broadcaster.js"
+import type {SmtpClientPort} from "./ports/smtp-client-port.js"
 
 export interface SmtpConfig {
     host: string
@@ -44,6 +44,7 @@ export class NotificationService {
         private readonly settings: NotificationSettings,
         private readonly broadcaster: StateBroadcaster,
         private readonly users: UserReadPort,
+        private readonly smtpClient: SmtpClientPort,
     ) {}
 
     async notify(event: NotificationEvent): Promise<void> {
@@ -90,9 +91,7 @@ export class NotificationService {
         }
 
         try {
-            const transport = this.createTransport(smtpConfig)
-            await transport.sendMail({
-                from: smtpConfig.from,
+            await this.smtpClient.sendMail(smtpConfig, {
                 to: emails.join(", "),
                 subject: event.subject,
                 text: event.message,
@@ -105,9 +104,7 @@ export class NotificationService {
     }
 
     async testSmtp(config: SmtpTestConfig): Promise<void> {
-        const transport = this.createTransport(config)
-        await transport.sendMail({
-            from: config.from,
+        await this.smtpClient.sendMail(config, {
             to: config.recipient,
             subject: "Docktor — SMTP test",
             text: "SMTP configuration is working correctly.",
@@ -116,15 +113,5 @@ export class NotificationService {
 
     async getSmtpConfig(): Promise<SmtpConfig | null> {
         return this.settings.getSmtpConfig()
-    }
-
-    private createTransport(config: SmtpConfig) {
-        return nodemailer.createTransport({
-            host: config.host,
-            port: config.port,
-            secure: config.encryption === "ssl",
-            requireTLS: config.encryption === "starttls",
-            auth: config.username ? {user: config.username, pass: config.password} : undefined,
-        })
     }
 }
