@@ -407,21 +407,55 @@ Independent of Phase 11 (separate server/client tracks — can run in parallel).
 **Plans:** 15 plans
 
 Plans:
+**Wave 1**
 
 - [ ] 10-01-PLAN.md — Layering contract proven end-to-end on the notification service: `repositories/index.ts`, the first port, the architecture fitness test
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 10-02-PLAN.md — Named port interfaces for the four infrastructure dependencies D-07 lists explicitly
 - [ ] 10-03-PLAN.md — The domain-event bus: event catalog, port, and in-memory implementation with per-subscriber failure isolation
 - [ ] 10-04-PLAN.md — The `Job` lifecycle contract, the two job kinds, and the health-tracking registry
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 10-05-PLAN.md — Ports for the remaining six infrastructure classes, plus the fitness rule that keeps the convention true
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 10-06-PLAN.md — Application services depend on ports only; pure business rules move down into `domain/`
 - [ ] 10-07-PLAN.md — All seven background jobs adopt the `Job` contract; `jobs/index.ts` becomes a registry
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 10-08-PLAN.md — `routes/stacks.ts` stops reaching past its layer; a new `LogService`
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 10-09-PLAN.md — The settings, notifications, setup and imports routes stop reaching past their layer
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
 - [ ] 10-10-PLAN.md — `routes/backups.ts` cleaned, plus the routes rule in the fitness test
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
 - [ ] 10-11-PLAN.md — Status and configuration broadcasts move onto the bus; the live-state broadcaster becomes a subscriber (D-15 item 3)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
 - [ ] 10-12-PLAN.md — Notifications move onto the bus; a subscriber composes them (D-15 item 1)
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
 - [ ] 10-13-PLAN.md — The `StackEvent` audit trail moves onto the bus, plus one ordered subscriber registration (D-15 item 2)
+
+**Wave 11** *(blocked on Wave 10 completion)*
+
 - [ ] 10-14-PLAN.md — The dedicated dead-code audit: the unreachable update-trigger method, the dead `src/services/` directory, and the workspace sweep (D-03, D-11)
+
+**Wave 12** *(blocked on Wave 11 completion)*
+
 - [ ] 10-15-PLAN.md — Phase gate: automated gate, decision-coverage table, live-database integration run, and the five deferred human checks
 
 ### Phase 11: UI Rework
