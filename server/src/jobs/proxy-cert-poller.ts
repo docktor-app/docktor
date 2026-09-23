@@ -1,8 +1,7 @@
-import cron from "node-cron"
 import {access as fsAccess, readFile as fsReadFile} from "node:fs/promises"
 import path from "node:path"
-import type {DockerodeClient} from "../infrastructure/dockerode-client.js"
 import {dockerodeClient} from "../infrastructure/dockerode-client.js"
+import type {DockerodeClientPort} from "../application/ports/dockerode-client-port.js"
 import type {StateBroadcaster} from "../lib/state-broadcaster.js"
 import {stateEventBroadcaster} from "../lib/state-broadcaster.js"
 import {getStackPath} from "../lib/stacks-dir.js"
@@ -10,6 +9,7 @@ import {ACME_COMPANION_CONTAINER_NAME, PROXY_CERTS_SUBPATH} from "../lib/proxy-s
 import {certFileBaseName} from "../domain/certificate-naming.js"
 import {certificateExpiry, parseCertificate} from "../domain/certificate-validation.js"
 import {CERTIFICATE_EXPIRY_WARNING_DAYS} from "@docktor/shared"
+import {IntervalJob} from "./job.js"
 
 // Fixed id of the Docktor-managed proxy stack — mirrors PROXY_STACK_ID in
 // application/proxy-service.ts. Redeclared locally (not imported from that
@@ -94,20 +94,24 @@ export function classifyCertificateExpiry(
     return "issued"
 }
 
-export class ProxyCertPoller {
-    private cronTask: cron.ScheduledTask | null = null
-    private readonly docker: Pick<DockerodeClient, "listContainers" | "getLogTail">
+export class ProxyCertPoller extends IntervalJob {
+    readonly name = "ProxyCertPoller"
+    protected readonly cronExpression = "*/60 * * * * *"
+    protected readonly runImmediatelyOnStart = false
+
+    private readonly docker: Pick<DockerodeClientPort, "listContainers" | "getLogTail">
     private readonly repo: ProxyCertPollerRepo | null
     private readonly broadcaster: Pick<StateBroadcaster, "publish">
     private readonly fs: ProxyCertPollerFs
     private readonly certsDir: string
 
     constructor(
-        docker?: Pick<DockerodeClient, "listContainers" | "getLogTail">,
+        docker?: Pick<DockerodeClientPort, "listContainers" | "getLogTail">,
         repo?: ProxyCertPollerRepo,
         broadcaster?: Pick<StateBroadcaster, "publish">,
         fs?: ProxyCertPollerFs,
     ) {
+        super()
         this.docker = docker ?? dockerodeClient
         this.repo = repo ?? null
         this.broadcaster = broadcaster ?? stateEventBroadcaster
@@ -125,21 +129,8 @@ export class ProxyCertPoller {
         return proxyRepository as unknown as ProxyCertPollerRepo
     }
 
-    async start(): Promise<void> {
-        this.cronTask = cron.schedule("*/60 * * * * *", async () => {
-            try {
-                await this.reconcile()
-            } catch (err) {
-                console.error("[ProxyCertPoller] reconcile error:", err)
-            }
-        })
-    }
-
-    stop(): void {
-        if (this.cronTask) {
-            this.cronTask.stop()
-            this.cronTask = null
-        }
+    protected async run(): Promise<void> {
+        await this.reconcile()
     }
 
     /**

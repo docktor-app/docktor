@@ -1,11 +1,11 @@
-import cron from "node-cron"
 import semver from "semver"
-import type {DockerExecutor} from "../infrastructure/docker-executor.js"
 import {dockerExecutor} from "../infrastructure/docker-executor.js"
-import type {RegistryClient} from "../infrastructure/registry-client.js"
+import type {DockerExecutorPort} from "../application/ports/docker-executor-port.js"
 import {registryClient, RegistryUnavailableError} from "../infrastructure/registry-client.js"
+import type {RegistryClientPort} from "../application/ports/registry-client-port.js"
 import type {StateBroadcaster} from "../lib/state-broadcaster.js"
 import {stateEventBroadcaster} from "../lib/state-broadcaster.js"
+import {IntervalJob} from "./job.js"
 
 // Tags with no version-ordered meaning — a moving tag always points at
 // whatever was last pushed, so ordering it against other tags is undefined.
@@ -314,19 +314,23 @@ async function createProductionRepo(): Promise<UpdateCheckerRepo> {
 // UpdateChecker class
 // ---------------------------------------------------------------------------
 
-export class UpdateChecker {
-    private cronTask: cron.ScheduledTask | null = null
+export class UpdateChecker extends IntervalJob {
+    readonly name = "UpdateChecker"
+    protected readonly cronExpression = "*/5 * * * *"
+    protected readonly runImmediatelyOnStart = false
+
     private readonly repo: UpdateCheckerRepo | null
-    private readonly docker: Pick<DockerExecutor, "manifestInspect" | "imageDigest">
+    private readonly docker: Pick<DockerExecutorPort, "manifestInspect" | "imageDigest">
     private readonly broadcaster: Pick<StateBroadcaster, "publish">
-    private readonly registry: Pick<RegistryClient, "listTags">
+    private readonly registry: Pick<RegistryClientPort, "listTags">
 
     constructor(
         repo?: UpdateCheckerRepo,
-        docker?: Pick<DockerExecutor, "manifestInspect" | "imageDigest">,
+        docker?: Pick<DockerExecutorPort, "manifestInspect" | "imageDigest">,
         broadcaster?: Pick<StateBroadcaster, "publish">,
-        registry?: Pick<RegistryClient, "listTags">,
+        registry?: Pick<RegistryClientPort, "listTags">,
     ) {
+        super()
         this.repo = repo ?? null
         this.docker = docker ?? dockerExecutor
         this.broadcaster = broadcaster ?? stateEventBroadcaster
@@ -338,20 +342,8 @@ export class UpdateChecker {
         return createProductionRepo()
     }
 
-    async start(): Promise<void> {
-        this.cronTask = cron.schedule("*/5 * * * *", async () => {
-            try {
-                await this.checkNextImage()
-            } catch (err) {
-                console.error("[UpdateChecker] error:", err)
-            }
-        })
-        console.log("[UpdateChecker] started — checking every 5 minutes, staggered over 6-hour window")
-    }
-
-    stop(): void {
-        this.cronTask?.stop()
-        this.cronTask = null
+    protected async run(): Promise<void> {
+        await this.checkNextImage()
     }
 
     async checkNextImage(): Promise<void> {

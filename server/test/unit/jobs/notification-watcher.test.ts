@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { NotificationWatcher } from "../../../src/jobs/notification-watcher.js"
 
+vi.mock("node-cron", () => ({
+    default: { schedule: vi.fn().mockReturnValue({ stop: vi.fn() }) },
+}))
+
+import cron from "node-cron"
+
 function createMockNotificationService() {
     return {
         notify: vi.fn().mockResolvedValue(undefined),
@@ -166,5 +172,16 @@ describe("NotificationWatcher", () => {
         await vi.advanceTimersByTimeAsync(2 * 60 * 1000)
 
         expect(notificationService.notify).not.toHaveBeenCalled()
+    })
+
+    describe("reconcile schedule (D-13, PD-6)", () => {
+        it("schedules no cron task because it has nothing to reconcile against", () => {
+            // watcher.start() already ran in beforeEach — a missed in-process
+            // broadcast leaves no queryable drift to reconcile against, unlike
+            // a stale file hash or container state, so this watcher's
+            // reconcileCronExpression is null and WatcherJob never calls
+            // cron.schedule() for it.
+            expect(vi.mocked(cron.schedule)).not.toHaveBeenCalled()
+        })
     })
 })

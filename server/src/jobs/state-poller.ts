@@ -1,9 +1,9 @@
-import cron from "node-cron"
-import type {DockerodeClient} from "../infrastructure/dockerode-client.js"
 import {dockerodeClient} from "../infrastructure/dockerode-client.js"
+import type {DockerodeClientPort} from "../application/ports/dockerode-client-port.js"
 import type {StateBroadcaster} from "../lib/state-broadcaster.js"
 import {stateEventBroadcaster} from "../lib/state-broadcaster.js"
 import type {StackStatus} from "../generated/prisma/enums.js"
+import {WatcherJob} from "./job.js"
 
 export interface ServiceState {
     serviceName: string
@@ -75,18 +75,22 @@ function deriveStackStatus(services: Array<{containerState?: string | null; heal
     return "RUNNING"
 }
 
-export class StatePoller {
+export class StatePoller extends WatcherJob {
+    readonly name = "StatePoller"
+    // Reconcile every 60 seconds as a safety net alongside the event stream.
+    protected readonly reconcileCronExpression = "*/60 * * * * *"
+
     private abortController: AbortController | null = null
-    private cronTask: cron.ScheduledTask | null = null
-    private readonly docker: Pick<DockerodeClient, "getEventStream" | "inspectContainer" | "listContainers">
+    private readonly docker: Pick<DockerodeClientPort, "getEventStream" | "inspectContainer" | "listContainers">
     private readonly repo: StatePollerRepo | null
     private readonly broadcaster: Pick<StateBroadcaster, "publish">
 
     constructor(
-        docker?: Pick<DockerodeClient, "getEventStream" | "inspectContainer" | "listContainers">,
+        docker?: Pick<DockerodeClientPort, "getEventStream" | "inspectContainer" | "listContainers">,
         repo?: StatePollerRepo,
         broadcaster?: Pick<StateBroadcaster, "publish">,
     ) {
+        super()
         this.docker = docker ?? dockerodeClient
         // repo is stored as-is; if undefined, getRepo() will load it lazily
         this.repo = repo ?? null
@@ -100,26 +104,14 @@ export class StatePoller {
         return stackRepository as unknown as StatePollerRepo
     }
 
-    async start(): Promise<void> {
+    protected async attach(): Promise<void> {
         await this.startEventStream()
-        // Run reconcile every 60 seconds as a safety net
-        this.cronTask = cron.schedule("*/60 * * * * *", async () => {
-            try {
-                await this.reconcile()
-            } catch (err) {
-                console.error("[StatePoller] reconcile error:", err)
-            }
-        })
     }
 
-    stop(): void {
+    protected async detach(): Promise<void> {
         if (this.abortController) {
             this.abortController.abort()
             this.abortController = null
-        }
-        if (this.cronTask) {
-            this.cronTask.stop()
-            this.cronTask = null
         }
     }
 
@@ -295,7 +287,7 @@ export class StatePoller {
         })
     }
 
-    async reconcile(): Promise<void> {
+    protected async reconcile(): Promise<void> {
         console.log("[StatePoller] Starting reconcile...")
         const repo = await this.getRepo()
         const containers = await this.docker.listContainers(true)

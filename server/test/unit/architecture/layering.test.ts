@@ -170,6 +170,43 @@ describe("architecture: layering", () => {
         }
     });
 
+    describe("every job under jobs/ joins the Job lifecycle contract (D-02, D-13, 10-07)", () => {
+        const JOBS_DIR = path.join(SRC_ROOT, "jobs");
+        // index.ts registers/delegates (no job class of its own); job.ts and
+        // job-registry.ts are the contract itself, not a job that joins it.
+        const EXEMPT_FILES = new Set(["index.ts", "job.ts", "job-registry.ts"]);
+
+        // Line-anchored so a mention inside a comment or a string literal can
+        // never satisfy the rule — only a real top-level "export class ..."
+        // declaration line joins the contract, either by extending one of
+        // the two base classes (which supply `kind` automatically) or by
+        // declaring "implements Job" directly (which forces the compiler to
+        // require a `kind` member, PD-6's dynamic-kind escape hatch).
+        const JOB_CONTRACT_PATTERN = /^export class \w+ (?:extends (?:IntervalJob|WatcherJob)\b|implements Job\b)/;
+
+        const jobFiles = fs
+            .readdirSync(JOBS_DIR)
+            .filter((f) => f.endsWith(".ts") && !EXEMPT_FILES.has(f))
+            .map((f) => path.join(JOBS_DIR, f));
+
+        for (const file of jobFiles) {
+            it(`${relative(file)} exports a class that joins the Job lifecycle contract`, () => {
+                const content = fs.readFileSync(file, "utf-8");
+                const classLines = content.split("\n").filter((line) => /^export class /.test(line));
+                expect(
+                    classLines.length,
+                    `${relative(file)} has no top-level "export class" declaration`,
+                ).toBeGreaterThan(0);
+
+                const joined = classLines.some((line) => JOB_CONTRACT_PATTERN.test(line));
+                expect(
+                    joined,
+                    `${relative(file)}: no "export class" line extends IntervalJob/WatcherJob or declares "implements Job" — a new job file must join the Job lifecycle contract (D-02, D-13) instead of hand-rolling its own scheduling`,
+                ).toBe(true);
+            });
+        }
+    });
+
     describe("every repository singleton is published from repositories/index.ts (D-09)", () => {
         const repoFiles = fs
             .readdirSync(REPOSITORIES_DIR)
