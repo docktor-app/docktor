@@ -1,4 +1,5 @@
 import {spawn} from "node:child_process";
+import type {ResticExecutorPort} from "../application/ports/restic-executor-port.js";
 
 export interface ResticRunResult {
     exitCode: number;
@@ -48,7 +49,7 @@ export interface RetentionPolicy {
     keepMonthly: number;
 }
 
-export class ResticExecutor {
+export class ResticExecutor implements ResticExecutorPort {
     private readonly binary: string;
 
     constructor(binary?: string) {
