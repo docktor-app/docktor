@@ -9,10 +9,8 @@ import {
     upgradeServiceSchema,
 } from "@docktor/shared";
 import {requireAuth} from "../lib/auth-middleware.js";
-import {stackService} from "../application/index.js";
-import {prisma} from "../lib/db.js";
-import {dockerodeClient} from "../infrastructure/dockerode-client.js";
-import {processDockerLogChunk, type LogLineEvent} from "../lib/docker-log-parser.js";
+import {logService, stackService} from "../application/index.js";
+import {processDockerLogChunk} from "../lib/docker-log-parser.js";
 import {NotFoundError} from "../lib/errors.js";
 
 const stackRoutes: FastifyPluginAsyncZod = async (app) => {
@@ -169,22 +167,14 @@ const stackRoutes: FastifyPluginAsyncZod = async (app) => {
         const {id} = request.params
         const {service} = request.query
 
-        // Load stack services with containerIds from DB
-        const stack = await prisma.stack.findUnique({
-            where: {id},
-            include: {services: {where: {containerId: {not: null}}}},
-        })
-        if (!stack) {
-            return reply.status(404).send({error: "Stack not found"})
-        }
+        // Resolves the stack's services with a running container, applies
+        // the "all"-vs-named-service filter, and opens a log stream per
+        // match. Throws NotFoundError("Stack not found") for an unknown
+        // stack, which the global error handler turns into the same 404
+        // this route always sent.
+        const targets = await logService.openLogStreams(id, service)
 
-        // Determine which services to stream
-        const allServices = stack.services as Array<{serviceName: string; containerId: string | null}>
-        const targetServices = service === "all"
-            ? allServices
-            : allServices.filter(s => s.serviceName === service)
-
-        if (targetServices.length === 0) {
+        if (targets.length === 0) {
             return reply.status(400).send({error: `No running containers for service "${service}"`})
         }
 
@@ -198,12 +188,11 @@ const stackRoutes: FastifyPluginAsyncZod = async (app) => {
 
         const streams: NodeJS.ReadableStream[] = []
 
-        for (const svc of targetServices) {
-            const logStream = await dockerodeClient.getLogStream(svc.containerId!, 100)
-            streams.push(logStream)
+        for (const target of targets) {
+            streams.push(target.stream)
 
-            logStream.on("data", (chunk: Buffer) => {
-                processDockerLogChunk(chunk, svc.serviceName, (event) => {
+            target.stream.on("data", (chunk: Buffer) => {
+                processDockerLogChunk(chunk, target.serviceName, (event) => {
                     reply.raw.write(`data: ${JSON.stringify(event)}\n\n`)
                 })
             })
