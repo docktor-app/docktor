@@ -7,8 +7,8 @@ import {assertTransition, TransitionError,} from "../domain/stack-status-machine
 import {detectNoUpdates, toImageRef, type ImageDigestComparison} from "../domain/image-update-detection.js";
 import {ComposeEditError, getServiceImageTag, setServiceImageTag} from "../lib/compose-editor.js";
 import type {StackRepository} from "../repositories/stack-repository.js";
-import type {StackFilesystem} from "../infrastructure/stack-filesystem.js";
-import type {DockerExecutor} from "../infrastructure/docker-executor.js";
+import type {StackFilesystemPort} from "./ports/stack-filesystem-port.js";
+import type {DockerExecutorPort} from "./ports/docker-executor-port.js";
 import type {StateBroadcaster} from "../lib/state-broadcaster.js";
 import type {SettingsService} from "./settings-service.js";
 import type {StackStatus, StackEventType} from "../generated/prisma/enums.js";
@@ -32,8 +32,8 @@ export interface StackEventReadRepo {
 export class StackService {
     constructor(
         private readonly repo: StackRepository,
-        private readonly fs: StackFilesystem,
-        private readonly docker: DockerExecutor,
+        private readonly fs: StackFilesystemPort,
+        private readonly docker: DockerExecutorPort,
         private readonly events: StackEventReadRepo,
         private readonly broadcaster: Pick<StateBroadcaster, "publish">,
         private readonly settings: Pick<SettingsService, "getProxySettings">,

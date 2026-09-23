@@ -7,13 +7,18 @@ import yaml from "yaml"
 import {decrypt} from "../lib/crypto.js"
 import {assertTransition} from "../domain/stack-status-machine.js"
 import {createComposeConfig} from "../domain/compose-config.js"
+import {parseRetentionPolicy} from "../domain/backup-retention-policy.js"
 import {BadRequestError} from "../lib/errors.js"
 import type {StackStatus, BackupTrigger} from "../generated/prisma/enums.js"
-import type {ResticExecutor, BackupRepoConfig, RetentionPolicy, ResticSnapshot} from "../infrastructure/restic-executor.js"
+// The single surviving infrastructure/ import: isRepositoryNotFoundError is
+// a value (a type guard), not a port member — every type this file needs
+// off the restic module comes through the port's re-export instead.
 import {isRepositoryNotFoundError} from "../infrastructure/restic-executor.js"
+import type {BackupRepoConfig, ResticExecutorPort, ResticSnapshot} from "./ports/restic-executor-port.js"
 import type {BackupRepository} from "../repositories/backup-repository.js"
 import type {NotificationService} from "./notification-service.js"
-import type {DockerExecutor} from "../infrastructure/docker-executor.js"
+import type {DockerExecutorPort} from "./ports/docker-executor-port.js"
+import type {StackFilesystemPort} from "./ports/stack-filesystem-port.js"
 import type {StateBroadcaster} from "../lib/state-broadcaster.js"
 
 // ─── Module-level broadcaster map ────────────────────────────────────────────
@@ -102,12 +107,6 @@ export interface BackupSettingsService {
     getMany(keys: string[]): Promise<Record<string, string>>
 }
 
-export interface BackupFilesystem {
-    readCompose?(stackId: string): Promise<string>
-    readComposeFile?(stackId: string): Promise<string>
-    getStackDirectory?(stackId: string): string
-}
-
 // ─── Setting key constants ────────────────────────────────────────────────────
 
 const BACKUP_SETTING_KEYS = {
@@ -151,13 +150,13 @@ interface StackRecord {
 
 export class BackupService {
     constructor(
-        private readonly resticExecutor: ResticExecutor,
+        private readonly resticExecutor: ResticExecutorPort,
         private readonly backupRepo: BackupRepository,
         private readonly stackRepo: BackupStackRepo,
         private readonly settings: BackupSettingsService,
         private readonly notificationService: NotificationService,
-        private readonly filesystem: BackupFilesystem,
-        private readonly docker: DockerExecutor,
+        private readonly filesystem: StackFilesystemPort,
+        private readonly docker: DockerExecutorPort,
         private readonly broadcaster: Pick<StateBroadcaster, "publish">,
     ) {}
 
@@ -242,7 +241,7 @@ export class BackupService {
 
             // Run forget / prune only for scheduled backups, not manual ones
             if (backupRecord.trigger === "SCHEDULED") {
-                const retentionPolicy = this.parseRetentionPolicy(stack.backupRetention)
+                const retentionPolicy = parseRetentionPolicy(stack.backupRetention)
                 const forgetArgs = this.resticExecutor.buildForgetArgs(stack.id, retentionPolicy)
                 await this.resticExecutor.run(forgetArgs, env, onLine, stackPath)
             }
@@ -589,10 +588,15 @@ export class BackupService {
      * Returns volume warnings for a stack's compose file.
      */
     async getVolumeWarnings(stackId: string): Promise<string[]> {
-        const readFn = this.filesystem.readComposeFile ?? this.filesystem.readCompose
-        if (!readFn) return []
-        const content = await readFn.call(this.filesystem, stackId)
-        const stackPath = this.filesystem.getStackDirectory?.(stackId) ?? ""
+        // BackupFilesystem's readComposeFile?/readCompose? guard and
+        // getStackDirectory?. optional-chaining are dropped here:
+        // StackFilesystemPort declares both readCompose and
+        // getStackDirectory as required members, and readComposeFile was
+        // never implemented by any concrete class this service was ever
+        // constructed with (grep confirms it — dead code, not a caller
+        // dependency to preserve).
+        const content = await this.filesystem.readCompose(stackId)
+        const stackPath = this.filesystem.getStackDirectory(stackId)
         return this.detectAbsolutePathVolumes(content, stackPath)
     }
 
@@ -749,20 +753,6 @@ export class BackupService {
                 resolve({stdout: "", exitCode: 1})
             })
         })
-    }
-
-    /**
-     * Parses the retention policy from JSON, falling back to defaults.
-     */
-    private parseRetentionPolicy(retentionJson: string | null): RetentionPolicy {
-        if (retentionJson) {
-            try {
-                return JSON.parse(retentionJson) as RetentionPolicy
-            } catch {
-                // Fall through to defaults
-            }
-        }
-        return {keepDaily: 7, keepWeekly: 4, keepMonthly: 12}
     }
 
     /**
