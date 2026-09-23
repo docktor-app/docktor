@@ -9,6 +9,7 @@ import {
     proxyRepository,
     certificateRepository,
     userRepository,
+    imageUpdateCheckRepository,
 } from "../repositories/index.js";
 import {StackService} from "./stack-service.js";
 import {SettingsService} from "./settings-service.js";
@@ -31,7 +32,7 @@ const docker = new DockerExecutor();
 export {settingsRepository};
 export const settingsService = new SettingsService(settingsRepository);
 
-export const stackService = new StackService(repo, fs, docker, stackEventRepository, stateEventBroadcaster, settingsService);
+export const stackService = new StackService(repo, fs, docker, stackEventRepository, stateEventBroadcaster, settingsService, imageUpdateCheckRepository);
 export const notificationService = new NotificationService(
     notificationRepository,
     settingsService,

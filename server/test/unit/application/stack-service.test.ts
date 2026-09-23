@@ -64,6 +64,13 @@ function createMockSettings() {
     };
 }
 
+function createMockUpdateChecks() {
+    return {
+        findByImageRefs: vi.fn().mockResolvedValue([]),
+        findByImageRef: vi.fn().mockResolvedValue(null),
+    };
+}
+
 describe("StackService", () => {
     let service: StackService;
     let repo: ReturnType<typeof createMockRepo>;
@@ -72,6 +79,7 @@ describe("StackService", () => {
     let events: ReturnType<typeof createMockStackEvents>;
     let broadcaster: ReturnType<typeof createMockBroadcaster>;
     let settings: ReturnType<typeof createMockSettings>;
+    let updateChecks: ReturnType<typeof createMockUpdateChecks>;
 
     beforeEach(() => {
         repo = createMockRepo();
@@ -80,7 +88,8 @@ describe("StackService", () => {
         events = createMockStackEvents();
         broadcaster = createMockBroadcaster();
         settings = createMockSettings();
-        service = new StackService(repo as any, fs as any, docker as any, events as any, broadcaster as any, settings as any);
+        updateChecks = createMockUpdateChecks();
+        service = new StackService(repo as any, fs as any, docker as any, events as any, broadcaster as any, settings as any, updateChecks as any);
     });
 
     describe("createStack", () => {
@@ -988,6 +997,95 @@ describe("StackService", () => {
                 stackId: "my-app",
                 hash: hashComposeContent(""),
             });
+        });
+    });
+
+    describe("getStackWithUpdateInfo", () => {
+        it("augments each service with updateAvailable/latestTag from a matching stored row", async () => {
+            repo.findByIdWithRelations.mockResolvedValue({
+                id: "my-app",
+                services: [{serviceName: "web", image: "nginx", imageTag: "1.25"}],
+            });
+            updateChecks.findByImageRefs.mockResolvedValue([
+                {imageRef: "nginx:1.25", hasUpdate: true, latestTag: "1.26"},
+            ]);
+
+            const result = await service.getStackWithUpdateInfo("my-app");
+
+            expect(updateChecks.findByImageRefs).toHaveBeenCalledWith(["nginx:1.25"]);
+            expect(result?.services[0]).toMatchObject({
+                serviceName: "web",
+                updateAvailable: true,
+                latestTag: "1.26",
+            });
+        });
+
+        it("falls back to updateAvailable: false and latestTag: null for a service with no stored row", async () => {
+            repo.findByIdWithRelations.mockResolvedValue({
+                id: "my-app",
+                services: [{serviceName: "web", image: "nginx", imageTag: "1.25"}],
+            });
+            updateChecks.findByImageRefs.mockResolvedValue([]);
+
+            const result = await service.getStackWithUpdateInfo("my-app");
+
+            expect(result?.services[0]).toMatchObject({
+                updateAvailable: false,
+                latestTag: null,
+            });
+        });
+    });
+
+    describe("getUpgradeCandidates", () => {
+        beforeEach(() => {
+            repo.findByIdWithRelations.mockResolvedValue({
+                id: "my-app",
+                services: [{serviceName: "web", image: "nginx", imageTag: "1.25"}],
+            });
+        });
+
+        it("returns currentTag/latestTag/candidates for a service with a matching stored row", async () => {
+            updateChecks.findByImageRef.mockResolvedValue({
+                latestTag: "1.27",
+                availableTags: JSON.stringify(["1.27", "1.26"]),
+            });
+
+            const result = await service.getUpgradeCandidates("my-app", "web");
+
+            expect(updateChecks.findByImageRef).toHaveBeenCalledWith("nginx:1.25");
+            expect(result).toEqual({currentTag: "1.25", latestTag: "1.27", candidates: ["1.27", "1.26"]});
+        });
+
+        it("returns an empty candidate list and null latestTag for a service with no stored row", async () => {
+            updateChecks.findByImageRef.mockResolvedValue(null);
+
+            const result = await service.getUpgradeCandidates("my-app", "web");
+
+            expect(result).toEqual({currentTag: "1.25", latestTag: null, candidates: []});
+        });
+
+        it("raises NotFoundError before any update-check lookup when the requested service is not in the stack's own service list", async () => {
+            await expect(
+                service.getUpgradeCandidates("my-app", "does-not-exist"),
+            ).rejects.toThrow(NotFoundError);
+            expect(updateChecks.findByImageRef).not.toHaveBeenCalled();
+        });
+
+        it("raises NotFoundError when the stack itself does not exist", async () => {
+            repo.findByIdWithRelations.mockRejectedValue(new NotFoundError('Stack "missing" not found'));
+
+            await expect(service.getUpgradeCandidates("missing", "web")).rejects.toThrow(NotFoundError);
+        });
+
+        it("returns an empty candidate list without throwing when the stored row's availableTags is unparsable JSON", async () => {
+            updateChecks.findByImageRef.mockResolvedValue({
+                latestTag: "1.27",
+                availableTags: "not-json{",
+            });
+
+            const result = await service.getUpgradeCandidates("my-app", "web");
+
+            expect(result).toEqual({currentTag: "1.25", latestTag: "1.27", candidates: []});
         });
     });
 });

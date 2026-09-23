@@ -4,7 +4,7 @@ import {BadRequestError, ConflictError, NotFoundError} from "../lib/errors.js";
 import {createComposeConfig, type ComposeConfig} from "../domain/compose-config.js";
 import {hashComposeContent} from "../lib/compose-parser.js";
 import {assertTransition, TransitionError,} from "../domain/stack-status-machine.js";
-import {detectNoUpdates, toImageRef, type ImageDigestComparison} from "../domain/image-update-detection.js";
+import {buildImageRefFromService, detectNoUpdates, toImageRef, type ImageDigestComparison} from "../domain/image-update-detection.js";
 import {ComposeEditError, getServiceImageTag, setServiceImageTag} from "../lib/compose-editor.js";
 import type {StackRepository} from "../repositories/stack-repository.js";
 import type {StackFilesystemPort} from "./ports/stack-filesystem-port.js";
@@ -29,6 +29,27 @@ export interface StackEventReadRepo {
     }>>;
 }
 
+/**
+ * Read port for the ImageUpdateCheck repository. Declared here rather than
+ * importing the concrete ImageUpdateCheckRepository, so this service stays
+ * unit-testable with a plain object and the dependency arrow keeps pointing
+ * inward (application depends on a port, not on repositories/) — same
+ * precedent as StackEventReadRepo above. Moved in from routes/stacks.ts
+ * (10-08 Task 2, D-01): the route-level join it used to back was a CLAUDE.md
+ * layering violation the same defect class as D-10.
+ */
+export interface ImageUpdateCheckReadRepo {
+    findByImageRefs(imageRefs: string[]): Promise<Array<{
+        imageRef: string;
+        hasUpdate: boolean;
+        latestTag: string | null;
+    }>>;
+    findByImageRef(imageRef: string): Promise<{
+        latestTag: string | null;
+        availableTags: string | null;
+    } | null>;
+}
+
 export class StackService {
     constructor(
         private readonly repo: StackRepository,
@@ -37,6 +58,7 @@ export class StackService {
         private readonly events: StackEventReadRepo,
         private readonly broadcaster: Pick<StateBroadcaster, "publish">,
         private readonly settings: Pick<SettingsService, "getProxySettings">,
+        private readonly updateChecks: ImageUpdateCheckReadRepo,
     ) {}
 
     async createStack(input: CreateStackInput) {
@@ -80,6 +102,94 @@ export class StackService {
 
     async getStack(id: string) {
         return this.repo.findByIdWithRelations(id);
+    }
+
+    /**
+     * Same as getStack(), with each service augmented by its
+     * update-availability and latest tag from the ImageUpdateCheck table —
+     * moved in from GET /api/stacks/:id's route-level join (10-08 Task 2,
+     * D-01/D-10). The lookup key must reconstruct the same tag-qualified
+     * ref that UpdateChecker.findAllImageRefs() persists (image +
+     * imageTag), not just the untagged `image` column — otherwise a
+     * service on an explicit tag never matches its own ImageUpdateCheck
+     * row. `getStack()`'s repo call already throws NotFoundError for an
+     * unknown stack before this method's own body runs, so the `!stack`
+     * branch below is unreachable in production — kept only because the
+     * route it replaces had the identical dead branch and this move must
+     * not change observable behaviour either way.
+     */
+    async getStackWithUpdateInfo(id: string) {
+        const stack = await this.getStack(id);
+        if (!stack) return null;
+
+        const serviceKeys = stack.services.map((svc) => ({
+            svc,
+            key: buildImageRefFromService(svc.image, svc.imageTag),
+        }));
+        const imageRefs = serviceKeys
+            .map(({key}) => key)
+            .filter((key): key is string => key !== null);
+        const updateChecks = await this.updateChecks.findByImageRefs(imageRefs);
+        const updateMap = new Map(updateChecks.map((u) => [u.imageRef, u]));
+
+        return {
+            ...stack,
+            services: serviceKeys.map(({svc, key}) => ({
+                ...svc,
+                updateAvailable: (key !== null ? updateMap.get(key)?.hasUpdate : undefined) ?? false,
+                latestTag: (key !== null ? updateMap.get(key)?.latestTag : undefined) ?? null,
+            })),
+        };
+    }
+
+    /**
+     * Returns the current tag, latest tag and upgrade-candidate list for
+     * one named service of one named stack — moved in from GET
+     * /api/stacks/:id/services/:serviceName/tags (10-08 Task 2, D-01/D-10).
+     *
+     * The per-stack scoping below — resolving the service from the
+     * addressed stack's own service list and raising NotFoundError when
+     * it is absent — is an access-control check (it prevents a guessed
+     * service name from reading another stack's data) and runs, unchanged
+     * and in the same order, before anything else.
+     */
+    async getUpgradeCandidates(
+        id: string,
+        serviceName: string,
+    ): Promise<{currentTag: string; latestTag: string | null; candidates: string[]}> {
+        const stack = await this.getStack(id);
+        if (!stack) throw new NotFoundError("Stack not found");
+
+        const svc = stack.services.find((s) => s.serviceName === serviceName);
+        if (!svc) throw new NotFoundError("Service not found");
+
+        const imageRef = buildImageRefFromService(svc.image, svc.imageTag);
+        const row = imageRef ? await this.updateChecks.findByImageRef(imageRef) : null;
+        const {latestTag, candidates} = this.decodeUpgradeCandidates(row);
+
+        return {currentTag: svc.imageTag ?? "latest", latestTag, candidates};
+    }
+
+    /**
+     * Decodes the JSON-encoded availableTags column into a candidate array,
+     * newest first, alongside the persisted latestTag. Never throws — a
+     * not-yet-checked image (no row) or an unparsable/absent column is a
+     * normal state, not an error, and must yield an empty candidate list.
+     * Moved in from routes/stacks.ts's decodeUpgradeCandidates() (10-08
+     * Task 2) — it is a pure decode with a documented never-throw contract
+     * and belongs with its only caller.
+     */
+    private decodeUpgradeCandidates(
+        row: {latestTag: string | null; availableTags: string | null} | null,
+    ): {latestTag: string | null; candidates: string[]} {
+        if (!row?.availableTags) return {latestTag: row?.latestTag ?? null, candidates: []};
+        try {
+            const parsed = JSON.parse(row.availableTags);
+            const candidates = Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === "string") : [];
+            return {latestTag: row.latestTag, candidates};
+        } catch {
+            return {latestTag: row.latestTag, candidates: []};
+        }
     }
 
     /**
