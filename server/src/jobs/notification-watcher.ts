@@ -1,6 +1,8 @@
 import type {StateEvent} from "../lib/state-broadcaster.js"
 import {stateEventBroadcaster} from "../lib/state-broadcaster.js"
 import type {NotificationEvent} from "../application/notification-service.js"
+import type {Job, JobHealthReporter} from "./job.js"
+import {WatcherJob} from "./job.js"
 
 export interface NotificationWatcherBroadcaster {
     subscribe(handler: (event: StateEvent) => void): () => void
@@ -10,7 +12,13 @@ export interface NotificationWatcherNotificationService {
     notify(event: NotificationEvent): Promise<void>
 }
 
-export class NotificationWatcher {
+export class NotificationWatcher extends WatcherJob {
+    readonly name = "NotificationWatcher"
+    // PD-6: a missed in-process broadcast leaves no queryable drift to
+    // reconcile against, unlike a stale file hash or container state — this
+    // watcher has nothing to reconcile, so it schedules nothing.
+    protected readonly reconcileCronExpression = null
+
     private activeIncidents: Map<string, Set<string>> = new Map()
     private unhealthyTimers: Map<string, NodeJS.Timeout> = new Map()
     private unsubscribe: (() => void) | null = null
@@ -18,16 +26,18 @@ export class NotificationWatcher {
     constructor(
         private readonly notificationService: NotificationWatcherNotificationService,
         private readonly broadcaster: NotificationWatcherBroadcaster,
-    ) {}
+    ) {
+        super()
+    }
 
-    start(): void {
+    protected attach(): void {
         this.unsubscribe = this.broadcaster.subscribe((event: StateEvent) => {
             void this.handleStateEvent(event)
         })
         console.log("[NotificationWatcher] Started - subscribed to StateBroadcaster")
     }
 
-    stop(): void {
+    protected detach(): void {
         console.log("[NotificationWatcher] Stopped")
         this.unsubscribe?.()
         this.unsubscribe = null
@@ -37,6 +47,16 @@ export class NotificationWatcher {
         }
         this.unhealthyTimers.clear()
         this.activeIncidents.clear()
+    }
+
+    /**
+     * Unreachable: reconcileCronExpression is null, so WatcherJob never
+     * schedules a cron tick that could call this. Implemented (rather than
+     * left undefined) to document why, per PD-6 — a missed broadcast has no
+     * queryable drift to reconcile against.
+     */
+    protected reconcile(): void {
+        // Intentionally empty — see class-level doc comment.
     }
 
     async handleStateEvent(event: StateEvent): Promise<void> {
@@ -109,18 +129,31 @@ export class NotificationWatcher {
 }
 
 let _watcher: NotificationWatcher | null = null
+let _healthReporter: JobHealthReporter | null = null
 
 async function createProductionWatcher(): Promise<NotificationWatcher> {
     const {notificationService} = await import("../application/index.js")
-    return new NotificationWatcher(notificationService, stateEventBroadcaster)
+    const watcher = new NotificationWatcher(notificationService, stateEventBroadcaster)
+    if (_healthReporter) watcher.setHealthReporter(_healthReporter)
+    return watcher
 }
 
-export const notificationWatcher = {
+// A Job facade over the lazily-constructed production NotificationWatcher —
+// the lazy construction itself (not this facade) is what keeps db.ts and
+// the rest of the production dependency chain out of the unit-test module
+// graph; several suites depend on that staying true.
+export const notificationWatcher: Job = {
+    name: "NotificationWatcher",
+    kind: "watcher",
     start: async () => {
         if (!_watcher) {
             _watcher = await createProductionWatcher()
         }
-        _watcher.start()
+        await _watcher.start()
     },
     stop: () => _watcher?.stop(),
+    setHealthReporter: (reporter: JobHealthReporter) => {
+        _healthReporter = reporter
+        _watcher?.setHealthReporter(reporter)
+    },
 }

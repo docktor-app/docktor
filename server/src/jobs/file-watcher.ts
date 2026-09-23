@@ -1,4 +1,3 @@
-import cron from "node-cron"
 import {watch} from "chokidar"
 import type {FSWatcher} from "chokidar"
 import {readFile} from "node:fs/promises"
@@ -9,6 +8,7 @@ import {hashComposeContent} from "../lib/compose-parser.js"
 import {createComposeConfig, type ComposeConfig} from "../domain/compose-config.js"
 import {getStacksDir} from "../lib/stacks-dir.js"
 import type {StackEventType} from "../generated/prisma/enums.js"
+import {WatcherJob} from "./job.js"
 
 interface FileWatcherStackRecord {
     id: string
@@ -84,9 +84,12 @@ export function createFileWatcherRepo(
 
 const WATCHED_FILENAMES = new Set(["docker-compose.yml", ".env"])
 
-export class FileWatcher {
+export class FileWatcher extends WatcherJob {
+    readonly name = "FileWatcher"
+    // Reconcile every 60 seconds as a safety net alongside the chokidar watcher.
+    protected readonly reconcileCronExpression = "*/60 * * * * *"
+
     private watcher: FSWatcher | null = null
-    private cronTask: cron.ScheduledTask | null = null
     private readonly repo: FileWatcherRepo | null
     private readonly broadcaster: Pick<StateBroadcaster, "publish">
 
@@ -94,6 +97,7 @@ export class FileWatcher {
         repo?: FileWatcherRepo,
         broadcaster?: Pick<StateBroadcaster, "publish">,
     ) {
+        super()
         this.repo = repo ?? null
         this.broadcaster = broadcaster ?? stateEventBroadcaster
     }
@@ -110,7 +114,7 @@ export class FileWatcher {
         return this.watcher !== null
     }
 
-    async start(): Promise<void> {
+    protected async attach(): Promise<void> {
         const stacksRoot = getStacksDir()
         console.log(`[FileWatcher] Starting file watcher on: ${stacksRoot}`)
 
@@ -167,24 +171,12 @@ export class FileWatcher {
         this.watcher.on("error", (err) => {
             console.error("[FileWatcher] chokidar error:", err)
         })
-
-        this.cronTask = cron.schedule("*/60 * * * * *", async () => {
-            try {
-                await this.reconcile()
-            } catch (err) {
-                console.error("[FileWatcher] reconcile error:", err)
-            }
-        })
     }
 
-    async stop(): Promise<void> {
+    protected async detach(): Promise<void> {
         if (this.watcher) {
             await this.watcher.close()
             this.watcher = null
-        }
-        if (this.cronTask) {
-            this.cronTask.stop()
-            this.cronTask = null
         }
     }
 
@@ -326,7 +318,7 @@ export class FileWatcher {
         })
     }
 
-    async reconcile(): Promise<void> {
+    protected async reconcile(): Promise<void> {
         const repo = await this.getRepo()
         const stacks = await repo.findAllStacks()
 
