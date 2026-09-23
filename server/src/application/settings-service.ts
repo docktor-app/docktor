@@ -1,6 +1,6 @@
 import {z} from "zod"
 import {BadRequestError} from "../lib/errors.js"
-import {decrypt} from "../lib/crypto.js"
+import {decrypt, encrypt} from "../lib/crypto.js"
 import type {SettingsRepository} from "../repositories/settings-repository.js"
 import type {SmtpConfig} from "./notification-service.js"
 
@@ -27,6 +27,31 @@ export interface ProxySettings {
     showInDashboard: boolean
 }
 
+export interface SmtpConfigWrite {
+    host: string
+    port: number
+    encryption: "none" | "starttls" | "ssl"
+    username: string
+    password: string
+    from: string
+}
+
+export interface MaskedSmtpConfig {
+    host: string
+    port: number
+    encryption: "none" | "starttls" | "ssl"
+    username: string
+    hasPassword: boolean
+    from: string
+}
+
+export interface NotificationTriggers {
+    stackError: boolean
+    diskWarning: boolean
+    diskThresholdPercent: number
+    diskThresholdBytes: number
+}
+
 const DEFAULTS: GeneralSettings = {
     instanceName: "Docktor",
     baseUrl: "",
@@ -47,6 +72,72 @@ export class SettingsService {
 
     async upsertSetting(key: string, value: string): Promise<void> {
         await this.repo.upsert(key, value)
+    }
+
+    // Encrypts a plaintext value and stores it with the encrypted flag set —
+    // the single encrypted-write path (matches getSmtpConfig()'s decrypt side).
+    async upsertEncryptedSetting(key: string, plaintext: string): Promise<void> {
+        const encrypted = encrypt(plaintext)
+        await this.repo.upsertEncrypted(key, encrypted)
+    }
+
+    async getMaskedSmtpConfig(): Promise<MaskedSmtpConfig> {
+        const keys = ["smtp.host", "smtp.port", "smtp.encryption", "smtp.username", "smtp.password", "smtp.from"]
+        const values = await this.repo.getMany(keys)
+        return {
+            host: values["smtp.host"] ?? "",
+            port: Number(values["smtp.port"] ?? "587"),
+            encryption: (values["smtp.encryption"] ?? "starttls") as MaskedSmtpConfig["encryption"],
+            username: values["smtp.username"] ?? "",
+            hasPassword: !!values["smtp.password"],
+            from: values["smtp.from"] ?? "",
+        }
+    }
+
+    // Saves the SMTP form as one grouped write. A blank/absent password
+    // leaves the stored password untouched rather than overwriting it with
+    // an empty value (past defect class: "SMTP `from` saved before password
+    // encryption to avoid silent save failures" — the plain fields are
+    // written first, the password only when non-empty).
+    async saveSmtpConfig(data: SmtpConfigWrite): Promise<void> {
+        await this.repo.upsert("smtp.host", data.host)
+        await this.repo.upsert("smtp.port", String(data.port))
+        await this.repo.upsert("smtp.encryption", data.encryption)
+        await this.repo.upsert("smtp.username", data.username)
+        await this.repo.upsert("smtp.from", data.from)
+        if (data.password) {
+            await this.upsertEncryptedSetting("smtp.password", data.password)
+        }
+    }
+
+    async getNotificationTriggers(): Promise<NotificationTriggers> {
+        const values = await this.repo.getMany([
+            "notify.stackError",
+            "notify.diskWarning",
+            "disk.thresholdPercent",
+            "disk.thresholdBytes",
+        ])
+        return {
+            stackError: values["notify.stackError"] !== "false",
+            diskWarning: values["notify.diskWarning"] !== "false",
+            diskThresholdPercent: Number(values["disk.thresholdPercent"] ?? "10"),
+            diskThresholdBytes: Number(values["disk.thresholdBytes"] ?? "2147483648"),
+        }
+    }
+
+    async updateNotificationTriggers(data: Partial<NotificationTriggers>): Promise<void> {
+        if (data.stackError !== undefined) {
+            await this.repo.upsert("notify.stackError", String(data.stackError))
+        }
+        if (data.diskWarning !== undefined) {
+            await this.repo.upsert("notify.diskWarning", String(data.diskWarning))
+        }
+        if (data.diskThresholdPercent !== undefined) {
+            await this.repo.upsert("disk.thresholdPercent", String(data.diskThresholdPercent))
+        }
+        if (data.diskThresholdBytes !== undefined) {
+            await this.repo.upsert("disk.thresholdBytes", String(data.diskThresholdBytes))
+        }
     }
 
     async getSmtpConfig(): Promise<SmtpConfig | null> {

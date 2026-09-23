@@ -19,6 +19,16 @@ export class SettingsRepository {
         })
     }
 
+    // Stores value with the encrypted flag set — the single write path for secrets.
+    // Callers must pass an already-encrypted value; this method never encrypts.
+    async upsertEncrypted(key: string, value: string): Promise<void> {
+        await prisma.setting.upsert({
+            where: {key},
+            create: {key, value, encrypted: true},
+            update: {value, encrypted: true},
+        })
+    }
+
     async findAll(): Promise<{key: string; value: string}[]> {
         return prisma.setting.findMany()
     }
