@@ -7,10 +7,10 @@ import {spawn} from "node:child_process";
 import type {ChildProcess} from "node:child_process";
 import {MigrationService} from "../../../src/application/migration-service.js";
 import {slugify} from "../../../src/lib/slugify.js";
-import type {DockerExecutor} from "../../../src/infrastructure/docker-executor.js";
-import type {VolumeMigrator} from "../../../src/infrastructure/volume-migrator.js";
-import type {ComposeRewriter} from "../../../src/infrastructure/compose-rewriter.js";
-import type {StackFilesystem} from "../../../src/infrastructure/stack-filesystem.js";
+import type {DockerExecutorPort} from "../../../src/application/ports/docker-executor-port.js";
+import type {VolumeMigratorPort} from "../../../src/application/ports/volume-migrator-port.js";
+import type {ComposeRewriterPort} from "../../../src/application/ports/compose-rewriter-port.js";
+import type {StackFilesystemPort} from "../../../src/application/ports/stack-filesystem-port.js";
 import type {StackRepository} from "../../../src/repositories/stack-repository.js";
 
 // DockerExecutor (imported transitively via MigrationService's default
@@ -105,12 +105,14 @@ describe("MigrationService.migrate (BF-05 rollback)", () => {
         // Test double: these five collaborators are exactly the constructor
         // parameters migrate() invokes; the casts expose only the members it
         // calls (up/copyVolumeToBindMount/copyDirectory/rewrite/createDirectory/
-        // removeDirectory/exists/create/delete).
+        // removeDirectory/exists/create/delete). The first four cast to their
+        // *Port types (not the concrete infrastructure classes) — proving the
+        // seam this plan changed now accepts a plain-object port double.
         return new MigrationService(
-            mockDocker as unknown as DockerExecutor,
-            mockMigrator as unknown as VolumeMigrator,
-            mockRewriter as unknown as ComposeRewriter,
-            mockStackFs as unknown as StackFilesystem,
+            mockDocker as unknown as DockerExecutorPort,
+            mockMigrator as unknown as VolumeMigratorPort,
+            mockRewriter as unknown as ComposeRewriterPort,
+            mockStackFs as unknown as StackFilesystemPort,
             mockStackRepo as unknown as StackRepository,
         );
     }
