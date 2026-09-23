@@ -74,7 +74,7 @@ function createMockNotificationService() {
 function createMockStackFilesystem() {
     return {
         getStackDirectory: vi.fn().mockReturnValue("/stacks/myapp"),
-        readComposeFile: vi.fn().mockResolvedValue("services:\n  web:\n    image: nginx"),
+        readCompose: vi.fn().mockResolvedValue("services:\n  web:\n    image: nginx"),
     };
 }
 
