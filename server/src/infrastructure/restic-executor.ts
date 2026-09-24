@@ -143,7 +143,7 @@ export class ResticExecutor implements ResticExecutorPort {
      *
      * IMPORTANT: Caller must set cwd to stackPath when calling run() so that "." resolves correctly.
      */
-    buildBackupArgs(stackPath: string, stackId: string): string[] {
+    buildBackupArgs(_stackPath: string, stackId: string): string[] {
         return [
             ".",
             "--exclude", "./logs",
@@ -174,7 +174,7 @@ export class ResticExecutor implements ResticExecutorPort {
      *
      * IMPORTANT: Caller must set cwd to stackPath when calling run() so that "." resolves correctly.
      */
-    buildRestoreArgs(snapshotId: string, targetPath: string): string[] {
+    buildRestoreArgs(snapshotId: string, _targetPath: string): string[] {
         return ["restore", snapshotId, "--target", "."];
     }
 

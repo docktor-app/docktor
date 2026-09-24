@@ -37,7 +37,7 @@ export class ComposeRewriter implements ComposeRewriterPort {
 		}
 
 		// Rewrite service volumes and extract environment variables
-		for (const [serviceName, service] of Object.entries(doc.services || {})) {
+		for (const [, service] of Object.entries(doc.services || {})) {
 			const svc = service as any;
 
 			// Rewrite volume paths
@@ -112,7 +112,7 @@ export class ComposeRewriter implements ComposeRewriterPort {
 		// Update top-level volumes: mark unconverted named volumes as external
 		if (doc.volumes) {
 			const newVolumes: Record<string, any> = {};
-			for (const [volName, volDef] of Object.entries(doc.volumes)) {
+			for (const [volName] of Object.entries(doc.volumes)) {
 				const shouldConvert = namedVolumeSelections.get(volName);
 				if (shouldConvert) {
 					// Remove from volumes section (now a bind mount)

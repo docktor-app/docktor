@@ -20,7 +20,7 @@ export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000 // 6 hours
 // Pure exported functions (unit-testable without class instantiation)
 // ---------------------------------------------------------------------------
 
-export function normalizeImageRef(imageRef: string): string {
+function normalizeImageRef(imageRef: string): string {
     let ref = imageRef
         .replace(/^docker\.io\/library\//, "")
         .replace(/^docker\.io\//, "")
@@ -44,17 +44,7 @@ export function splitImageRef(imageRef: string): {name: string; tag: string} {
     return {name: imageRef.slice(0, lastColon), tag: imageRef.slice(lastColon + 1)}
 }
 
-export function detectRegistry(imageRef: string): "dockerhub" | "ghcr" | "private" {
-    const normalized = normalizeImageRef(imageRef)
-    const firstSlash = normalized.indexOf("/")
-    if (firstSlash === -1) return "dockerhub"
-    const host = normalized.substring(0, firstSlash)
-    if (!host.includes(".")) return "dockerhub"
-    if (host === "ghcr.io") return "ghcr"
-    return "private"
-}
-
-export function parseDateTag(tag: string): Date | null {
+function parseDateTag(tag: string): Date | null {
     const DATE_PATTERNS = [
         /^(\d{4})-(\d{2})-(\d{2})$/,
         /^(\d{4})(\d{2})(\d{2})$/,
@@ -73,9 +63,9 @@ export function parseDateTag(tag: string): Date | null {
     return null
 }
 
-export type CompareResult = "newer" | "same" | "older" | "unknown"
+type CompareResult = "newer" | "same" | "older" | "unknown"
 
-export interface CompareOptions {
+interface CompareOptions {
     currentDigest?: string | null
     latestDigest?: string | null
 }
@@ -210,7 +200,7 @@ export function getNextImageToCheck(
 // Repository interface (matches mock in tests)
 // ---------------------------------------------------------------------------
 
-export interface ImageUpdateCheckRecord {
+interface ImageUpdateCheckRecord {
     imageRef: string
     lastCheckedAt: Date | null
     latestTag?: string | null
@@ -219,7 +209,7 @@ export interface ImageUpdateCheckRecord {
     hasUpdate?: boolean
 }
 
-export interface UpdateCheckerRepo {
+interface UpdateCheckerRepo {
     findAllImageRefs(): Promise<string[]>
     getImageUpdateCheck(imageRef: string): Promise<ImageUpdateCheckRecord | null>
     upsertImageUpdateCheck(input: {
@@ -240,10 +230,9 @@ export interface UpdateCheckerRepo {
 // ---------------------------------------------------------------------------
 
 async function createProductionRepo(): Promise<UpdateCheckerRepo> {
-    const [{prisma}, {imageUpdateCheckRepository}, {stackRepository}] = await Promise.all([
+    const [{prisma}, {imageUpdateCheckRepository}] = await Promise.all([
         import("../lib/db.js"),
         import("../repositories/image-update-check-repository.js"),
-        import("../repositories/stack-repository.js"),
     ])
 
     return {
