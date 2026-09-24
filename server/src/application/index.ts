@@ -28,17 +28,11 @@ import {NotFoundError} from "../lib/errors.js";
 import type {BackupStackRepo} from "./backup-service.js";
 import type {StackStatus} from "../generated/prisma/enums.js";
 import {domainEventBus} from "../infrastructure/event-bus.js";
-import {subscribeStateBroadcast} from "./subscribers/state-broadcast-subscriber.js";
-import {subscribeNotifications} from "./subscribers/notification-subscriber.js";
+import {registerDomainSubscribers} from "./subscribers/register.js";
 
 const repo = stackRepository;
 const fs = new StackFilesystem();
 const docker = new DockerExecutor();
-
-// D-15 item 3 / D-18: bridges the domain-event bus onto the live-state
-// broadcaster so it is an ordinary bus subscriber, not a special-cased
-// inline call. Exported so a test can tear it down.
-export const disposeStateBroadcastSubscription = subscribeStateBroadcast(domainEventBus, stateEventBroadcaster);
 
 export {settingsRepository};
 export const settingsService = new SettingsService(settingsRepository);
@@ -52,10 +46,15 @@ export const notificationService = new NotificationService(
     smtpClient,
 );
 
-// D-15 item 1: bridges the notification-intent domain events (backup/restore
-// failure, disk threshold) onto NotificationService.notify(). Exported so a
-// test can tear it down.
-export const disposeNotificationSubscription = subscribeNotifications(domainEventBus, notificationService);
+// D-15: registers all three subscriber categories (audit trail, plan 10-13;
+// notifications, plan 10-12; live-state bridge, plan 10-11) from one place
+// in the fixed, documented order subscribers/register.ts explains. Exported
+// so a test can tear it down.
+export const disposeDomainSubscribers = registerDomainSubscribers(domainEventBus, {
+    stackEventRepo: stackEventRepository,
+    notificationService,
+    broadcaster: stateEventBroadcaster,
+});
 
 // Adapter: StackRepository -> BackupStackRepo interface
 const backupStackRepo: BackupStackRepo = {

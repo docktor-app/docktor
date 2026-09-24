@@ -246,4 +246,72 @@ describe("architecture: layering", () => {
             });
         }
     });
+
+    describe("the StackEvent audit table has exactly one write path: the audit subscriber (D-15 item 2, 10-13)", () => {
+        // "The audit repository's write member is reached from exactly one
+        // file" is enforced by two complementary checks, since the audit
+        // subscriber (application/subscribers/stack-event-subscriber.ts)
+        // deliberately does NOT import repositories/ at all — it takes a
+        // narrow write-only shape by parameter (Task 1's own acceptance
+        // criteria: `grep -cE '^\s*import .*repositories/' ...
+        // stack-event-subscriber.ts` prints 0). So the module-specifier
+        // import check alone can't name the subscriber as the sole importer
+        // — instead:
+        //   1. No file other than the D-09-mandated barrel
+        //      (repositories/index.ts) imports stack-event-repository.js
+        //      directly — a future second writer reaching past the barrel
+        //      for the concrete module fails here.
+        //   2. No file other than the audit subscriber ever calls
+        //      `.createEvent(` — the one place the write member is actually
+        //      invoked at runtime.
+        // application/index.ts (the composition root) imports the singleton
+        // from the barrel (../repositories/index.js, not
+        // stack-event-repository.js directly) precisely so check 1 stays
+        // meaningful, and only ever passes the reference through to
+        // registerDomainSubscribers — it never calls .createEvent( itself,
+        // so check 2 holds for it too.
+        const STACK_EVENT_REPO_MODULE_PATTERN = /["'][^"']*\bstack-event-repository\.js["']/;
+        const REPOSITORIES_INDEX_FILE = path.join(REPOSITORIES_DIR, "index.ts");
+        const STACK_EVENT_REPO_FILE = path.join(REPOSITORIES_DIR, "stack-event-repository.ts");
+        const STACK_EVENT_SUBSCRIBER_FILE = path.join(APPLICATION_DIR, "subscribers", "stack-event-subscriber.ts");
+
+        const allSrcFilesExcludingDefinition = listTsFilesRecursive(SRC_ROOT).filter(
+            (f) => f !== STACK_EVENT_REPO_FILE,
+        );
+
+        it("no file under server/src/ other than repositories/index.ts imports stack-event-repository.js directly", () => {
+            const offenders: string[] = [];
+            for (const file of allSrcFilesExcludingDefinition) {
+                if (file === REPOSITORIES_INDEX_FILE) continue;
+                const lines = importLines(file);
+                if (lines.some((line) => STACK_EVENT_REPO_MODULE_PATTERN.test(line))) {
+                    offenders.push(relative(file));
+                }
+            }
+            expect(
+                offenders,
+                `The following file(s) import stack-event-repository.js directly, bypassing the audit subscriber's DI shape: ${offenders.join(", ")}`,
+            ).toHaveLength(0);
+        });
+
+        it("no file under server/src/ other than the audit subscriber calls .createEvent( on the audit repository", () => {
+            // A plain, non-comment code line only — a mention inside a `//`
+            // comment (e.g. explaining what used to happen here) must not
+            // trip this rule, matching every other rule in this file's
+            // comment/string immunity.
+            const offenders: string[] = [];
+            for (const file of allSrcFilesExcludingDefinition) {
+                if (file === STACK_EVENT_SUBSCRIBER_FILE) continue;
+                const content = fs.readFileSync(file, "utf-8");
+                const hasCall = content
+                    .split("\n")
+                    .some((line) => !/^\s*\/\//.test(line) && /\.createEvent\(/.test(line));
+                if (hasCall) offenders.push(relative(file));
+            }
+            expect(
+                offenders,
+                `The following file(s) call .createEvent( directly — application/subscribers/stack-event-subscriber.ts must be the only caller: ${offenders.join(", ")}`,
+            ).toHaveLength(0);
+        });
+    });
 });

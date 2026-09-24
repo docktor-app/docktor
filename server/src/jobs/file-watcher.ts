@@ -7,7 +7,6 @@ import {domainEventBus} from "../infrastructure/event-bus.js"
 import {hashComposeContent} from "../lib/compose-parser.js"
 import {createComposeConfig, type ComposeConfig} from "../domain/compose-config.js"
 import {getStacksDir} from "../lib/stacks-dir.js"
-import type {StackEventType} from "../generated/prisma/enums.js"
 import {WatcherJob} from "./job.js"
 
 interface FileWatcherStackRecord {
@@ -31,7 +30,6 @@ export interface FileWatcherRepo {
     updateStackHash(args: {stackId: string; hash: string}): Promise<void>
     updateEnvHash(args: {stackId: string; hash: string}): Promise<void>
     syncServicesFromCompose(stackId: string, composeConfig: ComposeConfig): Promise<void>
-    createStackEvent(args: {stackId: string; type: StackEventType; message?: string; payload?: string}): Promise<void>
     setConfigError(stackId: string, message: string): Promise<void>
     clearConfigError(stackId: string): Promise<void>
 }
@@ -52,21 +50,17 @@ interface FileWatcherStackRepo {
     clearConfigError: FileWatcherRepo["clearConfigError"]
 }
 
-/** Narrow local interface covering just the event repository's write member. */
-interface FileWatcherEventRepo {
-    createEvent(input: {stackId: string; type: StackEventType; message?: string; payload?: string}): Promise<unknown>
-}
-
 /**
- * Builds the FileWatcherRepo adapter from the two repositories that
- * actually own this data: StackRepository for stack reads/writes, and
- * StackEventRepository for the StackEvent audit trail. This is the single
- * write path for that table — the ad-hoc method that used to live on
- * StackRepository (and cast its type argument past the enum) is gone.
+ * Builds the FileWatcherRepo adapter from the one repository that owns this
+ * data: StackRepository for stack reads/writes. The watcher no longer
+ * touches the StackEvent audit table at all (plan 10-13) — the audit
+ * subscriber (application/subscribers/stack-event-subscriber.ts) is now the
+ * single write path for that table, reacting to the same
+ * stack.config_changed / stack.config_error events this watcher already
+ * emitted before this plan.
  */
 export function createFileWatcherRepo(
     stacks: FileWatcherStackRepo,
-    events: FileWatcherEventRepo,
 ): FileWatcherRepo {
     return {
         findAllStacks: (...args) => stacks.findAllStacks(...args),
@@ -76,9 +70,6 @@ export function createFileWatcherRepo(
         syncServicesFromCompose: (...args) => stacks.syncServicesFromCompose(...args),
         setConfigError: (...args) => stacks.setConfigError(...args),
         clearConfigError: (...args) => stacks.clearConfigError(...args),
-        async createStackEvent(args) {
-            await events.createEvent(args)
-        },
     }
 }
 
@@ -106,8 +97,7 @@ export class FileWatcher extends WatcherJob {
         if (this.repo !== null) return this.repo
         // Lazy-load to avoid pulling db.ts into the module graph at test time
         const {stackRepository} = await import("../repositories/stack-repository.js")
-        const {stackEventRepository} = await import("../repositories/stack-event-repository.js")
-        return createFileWatcherRepo(stackRepository, stackEventRepository)
+        return createFileWatcherRepo(stackRepository)
     }
 
     isWatching(): boolean {
@@ -229,11 +219,6 @@ export class FileWatcher extends WatcherJob {
             // Invalid YAML or no services key
             console.log(`[FileWatcher] Config error for ${stack.id}: ${err.message}`)
             await repo.setConfigError(stack.id, err.message)
-            await repo.createStackEvent({
-                stackId: stack.id,
-                type: "config_error",
-                message: err.message,
-            })
             this.bus.emit("stack.config_error", {
                 stackId: stack.id,
                 message: err.message,
@@ -251,16 +236,13 @@ export class FileWatcher extends WatcherJob {
         // stale configError before proceeding. Only reached once sync succeeds.
         await repo.clearConfigError(stack.id)
         await repo.updateStackHash({stackId: stack.id, hash: newHash})
-        await repo.createStackEvent({
-            stackId: stack.id,
-            type: "config_changed",
-            payload: JSON.stringify({oldHash, newHash}),
-        })
         console.log(`[FileWatcher] Broadcasting config_changed event for ${stack.id}`)
         this.bus.emit("stack.config_changed", {
             stackId: stack.id,
             newHash,
             source: "external",
+            previousHash: oldHash,
+            changedFile: "compose",
         })
     }
 
@@ -303,15 +285,12 @@ export class FileWatcher extends WatcherJob {
 
         console.log(`[FileWatcher] .env hash changed for ${stack.id}`)
         await repo.updateEnvHash({stackId: stack.id, hash: newHash})
-        await repo.createStackEvent({
-            stackId: stack.id,
-            type: "config_changed",
-            payload: JSON.stringify({oldHash, newHash, source: "env"}),
-        })
         this.bus.emit("stack.config_changed", {
             stackId: stack.id,
             newHash,
             source: "external",
+            previousHash: oldHash,
+            changedFile: "env",
         })
     }
 
