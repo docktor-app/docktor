@@ -8,12 +8,12 @@ updated: "2026-09-24T16:50:00Z"
 
 ## Current Test
 
-number: 3
-name: Notification isolation under a real mail outage (deferred by plan 10-12 — D-17)
+number: 4
+name: Audit-log freshness after an external edit (deferred by plan 10-13 — D-15 item 2, PD-11)
 expected: |
-  Configure an unreachable mail server, run a backup that fails. The backup's own
-  status/log/notification-row outcomes are unaffected by the mail failure — identical to a
-  working-mail-server run — and the notification row is still written to the log.
+  With a stack detail page open, edit the stack's compose file directly on disk (valid, then
+  invalid). New StackEvent entries (config_changed, then config_error) appear in the event log
+  section without a manual refresh, rendered identically to pre-refactor entries.
 awaiting: user response
 
 ## Tests
@@ -47,7 +47,23 @@ expected: |
   Configure an unreachable mail server, run a backup that fails. The backup's own
   status/log/notification-row outcomes are unaffected by the mail failure — identical to a
   working-mail-server run — and the notification row is still written to the log.
-result: [pending]
+result: issue
+reported: "when opening the backup tab, infinite requests are fired, and the page gets super slow. I think there is still a bug. Regarding the test: i have tested with an unhealthy container and the log stated: Received status change: stackId=memos status=UNHEALTHY. Seems good. However, I regularly get the following message: \"Received status change: stackId=docktor-proxy status=RUNNING\", it appears always directly after the state poller. The issue is that the status before was also RUNNING. I think this is a bug."
+severity: major
+note: |
+  Did not exercise the literal expected scenario (unreachable mail server + a failing backup) —
+  tested an UNHEALTHY container transition instead (worked: notification received correctly),
+  then surfaced two separate, unrelated problems along the way. Investigated both immediately:
+  (1) client/src/routes/app/stacks/components/backup-history.tsx:107 — the polling useEffect's
+  dependency array is `[stackId, backups]`, and the effect itself calls `setBackups(...)` and
+  unconditionally re-fetches on every run (line 84) — `backups` changing is what the effect
+  itself causes, so it retriggers itself in a tight loop, matching "infinite requests / page
+  gets super slow" exactly. (2) server/src/jobs/state-poller.ts:349 — `reconcile()` emits
+  `stack.status_changed` unconditionally on every 60s tick for every stack, with no comparison
+  against the stack's previous status, so a steady-state stack re-broadcasts "changed" every
+  tick even when nothing changed — matches the repeated docktor-proxy RUNNING->RUNNING report.
+  Unclear yet whether either is a Phase 10 regression or pre-existing behavior carried over
+  from before the refactor; full diagnosis deferred to the standard diagnose_issues sub-flow.
 
 ### 4. Audit-log freshness after an external edit (deferred by plan 10-13 — D-15 item 2, PD-11)
 expected: |
@@ -70,8 +86,8 @@ result: [pending]
 
 total: 5
 passed: 1
-issues: 1
-pending: 3
+issues: 2
+pending: 2
 skipped: 0
 blocked: 0
 
@@ -84,6 +100,28 @@ blocked: 0
   severity: major
   test: 1
   artifacts: []
+  missing: []
+
+- gap_id: G-10-2
+  truth: "Opening a stack's Backups tab does not cause runaway, continuous network requests"
+  status: failed
+  reason: "User reported: when opening the backup tab, infinite requests are fired, and the page gets super slow."
+  severity: major
+  test: 3
+  artifacts:
+    - path: "client/src/routes/app/stacks/components/backup-history.tsx"
+      issue: "useEffect at line 44-107 has dependency array [stackId, backups] (line 107); the effect itself calls setBackups(data) inside fetchBackups() and unconditionally calls fetchBackups() again on every run (line 84) — backups changing (which the effect itself causes) retriggers the effect, producing a continuous fetch loop with no terminating condition."
+  missing: []
+
+- gap_id: G-10-3
+  truth: "A notification 'status change' is only received when a stack's status actually changed, not on every poll tick"
+  status: failed
+  reason: "User reported: I regularly get the following message: \"Received status change: stackId=docktor-proxy status=RUNNING\", it appears always directly after the state poller. The issue is that the status before was also RUNNING. I think this is a bug."
+  severity: major
+  test: 3
+  artifacts:
+    - path: "server/src/jobs/state-poller.ts"
+      issue: "reconcile() (line 349) emits stack.status_changed unconditionally on every 60s tick for every known stack, with no comparison against the stack's previously recorded status — so NotificationWatcher.handleStatusChange logs and processes a 'status change' every tick even when nothing changed."
   missing: []
 
 ## Non-Blocking Advisory (from 10-REVIEW.md)
