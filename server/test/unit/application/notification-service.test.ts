@@ -25,10 +25,9 @@ function createMockSettings() {
     }
 }
 
-function createMockBroadcaster() {
+function createMockBus() {
     return {
-        publish: vi.fn(),
-        subscribe: vi.fn(),
+        emit: vi.fn(),
     }
 }
 
@@ -42,7 +41,7 @@ describe("NotificationService", () => {
     let service: NotificationService
     let repo: ReturnType<typeof createMockRepo>
     let settings: ReturnType<typeof createMockSettings>
-    let broadcaster: ReturnType<typeof createMockBroadcaster>
+    let bus: ReturnType<typeof createMockBus>
     let users: ReturnType<typeof createMockUsers>
     let smtpClient: ReturnType<typeof createMockSmtpClient>
 
@@ -50,11 +49,11 @@ describe("NotificationService", () => {
         vi.clearAllMocks()
         repo = createMockRepo()
         settings = createMockSettings()
-        broadcaster = createMockBroadcaster()
+        bus = createMockBus()
         // Default: two-address recipient list, derived solely from the injected UserReadPort stub
         users = createMockUsers(["user1@example.com", "user2@example.com"])
         smtpClient = createMockSmtpClient()
-        service = new NotificationService(repo as any, settings as any, broadcaster as any, users as any, smtpClient as any)
+        service = new NotificationService(repo as any, settings as any, bus as any, users as any, smtpClient as any)
     })
 
     describe("notify", () => {
@@ -78,6 +77,64 @@ describe("NotificationService", () => {
                     emailSent: false,
                 }),
             )
+        })
+
+        it("emits notification.created with the new record's id", async () => {
+            settings.getSetting.mockResolvedValue("true")
+            settings.getSmtpConfig.mockResolvedValue(null)
+            repo.create.mockResolvedValue({ id: "notif-1" })
+
+            await service.notify({
+                type: "stack_error",
+                stackId: "my-stack",
+                subject: "Stack Error",
+                message: "Stack my-stack entered ERROR state",
+            })
+
+            expect(bus.emit).toHaveBeenCalledWith("notification.created", { notificationId: "notif-1" })
+        })
+
+        it("emits notification.created after the record is created, not before", async () => {
+            settings.getSetting.mockResolvedValue("true")
+            settings.getSmtpConfig.mockResolvedValue(null)
+            const order: string[] = []
+            repo.create.mockImplementation(async () => {
+                order.push("repo.create")
+                return { id: "notif-1" }
+            })
+            bus.emit.mockImplementation(() => {
+                order.push("bus.emit")
+            })
+
+            await service.notify({
+                type: "stack_error",
+                stackId: "my-stack",
+                subject: "Stack Error",
+                message: "Stack my-stack entered ERROR state",
+            })
+
+            expect(order).toEqual(["repo.create", "bus.emit"])
+        })
+
+        it("completes normally when the bus emit throws — a failing subscriber can't strand notify()", async () => {
+            settings.getSetting.mockResolvedValue("true")
+            settings.getSmtpConfig.mockResolvedValue(null)
+            repo.create.mockResolvedValue({ id: "notif-1" })
+            bus.emit.mockImplementation(() => {
+                throw new Error("subscriber exploded")
+            })
+            const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+
+            await expect(
+                service.notify({
+                    type: "stack_error",
+                    stackId: "my-stack",
+                    subject: "Stack Error",
+                    message: "Stack my-stack entered ERROR state",
+                }),
+            ).resolves.toBeUndefined()
+
+            consoleError.mockRestore()
         })
 
         it("skips notification when trigger is disabled", async () => {

@@ -1,6 +1,6 @@
 import {decrypt} from "../lib/crypto.js"
 import type {NotificationRepository} from "../repositories/notification-repository.js"
-import type {StateBroadcaster} from "../lib/state-broadcaster.js"
+import type {EventBusPort} from "./ports/event-bus-port.js"
 import type {SmtpClientPort} from "./ports/smtp-client-port.js"
 
 export interface SmtpConfig {
@@ -42,7 +42,7 @@ export class NotificationService {
     constructor(
         private readonly repo: NotificationRepository,
         private readonly settings: NotificationSettings,
-        private readonly broadcaster: StateBroadcaster,
+        private readonly bus: Pick<EventBusPort, "emit">,
         private readonly users: UserReadPort,
         private readonly smtpClient: SmtpClientPort,
     ) {}
@@ -72,11 +72,17 @@ export class NotificationService {
         })
         console.log(`[NotificationService] Notification record created: ${notification.id}`)
 
-        // Broadcast notification creation event to all SSE clients
-        this.broadcaster.publish({
-            type: "notification_created",
-            notificationId: notification.id,
-        })
+        // Emit the notification-created domain event (D-15 item 1, last
+        // inline publish in the server) — the state-broadcast bridge
+        // subscriber (plan 10-11) delivers it to connected SSE clients in
+        // the same shape at the same point. Defence-in-depth try/catch
+        // alongside the bus's own per-subscriber isolation (D-17), matching
+        // every other emit site added in this phase.
+        try {
+            this.bus.emit("notification.created", {notificationId: notification.id})
+        } catch (err) {
+            console.error("[NotificationService] bus emit failed", err)
+        }
 
         const smtpConfig = await this.settings.getSmtpConfig()
         if (!smtpConfig) {

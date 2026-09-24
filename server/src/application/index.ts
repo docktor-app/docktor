@@ -47,7 +47,7 @@ export const stackService = new StackService(repo, fs, docker, stackEventReposit
 export const notificationService = new NotificationService(
     notificationRepository,
     settingsService,
-    stateEventBroadcaster,
+    domainEventBus,
     userRepository,
     smtpClient,
 );

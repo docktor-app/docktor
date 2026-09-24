@@ -1,12 +1,8 @@
-import type {StateEvent} from "../lib/state-broadcaster.js"
-import {stateEventBroadcaster} from "../lib/state-broadcaster.js"
+import type {EventBusPort} from "../application/ports/event-bus-port.js"
+import {domainEventBus} from "../infrastructure/event-bus.js"
 import type {NotificationEvent} from "../application/notification-service.js"
 import type {Job, JobHealthReporter} from "./job.js"
 import {WatcherJob} from "./job.js"
-
-export interface NotificationWatcherBroadcaster {
-    subscribe(handler: (event: StateEvent) => void): () => void
-}
 
 export interface NotificationWatcherNotificationService {
     notify(event: NotificationEvent): Promise<void>
@@ -21,26 +17,45 @@ export class NotificationWatcher extends WatcherJob {
 
     private activeIncidents: Map<string, Set<string>> = new Map()
     private unhealthyTimers: Map<string, NodeJS.Timeout> = new Map()
-    private unsubscribe: (() => void) | null = null
+    private unsubscribers: Array<() => void> = []
 
     constructor(
         private readonly notificationService: NotificationWatcherNotificationService,
-        private readonly broadcaster: NotificationWatcherBroadcaster,
+        private readonly bus: Pick<EventBusPort, "subscribe">,
     ) {
         super()
     }
 
     protected attach(): void {
-        this.unsubscribe = this.broadcaster.subscribe((event: StateEvent) => {
-            void this.handleStateEvent(event)
-        })
-        console.log("[NotificationWatcher] Started - subscribed to StateBroadcaster")
+        // Two subscriptions, not one filtered channel: the old
+        // StateBroadcaster subscription received both `container_state` and
+        // `stack_status` live-state events on a single callback and filtered
+        // by `event.type`. The bus has a separate domain event per kind, so
+        // this watcher subscribes to both and forwards each to the same
+        // handler — detach() disposes both.
+        this.unsubscribers = [
+            this.bus.subscribe("stack.status_changed", (payload) => {
+                // Field-name note (plan 10-12 action text): this domain
+                // event's status field is named `status`, not `stackStatus`
+                // — the only field-name difference between the two events
+                // this watcher subscribes to (10-03's mirroring keeps every
+                // other field name identical to the pre-migration StateEvent
+                // shapes).
+                void this.handleStatusChange(payload.stackId, payload.status)
+            }),
+            this.bus.subscribe("stack.container_state_changed", (payload) => {
+                void this.handleStatusChange(payload.stackId, payload.stackStatus)
+            }),
+        ]
+        console.log("[NotificationWatcher] Started - subscribed to the domain-event bus")
     }
 
     protected detach(): void {
         console.log("[NotificationWatcher] Stopped")
-        this.unsubscribe?.()
-        this.unsubscribe = null
+        for (const unsubscribe of this.unsubscribers) {
+            unsubscribe()
+        }
+        this.unsubscribers = []
 
         for (const timer of this.unhealthyTimers.values()) {
             clearTimeout(timer)
@@ -59,12 +74,8 @@ export class NotificationWatcher extends WatcherJob {
         // Intentionally empty — see class-level doc comment.
     }
 
-    async handleStateEvent(event: StateEvent): Promise<void> {
-        console.log("[NotificationWatcher] Received event:", event.type, event.type === "container_state" || event.type === "stack_status" ? `stackId=${event.stackId} status=${event.stackStatus}` : "")
-
-        if (event.type !== "container_state" && event.type !== "stack_status") return
-
-        const {stackId, stackStatus} = event
+    async handleStatusChange(stackId: string, stackStatus: string): Promise<void> {
+        console.log(`[NotificationWatcher] Received status change: stackId=${stackId} status=${stackStatus}`)
 
         if (!this.activeIncidents.has(stackId)) {
             this.activeIncidents.set(stackId, new Set())
@@ -133,7 +144,7 @@ let _healthReporter: JobHealthReporter | null = null
 
 async function createProductionWatcher(): Promise<NotificationWatcher> {
     const {notificationService} = await import("../application/index.js")
-    const watcher = new NotificationWatcher(notificationService, stateEventBroadcaster)
+    const watcher = new NotificationWatcher(notificationService, domainEventBus)
     if (_healthReporter) watcher.setHealthReporter(_healthReporter)
     return watcher
 }
