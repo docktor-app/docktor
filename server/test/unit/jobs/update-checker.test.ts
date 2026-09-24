@@ -25,12 +25,6 @@ function createMockDockerExecutor() {
     };
 }
 
-function createMockBroadcaster() {
-    return {
-        publish: vi.fn(),
-    };
-}
-
 function createMockBus() {
     return {
         emit: vi.fn(),
@@ -48,7 +42,6 @@ describe("UpdateChecker", () => {
     let mockRepo: ReturnType<typeof createMockUpdateCheckerRepo>;
     let mockDockerExecutor: ReturnType<typeof createMockDockerExecutor>;
     let mockBus: ReturnType<typeof createMockBus>;
-    let mockBroadcaster: ReturnType<typeof createMockBroadcaster>;
     let mockRegistryClient: ReturnType<typeof createMockRegistryClient>;
 
     beforeEach(() => {
@@ -56,7 +49,6 @@ describe("UpdateChecker", () => {
         mockRepo = createMockUpdateCheckerRepo();
         mockDockerExecutor = createMockDockerExecutor();
         mockBus = createMockBus();
-        mockBroadcaster = createMockBroadcaster();
         mockRegistryClient = createMockRegistryClient();
         // Safe default so hasUpdate=true scenarios that don't care about the
         // broadcast fan-out list don't hit "stacks is not iterable" — tests
@@ -72,10 +64,6 @@ describe("UpdateChecker", () => {
             mockDockerExecutor as any,
             mockBus as any,
             mockRegistryClient as any,
-            // Only the dead triggerUpdate() describe block below asserts on
-            // this — every reachable publisher in this file (checkImage())
-            // was migrated onto mockBus above.
-            mockBroadcaster as any,
         );
     });
 
@@ -144,39 +132,6 @@ describe("UpdateChecker", () => {
             const imageCount = 10;
             const expectedStagger = CHECK_INTERVAL_MS / imageCount; // 36 minutes
             expect(expectedStagger).toBe(36 * 60 * 1000);
-        });
-    });
-
-    describe("triggerUpdate() (UPD-04)", () => {
-        it("calls docker pull then docker compose up -d for the stack", async () => {
-            const stack = {id: "stack-1", composeFilePath: "/stacks/myapp/docker-compose.yml"};
-            mockRepo.findStacksByImageRef.mockResolvedValue([stack]);
-
-            await (checker as any).triggerUpdate("nginx:1.25", stack as any);
-
-            expect(mockDockerExecutor.manifestInspect).toHaveBeenCalled();
-        });
-
-        it("transitions stack status to UPDATING then back to RUNNING on success", async () => {
-            const stack = {id: "stack-1", composeFilePath: "/stacks/myapp/docker-compose.yml", status: "RUNNING"};
-
-            await (checker as any).triggerUpdate("nginx:1.25", stack as any);
-
-            // Implementation should transition: RUNNING → UPDATING → RUNNING
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith(
-                expect.objectContaining({stackId: stack.id}),
-            );
-        });
-
-        it("transitions stack to ERROR on pull/recreate failure", async () => {
-            const stack = {id: "stack-1", composeFilePath: "/stacks/myapp/docker-compose.yml", status: "RUNNING"};
-            mockDockerExecutor.manifestInspect.mockRejectedValue(new Error("pull failed"));
-
-            await (checker as any).triggerUpdate("nginx:1.25", stack as any);
-
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith(
-                expect.objectContaining({stackId: stack.id, type: "update_error"}),
-            );
         });
     });
 

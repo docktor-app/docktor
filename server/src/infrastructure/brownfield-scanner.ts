@@ -4,12 +4,11 @@ import path from "node:path";
 import {
     ComposeAnalyzer,
     composeAnalyzer,
-    type AnalysisResult,
     type CompatibilityLevel,
 } from "./compose-analyzer.js";
 import type {BrownfieldScannerPort} from "../application/ports/brownfield-scanner-port.js";
 
-export interface DiscoveredStack {
+interface DiscoveredStack {
     path: string;
     directory: string;
     compatibility: CompatibilityLevel;

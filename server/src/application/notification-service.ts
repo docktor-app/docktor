@@ -1,4 +1,3 @@
-import {decrypt} from "../lib/crypto.js"
 import type {NotificationRepository} from "../repositories/notification-repository.js"
 import type {EventBusPort} from "./ports/event-bus-port.js"
 import type {SmtpClientPort} from "./ports/smtp-client-port.js"
@@ -12,7 +11,7 @@ export interface SmtpConfig {
     from: string
 }
 
-export interface SmtpTestConfig extends SmtpConfig {
+interface SmtpTestConfig extends SmtpConfig {
     recipient: string
 }
 
@@ -23,7 +22,7 @@ export interface NotificationEvent {
     message: string
 }
 
-export interface NotificationSettings {
+interface NotificationSettings {
     getSetting(key: string): Promise<string | null>
     getSmtpConfig(): Promise<SmtpConfig | null>
 }

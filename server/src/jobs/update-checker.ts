@@ -3,8 +3,6 @@ import {dockerExecutor} from "../infrastructure/docker-executor.js"
 import type {DockerExecutorPort} from "../application/ports/docker-executor-port.js"
 import {registryClient, RegistryUnavailableError} from "../infrastructure/registry-client.js"
 import type {RegistryClientPort} from "../application/ports/registry-client-port.js"
-import type {StateBroadcaster} from "../lib/state-broadcaster.js"
-import {stateEventBroadcaster} from "../lib/state-broadcaster.js"
 import type {EventBusPort} from "../application/ports/event-bus-port.js"
 import {domainEventBus} from "../infrastructure/event-bus.js"
 import {buildImageRefFromService} from "../domain/image-update-detection.js"
@@ -22,7 +20,7 @@ export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000 // 6 hours
 // Pure exported functions (unit-testable without class instantiation)
 // ---------------------------------------------------------------------------
 
-export function normalizeImageRef(imageRef: string): string {
+function normalizeImageRef(imageRef: string): string {
     let ref = imageRef
         .replace(/^docker\.io\/library\//, "")
         .replace(/^docker\.io\//, "")
@@ -46,17 +44,7 @@ export function splitImageRef(imageRef: string): {name: string; tag: string} {
     return {name: imageRef.slice(0, lastColon), tag: imageRef.slice(lastColon + 1)}
 }
 
-export function detectRegistry(imageRef: string): "dockerhub" | "ghcr" | "private" {
-    const normalized = normalizeImageRef(imageRef)
-    const firstSlash = normalized.indexOf("/")
-    if (firstSlash === -1) return "dockerhub"
-    const host = normalized.substring(0, firstSlash)
-    if (!host.includes(".")) return "dockerhub"
-    if (host === "ghcr.io") return "ghcr"
-    return "private"
-}
-
-export function parseDateTag(tag: string): Date | null {
+function parseDateTag(tag: string): Date | null {
     const DATE_PATTERNS = [
         /^(\d{4})-(\d{2})-(\d{2})$/,
         /^(\d{4})(\d{2})(\d{2})$/,
@@ -75,9 +63,9 @@ export function parseDateTag(tag: string): Date | null {
     return null
 }
 
-export type CompareResult = "newer" | "same" | "older" | "unknown"
+type CompareResult = "newer" | "same" | "older" | "unknown"
 
-export interface CompareOptions {
+interface CompareOptions {
     currentDigest?: string | null
     latestDigest?: string | null
 }
@@ -212,7 +200,7 @@ export function getNextImageToCheck(
 // Repository interface (matches mock in tests)
 // ---------------------------------------------------------------------------
 
-export interface ImageUpdateCheckRecord {
+interface ImageUpdateCheckRecord {
     imageRef: string
     lastCheckedAt: Date | null
     latestTag?: string | null
@@ -221,7 +209,7 @@ export interface ImageUpdateCheckRecord {
     hasUpdate?: boolean
 }
 
-export interface UpdateCheckerRepo {
+interface UpdateCheckerRepo {
     findAllImageRefs(): Promise<string[]>
     getImageUpdateCheck(imageRef: string): Promise<ImageUpdateCheckRecord | null>
     upsertImageUpdateCheck(input: {
@@ -242,10 +230,9 @@ export interface UpdateCheckerRepo {
 // ---------------------------------------------------------------------------
 
 async function createProductionRepo(): Promise<UpdateCheckerRepo> {
-    const [{prisma}, {imageUpdateCheckRepository}, {stackRepository}] = await Promise.all([
+    const [{prisma}, {imageUpdateCheckRepository}] = await Promise.all([
         import("../lib/db.js"),
         import("../repositories/image-update-check-repository.js"),
-        import("../repositories/stack-repository.js"),
     ])
 
     return {
@@ -309,25 +296,18 @@ export class UpdateChecker extends IntervalJob {
     private readonly docker: Pick<DockerExecutorPort, "manifestInspect" | "imageDigest">
     private readonly bus: Pick<EventBusPort, "emit">
     private readonly registry: Pick<RegistryClientPort, "listTags">
-    // Retained solely for the dead triggerUpdate() method below (unreachable
-    // in production — see its own doc comment — and removed wholesale by
-    // plan 10-14). Every reachable publisher in this file (checkImage())
-    // migrated onto the bus above; this field deliberately did not.
-    private readonly broadcaster: Pick<StateBroadcaster, "publish">
 
     constructor(
         repo?: UpdateCheckerRepo,
         docker?: Pick<DockerExecutorPort, "manifestInspect" | "imageDigest">,
         bus?: Pick<EventBusPort, "emit">,
         registry?: Pick<RegistryClientPort, "listTags">,
-        broadcaster?: Pick<StateBroadcaster, "publish">,
     ) {
         super()
         this.repo = repo ?? null
         this.docker = docker ?? dockerExecutor
         this.bus = bus ?? domainEventBus
         this.registry = registry ?? registryClient
-        this.broadcaster = broadcaster ?? stateEventBroadcaster
     }
 
     private async getRepo(): Promise<UpdateCheckerRepo> {
@@ -461,38 +441,6 @@ export class UpdateChecker extends IntervalJob {
                 checkError,
             })
             console.error(`[UpdateChecker] failed to check ${imageRef}:`, err)
-        }
-    }
-
-    /**
-     * Unreachable in production (no caller found by grep) and carries an
-     * `as any` cast for a live-state event type ("update_error") that does
-     * not exist in StateEvent's own union. Deliberately left on the old
-     * old broadcaster-publish path rather than migrated onto the bus in plan
-     * 10-11 — migrating a domain event that has no corresponding real
-     * producer would mean inventing catalog scope this plan doesn't own.
-     * Plan 10-14 removes this method wholesale.
-     */
-    async triggerUpdate(imageRef: string, stack: {id: string}): Promise<void> {
-        try {
-            // Verify manifest is accessible (also serves as a connectivity check)
-            await this.docker.manifestInspect(imageRef)
-
-            this.broadcaster.publish({
-                type: "update_available",
-                stackId: stack.id,
-                imageRef,
-                latestTag: null,
-                hasUpdate: true,
-            })
-        } catch (err: any) {
-            console.error(`[UpdateChecker] triggerUpdate failed for ${imageRef}:`, err)
-            this.broadcaster.publish({
-                type: "update_error",
-                stackId: stack.id,
-                imageRef,
-                error: err.message ?? String(err),
-            } as any)
         }
     }
 }
