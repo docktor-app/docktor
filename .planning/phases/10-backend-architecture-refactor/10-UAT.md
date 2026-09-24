@@ -8,19 +8,22 @@ updated: "2026-09-24T16:50:00Z"
 
 ## Current Test
 
-number: 1
-name: Job startup and shutdown (deferred by plan 10-07 — D-02, D-13, D-14)
+number: 2
+name: Live-state stream sequences (deferred by plan 10-11 — D-18)
 expected: |
-  Startup log names all seven jobs in sequence (state poller, file watcher, update checker,
-  disk checker, notification watcher, backup scheduler, proxy cert poller); a shutdown signal
-  exits the process cleanly with no orphaned container-event stream or file watcher.
+  Connect an SSE client to the live-state endpoint and perform: deploy a stack, stop a stack,
+  edit a stack's compose file directly on disk (outside the app), and run a backup. Each
+  operation's event sequence has the same types, fields, and order as before the refactor; the
+  outside-edit config_changed event arrives tagged as external.
 awaiting: user response
 
 ## Tests
 
 ### 1. Job startup and shutdown (deferred by plan 10-07 — D-02, D-13, D-14)
 expected: Startup log names all seven jobs in sequence; a shutdown signal exits the process cleanly with no orphaned container-event stream or file watcher.
-result: [pending]
+result: issue
+reported: "startup was successful, but I didnt see the proxy cert poller. Here is the log: [FileWatcher] Starting file watcher on: ....; [FileWatcher] Polling mode enabled (interval: 1000ms) [DOCKTOR_FS_POLLING override]; [NotificationWatcher] Started - subscribed to the domain-event bus; [FileWatcher] Chokidar is ready and watching; [BackupScheduler] Registered 0 backup schedule(s); [StatePoller] Starting reconcile...; [StatePoller] Found 9 total containers; [FileWatcher] Reconcile: file not found for stack docktor-proxy, skipping; [StatePoller] Processing stack=memos...; [StatePoller] Reconcile: stack=memos, derived=STOPPED...; [NotificationWatcher] Received status change: stackId=memos status=STOPPED; [StatePoller] Processing stack=docktor-proxy...; [StatePoller] Reconcile: stack=docktor-proxy, derived=RUNNING..."
+severity: major
 
 ### 2. Live-state stream sequences (deferred by plan 10-11 — D-18)
 expected: |
@@ -58,17 +61,21 @@ result: [pending]
 
 total: 5
 passed: 0
-issues: 0
-pending: 5
+issues: 1
+pending: 4
 skipped: 0
 blocked: 0
 
 ## Gaps
 
-None identified by automated/independent verification. All 5 must-haves and the automated gate
-(typecheck, all-workspace unit suites, layering fitness test, integration-test diff, build)
-verified green by two independent sessions. The 5 items above are runtime behaviors that no
-sandbox available to this project can currently observe — not code defects.
+- gap_id: G-10-1
+  truth: "Startup log names all seven jobs in sequence (state poller, file watcher, update checker, disk checker, notification watcher, backup scheduler, proxy cert poller)"
+  status: failed
+  reason: "User reported: startup was successful, but I didnt see the proxy cert poller. Log shows FileWatcher, NotificationWatcher, BackupScheduler, and StatePoller lines but no ProxyCertPoller line."
+  severity: major
+  test: 1
+  artifacts: []
+  missing: []
 
 ## Non-Blocking Advisory (from 10-REVIEW.md)
 
