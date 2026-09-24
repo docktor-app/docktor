@@ -52,6 +52,7 @@ const APPLICATION_DIR = path.join(SRC_ROOT, "application");
 const APPLICATION_PORTS_DIR = path.join(SRC_ROOT, "application", "ports");
 const DOMAIN_DIR = path.join(SRC_ROOT, "domain");
 const REPOSITORIES_DIR = path.join(SRC_ROOT, "repositories");
+const ROUTES_DIR = path.join(SRC_ROOT, "routes");
 
 // application/ports/ is excluded — port interfaces are pure type
 // declarations, not the service code D-01/D-10 restrict.
@@ -60,6 +61,7 @@ const applicationFilesExcludingPorts = listTsFilesRecursive(APPLICATION_DIR).fil
 );
 
 const domainFiles = listTsFilesRecursive(DOMAIN_DIR);
+const routeFiles = listTsFilesRecursive(ROUTES_DIR);
 
 const RULES: LayeringRule[] = [
     {
@@ -82,6 +84,23 @@ const RULES: LayeringRule[] = [
             {label: "lib/db.js", pattern: /["'][^"']*\blib\/db\.js["']/},
             {label: "infrastructure/", pattern: /["'][^"']*\/infrastructure\/[^"']*["']/},
             {label: "repositories/", pattern: /["'][^"']*\/repositories\/[^"']*["']/},
+        ],
+    },
+    {
+        // D-01, 10-10: closes routes/backups.ts's five cross-layer reaches
+        // (two repositories, an infrastructure executor, a job module, the
+        // database client) and keeps every route file this clean from here
+        // on — a route that starts importing a repository, infrastructure
+        // module, job module or lib/db.js fails this test instead of
+        // waiting for a reviewer to notice.
+        describeName: "routes call application services only — no repository, infrastructure, jobs, or database-client import (D-01, 10-10)",
+        files: routeFiles,
+        itName: (file) => `${relative(file)} has no top-level import of repositories/, infrastructure/, jobs/, or lib/db.js`,
+        forbidden: [
+            {label: "repositories/", pattern: /["'][^"']*\/repositories\/[^"']*["']/},
+            {label: "infrastructure/", pattern: /["'][^"']*\/infrastructure\/[^"']*["']/},
+            {label: "jobs/", pattern: /["'][^"']*\/jobs\/[^"']*["']/},
+            {label: "lib/db.js", pattern: /["'][^"']*\blib\/db\.js["']/},
         ],
     },
 ];

@@ -7,10 +7,8 @@ import {
     restoreSnapshotSchema,
 } from "@docktor/shared"
 import {requireAuth} from "../lib/auth-middleware.js"
-import {backupService, getBackupBroadcaster, getBackupLogBuffer, settingsRepository} from "../application/index.js"
+import {backupService, getBackupBroadcaster, getBackupLogBuffer, settingsService} from "../application/index.js"
 import {streamLiveBackupLog} from "../lib/sse-backup-log.js"
-import {encrypt} from "../lib/crypto.js"
-import {prisma} from "../lib/db.js"
 
 const stackParamsSchema = z.object({id: z.string()})
 const backupParamsSchema = z.object({id: z.string()})
@@ -221,34 +219,7 @@ const backupsPlugin: FastifyPluginAsyncZod = async (app) => {
     // ── GET /api/settings/backup — Get backup repository settings ─────────────
 
     app.get("/api/settings/backup", async () => {
-        const keys = [
-            "backup.repoType",
-            "backup.repoPath",
-            "backup.sftpHost",
-            "backup.sftpUser",
-            "backup.sftpKey",
-            "backup.s3Endpoint",
-            "backup.s3Bucket",
-            "backup.s3AccessKey",
-            "backup.s3SecretKey",
-            "backup.password",
-        ]
-        const values = await settingsRepository.getMany(keys)
-        return {
-            repoType: values["backup.repoType"] ?? null,
-            repoPath: values["backup.repoPath"] ?? null,
-            sftpHost: values["backup.sftpHost"] ?? null,
-            sftpUser: values["backup.sftpUser"] ?? null,
-            // Never return sensitive keys — return presence indicator only
-            hasSftpKey: !!values["backup.sftpKey"],
-            s3Endpoint: values["backup.s3Endpoint"] ?? null,
-            s3Bucket: values["backup.s3Bucket"] ?? null,
-            s3AccessKey: values["backup.s3AccessKey"] ?? null,
-            // Never return secret key — return presence indicator only
-            hasS3SecretKey: !!values["backup.s3SecretKey"],
-            // Never return password — return presence indicator only
-            hasPassword: !!values["backup.password"],
-        }
+        return settingsService.getMaskedBackupRepositorySettings()
     })
 
     // ── PUT /api/settings/backup — Save backup repository settings ────────────
@@ -257,43 +228,7 @@ const backupsPlugin: FastifyPluginAsyncZod = async (app) => {
         "/api/settings/backup",
         {schema: {body: backupSettingsSchema}},
         async (request, reply) => {
-            const {repoType, repoPath, sftpHost, sftpUser, sftpKey, s3Endpoint, s3Bucket, s3AccessKey, s3SecretKey, password} =
-                request.body
-
-            await settingsRepository.upsert("backup.repoType", repoType)
-            if (repoPath) await settingsRepository.upsert("backup.repoPath", repoPath)
-            if (sftpHost) await settingsRepository.upsert("backup.sftpHost", sftpHost)
-            if (sftpUser) await settingsRepository.upsert("backup.sftpUser", sftpUser)
-            if (s3Endpoint) await settingsRepository.upsert("backup.s3Endpoint", s3Endpoint)
-            if (s3Bucket) await settingsRepository.upsert("backup.s3Bucket", s3Bucket)
-            if (s3AccessKey) await settingsRepository.upsert("backup.s3AccessKey", s3AccessKey)
-
-            // Encrypt sensitive fields
-            if (sftpKey) {
-                const encryptedKey = encrypt(sftpKey)
-                await prisma.setting.upsert({
-                    where: {key: "backup.sftpKey"},
-                    create: {key: "backup.sftpKey", value: encryptedKey, encrypted: true},
-                    update: {value: encryptedKey, encrypted: true},
-                })
-            }
-            if (s3SecretKey) {
-                const encryptedSecret = encrypt(s3SecretKey)
-                await prisma.setting.upsert({
-                    where: {key: "backup.s3SecretKey"},
-                    create: {key: "backup.s3SecretKey", value: encryptedSecret, encrypted: true},
-                    update: {value: encryptedSecret, encrypted: true},
-                })
-            }
-            if (password) {
-                const encryptedPassword = encrypt(password)
-                await prisma.setting.upsert({
-                    where: {key: "backup.password"},
-                    create: {key: "backup.password", value: encryptedPassword, encrypted: true},
-                    update: {value: encryptedPassword, encrypted: true},
-                })
-            }
-
+            await settingsService.saveBackupRepositorySettings(request.body)
             return reply.status(200).send({success: true})
         },
     )
@@ -301,15 +236,7 @@ const backupsPlugin: FastifyPluginAsyncZod = async (app) => {
     // ── GET /api/settings/backup-defaults — Get global default schedule/retention
 
     app.get("/api/settings/backup-defaults", async () => {
-        const keys = ["backup.defaultSchedule", "backup.defaultRetention"]
-        const values = await settingsRepository.getMany(keys)
-        const retentionRaw = values["backup.defaultRetention"]
-        return {
-            defaultSchedule: values["backup.defaultSchedule"] ?? null,
-            defaultRetention: retentionRaw
-                ? (JSON.parse(retentionRaw) as {keepDaily: number; keepWeekly: number; keepMonthly: number})
-                : null,
-        }
+        return settingsService.getBackupDefaults()
     })
 
     // ── PUT /api/settings/backup-defaults — Save global defaults ─────────────
@@ -318,13 +245,7 @@ const backupsPlugin: FastifyPluginAsyncZod = async (app) => {
         "/api/settings/backup-defaults",
         {schema: {body: backupDefaultsSchema}},
         async (request, reply) => {
-            const {defaultSchedule, defaultRetention} = request.body
-            if (defaultSchedule !== undefined) {
-                await settingsRepository.upsert("backup.defaultSchedule", defaultSchedule)
-            }
-            if (defaultRetention !== undefined) {
-                await settingsRepository.upsert("backup.defaultRetention", JSON.stringify(defaultRetention))
-            }
+            await settingsService.updateBackupDefaults(request.body)
             return reply.status(200).send({success: true})
         },
     )
