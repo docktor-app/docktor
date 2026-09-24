@@ -3,8 +3,6 @@ import {dockerExecutor} from "../infrastructure/docker-executor.js"
 import type {DockerExecutorPort} from "../application/ports/docker-executor-port.js"
 import {registryClient, RegistryUnavailableError} from "../infrastructure/registry-client.js"
 import type {RegistryClientPort} from "../application/ports/registry-client-port.js"
-import type {StateBroadcaster} from "../lib/state-broadcaster.js"
-import {stateEventBroadcaster} from "../lib/state-broadcaster.js"
 import type {EventBusPort} from "../application/ports/event-bus-port.js"
 import {domainEventBus} from "../infrastructure/event-bus.js"
 import {buildImageRefFromService} from "../domain/image-update-detection.js"
@@ -309,25 +307,18 @@ export class UpdateChecker extends IntervalJob {
     private readonly docker: Pick<DockerExecutorPort, "manifestInspect" | "imageDigest">
     private readonly bus: Pick<EventBusPort, "emit">
     private readonly registry: Pick<RegistryClientPort, "listTags">
-    // Retained solely for the dead triggerUpdate() method below (unreachable
-    // in production — see its own doc comment — and removed wholesale by
-    // plan 10-14). Every reachable publisher in this file (checkImage())
-    // migrated onto the bus above; this field deliberately did not.
-    private readonly broadcaster: Pick<StateBroadcaster, "publish">
 
     constructor(
         repo?: UpdateCheckerRepo,
         docker?: Pick<DockerExecutorPort, "manifestInspect" | "imageDigest">,
         bus?: Pick<EventBusPort, "emit">,
         registry?: Pick<RegistryClientPort, "listTags">,
-        broadcaster?: Pick<StateBroadcaster, "publish">,
     ) {
         super()
         this.repo = repo ?? null
         this.docker = docker ?? dockerExecutor
         this.bus = bus ?? domainEventBus
         this.registry = registry ?? registryClient
-        this.broadcaster = broadcaster ?? stateEventBroadcaster
     }
 
     private async getRepo(): Promise<UpdateCheckerRepo> {
@@ -461,38 +452,6 @@ export class UpdateChecker extends IntervalJob {
                 checkError,
             })
             console.error(`[UpdateChecker] failed to check ${imageRef}:`, err)
-        }
-    }
-
-    /**
-     * Unreachable in production (no caller found by grep) and carries an
-     * `as any` cast for a live-state event type ("update_error") that does
-     * not exist in StateEvent's own union. Deliberately left on the old
-     * old broadcaster-publish path rather than migrated onto the bus in plan
-     * 10-11 — migrating a domain event that has no corresponding real
-     * producer would mean inventing catalog scope this plan doesn't own.
-     * Plan 10-14 removes this method wholesale.
-     */
-    async triggerUpdate(imageRef: string, stack: {id: string}): Promise<void> {
-        try {
-            // Verify manifest is accessible (also serves as a connectivity check)
-            await this.docker.manifestInspect(imageRef)
-
-            this.broadcaster.publish({
-                type: "update_available",
-                stackId: stack.id,
-                imageRef,
-                latestTag: null,
-                hasUpdate: true,
-            })
-        } catch (err: any) {
-            console.error(`[UpdateChecker] triggerUpdate failed for ${imageRef}:`, err)
-            this.broadcaster.publish({
-                type: "update_error",
-                stackId: stack.id,
-                imageRef,
-                error: err.message ?? String(err),
-            } as any)
         }
     }
 }
