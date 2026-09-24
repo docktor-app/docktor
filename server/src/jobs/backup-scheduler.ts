@@ -1,5 +1,10 @@
 import cron from "node-cron"
 import type {Job, JobHealthReporter, JobKind} from "./job.js"
+// Type-only import (erased at compile time, no runtime edge) — this file's
+// only top-level *runtime* imports remain `cron` and `./job.js`, confirmed
+// before wiring the composition root's import of this module below
+// (T-10-34: a runtime cycle here would break server startup, not a test).
+import type {BackupSchedulePort} from "../application/ports/backup-schedule-port.js"
 
 // ─── Dependency interfaces ────────────────────────────────────────────────────
 
@@ -209,14 +214,13 @@ async function createProductionScheduler(): Promise<BackupScheduler> {
 let _healthReporter: JobHealthReporter | null = null
 
 // A Job facade over the lazily-constructed production BackupScheduler,
-// plus the upsert()/remove() members routes call at runtime to create and
-// destroy a single stack's schedule — the lazy construction itself (not
-// this facade) is what keeps db.ts and the rest of the production
-// dependency chain out of the unit-test module graph.
-export const backupScheduler: Job & {
-    upsert(stackId: string, cronExpr: string): void
-    remove(stackId: string): void
-} = {
+// plus the upsert()/remove() members BackupService calls at runtime (via
+// BackupSchedulePort) to create and destroy a single stack's schedule —
+// the lazy construction itself (not this facade) is what keeps db.ts and
+// the rest of the production dependency chain out of the unit-test module
+// graph. Annotated with BackupSchedulePort so removing upsert()/remove()
+// from this object is a compile error, not a silent drift from the port.
+export const backupScheduler: Job & BackupSchedulePort = {
     name: "BackupScheduler",
     kind: "dynamic",
     start: async () => {

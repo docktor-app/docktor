@@ -331,4 +331,155 @@ describe("SettingsService", () => {
             expect(mockRepo.upsert).toHaveBeenCalledTimes(1);
         });
     });
+
+    describe("saveBackupRepositorySettings (Task 3, 10-10 — T-10-33)", () => {
+        const baseInput = {
+            repoType: "s3" as const,
+            repoPath: null,
+            sftpHost: null,
+            sftpUser: null,
+            sftpKey: null,
+            s3Endpoint: "s3.example.com",
+            s3Bucket: "my-bucket",
+            s3AccessKey: "AKIA...",
+            s3SecretKey: null,
+            password: null,
+        };
+
+        it("writes the non-secret fields via repo.upsert in the route's original order", async () => {
+            mockRepo.upsert.mockResolvedValue(undefined);
+
+            await service.saveBackupRepositorySettings(baseInput);
+
+            expect(mockRepo.upsert).toHaveBeenCalledWith("backup.repoType", "s3");
+            expect(mockRepo.upsert).toHaveBeenCalledWith("backup.s3Endpoint", "s3.example.com");
+            expect(mockRepo.upsert).toHaveBeenCalledWith("backup.s3Bucket", "my-bucket");
+            expect(mockRepo.upsert).toHaveBeenCalledWith("backup.s3AccessKey", "AKIA...");
+        });
+
+        it("a blank/absent backup repository password leaves the stored password untouched", async () => {
+            mockRepo.upsert.mockResolvedValue(undefined);
+
+            await service.saveBackupRepositorySettings({...baseInput, password: ""});
+
+            expect(mockRepo.upsertEncrypted).not.toHaveBeenCalled();
+            const upsertedKeys = mockRepo.upsert.mock.calls.map((call) => call[0]);
+            expect(upsertedKeys).not.toContain("backup.password");
+        });
+
+        it("a blank/absent SFTP key leaves the stored SFTP key untouched", async () => {
+            mockRepo.upsert.mockResolvedValue(undefined);
+
+            await service.saveBackupRepositorySettings({...baseInput, sftpKey: ""});
+
+            const encryptedKeys = mockRepo.upsertEncrypted.mock.calls.map((call) => call[0]);
+            expect(encryptedKeys).not.toContain("backup.sftpKey");
+        });
+
+        it("a blank/absent S3 secret key leaves the stored S3 secret key untouched", async () => {
+            mockRepo.upsert.mockResolvedValue(undefined);
+
+            await service.saveBackupRepositorySettings({...baseInput, s3SecretKey: ""});
+
+            const encryptedKeys = mockRepo.upsertEncrypted.mock.calls.map((call) => call[0]);
+            expect(encryptedKeys).not.toContain("backup.s3SecretKey");
+        });
+
+        it("encrypts and writes the password, SFTP key, and S3 secret key via the shared encrypted-write path when provided", async () => {
+            mockRepo.upsert.mockResolvedValue(undefined);
+            mockRepo.upsertEncrypted.mockResolvedValue(undefined);
+
+            await service.saveBackupRepositorySettings({
+                ...baseInput,
+                repoType: "sftp",
+                sftpHost: "sftp.example.com",
+                sftpUser: "backup-user",
+                sftpKey: "-----BEGIN KEY-----",
+                s3SecretKey: "s3-secret",
+                password: "repo-password",
+            });
+
+            expect(mockRepo.upsertEncrypted).toHaveBeenCalledTimes(3);
+            const calls = mockRepo.upsertEncrypted.mock.calls;
+            const sftpKeyCall = calls.find((c) => c[0] === "backup.sftpKey");
+            const s3SecretCall = calls.find((c) => c[0] === "backup.s3SecretKey");
+            const passwordCall = calls.find((c) => c[0] === "backup.password");
+            expect(sftpKeyCall?.[1]).not.toBe("-----BEGIN KEY-----");
+            expect(decrypt(sftpKeyCall?.[1])).toBe("-----BEGIN KEY-----");
+            expect(decrypt(s3SecretCall?.[1])).toBe("s3-secret");
+            expect(decrypt(passwordCall?.[1])).toBe("repo-password");
+        });
+    });
+
+    describe("getMaskedBackupRepositorySettings (Task 3, 10-10)", () => {
+        it("masks secrets to boolean presence indicators", async () => {
+            mockRepo.getMany.mockResolvedValue({
+                "backup.repoType": "s3",
+                "backup.s3Endpoint": "s3.example.com",
+                "backup.s3Bucket": "my-bucket",
+                "backup.s3AccessKey": "AKIA...",
+                "backup.s3SecretKey": "encrypted-value",
+                "backup.password": "encrypted-value",
+            });
+
+            const result = await service.getMaskedBackupRepositorySettings();
+
+            expect(result).toEqual({
+                repoType: "s3",
+                repoPath: null,
+                sftpHost: null,
+                sftpUser: null,
+                hasSftpKey: false,
+                s3Endpoint: "s3.example.com",
+                s3Bucket: "my-bucket",
+                s3AccessKey: "AKIA...",
+                hasS3SecretKey: true,
+                hasPassword: true,
+            });
+        });
+    });
+
+    describe("getBackupDefaults / updateBackupDefaults (Task 3, 10-10)", () => {
+        it("returns null defaults when nothing is stored", async () => {
+            mockRepo.getMany.mockResolvedValue({});
+
+            const result = await service.getBackupDefaults();
+
+            expect(result).toEqual({defaultSchedule: null, defaultRetention: null});
+        });
+
+        it("parses the stored retention JSON", async () => {
+            mockRepo.getMany.mockResolvedValue({
+                "backup.defaultSchedule": "0 2 * * *",
+                "backup.defaultRetention": JSON.stringify({keepDaily: 7, keepWeekly: 4, keepMonthly: 12}),
+            });
+
+            const result = await service.getBackupDefaults();
+
+            expect(result).toEqual({
+                defaultSchedule: "0 2 * * *",
+                defaultRetention: {keepDaily: 7, keepWeekly: 4, keepMonthly: 12},
+            });
+        });
+
+        it("upserts only the keys present in the argument", async () => {
+            mockRepo.upsert.mockResolvedValue(undefined);
+
+            await service.updateBackupDefaults({defaultSchedule: "0 3 * * *"});
+
+            expect(mockRepo.upsert).toHaveBeenCalledWith("backup.defaultSchedule", "0 3 * * *");
+            expect(mockRepo.upsert).toHaveBeenCalledTimes(1);
+        });
+
+        it("JSON-stringifies the retention object when writing", async () => {
+            mockRepo.upsert.mockResolvedValue(undefined);
+
+            await service.updateBackupDefaults({defaultRetention: {keepDaily: 1, keepWeekly: 1, keepMonthly: 1}});
+
+            expect(mockRepo.upsert).toHaveBeenCalledWith(
+                "backup.defaultRetention",
+                JSON.stringify({keepDaily: 1, keepWeekly: 1, keepMonthly: 1}),
+            );
+        });
+    });
 });

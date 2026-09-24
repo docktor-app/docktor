@@ -3,6 +3,7 @@ import {BadRequestError} from "../lib/errors.js"
 import {decrypt, encrypt} from "../lib/crypto.js"
 import type {SettingsRepository} from "../repositories/settings-repository.js"
 import type {SmtpConfig} from "./notification-service.js"
+import type {BackupSettingsInput, RetentionPolicy} from "@docktor/shared"
 
 // Mirrors SETTING_KEYS from settings-repository — inlined to avoid loading db.ts at module level
 const SETTING_KEYS = {
@@ -50,6 +51,24 @@ export interface NotificationTriggers {
     diskWarning: boolean
     diskThresholdPercent: number
     diskThresholdBytes: number
+}
+
+export interface MaskedBackupRepositorySettings {
+    repoType: string | null
+    repoPath: string | null
+    sftpHost: string | null
+    sftpUser: string | null
+    hasSftpKey: boolean
+    s3Endpoint: string | null
+    s3Bucket: string | null
+    s3AccessKey: string | null
+    hasS3SecretKey: boolean
+    hasPassword: boolean
+}
+
+export interface BackupDefaultsView {
+    defaultSchedule: string | null
+    defaultRetention: RetentionPolicy | null
 }
 
 const DEFAULTS: GeneralSettings = {
@@ -275,5 +294,87 @@ export class SettingsService {
         }
 
         await Promise.all(updates.map(({key, value}) => this.repo.upsert(key, value)))
+    }
+
+    /**
+     * Masked view of the backup repository settings — GET /api/settings/backup
+     * used to build this inline. Secrets are never returned in plaintext,
+     * only a presence indicator (hasSftpKey/hasS3SecretKey/hasPassword).
+     */
+    async getMaskedBackupRepositorySettings(): Promise<MaskedBackupRepositorySettings> {
+        const keys = [
+            "backup.repoType",
+            "backup.repoPath",
+            "backup.sftpHost",
+            "backup.sftpUser",
+            "backup.sftpKey",
+            "backup.s3Endpoint",
+            "backup.s3Bucket",
+            "backup.s3AccessKey",
+            "backup.s3SecretKey",
+            "backup.password",
+        ]
+        const values = await this.repo.getMany(keys)
+        return {
+            repoType: values["backup.repoType"] ?? null,
+            repoPath: values["backup.repoPath"] ?? null,
+            sftpHost: values["backup.sftpHost"] ?? null,
+            sftpUser: values["backup.sftpUser"] ?? null,
+            hasSftpKey: !!values["backup.sftpKey"],
+            s3Endpoint: values["backup.s3Endpoint"] ?? null,
+            s3Bucket: values["backup.s3Bucket"] ?? null,
+            s3AccessKey: values["backup.s3AccessKey"] ?? null,
+            hasS3SecretKey: !!values["backup.s3SecretKey"],
+            hasPassword: !!values["backup.password"],
+        }
+    }
+
+    // Saves the backup-repository settings form as one grouped write — the
+    // plain fields via repo.upsert (in the same order and under the same
+    // presence conditionals the route used to apply inline), the three
+    // secrets (sftpKey, s3SecretKey, password, in that order) via the
+    // shared encrypted-write path (upsertEncryptedSetting(), added in plan
+    // 10-09 for SMTP — reused here rather than duplicated). A blank/absent
+    // secret leaves its stored value untouched, matching saveSmtpConfig()'s
+    // blank-password conditional (T-10-33: a blanked backup password would
+    // silently break every subsequent scheduled backup).
+    async saveBackupRepositorySettings(data: BackupSettingsInput): Promise<void> {
+        await this.repo.upsert("backup.repoType", data.repoType)
+        if (data.repoPath) await this.repo.upsert("backup.repoPath", data.repoPath)
+        if (data.sftpHost) await this.repo.upsert("backup.sftpHost", data.sftpHost)
+        if (data.sftpUser) await this.repo.upsert("backup.sftpUser", data.sftpUser)
+        if (data.s3Endpoint) await this.repo.upsert("backup.s3Endpoint", data.s3Endpoint)
+        if (data.s3Bucket) await this.repo.upsert("backup.s3Bucket", data.s3Bucket)
+        if (data.s3AccessKey) await this.repo.upsert("backup.s3AccessKey", data.s3AccessKey)
+
+        if (data.sftpKey) await this.upsertEncryptedSetting("backup.sftpKey", data.sftpKey)
+        if (data.s3SecretKey) await this.upsertEncryptedSetting("backup.s3SecretKey", data.s3SecretKey)
+        if (data.password) await this.upsertEncryptedSetting("backup.password", data.password)
+    }
+
+    /**
+     * Global default backup schedule/retention — GET /api/settings/backup-defaults
+     * used to build this inline.
+     */
+    async getBackupDefaults(): Promise<BackupDefaultsView> {
+        const values = await this.repo.getMany(["backup.defaultSchedule", "backup.defaultRetention"])
+        const retentionRaw = values["backup.defaultRetention"]
+        return {
+            defaultSchedule: values["backup.defaultSchedule"] ?? null,
+            defaultRetention: retentionRaw ? (JSON.parse(retentionRaw) as RetentionPolicy) : null,
+        }
+    }
+
+    /**
+     * Updates only the keys present in the argument — matches the route's
+     * pre-existing per-field conditional upserts.
+     */
+    async updateBackupDefaults(data: {defaultSchedule?: string; defaultRetention?: RetentionPolicy}): Promise<void> {
+        if (data.defaultSchedule !== undefined) {
+            await this.repo.upsert("backup.defaultSchedule", data.defaultSchedule)
+        }
+        if (data.defaultRetention !== undefined) {
+            await this.repo.upsert("backup.defaultRetention", JSON.stringify(data.defaultRetention))
+        }
     }
 }
