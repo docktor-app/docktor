@@ -17,9 +17,9 @@ const CONFIGURED_REPO_SETTINGS = {
     "backup.password": "encrypted:abc",
 };
 
-function createMockBroadcaster() {
+function createMockBus() {
     return {
-        publish: vi.fn(),
+        emit: vi.fn(),
     };
 }
 
@@ -109,7 +109,7 @@ describe("BackupService", () => {
     let mockNotificationService: ReturnType<typeof createMockNotificationService>;
     let mockStackFilesystem: ReturnType<typeof createMockStackFilesystem>;
     let mockDockerExecutor: ReturnType<typeof createMockDockerExecutor>;
-    let mockBroadcaster: ReturnType<typeof createMockBroadcaster>;
+    let mockBus: ReturnType<typeof createMockBus>;
     let mockSchedulePort: ReturnType<typeof createMockSchedulePort>;
 
     beforeEach(() => {
@@ -121,7 +121,7 @@ describe("BackupService", () => {
         mockNotificationService = createMockNotificationService();
         mockStackFilesystem = createMockStackFilesystem();
         mockDockerExecutor = createMockDockerExecutor();
-        mockBroadcaster = createMockBroadcaster();
+        mockBus = createMockBus();
         mockSchedulePort = createMockSchedulePort();
 
         service = new BackupService(
@@ -132,7 +132,7 @@ describe("BackupService", () => {
             mockNotificationService as any,
             mockStackFilesystem as any,
             mockDockerExecutor as any,
-            mockBroadcaster as any,
+            mockBus as any,
             mockSchedulePort as any,
         );
 
@@ -269,10 +269,9 @@ describe("BackupService", () => {
 
             await service.initiateBackup("stack-1");
 
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith({
-                type: "stack_status",
+            expect(mockBus.emit).toHaveBeenCalledWith("stack.status_changed", {
                 stackId: "stack-1",
-                stackStatus: "BACKING_UP",
+                status: "BACKING_UP",
             });
         });
     });
@@ -550,10 +549,9 @@ describe("BackupService", () => {
         it("publishes stack_status with the stack's restored previous status on success", async () => {
             await service.runBackup(backupRecord as any, stack as any, repoConfig);
 
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith({
-                type: "stack_status",
+            expect(mockBus.emit).toHaveBeenCalledWith("stack.status_changed", {
                 stackId: "stack-1",
-                stackStatus: "RUNNING",
+                status: "RUNNING",
             });
         });
 
@@ -562,11 +560,24 @@ describe("BackupService", () => {
 
             await service.runBackup(backupRecord as any, stack as any, repoConfig);
 
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith({
-                type: "stack_status",
+            expect(mockBus.emit).toHaveBeenCalledWith("stack.status_changed", {
                 stackId: "stack-1",
-                stackStatus: "ERROR",
+                status: "ERROR",
             });
+        });
+
+        it("resolves the stack repository write before emitting stack.status_changed", async () => {
+            const order: string[] = [];
+            mockStackRepository.update.mockImplementation(async () => {
+                order.push("stackRepo.update");
+            });
+            mockBus.emit.mockImplementation(() => {
+                order.push("bus.emit");
+            });
+
+            await service.runBackup(backupRecord as any, stack as any, repoConfig);
+
+            expect(order).toEqual(["stackRepo.update", "bus.emit"]);
         });
     });
 
@@ -775,10 +786,9 @@ services:
         it("publishes stack_status with RESTORING when a repository is configured", async () => {
             await service.initiateRestore("stack-1", snapshotId);
 
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith({
-                type: "stack_status",
+            expect(mockBus.emit).toHaveBeenCalledWith("stack.status_changed", {
                 stackId: "stack-1",
-                stackStatus: "RESTORING",
+                status: "RESTORING",
             });
         });
     });
@@ -968,10 +978,9 @@ services:
         it("publishes stack_status with RUNNING on successful restore", async () => {
             await service.runRestoreProcess(backupRecord as any, stack as any, snapshotId);
 
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith({
-                type: "stack_status",
+            expect(mockBus.emit).toHaveBeenCalledWith("stack.status_changed", {
                 stackId: "stack-1",
-                stackStatus: "RUNNING",
+                status: "RUNNING",
             });
         });
 
@@ -980,10 +989,9 @@ services:
 
             await service.runRestoreProcess(backupRecord as any, stack as any, snapshotId);
 
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith({
-                type: "stack_status",
+            expect(mockBus.emit).toHaveBeenCalledWith("stack.status_changed", {
                 stackId: "stack-1",
-                stackStatus: "ERROR",
+                status: "ERROR",
             });
         });
     });
@@ -1098,16 +1106,15 @@ services:
 
             await service.abortBackup("backup-1", "stack-1", "boom");
 
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith({
-                type: "stack_status",
+            expect(mockBus.emit).toHaveBeenCalledWith("stack.status_changed", {
                 stackId: "stack-1",
-                stackStatus: "ERROR",
+                status: "ERROR",
             });
         });
 
-        it("swallows a throwing broadcaster publish — the status write and the terminal done frame still complete", async () => {
+        it("swallows a throwing bus emit — the status write and the terminal done frame still complete", async () => {
             mockBackupRepository.findById.mockResolvedValue({id: "backup-1", status: "IN_PROGRESS"});
-            mockBroadcaster.publish.mockImplementation(() => {
+            mockBus.emit.mockImplementation(() => {
                 throw new Error("subscriber exploded");
             });
             const emitter = ensureBackupBroadcaster("backup-1");

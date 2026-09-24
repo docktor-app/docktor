@@ -1,7 +1,7 @@
 import {dockerodeClient} from "../infrastructure/dockerode-client.js"
 import type {DockerodeClientPort} from "../application/ports/dockerode-client-port.js"
-import type {StateBroadcaster} from "../lib/state-broadcaster.js"
-import {stateEventBroadcaster} from "../lib/state-broadcaster.js"
+import type {EventBusPort} from "../application/ports/event-bus-port.js"
+import {domainEventBus} from "../infrastructure/event-bus.js"
 import type {StackStatus} from "../generated/prisma/enums.js"
 import {WatcherJob} from "./job.js"
 
@@ -83,18 +83,18 @@ export class StatePoller extends WatcherJob {
     private abortController: AbortController | null = null
     private readonly docker: Pick<DockerodeClientPort, "getEventStream" | "inspectContainer" | "listContainers">
     private readonly repo: StatePollerRepo | null
-    private readonly broadcaster: Pick<StateBroadcaster, "publish">
+    private readonly bus: Pick<EventBusPort, "emit">
 
     constructor(
         docker?: Pick<DockerodeClientPort, "getEventStream" | "inspectContainer" | "listContainers">,
         repo?: StatePollerRepo,
-        broadcaster?: Pick<StateBroadcaster, "publish">,
+        bus?: Pick<EventBusPort, "emit">,
     ) {
         super()
         this.docker = docker ?? dockerodeClient
         // repo is stored as-is; if undefined, getRepo() will load it lazily
         this.repo = repo ?? null
-        this.broadcaster = broadcaster ?? stateEventBroadcaster
+        this.bus = bus ?? domainEventBus
     }
 
     private async getRepo(): Promise<StatePollerRepo> {
@@ -226,8 +226,7 @@ export class StatePoller extends WatcherJob {
                 )
                 console.log(`[StatePoller] Container 404: service=${serviceName}, state=${containerState}, derived=${derivedStatus}`)
                 await repo.updateStackStatus(stack.id, derivedStatus)
-                this.broadcaster.publish({
-                    type: "container_state",
+                this.bus.emit("stack.container_state_changed", {
                     stackId: stack.id,
                     serviceName,
                     containerState,
@@ -267,9 +266,9 @@ export class StatePoller extends WatcherJob {
         // Update stack status in DB (returns statusLog if status changed)
         const statusLog = await repo.updateStackStatus(stack.id, derivedStatus)
 
-        // Publish SSE event
-        this.broadcaster.publish({
-            type: "container_state",
+        // Emit the domain event — the state-broadcast subscriber turns this
+        // into the container_state SSE event.
+        this.bus.emit("stack.container_state_changed", {
             stackId: stack.id,
             serviceName,
             containerState,
@@ -345,11 +344,11 @@ export class StatePoller extends WatcherJob {
                 // Update stack status in DB
                 await repo.updateStackStatus(stack.id, derivedStatus)
 
-                // Broadcast SSE event
-                this.broadcaster.publish({
-                    type: "stack_status",
+                // Emit the domain event — the state-broadcast subscriber
+                // turns this into the stack_status SSE event.
+                this.bus.emit("stack.status_changed", {
                     stackId: stack.id,
-                    stackStatus: derivedStatus,
+                    status: derivedStatus,
                 })
             } catch (err) {
                 console.error(`[StatePoller] reconcile error for project ${project}:`, err)

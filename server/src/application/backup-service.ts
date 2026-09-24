@@ -22,7 +22,7 @@ import type {BackupRepository} from "../repositories/backup-repository.js"
 import type {NotificationService} from "./notification-service.js"
 import type {DockerExecutorPort} from "./ports/docker-executor-port.js"
 import type {StackFilesystemPort} from "./ports/stack-filesystem-port.js"
-import type {StateBroadcaster} from "../lib/state-broadcaster.js"
+import type {EventBusPort} from "./ports/event-bus-port.js"
 
 // ─── Module-level broadcaster map ────────────────────────────────────────────
 
@@ -169,7 +169,7 @@ export class BackupService {
         private readonly notificationService: NotificationService,
         private readonly filesystem: StackFilesystemPort,
         private readonly docker: DockerExecutorPort,
-        private readonly broadcaster: Pick<StateBroadcaster, "publish">,
+        private readonly bus: Pick<EventBusPort, "emit">,
         private readonly schedulePort: BackupSchedulePort,
     ) {}
 
@@ -852,11 +852,12 @@ export class BackupService {
 
     /**
      * Writes a stack status update through stackRepo.update() and then
-     * publishes a stack_status SSE event so every open browser tab sees the
-     * transition live — mirroring StackService.transitionStatus()'s
-     * broadcaster convention (plan 05.1-02).
+     * emits a stack.status_changed domain event so every open browser tab
+     * sees the transition live (via the state-broadcast subscriber) —
+     * mirroring StackService.transitionStatus()'s convention (plan 05.1-02).
      *
-     * The publish is wrapped in try/catch: a throwing SSE subscriber must
+     * The emit is wrapped in try/catch: the bus contract says emit does not
+     * throw, but this catch is defence-in-depth so a throwing subscriber can
      * never propagate out of here. In abortBackup() especially, an exception
      * escaping this call would skip the caller's `finally` block that emits
      * the terminal `done` frame and disposes the backup broadcaster, leaving
@@ -868,9 +869,9 @@ export class BackupService {
     ): Promise<void> {
         await this.stackRepo.update(stackId, data)
         try {
-            this.broadcaster.publish({type: "stack_status", stackId, stackStatus: data.status})
+            this.bus.emit("stack.status_changed", {stackId, status: data.status})
         } catch (err) {
-            console.error("[BackupService] broadcaster publish failed", err)
+            console.error("[BackupService] bus emit failed", err)
         }
     }
 

@@ -31,6 +31,12 @@ function createMockBroadcaster() {
     };
 }
 
+function createMockBus() {
+    return {
+        emit: vi.fn(),
+    };
+}
+
 function createMockRegistryClient() {
     return {
         listTags: vi.fn(),
@@ -41,6 +47,7 @@ describe("UpdateChecker", () => {
     let checker: UpdateChecker;
     let mockRepo: ReturnType<typeof createMockUpdateCheckerRepo>;
     let mockDockerExecutor: ReturnType<typeof createMockDockerExecutor>;
+    let mockBus: ReturnType<typeof createMockBus>;
     let mockBroadcaster: ReturnType<typeof createMockBroadcaster>;
     let mockRegistryClient: ReturnType<typeof createMockRegistryClient>;
 
@@ -48,6 +55,7 @@ describe("UpdateChecker", () => {
         vi.clearAllMocks();
         mockRepo = createMockUpdateCheckerRepo();
         mockDockerExecutor = createMockDockerExecutor();
+        mockBus = createMockBus();
         mockBroadcaster = createMockBroadcaster();
         mockRegistryClient = createMockRegistryClient();
         // Safe default so hasUpdate=true scenarios that don't care about the
@@ -62,8 +70,12 @@ describe("UpdateChecker", () => {
         checker = new UpdateChecker(
             mockRepo as any,
             mockDockerExecutor as any,
-            mockBroadcaster as any,
+            mockBus as any,
             mockRegistryClient as any,
+            // Only the dead triggerUpdate() describe block below asserts on
+            // this — every reachable publisher in this file (checkImage())
+            // was migrated onto mockBus above.
+            mockBroadcaster as any,
         );
     });
 
@@ -303,8 +315,9 @@ describe("UpdateChecker", () => {
                     hasUpdate: true,
                 }),
             );
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith(
-                expect.objectContaining({type: "update_available", stackId: "stack-1"}),
+            expect(mockBus.emit).toHaveBeenCalledWith(
+                "stack.update_available",
+                expect.objectContaining({stackId: "stack-1"}),
             );
         });
 
@@ -318,7 +331,7 @@ describe("UpdateChecker", () => {
             expect(mockRepo.upsertImageUpdateCheck).toHaveBeenCalledWith(
                 expect.objectContaining({hasUpdate: false, currentDigest: "sha256:aaaa", latestDigest: "sha256:aaaa"}),
             );
-            expect(mockBroadcaster.publish).not.toHaveBeenCalled();
+            expect(mockBus.emit).not.toHaveBeenCalled();
         });
 
         it("persists a non-null currentDigest and latestDigest on a successful check", async () => {
@@ -406,8 +419,9 @@ describe("UpdateChecker", () => {
                     availableTags: ["1.26"],
                 }),
             );
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith(
-                expect.objectContaining({type: "update_available", stackId: "stack-1", latestTag: "1.26"}),
+            expect(mockBus.emit).toHaveBeenCalledWith(
+                "stack.update_available",
+                expect.objectContaining({stackId: "stack-1", latestTag: "1.26"}),
             );
         });
 
