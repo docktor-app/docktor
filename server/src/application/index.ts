@@ -29,6 +29,7 @@ import type {BackupStackRepo} from "./backup-service.js";
 import type {StackStatus} from "../generated/prisma/enums.js";
 import {domainEventBus} from "../infrastructure/event-bus.js";
 import {subscribeStateBroadcast} from "./subscribers/state-broadcast-subscriber.js";
+import {subscribeNotifications} from "./subscribers/notification-subscriber.js";
 
 const repo = stackRepository;
 const fs = new StackFilesystem();
@@ -46,10 +47,15 @@ export const stackService = new StackService(repo, fs, docker, stackEventReposit
 export const notificationService = new NotificationService(
     notificationRepository,
     settingsService,
-    stateEventBroadcaster,
+    domainEventBus,
     userRepository,
     smtpClient,
 );
+
+// D-15 item 1: bridges the notification-intent domain events (backup/restore
+// failure, disk threshold) onto NotificationService.notify(). Exported so a
+// test can tear it down.
+export const disposeNotificationSubscription = subscribeNotifications(domainEventBus, notificationService);
 
 // Adapter: StackRepository -> BackupStackRepo interface
 const backupStackRepo: BackupStackRepo = {
@@ -83,7 +89,6 @@ export const backupService = new BackupService(
     backupRepository,
     backupStackRepo,
     settingsService,
-    notificationService,
     fs,
     docker,
     domainEventBus,
