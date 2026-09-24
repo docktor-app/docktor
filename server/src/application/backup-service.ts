@@ -19,7 +19,6 @@ import {isRepositoryNotFoundError} from "../infrastructure/restic-executor.js"
 import type {BackupRepoConfig, ResticExecutorPort, ResticSnapshot, RetentionPolicy} from "./ports/restic-executor-port.js"
 import type {BackupSchedulePort} from "./ports/backup-schedule-port.js"
 import type {BackupRepository} from "../repositories/backup-repository.js"
-import type {NotificationService} from "./notification-service.js"
 import type {DockerExecutorPort} from "./ports/docker-executor-port.js"
 import type {StackFilesystemPort} from "./ports/stack-filesystem-port.js"
 import type {EventBusPort} from "./ports/event-bus-port.js"
@@ -166,7 +165,6 @@ export class BackupService {
         private readonly backupRepo: BackupRepository,
         private readonly stackRepo: BackupStackRepo,
         private readonly settings: BackupSettingsService,
-        private readonly notificationService: NotificationService,
         private readonly filesystem: StackFilesystemPort,
         private readonly docker: DockerExecutorPort,
         private readonly bus: Pick<EventBusPort, "emit">,
@@ -219,7 +217,9 @@ export class BackupService {
      * Orchestrates the restic backup process.
      * Accepts the pre-fetched backup record, stack record, and repo config.
      * Handles success/failure state transitions, log accumulation, SSE broadcasting,
-     * and sends backup_failure notification on error.
+     * and emits a backup.failed domain event on error (D-15 item 1) — a
+     * subscriber turns that into a notification, this service no longer
+     * knows notifications exist.
      */
     async runBackup(
         backupRecord: BackupRecord,
@@ -296,12 +296,20 @@ export class BackupService {
 
             await this.writeStackStatus(stack.id, {status: "ERROR"})
 
-            await this.notificationService.notify({
-                type: "backup_failure",
-                stackId: stack.id,
-                subject: `Backup failed: ${stack.displayName ?? stack.id}`,
-                message: `Backup failed for stack "${stack.displayName ?? stack.id}" (repo: ${repoConfig.repoType}). Error: ${errorMessage}`,
-            })
+            // Defence-in-depth alongside the bus's own per-subscriber
+            // isolation (D-17): emit()'s contract says it never throws, but
+            // this catch keeps a violation of that contract from escaping
+            // the outer catch block and skipping the `finally` below.
+            try {
+                this.bus.emit("backup.failed", {
+                    stackId: stack.id,
+                    displayName: stack.displayName,
+                    repoType: repoConfig.repoType,
+                    errorMessage,
+                })
+            } catch (emitErr) {
+                console.error("[BackupService] bus emit failed", emitErr)
+            }
         } finally {
             emitter.emit("done", finalStatus)
             disposeBackupBroadcaster(backupRecord.id)
@@ -356,7 +364,9 @@ export class BackupService {
      * Orchestrates a restore: stop → restic restore → redeploy.
      * Accepts the pre-fetched backup record and stack record (mirrors runBackup).
      * Handles success/failure state transitions, log accumulation, SSE broadcasting,
-     * and sends restore notifications.
+     * and emits restore-lifecycle domain events (D-15 item 1) — a subscriber
+     * turns each into a notification, this service no longer knows
+     * notifications exist.
      */
     async runRestoreProcess(backupRecord: BackupRecord, stack: StackRecord, snapshotId: string): Promise<void> {
         const emitter = ensureBackupBroadcaster(backupRecord.id)
@@ -364,13 +374,19 @@ export class BackupService {
         const lines = ensureBackupLogBuffer(backupRecord.id)
         let finalStatus: "COMPLETED" | "FAILED" = "FAILED"
 
-        // Send restore start notification
-        await this.notificationService.notify({
-            type: "backup_failure", // Reuse backup_failure type for restore events
-            stackId: stack.id,
-            subject: `Restore started: ${stack.displayName ?? stack.id}`,
-            message: `Restore started for stack "${stack.displayName ?? stack.id}" from snapshot ${snapshotId}`,
-        })
+        // Emit the restore-started domain event (D-15 item 1) — a
+        // subscriber turns this into a notification. Defence-in-depth
+        // try/catch alongside the bus's own per-subscriber isolation
+        // (D-17), matching every other emit site in this file.
+        try {
+            this.bus.emit("restore.started", {
+                stackId: stack.id,
+                displayName: stack.displayName,
+                snapshotId,
+            })
+        } catch (emitErr) {
+            console.error("[BackupService] bus emit failed", emitErr)
+        }
 
         try {
             // Fetch repo config to build env for restic. initiateRestore() already
@@ -428,13 +444,20 @@ export class BackupService {
             await this.writeStackStatus(stack.id, {status: "RUNNING"})
             await this.stackRepo.clearConfigChanged(stack.id)
 
-            // Send restore success notification
-            await this.notificationService.notify({
-                type: "backup_failure", // Reuse backup_failure type
-                stackId: stack.id,
-                subject: `Restore completed: ${stack.displayName ?? stack.id}`,
-                message: `Restore completed successfully for stack "${stack.displayName ?? stack.id}" from snapshot ${snapshotId}`,
-            })
+            // Emit the restore-completed domain event (D-15 item 1) — a
+            // subscriber turns this into a notification. Defence-in-depth
+            // try/catch alongside the bus's own per-subscriber isolation
+            // (D-17): a violation of emit()'s never-throws contract must
+            // not prevent finalStatus from being set to COMPLETED below.
+            try {
+                this.bus.emit("restore.completed", {
+                    stackId: stack.id,
+                    displayName: stack.displayName,
+                    snapshotId,
+                })
+            } catch (emitErr) {
+                console.error("[BackupService] bus emit failed", emitErr)
+            }
             finalStatus = "COMPLETED"
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : String(err)
@@ -453,12 +476,20 @@ export class BackupService {
 
             await this.writeStackStatus(stack.id, {status: "ERROR"})
 
-            await this.notificationService.notify({
-                type: "backup_failure",
-                stackId: stack.id,
-                subject: `Restore failed: ${stack.displayName ?? stack.id}`,
-                message: `Restore failed for stack "${stack.displayName ?? stack.id}". Snapshot: ${snapshotId}. Error: ${errorMessage}`,
-            })
+            // Emit the restore-failed domain event (D-15 item 1) — a
+            // subscriber turns this into a notification. Defence-in-depth
+            // try/catch alongside the bus's own per-subscriber isolation
+            // (D-17), matching every other emit site in this file.
+            try {
+                this.bus.emit("restore.failed", {
+                    stackId: stack.id,
+                    displayName: stack.displayName,
+                    snapshotId,
+                    errorMessage,
+                })
+            } catch (emitErr) {
+                console.error("[BackupService] bus emit failed", emitErr)
+            }
 
             // Attempt to restart containers even if restore failed partially
             try {
@@ -783,18 +814,23 @@ export class BackupService {
      * Ends an IN_PROGRESS backup that never reached restic — e.g. a missing
      * dependency in the manual-trigger or scheduled fire-and-forget fetch.
      * Marks the row FAILED with the given reason, transitions the stack to
-     * ERROR so it can be acted on again, and sends a backup_failure
-     * notification. Idempotent: a no-op on an unknown backup id or a backup
-     * that has already reached a terminal status (COMPLETED/FAILED), so it
-     * never clobbers a row that runBackup already finished.
+     * ERROR so it can be acted on again, and emits a backup.failed domain
+     * event (D-15 item 1) — a subscriber turns that into a notification.
+     * Idempotent: a no-op on an unknown backup id or a backup that has
+     * already reached a terminal status (COMPLETED/FAILED), so it never
+     * clobbers a row that runBackup already finished.
      */
     async abortBackup(backupId: string, stackId: string, errorMessage: string): Promise<void> {
         const backup = await this.backupRepo.findById(backupId)
         if (!backup || backup.status !== "IN_PROGRESS") return
 
-        // A rejected notify() must not be able to strand a subscribed SSE
-        // client with a stream that never ends — the terminal `done` and the
-        // broadcaster disposal happen in `finally` regardless of outcome.
+        // The bus's emit() contract guarantees it never throws and never
+        // awaits a subscriber, so unlike the notification call this
+        // replaced, a failing notification subscriber can no longer strand
+        // a subscribed SSE client with a stream that never ends — the
+        // terminal `done` and the broadcaster disposal in `finally` still
+        // run regardless of outcome, exactly as before, just no longer
+        // guarded against a rejection that can no longer happen here.
         try {
             await this.backupRepo.update(backupId, {
                 status: "FAILED",
@@ -813,12 +849,15 @@ export class BackupService {
                 // Stack row unreadable — fall back to the stack id in the notification text
             }
 
-            await this.notificationService.notify({
-                type: "backup_failure",
-                stackId,
-                subject: `Backup failed: ${displayName}`,
-                message: `Backup failed for stack "${displayName}". Error: ${errorMessage}`,
-            })
+            // Defence-in-depth try/catch alongside the bus's own
+            // per-subscriber isolation (D-17) — see this method's doc
+            // comment: unlike the direct notification call this replaced,
+            // nothing here can propagate past the `finally` below any more.
+            try {
+                this.bus.emit("backup.failed", {stackId, displayName, errorMessage})
+            } catch (emitErr) {
+                console.error("[BackupService] bus emit failed", emitErr)
+            }
         } finally {
             getBackupBroadcaster(backupId)?.emit("done", "FAILED")
             disposeBackupBroadcaster(backupId)

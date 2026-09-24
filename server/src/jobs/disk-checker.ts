@@ -1,10 +1,7 @@
-import type {NotificationEvent} from "../application/notification-service.js"
+import type {EventBusPort} from "../application/ports/event-bus-port.js"
+import {domainEventBus} from "../infrastructure/event-bus.js"
 import type {Job, JobHealthReporter} from "./job.js"
 import {IntervalJob} from "./job.js"
-
-export interface DiskCheckerNotificationService {
-    notify(event: NotificationEvent): Promise<void>
-}
 
 export interface DiskCheckerSettings {
     getMany(keys: string[]): Promise<Record<string, string>>
@@ -20,7 +17,7 @@ export class DiskChecker extends IntervalJob {
     private readonly monitorPath: string
 
     constructor(
-        private readonly notificationService: DiskCheckerNotificationService,
+        private readonly bus: Pick<EventBusPort, "emit">,
         private readonly settings: DiskCheckerSettings,
         monitorPath?: string,
     ) {
@@ -83,23 +80,28 @@ export class DiskChecker extends IntervalJob {
         if (triggered && (!lastAlert || !lastAlert.active)) {
             await this.settings.setDiskAlertActive(true)
 
-            const freeMB = Number(freeBytes / (1024n * 1024n))
-            const totalMB = Number(totalBytes / (1024n * 1024n))
-            const thresholdKind = belowPercent ? `below ${thresholdPercent}%` : `below ${Number(thresholdBytes / (1024n * 1024n * 1024n))}GB`
-            const message = [
-                `Disk space warning on ${this.monitorPath}`,
-                ``,
-                `Free space: ${freeMB} MB (${freePercent}%) of ${totalMB} MB total`,
-                `Threshold crossed: ${thresholdKind}`,
-                ``,
-                `This notification will not repeat until disk space recovers above the threshold.`,
-            ].join("\n")
+            const thresholdDescription = belowPercent
+                ? `below ${thresholdPercent}%`
+                : `below ${Number(thresholdBytes / (1024n * 1024n * 1024n))}GB`
 
-            await this.notificationService.notify({
-                type: "disk_warning",
-                subject: "Disk space warning",
-                message,
-            })
+            // Emits the raw facts; the notification subscriber composes the
+            // exact multi-line message the direct notification call used to
+            // build here (D-15 item 1, plan 10-12). Defence-in-depth
+            // try/catch alongside the bus's own per-subscriber isolation
+            // (D-17): emit()'s contract says it never throws, but this
+            // catch keeps a violation of that contract from escaping
+            // check()'s own try/catch and its job-specific log line.
+            try {
+                this.bus.emit("disk.threshold_crossed", {
+                    monitorPath: this.monitorPath,
+                    freeBytes,
+                    totalBytes,
+                    freePercent,
+                    thresholdDescription,
+                })
+            } catch (emitErr) {
+                console.error("[DiskChecker] bus emit failed", emitErr)
+            }
         } else if (!triggered && lastAlert?.active) {
             await this.settings.setDiskAlertActive(false)
         }
@@ -110,7 +112,7 @@ let _checker: DiskChecker | null = null
 let _healthReporter: JobHealthReporter | null = null
 
 async function createProductionChecker(): Promise<DiskChecker> {
-    const [{notificationService, settingsRepository}, {notificationRepository}] = await Promise.all([
+    const [{settingsRepository}, {notificationRepository}] = await Promise.all([
         import("../application/index.js"),
         import("../repositories/notification-repository.js"),
     ])
@@ -123,7 +125,7 @@ async function createProductionChecker(): Promise<DiskChecker> {
 
     const monitorPath = process.env.DOCKER_DATA_PATH ?? (process.platform === "win32" ? "." : "/var/lib/docker")
 
-    const checker = new DiskChecker(notificationService, combinedSettings, monitorPath)
+    const checker = new DiskChecker(domainEventBus, combinedSettings, monitorPath)
     if (_healthReporter) checker.setHealthReporter(_healthReporter)
     return checker
 }

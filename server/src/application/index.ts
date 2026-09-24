@@ -89,7 +89,6 @@ export const backupService = new BackupService(
     backupRepository,
     backupStackRepo,
     settingsService,
-    notificationService,
     fs,
     docker,
     domainEventBus,

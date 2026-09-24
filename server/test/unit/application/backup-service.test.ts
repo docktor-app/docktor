@@ -79,12 +79,6 @@ function createMockSettingsService() {
     };
 }
 
-function createMockNotificationService() {
-    return {
-        notify: vi.fn().mockResolvedValue(undefined),
-    };
-}
-
 function createMockStackFilesystem() {
     return {
         getStackDirectory: vi.fn().mockReturnValue("/stacks/myapp"),
@@ -106,7 +100,6 @@ describe("BackupService", () => {
     let mockBackupRepository: ReturnType<typeof createMockBackupRepository>;
     let mockStackRepository: ReturnType<typeof createMockStackRepository>;
     let mockSettingsService: ReturnType<typeof createMockSettingsService>;
-    let mockNotificationService: ReturnType<typeof createMockNotificationService>;
     let mockStackFilesystem: ReturnType<typeof createMockStackFilesystem>;
     let mockDockerExecutor: ReturnType<typeof createMockDockerExecutor>;
     let mockBus: ReturnType<typeof createMockBus>;
@@ -118,7 +111,6 @@ describe("BackupService", () => {
         mockBackupRepository = createMockBackupRepository();
         mockStackRepository = createMockStackRepository();
         mockSettingsService = createMockSettingsService();
-        mockNotificationService = createMockNotificationService();
         mockStackFilesystem = createMockStackFilesystem();
         mockDockerExecutor = createMockDockerExecutor();
         mockBus = createMockBus();
@@ -129,7 +121,6 @@ describe("BackupService", () => {
             mockBackupRepository as any,
             mockStackRepository as any,
             mockSettingsService as any,
-            mockNotificationService as any,
             mockStackFilesystem as any,
             mockDockerExecutor as any,
             mockBus as any,
@@ -387,13 +378,36 @@ describe("BackupService", () => {
             );
         });
 
-        it("calls notificationService.notify with type backup_failure on failure", async () => {
+        it("emits backup.failed on failure, with the repo type from the resolved repo config", async () => {
             mockResticExecutor.run.mockRejectedValue(new Error("restic failed"));
 
             await service.runBackup(backupRecord as any, stack as any, repoConfig);
 
-            expect(mockNotificationService.notify).toHaveBeenCalledWith(
-                expect.objectContaining({type: "backup_failure"}),
+            // This describe block's `stack` fixture carries no displayName
+            // field — the payload's displayName is `undefined` here, which
+            // the notification subscriber (Task 1) falls back to the stack
+            // id for.
+            expect(mockBus.emit).toHaveBeenCalledWith("backup.failed", {
+                stackId: "stack-1",
+                displayName: undefined,
+                repoType: repoConfig.repoType,
+                errorMessage: "restic failed",
+            });
+        });
+
+        it("completes normally when the bus emit throws — a failing notification subscriber can't strand a backup run", async () => {
+            mockResticExecutor.run.mockRejectedValue(new Error("restic failed"));
+            mockBus.emit.mockImplementation((event: string) => {
+                if (event === "backup.failed") throw new Error("subscriber exploded");
+            });
+
+            await expect(
+                service.runBackup(backupRecord as any, stack as any, repoConfig),
+            ).resolves.toBeUndefined();
+
+            expect(mockStackRepository.update).toHaveBeenCalledWith(
+                "stack-1",
+                expect.objectContaining({status: "ERROR"}),
             );
         });
 
@@ -994,6 +1008,54 @@ services:
                 status: "ERROR",
             });
         });
+
+        it("emits restore.started before any restic work begins", async () => {
+            await service.runRestoreProcess(backupRecord as any, stack as any, snapshotId);
+
+            expect(mockBus.emit).toHaveBeenCalledWith("restore.started", {
+                stackId: "stack-1",
+                displayName: "My App",
+                snapshotId,
+            });
+        });
+
+        it("emits restore.completed on successful restore", async () => {
+            await service.runRestoreProcess(backupRecord as any, stack as any, snapshotId);
+
+            expect(mockBus.emit).toHaveBeenCalledWith("restore.completed", {
+                stackId: "stack-1",
+                displayName: "My App",
+                snapshotId,
+            });
+        });
+
+        it("emits restore.failed on restore failure, with the error message", async () => {
+            mockResticExecutor.run.mockRejectedValue(new Error("restore: corrupted data"));
+
+            await service.runRestoreProcess(backupRecord as any, stack as any, snapshotId);
+
+            expect(mockBus.emit).toHaveBeenCalledWith("restore.failed", {
+                stackId: "stack-1",
+                displayName: "My App",
+                snapshotId,
+                errorMessage: "restore: corrupted data",
+            });
+        });
+
+        it("completes normally when the bus emit throws for every restore-lifecycle event", async () => {
+            mockBus.emit.mockImplementation((event: string) => {
+                if (event.startsWith("restore.")) throw new Error("subscriber exploded");
+            });
+
+            await expect(
+                service.runRestoreProcess(backupRecord as any, stack as any, snapshotId),
+            ).resolves.toBeUndefined();
+
+            expect(mockStackRepository.update).toHaveBeenCalledWith(
+                "stack-1",
+                expect.objectContaining({status: "RUNNING"}),
+            );
+        });
     });
 
     describe("abortBackup()", () => {
@@ -1024,14 +1086,31 @@ services:
             );
         });
 
-        it("calls notificationService.notify with type backup_failure and the stack id", async () => {
+        it("emits backup.failed with the stack id, the resolved stack's display name, and no repo type", async () => {
             mockBackupRepository.findById.mockResolvedValue({id: "backup-1", status: "IN_PROGRESS"});
 
             await service.abortBackup("backup-1", "stack-1", "boom");
 
-            expect(mockNotificationService.notify).toHaveBeenCalledWith(
-                expect.objectContaining({type: "backup_failure", stackId: "stack-1"}),
-            );
+            // mockStackRepository.findByIdOrThrow resolves to displayName
+            // "My App" per the outer beforeEach's default stub.
+            expect(mockBus.emit).toHaveBeenCalledWith("backup.failed", {
+                stackId: "stack-1",
+                displayName: "My App",
+                errorMessage: "boom",
+            });
+        });
+
+        it("falls back to the stack id as the display name when the stack row can't be read", async () => {
+            mockBackupRepository.findById.mockResolvedValue({id: "backup-1", status: "IN_PROGRESS"});
+            mockStackRepository.findByIdOrThrow.mockRejectedValueOnce(new Error("stack not found"));
+
+            await service.abortBackup("backup-1", "stack-1", "boom");
+
+            expect(mockBus.emit).toHaveBeenCalledWith("backup.failed", {
+                stackId: "stack-1",
+                displayName: "stack-1",
+                errorMessage: "boom",
+            });
         });
 
         it("is a no-op on a row that is already COMPLETED", async () => {
@@ -1041,7 +1120,7 @@ services:
 
             expect(mockBackupRepository.update).not.toHaveBeenCalled();
             expect(mockStackRepository.update).not.toHaveBeenCalled();
-            expect(mockNotificationService.notify).not.toHaveBeenCalled();
+            expect(mockBus.emit).not.toHaveBeenCalled();
         });
 
         it("is a no-op on a row that is already FAILED", async () => {
@@ -1051,7 +1130,7 @@ services:
 
             expect(mockBackupRepository.update).not.toHaveBeenCalled();
             expect(mockStackRepository.update).not.toHaveBeenCalled();
-            expect(mockNotificationService.notify).not.toHaveBeenCalled();
+            expect(mockBus.emit).not.toHaveBeenCalled();
         });
 
         it("is a no-op and does not throw on an unknown backup id", async () => {
@@ -1061,7 +1140,7 @@ services:
 
             expect(mockBackupRepository.update).not.toHaveBeenCalled();
             expect(mockStackRepository.update).not.toHaveBeenCalled();
-            expect(mockNotificationService.notify).not.toHaveBeenCalled();
+            expect(mockBus.emit).not.toHaveBeenCalled();
         });
 
         it("on a still-IN_PROGRESS row, emits done with FAILED on the registered emitter, then removes it", async () => {
@@ -1076,14 +1155,25 @@ services:
             expect(getBackupBroadcaster("backup-1")).toBeUndefined();
         });
 
-        it("emits done even when the notification send rejects", async () => {
+        // Behavioural change (D-17, plan 10-12): abortBackup() used to
+        // `await this.notificationService.notify(...)` directly inside its
+        // try block with no catch — a rejecting notify() propagated past
+        // this method's own return, even though the `finally` below still
+        // ran the terminal `done` emit and broadcaster disposal first. Now
+        // that the notification path is a `bus.emit()` wrapped in its own
+        // try/catch (never awaited, never able to throw), that propagation
+        // path is gone entirely — proven below by a throwing bus.emit no
+        // longer causing abortBackup() itself to reject, only logging.
+        it("resolves normally even when the bus emit throws — a rejecting notification path can no longer propagate past abortBackup's finally", async () => {
             mockBackupRepository.findById.mockResolvedValue({id: "backup-1", status: "IN_PROGRESS"});
-            mockNotificationService.notify.mockRejectedValueOnce(new Error("smtp down"));
+            mockBus.emit.mockImplementation(() => {
+                throw new Error("subscriber exploded");
+            });
             const emitter = ensureBackupBroadcaster("backup-1");
             const onDone = vi.fn();
             emitter.on("done", onDone);
 
-            await expect(service.abortBackup("backup-1", "stack-1", "boom")).rejects.toThrow("smtp down");
+            await expect(service.abortBackup("backup-1", "stack-1", "boom")).resolves.toBeUndefined();
 
             expect(onDone).toHaveBeenCalledWith("FAILED");
             expect(getBackupBroadcaster("backup-1")).toBeUndefined();
