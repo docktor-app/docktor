@@ -9,9 +9,6 @@ import {
 import {requireAuth} from "../lib/auth-middleware.js"
 import {backupService, getBackupBroadcaster, getBackupLogBuffer, settingsRepository} from "../application/index.js"
 import {streamLiveBackupLog} from "../lib/sse-backup-log.js"
-import {backupRepository} from "../repositories/backup-repository.js"
-import {stackRepository} from "../repositories/stack-repository.js"
-import {resticExecutor} from "../infrastructure/restic-executor.js"
 import {encrypt} from "../lib/crypto.js"
 import {prisma} from "../lib/db.js"
 
@@ -33,11 +30,7 @@ const backupsPlugin: FastifyPluginAsyncZod = async (app) => {
             // Fire-and-forget: fetch required args and run backup asynchronously
             void (async () => {
                 try {
-                    const [backupRecord, stack, repoConfig] = await Promise.all([
-                        backupRepository.findByIdOrThrow(backup.id),
-                        stackRepository.findByIdOrThrow(id),
-                        backupService.getBackupRepoConfig(),
-                    ])
+                    const {backupRecord, stack, repoConfig} = await backupService.getBackupRunContext(backup.id, id)
                     if (!repoConfig) {
                         await backupService.abortBackup(
                             backup.id,
@@ -78,10 +71,7 @@ const backupsPlugin: FastifyPluginAsyncZod = async (app) => {
             // Fire-and-forget: run the restore asynchronously (mirrors the backup route above)
             void (async () => {
                 try {
-                    const [backupRecord, stack] = await Promise.all([
-                        backupRepository.findByIdOrThrow(backup.id),
-                        stackRepository.findByIdOrThrow(id),
-                    ])
+                    const {backupRecord, stack} = await backupService.getBackupAndStack(backup.id, id)
                     await backupService.runRestoreProcess(backupRecord, stack, snapshotId)
                 } catch (err) {
                     app.log.error({err}, "[backups] fire-and-forget runRestoreProcess failed")
@@ -108,8 +98,7 @@ const backupsPlugin: FastifyPluginAsyncZod = async (app) => {
         {schema: {params: stackParamsSchema}},
         async (request) => {
             const {id} = request.params
-            const backups = await backupRepository.findByStackId(id)
-            return backups.map((b) => backupRepository.toDto(b))
+            return backupService.listBackups(id)
         },
     )
 
@@ -118,15 +107,9 @@ const backupsPlugin: FastifyPluginAsyncZod = async (app) => {
     app.get(
         "/api/stacks/:id/snapshots",
         {schema: {params: stackParamsSchema}},
-        async (request, reply) => {
+        async (request) => {
             const {id} = request.params
-            const stack = await stackRepository.findByIdOrThrow(id)
-            const transitionalStates = ["BACKING_UP", "RESTORING"]
-            if (transitionalStates.includes(stack.status)) {
-                return reply.status(409).send({error: "Backup in progress, try again shortly"})
-            }
-            const snapshots = await backupService.getSnapshots(id)
-            return snapshots
+            return backupService.getSnapshotsIfIdle(id)
         },
     )
 
@@ -149,8 +132,7 @@ const backupsPlugin: FastifyPluginAsyncZod = async (app) => {
         {schema: {params: backupParamsSchema}},
         async (request) => {
             const {id} = request.params
-            const backup = await backupRepository.findByIdOrThrow(id)
-            return backupRepository.toDto(backup)
+            return backupService.getBackupDto(id)
         },
     )
 
@@ -161,7 +143,7 @@ const backupsPlugin: FastifyPluginAsyncZod = async (app) => {
         {schema: {params: backupParamsSchema}},
         async (request, reply) => {
             const {id} = request.params
-            const backup = await backupRepository.findByIdOrThrow(id)
+            const backup = await backupService.getBackupRecordOrThrow(id)
 
             reply.hijack()
 
@@ -191,7 +173,7 @@ const backupsPlugin: FastifyPluginAsyncZod = async (app) => {
                 // (or, pre-04-17, before runBackup had registered it at all). Re-read
                 // the record rather than trusting the pre-check status, and replay
                 // its stored log lines so this client isn't left with an empty pane.
-                const refreshed = await backupRepository.findByIdOrThrow(id)
+                const refreshed = await backupService.getBackupRecordOrThrow(id)
                 for (const line of refreshed.logLines) {
                     reply.raw.write(`data: ${JSON.stringify({line})}\n\n`)
                 }
@@ -220,28 +202,7 @@ const backupsPlugin: FastifyPluginAsyncZod = async (app) => {
         {schema: {params: stackParamsSchema}},
         async (request) => {
             const {id} = request.params
-            const stack = await stackRepository.findByIdOrThrow(id)
-
-            const globalSchedule = await settingsRepository.get("backup.defaultSchedule")
-            const globalRetentionRaw = await settingsRepository.get("backup.defaultRetention")
-            const globalRetention = globalRetentionRaw
-                ? (JSON.parse(globalRetentionRaw) as {keepDaily: number; keepWeekly: number; keepMonthly: number})
-                : null
-
-            const retention = stack.backupRetention
-                ? (JSON.parse(stack.backupRetention) as {keepDaily: number; keepWeekly: number; keepMonthly: number})
-                : null
-
-            return {
-                useGlobalSchedule: !stack.backupSchedule,
-                schedule: stack.backupSchedule,
-                useGlobalRetention: !stack.backupRetention,
-                retention,
-                preHook: stack.backupPreHook,
-                postHook: stack.backupPostHook,
-                globalSchedule,
-                globalRetention,
-            }
+            return backupService.getBackupConfig(id)
         },
     )
 
@@ -371,7 +332,7 @@ const backupsPlugin: FastifyPluginAsyncZod = async (app) => {
     // ── GET /api/settings/backup/status — Check restic binary availability ────
 
     app.get("/api/settings/backup/status", async () => {
-        return resticExecutor.checkVersion()
+        return backupService.checkResticStatus()
     })
 }
 

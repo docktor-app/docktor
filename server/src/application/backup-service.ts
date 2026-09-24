@@ -10,13 +10,13 @@ import {decrypt} from "../lib/crypto.js"
 import {assertTransition} from "../domain/stack-status-machine.js"
 import {createComposeConfig} from "../domain/compose-config.js"
 import {parseRetentionPolicy} from "../domain/backup-retention-policy.js"
-import {BadRequestError} from "../lib/errors.js"
+import {BadRequestError, ConflictError} from "../lib/errors.js"
 import type {StackStatus, BackupTrigger} from "../generated/prisma/enums.js"
 // The single surviving infrastructure/ import: isRepositoryNotFoundError is
 // a value (a type guard), not a port member — every type this file needs
 // off the restic module comes through the port's re-export instead.
 import {isRepositoryNotFoundError} from "../infrastructure/restic-executor.js"
-import type {BackupRepoConfig, ResticExecutorPort, ResticSnapshot} from "./ports/restic-executor-port.js"
+import type {BackupRepoConfig, ResticExecutorPort, ResticSnapshot, RetentionPolicy} from "./ports/restic-executor-port.js"
 import type {BackupSchedulePort} from "./ports/backup-schedule-port.js"
 import type {BackupRepository} from "../repositories/backup-repository.js"
 import type {NotificationService} from "./notification-service.js"
@@ -631,6 +631,136 @@ export class BackupService {
         if (!repoConfig) return []
         const env = this.buildEnv(repoConfig, stack.hostPath ?? undefined)
         return this.resticExecutor.snapshots(env, stackId)
+    }
+
+    /**
+     * Same as getSnapshots(), but first re-checks the stack isn't currently
+     * BACKING_UP/RESTORING — the route's pre-existing 409 guard, moved
+     * here unchanged (including its own stack fetch preceding getSnapshots()'s
+     * own internal one; not a new round trip, the same one the route already
+     * made). ConflictError -> 409 {error: "Backup in progress, try again
+     * shortly"}, byte-identical to the route's own reply.status(409).send(...).
+     */
+    async getSnapshotsIfIdle(stackId: string): Promise<ResticSnapshot[]> {
+        const stack = await this.stackRepo.findByIdOrThrow(stackId)
+        const transitionalStates: StackStatus[] = ["BACKING_UP", "RESTORING"]
+        if (transitionalStates.includes(stack.status)) {
+            throw new ConflictError("Backup in progress, try again shortly")
+        }
+        return this.getSnapshots(stackId)
+    }
+
+    /**
+     * Returns every backup for a stack as DTOs (BigInt sizeBytes converted
+     * to string) — the mapping the route used to apply itself after
+     * fetching the raw rows.
+     */
+    async listBackups(stackId: string): Promise<Record<string, unknown>[]> {
+        const backups = await this.backupRepo.findByStackId(stackId)
+        return backups.map((b) => this.backupRepo.toDto(b))
+    }
+
+    /**
+     * Returns a single backup as a DTO — the mapping GET /api/backups/:id
+     * used to apply itself. Throws the repository's typed NotFoundError
+     * (-> 404) for an unknown id, unchanged.
+     */
+    async getBackupDto(id: string): Promise<Record<string, unknown>> {
+        const backup = await this.backupRepo.findByIdOrThrow(id)
+        return this.backupRepo.toDto(backup)
+    }
+
+    /**
+     * Returns the raw (non-DTO) backup row — the shape the SSE stream
+     * handler needs (backup.status, backup.logLines) both for its initial
+     * fetch and for its re-read when no live broadcaster is registered.
+     * Kept undecorated (no toDto()) since the stream handler never touches
+     * sizeBytes.
+     */
+    async getBackupRecordOrThrow(id: string) {
+        return this.backupRepo.findByIdOrThrow(id)
+    }
+
+    /**
+     * Fetches a backup and its stack concurrently — the shape the restore
+     * route's fire-and-forget dependency fetch needs before calling
+     * runRestoreProcess(). Preserves the original Promise.all's concurrency
+     * (two round trips, not moved to sequential awaits).
+     */
+    async getBackupAndStack(backupId: string, stackId: string): Promise<{
+        backupRecord: BackupRecord
+        stack: StackRecord
+    }> {
+        const [backupRecord, stack] = await Promise.all([
+            this.backupRepo.findByIdOrThrow(backupId),
+            this.stackRepo.findByIdOrThrow(stackId),
+        ])
+        return {backupRecord, stack}
+    }
+
+    /**
+     * Fetches a backup, its stack, and the backup repository config
+     * concurrently — the shape the manual/scheduled backup route's
+     * fire-and-forget dependency fetch needs before calling runBackup().
+     * Preserves the original Promise.all's concurrency (three round trips).
+     */
+    async getBackupRunContext(backupId: string, stackId: string): Promise<{
+        backupRecord: BackupRecord
+        stack: StackRecord
+        repoConfig: BackupRepoConfig | null
+    }> {
+        const [backupRecord, stack, repoConfig] = await Promise.all([
+            this.backupRepo.findByIdOrThrow(backupId),
+            this.stackRepo.findByIdOrThrow(stackId),
+            this.getBackupRepoConfig(),
+        ])
+        return {backupRecord, stack, repoConfig}
+    }
+
+    /**
+     * Returns the per-stack backup-config view GET /api/stacks/:id/backup-config
+     * used to build inline: the stack's own schedule/retention/hooks plus
+     * the global defaults, with the same useGlobalSchedule/useGlobalRetention
+     * derivation (presence of a per-stack override) and the same JSON parse
+     * of the stored retention column.
+     */
+    async getBackupConfig(stackId: string): Promise<{
+        useGlobalSchedule: boolean
+        schedule: string | null
+        useGlobalRetention: boolean
+        retention: RetentionPolicy | null
+        preHook: string | null
+        postHook: string | null
+        globalSchedule: string | null
+        globalRetention: RetentionPolicy | null
+    }> {
+        const stack = await this.stackRepo.findByIdOrThrow(stackId)
+
+        const globalSchedule = await this.settings.getSetting(BACKUP_SETTING_KEYS.DEFAULT_SCHEDULE)
+        const globalRetentionRaw = await this.settings.getSetting(BACKUP_SETTING_KEYS.DEFAULT_RETENTION)
+        const globalRetention = globalRetentionRaw ? (JSON.parse(globalRetentionRaw) as RetentionPolicy) : null
+
+        const retention = stack.backupRetention ? (JSON.parse(stack.backupRetention) as RetentionPolicy) : null
+
+        return {
+            useGlobalSchedule: !stack.backupSchedule,
+            schedule: stack.backupSchedule,
+            useGlobalRetention: !stack.backupRetention,
+            retention,
+            preHook: stack.backupPreHook,
+            postHook: stack.backupPostHook,
+            globalSchedule,
+            globalRetention,
+        }
+    }
+
+    /**
+     * Delegates to the injected restic port's version check — the restic
+     * binary availability probe GET /api/settings/backup/status used to
+     * call the infrastructure module directly for.
+     */
+    async checkResticStatus(): Promise<{available: boolean; version?: string}> {
+        return this.resticExecutor.checkVersion()
     }
 
     /**
