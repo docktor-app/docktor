@@ -7,10 +7,7 @@
  * name.
  *
  * This catalog covers only events with an existing, grounded producer in
- * server/src/ today. Two categories are intentionally NOT here yet:
- *   - Notification-intent events (backup failure, restore lifecycle, low
- *     disk) — added by plan 10-12 when NotificationWatcher's direct call
- *     sites migrate onto the bus.
+ * server/src/ today. One category is intentionally NOT here yet:
  *   - Audit-trail fields on the configuration-changed payload — added by
  *     plan 10-13 when the StackEvent audit trail becomes a subscriber.
  */
@@ -82,6 +79,61 @@ export interface ProxyCertStatusChangedEvent {
 }
 
 /**
+ * A backup run failed (runBackup's catch path or abortBackup's early-abort
+ * path — plan 10-12). `repoType` is present only when the failure happened
+ * with a resolved repository config (runBackup); abortBackup fires before a
+ * repo config is necessarily available, so it omits the field. The
+ * subscriber composes a message with or without the "(repo: ...)" clause
+ * accordingly, reproducing both of the two prior call sites' templates
+ * exactly.
+ */
+export interface BackupFailedEvent {
+    stackId: string;
+    displayName?: string;
+    repoType?: string;
+    errorMessage: string;
+}
+
+/** A restore run began (runRestoreProcess, before any restic work starts). */
+export interface RestoreStartedEvent {
+    stackId: string;
+    displayName?: string;
+    snapshotId: string;
+}
+
+/** A restore run completed successfully (runRestoreProcess's success path). */
+export interface RestoreCompletedEvent {
+    stackId: string;
+    displayName?: string;
+    snapshotId: string;
+}
+
+/** A restore run failed (runRestoreProcess's catch path). */
+export interface RestoreFailedEvent {
+    stackId: string;
+    displayName?: string;
+    snapshotId: string;
+    errorMessage: string;
+}
+
+/**
+ * Free disk space on the monitored path crossed its configured threshold
+ * (DiskChecker.checkDiskUsage). Carries the raw facts the prior call site's
+ * multi-line message was built from — free/total sizes as exact byte
+ * counts, the already-computed free percentage, and a pre-formatted
+ * threshold-description clause ("below 10%" / "below 2GB") — so the
+ * subscriber can reproduce that message byte-for-byte without re-deriving
+ * which threshold (percent or bytes) was the one actually crossed.
+ */
+export interface DiskSpaceThresholdCrossedEvent {
+    monitorPath: string;
+    freeBytes: bigint;
+    totalBytes: bigint;
+    freePercent: number;
+    thresholdDescription: string;
+}
+
+/**
  * The domain-event catalog: one key per event, mapped to its payload type.
  * The bus (EventBusPort) is generic over this map so emit()/subscribe()
  * infer the correct payload from the event name.
@@ -94,4 +146,9 @@ export interface DomainEventMap {
     "stack.update_available": StackUpdateAvailableEvent;
     "notification.created": NotificationCreatedEvent;
     "proxy.cert_status_changed": ProxyCertStatusChangedEvent;
+    "backup.failed": BackupFailedEvent;
+    "restore.started": RestoreStartedEvent;
+    "restore.completed": RestoreCompletedEvent;
+    "restore.failed": RestoreFailedEvent;
+    "disk.threshold_crossed": DiskSpaceThresholdCrossedEvent;
 }
