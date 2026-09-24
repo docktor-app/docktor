@@ -52,9 +52,9 @@ function createMockStackEvents() {
     };
 }
 
-function createMockBroadcaster() {
+function createMockBus() {
     return {
-        publish: vi.fn(),
+        emit: vi.fn(),
     };
 }
 
@@ -77,7 +77,7 @@ describe("StackService", () => {
     let fs: ReturnType<typeof createMockFs>;
     let docker: ReturnType<typeof createMockDocker>;
     let events: ReturnType<typeof createMockStackEvents>;
-    let broadcaster: ReturnType<typeof createMockBroadcaster>;
+    let bus: ReturnType<typeof createMockBus>;
     let settings: ReturnType<typeof createMockSettings>;
     let updateChecks: ReturnType<typeof createMockUpdateChecks>;
 
@@ -86,10 +86,10 @@ describe("StackService", () => {
         fs = createMockFs();
         docker = createMockDocker();
         events = createMockStackEvents();
-        broadcaster = createMockBroadcaster();
+        bus = createMockBus();
         settings = createMockSettings();
         updateChecks = createMockUpdateChecks();
-        service = new StackService(repo as any, fs as any, docker as any, events as any, broadcaster as any, settings as any, updateChecks as any);
+        service = new StackService(repo as any, fs as any, docker as any, events as any, bus as any, settings as any, updateChecks as any);
     });
 
     describe("createStack", () => {
@@ -368,15 +368,13 @@ describe("StackService", () => {
 
             await service.deployStack("my-app");
 
-            expect(broadcaster.publish).toHaveBeenCalledWith({
-                type: "stack_status",
+            expect(bus.emit).toHaveBeenCalledWith("stack.status_changed", {
                 stackId: "my-app",
-                stackStatus: "DEPLOYING",
+                status: "DEPLOYING",
             });
-            expect(broadcaster.publish).toHaveBeenLastCalledWith({
-                type: "stack_status",
+            expect(bus.emit).toHaveBeenLastCalledWith("stack.status_changed", {
                 stackId: "my-app",
-                stackStatus: "RUNNING",
+                status: "RUNNING",
             });
         });
 
@@ -387,23 +385,43 @@ describe("StackService", () => {
 
             await service.deployStack("my-app");
 
-            expect(broadcaster.publish).toHaveBeenCalledWith({
-                type: "stack_status",
+            expect(bus.emit).toHaveBeenCalledWith("stack.status_changed", {
                 stackId: "my-app",
-                stackStatus: "DEPLOYING",
+                status: "DEPLOYING",
             });
-            expect(broadcaster.publish).toHaveBeenLastCalledWith({
-                type: "stack_status",
+            expect(bus.emit).toHaveBeenLastCalledWith("stack.status_changed", {
                 stackId: "my-app",
-                stackStatus: "ERROR",
+                status: "ERROR",
             });
         });
 
-        it("does not let a throwing broadcaster subscriber strand a successful deploy", async () => {
+        it("resolves the repository write before emitting stack.status_changed", async () => {
             repo.findByIdOrThrow.mockResolvedValue({id: "my-app", status: "DRAFT"});
             docker.up.mockResolvedValue(undefined);
             fs.readCompose.mockResolvedValue("services:\n  web:\n    image: nginx\n");
-            broadcaster.publish.mockImplementation(() => {
+            const order: string[] = [];
+            repo.transitionStatus.mockImplementation(async () => {
+                order.push("repo.transitionStatus");
+            });
+            bus.emit.mockImplementation(() => {
+                order.push("bus.emit");
+            });
+
+            await service.deployStack("my-app");
+
+            expect(order).toEqual([
+                "repo.transitionStatus",
+                "bus.emit",
+                "repo.transitionStatus",
+                "bus.emit",
+            ]);
+        });
+
+        it("does not let a throwing bus emit strand a successful deploy", async () => {
+            repo.findByIdOrThrow.mockResolvedValue({id: "my-app", status: "DRAFT"});
+            docker.up.mockResolvedValue(undefined);
+            fs.readCompose.mockResolvedValue("services:\n  web:\n    image: nginx\n");
+            bus.emit.mockImplementation(() => {
                 throw new Error("subscriber exploded");
             });
             const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -449,10 +467,9 @@ describe("StackService", () => {
                 "STOPPED",
                 "Stack stopped",
             );
-            expect(broadcaster.publish).toHaveBeenCalledWith({
-                type: "stack_status",
+            expect(bus.emit).toHaveBeenCalledWith("stack.status_changed", {
                 stackId: "my-app",
-                stackStatus: "STOPPED",
+                status: "STOPPED",
             });
         });
 
@@ -462,15 +479,13 @@ describe("StackService", () => {
 
             await expect(service.stopStack("my-app")).rejects.toThrow("stop failed");
 
-            expect(broadcaster.publish).toHaveBeenCalledWith({
-                type: "stack_status",
+            expect(bus.emit).toHaveBeenCalledWith("stack.status_changed", {
                 stackId: "my-app",
-                stackStatus: "STOPPED",
+                status: "STOPPED",
             });
-            expect(broadcaster.publish).toHaveBeenLastCalledWith({
-                type: "stack_status",
+            expect(bus.emit).toHaveBeenLastCalledWith("stack.status_changed", {
                 stackId: "my-app",
-                stackStatus: "ERROR",
+                status: "ERROR",
             });
         });
 
@@ -503,10 +518,9 @@ describe("StackService", () => {
                 "RUNNING",
                 "Stack restarted",
             );
-            expect(broadcaster.publish).toHaveBeenCalledWith({
-                type: "stack_status",
+            expect(bus.emit).toHaveBeenCalledWith("stack.status_changed", {
                 stackId: "my-app",
-                stackStatus: "RUNNING",
+                status: "RUNNING",
             });
             expect(repo.clearConfigChanged).toHaveBeenCalledWith("my-app");
         });
@@ -655,15 +669,13 @@ describe("StackService", () => {
 
             await service.updateImages("my-app");
 
-            expect(broadcaster.publish).toHaveBeenCalledWith({
-                type: "stack_status",
+            expect(bus.emit).toHaveBeenCalledWith("stack.status_changed", {
                 stackId: "my-app",
-                stackStatus: "UPDATING",
+                status: "UPDATING",
             });
-            expect(broadcaster.publish).toHaveBeenLastCalledWith({
-                type: "stack_status",
+            expect(bus.emit).toHaveBeenLastCalledWith("stack.status_changed", {
                 stackId: "my-app",
-                stackStatus: "RUNNING",
+                status: "RUNNING",
             });
         });
 
@@ -673,15 +685,13 @@ describe("StackService", () => {
 
             await expect(service.updateImages("my-app")).rejects.toThrow("DB unavailable");
 
-            expect(broadcaster.publish).toHaveBeenCalledWith({
-                type: "stack_status",
+            expect(bus.emit).toHaveBeenCalledWith("stack.status_changed", {
                 stackId: "my-app",
-                stackStatus: "UPDATING",
+                status: "UPDATING",
             });
-            expect(broadcaster.publish).toHaveBeenLastCalledWith({
-                type: "stack_status",
+            expect(bus.emit).toHaveBeenLastCalledWith("stack.status_changed", {
                 stackId: "my-app",
-                stackStatus: "ERROR",
+                status: "ERROR",
             });
         });
     });
@@ -834,22 +844,20 @@ describe("StackService", () => {
         it("publishes stack_status UPDATING then RUNNING on a successful upgrade", async () => {
             await service.upgradeServiceImage("my-app", "web", "1.26");
 
-            expect(broadcaster.publish).toHaveBeenCalledWith({
-                type: "stack_status",
+            expect(bus.emit).toHaveBeenCalledWith("stack.status_changed", {
                 stackId: "my-app",
-                stackStatus: "UPDATING",
+                status: "UPDATING",
             });
-            expect(broadcaster.publish).toHaveBeenLastCalledWith({
-                type: "stack_status",
+            expect(bus.emit).toHaveBeenLastCalledWith("stack.status_changed", {
                 stackId: "my-app",
-                stackStatus: "RUNNING",
+                status: "RUNNING",
             });
         });
 
         it("publishes no event on the idempotent no-op path", async () => {
             await service.upgradeServiceImage("my-app", "web", "1.25");
 
-            expect(broadcaster.publish).not.toHaveBeenCalled();
+            expect(bus.emit).not.toHaveBeenCalled();
         });
 
         it("publishes stack_status UPDATING then ERROR when composePull fails", async () => {
@@ -859,15 +867,13 @@ describe("StackService", () => {
                 service.upgradeServiceImage("my-app", "web", "1.26"),
             ).rejects.toThrow("pull failed");
 
-            expect(broadcaster.publish).toHaveBeenCalledWith({
-                type: "stack_status",
+            expect(bus.emit).toHaveBeenCalledWith("stack.status_changed", {
                 stackId: "my-app",
-                stackStatus: "UPDATING",
+                status: "UPDATING",
             });
-            expect(broadcaster.publish).toHaveBeenLastCalledWith({
-                type: "stack_status",
+            expect(bus.emit).toHaveBeenLastCalledWith("stack.status_changed", {
                 stackId: "my-app",
-                stackStatus: "ERROR",
+                status: "ERROR",
             });
         });
     });
@@ -883,8 +889,9 @@ describe("StackService", () => {
 
             expect(fs.writeEnv).toHaveBeenCalledWith("my-app", "FOO=bar");
             expect(repo.setConfigChanged).toHaveBeenCalledWith("my-app", true);
-            expect(broadcaster.publish).toHaveBeenCalledWith(
-                expect.objectContaining({type: "config_changed", stackId: "my-app"}),
+            expect(bus.emit).toHaveBeenCalledWith(
+                "stack.config_changed",
+                expect.objectContaining({stackId: "my-app"}),
             );
         });
 
@@ -893,8 +900,9 @@ describe("StackService", () => {
 
             expect(fs.removeEnv).toHaveBeenCalledWith("my-app");
             expect(repo.setConfigChanged).toHaveBeenCalledWith("my-app", true);
-            expect(broadcaster.publish).toHaveBeenCalledWith(
-                expect.objectContaining({type: "config_changed", stackId: "my-app"}),
+            expect(bus.emit).toHaveBeenCalledWith(
+                "stack.config_changed",
+                expect.objectContaining({stackId: "my-app"}),
             );
         });
 
@@ -905,8 +913,9 @@ describe("StackService", () => {
 
             expect(repo.setConfigChanged).toHaveBeenCalledWith("my-app", true);
             expect(repo.updateStackHash).toHaveBeenCalled();
-            expect(broadcaster.publish).toHaveBeenCalledWith(
-                expect.objectContaining({type: "config_changed", stackId: "my-app"}),
+            expect(bus.emit).toHaveBeenCalledWith(
+                "stack.config_changed",
+                expect.objectContaining({stackId: "my-app"}),
             );
         });
 
@@ -915,16 +924,18 @@ describe("StackService", () => {
                 composeContent: "services:\n  web:\n    image: nginx\n",
             });
 
-            expect(broadcaster.publish).toHaveBeenCalledWith(
-                expect.objectContaining({type: "config_changed", stackId: "my-app", source: "app"}),
+            expect(bus.emit).toHaveBeenCalledWith(
+                "stack.config_changed",
+                expect.objectContaining({stackId: "my-app", source: "app"}),
             );
         });
 
         it("tags an app-initiated env save's config_changed broadcast source: \"app\" (G-08-2)", async () => {
             await service.updateStack("my-app", {envContent: "FOO=bar"});
 
-            expect(broadcaster.publish).toHaveBeenCalledWith(
-                expect.objectContaining({type: "config_changed", stackId: "my-app", source: "app"}),
+            expect(bus.emit).toHaveBeenCalledWith(
+                "stack.config_changed",
+                expect.objectContaining({stackId: "my-app", source: "app"}),
             );
         });
 
@@ -938,15 +949,15 @@ describe("StackService", () => {
 
             expect(repo.setConfigChanged).toHaveBeenCalledWith("my-app", false);
             expect(repo.updateStackHash).not.toHaveBeenCalled();
-            expect(broadcaster.publish).not.toHaveBeenCalled();
+            expect(bus.emit).not.toHaveBeenCalled();
             expect(repo.clearConfigError).toHaveBeenCalledWith("my-app");
         });
 
-        it("touches neither configChanged nor the broadcaster for a metadata-only update", async () => {
+        it("touches neither configChanged nor the bus for a metadata-only update", async () => {
             await service.updateStack("my-app", {displayName: "New Name"});
 
             expect(repo.setConfigChanged).not.toHaveBeenCalled();
-            expect(broadcaster.publish).not.toHaveBeenCalled();
+            expect(bus.emit).not.toHaveBeenCalled();
         });
 
         it("throws BadRequestError carrying the parser's message instead of an unguarded raw Error for invalid compose content", async () => {
@@ -958,7 +969,7 @@ describe("StackService", () => {
             ).rejects.toThrow("Compose file missing 'services' key");
         });
 
-        it("still writes the invalid content to disk (YAML-first) but touches neither configChanged, clearConfigError, nor the broadcaster before rejecting", async () => {
+        it("still writes the invalid content to disk (YAML-first) but touches neither configChanged, clearConfigError, nor the bus before rejecting", async () => {
             await expect(
                 service.updateStack("my-app", {composeContent: "foo: bar"}),
             ).rejects.toThrow(BadRequestError);
@@ -966,7 +977,7 @@ describe("StackService", () => {
             expect(fs.writeCompose).toHaveBeenCalledWith("my-app", "foo: bar");
             expect(repo.setConfigChanged).not.toHaveBeenCalled();
             expect(repo.clearConfigError).not.toHaveBeenCalled();
-            expect(broadcaster.publish).not.toHaveBeenCalled();
+            expect(bus.emit).not.toHaveBeenCalled();
         });
 
         it("calls repo.clearConfigError on a successful compose save that changes the hash", async () => {

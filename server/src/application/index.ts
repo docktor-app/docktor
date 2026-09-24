@@ -42,7 +42,7 @@ export const disposeStateBroadcastSubscription = subscribeStateBroadcast(domainE
 export {settingsRepository};
 export const settingsService = new SettingsService(settingsRepository);
 
-export const stackService = new StackService(repo, fs, docker, stackEventRepository, stateEventBroadcaster, settingsService, imageUpdateCheckRepository);
+export const stackService = new StackService(repo, fs, docker, stackEventRepository, domainEventBus, settingsService, imageUpdateCheckRepository);
 export const notificationService = new NotificationService(
     notificationRepository,
     settingsService,
@@ -86,7 +86,7 @@ export const backupService = new BackupService(
     notificationService,
     fs,
     docker,
-    stateEventBroadcaster,
+    domainEventBus,
     backupScheduler,
 );
 

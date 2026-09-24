@@ -9,7 +9,7 @@ import {ComposeEditError, getServiceImageTag, setServiceImageTag} from "../lib/c
 import type {StackRepository} from "../repositories/stack-repository.js";
 import type {StackFilesystemPort} from "./ports/stack-filesystem-port.js";
 import type {DockerExecutorPort} from "./ports/docker-executor-port.js";
-import type {StateBroadcaster} from "../lib/state-broadcaster.js";
+import type {EventBusPort} from "./ports/event-bus-port.js";
 import type {SettingsService} from "./settings-service.js";
 import type {StackStatus, StackEventType} from "../generated/prisma/enums.js";
 
@@ -56,7 +56,7 @@ export class StackService {
         private readonly fs: StackFilesystemPort,
         private readonly docker: DockerExecutorPort,
         private readonly events: StackEventReadRepo,
-        private readonly broadcaster: Pick<StateBroadcaster, "publish">,
+        private readonly bus: Pick<EventBusPort, "emit">,
         private readonly settings: Pick<SettingsService, "getProxySettings">,
         private readonly updateChecks: ImageUpdateCheckReadRepo,
     ) {}
@@ -670,17 +670,19 @@ export class StackService {
     }
 
     /**
-     * Wraps the repository's DB write with a `stack_status` broadcast. This
-     * is the single call site for `repo.transitionStatus` — every action
-     * method above routes through here so a manual action becomes visible
-     * over SSE while it is still in flight, not only after StatePoller's
-     * next 60s reconcile() tick (todo: manual-actions-dont-broadcast-sse).
-     * The publish happens strictly after the DB write resolves — a
-     * broadcast before a failed write would advertise a status that never
-     * existed — and any broadcaster failure is caught and logged rather
-     * than propagated: a throwing subscriber must never be able to strand
-     * a stack in a transitional status that no action's allowed-from list
-     * accepts and StatePoller unconditionally skips.
+     * Wraps the repository's DB write with a `stack.status_changed` emit.
+     * This is the single call site for `repo.transitionStatus` — every
+     * action method above routes through here so a manual action becomes
+     * visible over SSE (via the state-broadcast subscriber) while it is
+     * still in flight, not only after StatePoller's next 60s reconcile()
+     * tick (todo: manual-actions-dont-broadcast-sse). The emit happens
+     * strictly after the DB write resolves — an emit before a failed write
+     * would advertise a status that never existed — and any emit failure is
+     * caught and logged rather than propagated: the bus contract says emit
+     * does not throw, but this catch is defence-in-depth so a contract
+     * violation can never strand a stack in a transitional status that no
+     * action's allowed-from list accepts and StatePoller unconditionally
+     * skips.
      */
     private async transitionStatus(
         id: string,
@@ -690,24 +692,25 @@ export class StackService {
     ): Promise<void> {
         await this.repo.transitionStatus(id, from, to, message);
         try {
-            this.broadcaster.publish({type: "stack_status", stackId: id, stackStatus: to});
+            this.bus.emit("stack.status_changed", {stackId: id, status: to});
         } catch (err) {
-            console.error(`[StackService] failed to publish stack_status for "${id}":`, err);
+            console.error(`[StackService] failed to emit stack.status_changed for "${id}":`, err);
         }
     }
 
     /**
-     * Same non-throwing guard as transitionStatus(), for config_changed.
-     * This is the sole app-initiated call site (both updateStack() branches
-     * route through it), so the app-origin tag below is a hardcoded literal,
-     * not a parameter — FileWatcher's two publish call sites are the only
-     * other caller of this event and always tag "external".
+     * Same non-throwing guard as transitionStatus(), for
+     * stack.config_changed. This is the sole app-initiated call site (both
+     * updateStack() branches route through it), so the app-origin tag below
+     * is a hardcoded literal, not a parameter — FileWatcher's two emit call
+     * sites are the only other caller of this event and always tag
+     * "external".
      */
     private publishConfigChanged(id: string, newHash: string): void {
         try {
-            this.broadcaster.publish({type: "config_changed", stackId: id, newHash, source: "app"});
+            this.bus.emit("stack.config_changed", {stackId: id, newHash, source: "app"});
         } catch (err) {
-            console.error(`[StackService] failed to publish config_changed for "${id}":`, err);
+            console.error(`[StackService] failed to emit stack.config_changed for "${id}":`, err);
         }
     }
 
