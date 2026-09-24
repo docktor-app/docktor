@@ -27,10 +27,17 @@ import {backupScheduler} from "../jobs/backup-scheduler.js";
 import {NotFoundError} from "../lib/errors.js";
 import type {BackupStackRepo} from "./backup-service.js";
 import type {StackStatus} from "../generated/prisma/enums.js";
+import {domainEventBus} from "../infrastructure/event-bus.js";
+import {subscribeStateBroadcast} from "./subscribers/state-broadcast-subscriber.js";
 
 const repo = stackRepository;
 const fs = new StackFilesystem();
 const docker = new DockerExecutor();
+
+// D-15 item 3 / D-18: bridges the domain-event bus onto the live-state
+// broadcaster so it is an ordinary bus subscriber, not a special-cased
+// inline call. Exported so a test can tear it down.
+export const disposeStateBroadcastSubscription = subscribeStateBroadcast(domainEventBus, stateEventBroadcaster);
 
 export {settingsRepository};
 export const settingsService = new SettingsService(settingsRepository);
