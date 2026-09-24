@@ -23,6 +23,7 @@ import {certificateFilesystem} from "../infrastructure/certificate-filesystem.js
 import {stateEventBroadcaster} from "../lib/state-broadcaster.js";
 import {dockerodeClient} from "../infrastructure/dockerode-client.js";
 import {smtpClient} from "../infrastructure/smtp-client.js";
+import {backupScheduler} from "../jobs/backup-scheduler.js";
 import {NotFoundError} from "../lib/errors.js";
 import type {BackupStackRepo} from "./backup-service.js";
 import type {StackStatus} from "../generated/prisma/enums.js";
@@ -59,6 +60,15 @@ const backupStackRepo: BackupStackRepo = {
     clearConfigChanged: (id: string) => repo.clearConfigChanged(id),
     updateStackHash: (args: {stackId: string; hash: string}) => repo.updateStackHash(args),
     replaceServices: (stackId: string, composeConfig: any) => repo.replaceServices(stackId, composeConfig),
+    updateBackupConfig: (
+        id: string,
+        data: {
+            backupSchedule: string | null
+            backupRetention: string | null
+            backupPreHook: string | null
+            backupPostHook: string | null
+        },
+    ) => repo.updateBackupConfig(id, data),
 }
 
 export const backupService = new BackupService(
@@ -70,6 +80,7 @@ export const backupService = new BackupService(
     fs,
     docker,
     stateEventBroadcaster,
+    backupScheduler,
 );
 
 export {getBackupBroadcaster, getBackupLogBuffer} from "./backup-service.js";

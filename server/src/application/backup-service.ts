@@ -4,6 +4,8 @@ import {readFile} from "node:fs/promises"
 import path from "node:path"
 import os from "node:os"
 import yaml from "yaml"
+import cron from "node-cron"
+import type {StackBackupConfigInput} from "@docktor/shared"
 import {decrypt} from "../lib/crypto.js"
 import {assertTransition} from "../domain/stack-status-machine.js"
 import {createComposeConfig} from "../domain/compose-config.js"
@@ -15,6 +17,7 @@ import type {StackStatus, BackupTrigger} from "../generated/prisma/enums.js"
 // off the restic module comes through the port's re-export instead.
 import {isRepositoryNotFoundError} from "../infrastructure/restic-executor.js"
 import type {BackupRepoConfig, ResticExecutorPort, ResticSnapshot} from "./ports/restic-executor-port.js"
+import type {BackupSchedulePort} from "./ports/backup-schedule-port.js"
 import type {BackupRepository} from "../repositories/backup-repository.js"
 import type {NotificationService} from "./notification-service.js"
 import type {DockerExecutorPort} from "./ports/docker-executor-port.js"
@@ -100,6 +103,15 @@ export interface BackupStackRepo {
     clearConfigChanged(id: string): Promise<void>
     updateStackHash(args: {stackId: string; hash: string}): Promise<void>
     replaceServices(stackId: string, composeConfig: any): Promise<void>
+    updateBackupConfig(
+        id: string,
+        data: {
+            backupSchedule: string | null
+            backupRetention: string | null
+            backupPreHook: string | null
+            backupPostHook: string | null
+        },
+    ): Promise<void>
 }
 
 export interface BackupSettingsService {
@@ -158,6 +170,7 @@ export class BackupService {
         private readonly filesystem: StackFilesystemPort,
         private readonly docker: DockerExecutorPort,
         private readonly broadcaster: Pick<StateBroadcaster, "publish">,
+        private readonly schedulePort: BackupSchedulePort,
     ) {}
 
     // ── Public API ─────────────────────────────────────────────────────────────
@@ -457,6 +470,42 @@ export class BackupService {
         } finally {
             emitter.emit("done", finalStatus)
             disposeBackupBroadcaster(backupRecord.id)
+        }
+    }
+
+    /**
+     * Persists a stack's backup schedule, retention, and pre/post hooks,
+     * then tells the scheduler about the change — one call replacing the
+     * route's inline validate-then-write-then-schedule sequence. Validates
+     * the cron expression with the same refusal the route used to produce
+     * (BadRequestError -> 400 {error: "Invalid cron expression"}, the exact
+     * body the route's `reply.status(400).send(...)` built), resolves the
+     * effective schedule/retention (including the global-defaults branch),
+     * persists through the stack repository, and only then calls the
+     * schedule port. Persist first, notify second: a scheduler registered
+     * against settings that failed to persist would fire against stale data.
+     */
+    async saveBackupConfig(stackId: string, input: StackBackupConfigInput): Promise<void> {
+        const {useGlobalSchedule, schedule, useGlobalRetention, retention, preHook, postHook} = input
+
+        const effectiveSchedule = useGlobalSchedule ? null : (schedule ?? null)
+        if (effectiveSchedule && !cron.validate(effectiveSchedule)) {
+            throw new BadRequestError("Invalid cron expression")
+        }
+
+        const effectiveRetention = useGlobalRetention ? null : (retention ?? null)
+
+        await this.stackRepo.updateBackupConfig(stackId, {
+            backupSchedule: effectiveSchedule,
+            backupRetention: effectiveRetention ? JSON.stringify(effectiveRetention) : null,
+            backupPreHook: preHook ?? null,
+            backupPostHook: postHook ?? null,
+        })
+
+        if (effectiveSchedule) {
+            this.schedulePort.upsert(stackId, effectiveSchedule)
+        } else {
+            this.schedulePort.remove(stackId)
         }
     }
 

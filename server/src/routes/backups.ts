@@ -12,10 +12,8 @@ import {streamLiveBackupLog} from "../lib/sse-backup-log.js"
 import {backupRepository} from "../repositories/backup-repository.js"
 import {stackRepository} from "../repositories/stack-repository.js"
 import {resticExecutor} from "../infrastructure/restic-executor.js"
-import {backupScheduler} from "../jobs/backup-scheduler.js"
 import {encrypt} from "../lib/crypto.js"
 import {prisma} from "../lib/db.js"
-import cron from "node-cron"
 
 const stackParamsSchema = z.object({id: z.string()})
 const backupParamsSchema = z.object({id: z.string()})
@@ -30,22 +28,17 @@ const backupsPlugin: FastifyPluginAsyncZod = async (app) => {
         {schema: {params: stackParamsSchema}},
         async (request, reply) => {
             const {id} = request.params
-            console.log(`[backups] POST /api/stacks/${id}/backup - initiating backup`)
             const backup = await backupService.initiateBackup(id, "MANUAL")
-            console.log(`[backups] Backup initiated with ID: ${backup.id}`)
 
             // Fire-and-forget: fetch required args and run backup asynchronously
             void (async () => {
                 try {
-                    console.log(`[backups] Fetching backup dependencies for ${backup.id}`)
                     const [backupRecord, stack, repoConfig] = await Promise.all([
                         backupRepository.findByIdOrThrow(backup.id),
                         stackRepository.findByIdOrThrow(id),
                         backupService.getBackupRepoConfig(),
                     ])
-                    console.log(`[backups] Dependencies fetched. repoConfig exists: ${!!repoConfig}`)
                     if (!repoConfig) {
-                        console.error(`[backups] No repoConfig - backup repository not configured`)
                         await backupService.abortBackup(
                             backup.id,
                             id,
@@ -53,9 +46,7 @@ const backupsPlugin: FastifyPluginAsyncZod = async (app) => {
                         )
                         return
                     }
-                    console.log(`[backups] Starting runBackup for ${backup.id}`)
                     await backupService.runBackup(backupRecord, stack, repoConfig)
-                    console.log(`[backups] runBackup completed for ${backup.id}`)
                 } catch (err) {
                     app.log.error({err}, "[backups] fire-and-forget runBackup failed")
                     try {
@@ -261,33 +252,7 @@ const backupsPlugin: FastifyPluginAsyncZod = async (app) => {
         {schema: {params: stackParamsSchema, body: stackBackupConfigSchema}},
         async (request, reply) => {
             const {id} = request.params
-            const {useGlobalSchedule, schedule, useGlobalRetention, retention, preHook, postHook} = request.body
-
-            // Validate cron expression if a custom schedule is provided
-            const effectiveSchedule = useGlobalSchedule ? null : (schedule ?? null)
-            if (effectiveSchedule && !cron.validate(effectiveSchedule)) {
-                return reply.status(400).send({error: "Invalid cron expression"})
-            }
-
-            const effectiveRetention = useGlobalRetention ? null : (retention ?? null)
-
-            await prisma.stack.update({
-                where: {id},
-                data: {
-                    backupSchedule: effectiveSchedule,
-                    backupRetention: effectiveRetention ? JSON.stringify(effectiveRetention) : null,
-                    backupPreHook: preHook ?? null,
-                    backupPostHook: postHook ?? null,
-                },
-            })
-
-            // Update BackupScheduler accordingly
-            if (effectiveSchedule) {
-                backupScheduler.upsert(id, effectiveSchedule)
-            } else {
-                backupScheduler.remove(id)
-            }
-
+            await backupService.saveBackupConfig(id, request.body)
             return reply.status(200).send({success: true})
         },
     )
@@ -331,21 +296,8 @@ const backupsPlugin: FastifyPluginAsyncZod = async (app) => {
         "/api/settings/backup",
         {schema: {body: backupSettingsSchema}},
         async (request, reply) => {
-            console.log(`[backups] PUT /api/settings/backup - saving settings`)
             const {repoType, repoPath, sftpHost, sftpUser, sftpKey, s3Endpoint, s3Bucket, s3AccessKey, s3SecretKey, password} =
                 request.body
-            console.log(`[backups] Settings payload:`, {
-                repoType,
-                hasRepoPath: !!repoPath,
-                hasSftpHost: !!sftpHost,
-                hasSftpUser: !!sftpUser,
-                hasSftpKey: !!sftpKey,
-                hasS3Endpoint: !!s3Endpoint,
-                hasS3Bucket: !!s3Bucket,
-                hasS3AccessKey: !!s3AccessKey,
-                hasS3SecretKey: !!s3SecretKey,
-                hasPassword: !!password,
-            })
 
             await settingsRepository.upsert("backup.repoType", repoType)
             if (repoPath) await settingsRepository.upsert("backup.repoPath", repoPath)
@@ -381,7 +333,6 @@ const backupsPlugin: FastifyPluginAsyncZod = async (app) => {
                 })
             }
 
-            console.log(`[backups] Settings saved successfully`)
             return reply.status(200).send({success: true})
         },
     )

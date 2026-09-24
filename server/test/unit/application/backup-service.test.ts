@@ -34,6 +34,7 @@ function createMockResticExecutor() {
         buildBackupArgs: vi.fn().mockReturnValue(["backup", "/path"]),
         buildForgetArgs: vi.fn().mockReturnValue(["forget", "--prune"]),
         snapshots: vi.fn().mockResolvedValue([]),
+        checkVersion: vi.fn().mockResolvedValue({available: true, version: "0.16.0"}),
     };
 }
 
@@ -42,7 +43,12 @@ function createMockBackupRepository() {
         create: vi.fn().mockResolvedValue({id: "backup-1", logLines: []}),
         update: vi.fn().mockResolvedValue(undefined),
         findById: vi.fn(),
+        findByIdOrThrow: vi.fn(),
         findByStackId: vi.fn().mockResolvedValue([]),
+        toDto: vi.fn((b: {sizeBytes: bigint | null; [key: string]: unknown}) => ({
+            ...b,
+            sizeBytes: b.sizeBytes !== null ? String(b.sizeBytes) : null,
+        })),
     };
 }
 
@@ -54,6 +60,14 @@ function createMockStackRepository() {
         clearConfigChanged: vi.fn().mockResolvedValue(undefined),
         updateStackHash: vi.fn().mockResolvedValue(undefined),
         replaceServices: vi.fn().mockResolvedValue(undefined),
+        updateBackupConfig: vi.fn().mockResolvedValue(undefined),
+    };
+}
+
+function createMockSchedulePort() {
+    return {
+        upsert: vi.fn(),
+        remove: vi.fn(),
     };
 }
 
@@ -96,6 +110,7 @@ describe("BackupService", () => {
     let mockStackFilesystem: ReturnType<typeof createMockStackFilesystem>;
     let mockDockerExecutor: ReturnType<typeof createMockDockerExecutor>;
     let mockBroadcaster: ReturnType<typeof createMockBroadcaster>;
+    let mockSchedulePort: ReturnType<typeof createMockSchedulePort>;
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -107,6 +122,7 @@ describe("BackupService", () => {
         mockStackFilesystem = createMockStackFilesystem();
         mockDockerExecutor = createMockDockerExecutor();
         mockBroadcaster = createMockBroadcaster();
+        mockSchedulePort = createMockSchedulePort();
 
         service = new BackupService(
             mockResticExecutor as any,
@@ -117,6 +133,7 @@ describe("BackupService", () => {
             mockStackFilesystem as any,
             mockDockerExecutor as any,
             mockBroadcaster as any,
+            mockSchedulePort as any,
         );
 
         // Default: stack exists and is running
@@ -1146,6 +1163,91 @@ services:
             // path.resolve on Windows converts Unix paths to Windows format
             const expected = path.resolve(unixPath, "backups");
             expect(env.RESTIC_REPOSITORY).toBe(expected);
+        });
+    });
+
+    describe("saveBackupConfig() (Task 1, 10-10)", () => {
+        const baseInput = {
+            useGlobalSchedule: false,
+            schedule: "0 3 * * *",
+            useGlobalRetention: true,
+            retention: null,
+            preHook: null,
+            postHook: null,
+        };
+
+        it("persists via stackRepo.updateBackupConfig before calling the schedule port's upsert", async () => {
+            const callOrder: string[] = [];
+            mockStackRepository.updateBackupConfig.mockImplementation(async () => {
+                callOrder.push("persist");
+            });
+            mockSchedulePort.upsert.mockImplementation(() => {
+                callOrder.push("upsert");
+            });
+
+            await service.saveBackupConfig("stack-1", baseInput as any);
+
+            expect(callOrder).toEqual(["persist", "upsert"]);
+            expect(mockStackRepository.updateBackupConfig).toHaveBeenCalledWith("stack-1", {
+                backupSchedule: "0 3 * * *",
+                backupRetention: null,
+                backupPreHook: null,
+                backupPostHook: null,
+            });
+            expect(mockSchedulePort.upsert).toHaveBeenCalledWith("stack-1", "0 3 * * *");
+            expect(mockSchedulePort.remove).not.toHaveBeenCalled();
+        });
+
+        it("calls the schedule port's remove (not upsert) when no effective schedule is set", async () => {
+            await service.saveBackupConfig("stack-1", {
+                ...baseInput,
+                useGlobalSchedule: true,
+                schedule: null,
+            } as any);
+
+            expect(mockSchedulePort.remove).toHaveBeenCalledWith("stack-1");
+            expect(mockSchedulePort.upsert).not.toHaveBeenCalled();
+        });
+
+        it("rejects an invalid cron expression with BadRequestError and never persists or notifies the scheduler", async () => {
+            await expect(
+                service.saveBackupConfig("stack-1", {
+                    ...baseInput,
+                    schedule: "not a cron expression",
+                } as any),
+            ).rejects.toBeInstanceOf(BadRequestError);
+
+            expect(mockStackRepository.updateBackupConfig).not.toHaveBeenCalled();
+            expect(mockSchedulePort.upsert).not.toHaveBeenCalled();
+            expect(mockSchedulePort.remove).not.toHaveBeenCalled();
+        });
+
+        it("resolves retention through the global-defaults branch (useGlobalRetention -> null, no JSON.stringify)", async () => {
+            await service.saveBackupConfig("stack-1", {
+                ...baseInput,
+                useGlobalRetention: true,
+                retention: {keepDaily: 1, keepWeekly: 1, keepMonthly: 1},
+            } as any);
+
+            expect(mockStackRepository.updateBackupConfig).toHaveBeenCalledWith(
+                "stack-1",
+                expect.objectContaining({backupRetention: null}),
+            );
+        });
+
+        it("JSON-stringifies a per-stack retention override", async () => {
+            await service.saveBackupConfig("stack-1", {
+                ...baseInput,
+                useGlobalRetention: false,
+                retention: {keepDaily: 3, keepWeekly: 2, keepMonthly: 1},
+            } as any);
+
+            expect(mockStackRepository.updateBackupConfig).toHaveBeenCalledWith(
+                "stack-1",
+                expect.objectContaining({
+                    backupRetention: JSON.stringify({keepDaily: 3, keepWeekly: 2, keepMonthly: 1}),
+                }),
+            );
         });
     });
 });
