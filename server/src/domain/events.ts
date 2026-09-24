@@ -7,9 +7,9 @@
  * name.
  *
  * This catalog covers only events with an existing, grounded producer in
- * server/src/ today. One category is intentionally NOT here yet:
- *   - Audit-trail fields on the configuration-changed payload — added by
- *     plan 10-13 when the StackEvent audit trail becomes a subscriber.
+ * server/src/ today. Plan 10-13 closed the last outstanding category (the
+ * StackEvent audit trail) by adding the two audit-only fields below to
+ * StackConfigChangedEvent.
  */
 
 /** A stack's status-machine transition completed. */
@@ -46,6 +46,14 @@ export interface StackConfigChangedEvent {
     // (G-08-2) so the client's "changed externally" toast gating carries
     // over unchanged.
     source: "app" | "external";
+    // Audit-trail fields (D-15 item 2, plan 10-13). Both optional because
+    // the in-app producer (StackService) has neither — only FileWatcher's
+    // two external call sites populate them, so the audit subscriber can
+    // reproduce their StackEvent payload string byte-for-byte. previousHash
+    // is the hash the file had before this change (empty string if there
+    // was none); changedFile names which of the two watched files changed.
+    previousHash?: string;
+    changedFile?: "compose" | "env";
 }
 
 /** A stack's compose/env configuration failed to parse. */
