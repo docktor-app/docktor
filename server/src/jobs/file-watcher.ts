@@ -2,8 +2,8 @@ import {watch} from "chokidar"
 import type {FSWatcher} from "chokidar"
 import {readFile} from "node:fs/promises"
 import path from "node:path"
-import type {StateBroadcaster} from "../lib/state-broadcaster.js"
-import {stateEventBroadcaster} from "../lib/state-broadcaster.js"
+import type {EventBusPort} from "../application/ports/event-bus-port.js"
+import {domainEventBus} from "../infrastructure/event-bus.js"
 import {hashComposeContent} from "../lib/compose-parser.js"
 import {createComposeConfig, type ComposeConfig} from "../domain/compose-config.js"
 import {getStacksDir} from "../lib/stacks-dir.js"
@@ -91,15 +91,15 @@ export class FileWatcher extends WatcherJob {
 
     private watcher: FSWatcher | null = null
     private readonly repo: FileWatcherRepo | null
-    private readonly broadcaster: Pick<StateBroadcaster, "publish">
+    private readonly bus: Pick<EventBusPort, "emit">
 
     constructor(
         repo?: FileWatcherRepo,
-        broadcaster?: Pick<StateBroadcaster, "publish">,
+        bus?: Pick<EventBusPort, "emit">,
     ) {
         super()
         this.repo = repo ?? null
-        this.broadcaster = broadcaster ?? stateEventBroadcaster
+        this.bus = bus ?? domainEventBus
     }
 
     private async getRepo(): Promise<FileWatcherRepo> {
@@ -234,8 +234,7 @@ export class FileWatcher extends WatcherJob {
                 type: "config_error",
                 message: err.message,
             })
-            this.broadcaster.publish({
-                type: "config_error",
+            this.bus.emit("stack.config_error", {
                 stackId: stack.id,
                 message: err.message,
             })
@@ -258,8 +257,7 @@ export class FileWatcher extends WatcherJob {
             payload: JSON.stringify({oldHash, newHash}),
         })
         console.log(`[FileWatcher] Broadcasting config_changed event for ${stack.id}`)
-        this.broadcaster.publish({
-            type: "config_changed",
+        this.bus.emit("stack.config_changed", {
             stackId: stack.id,
             newHash,
             source: "external",
@@ -310,8 +308,7 @@ export class FileWatcher extends WatcherJob {
             type: "config_changed",
             payload: JSON.stringify({oldHash, newHash, source: "env"}),
         })
-        this.broadcaster.publish({
-            type: "config_changed",
+        this.bus.emit("stack.config_changed", {
             stackId: stack.id,
             newHash,
             source: "external",

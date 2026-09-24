@@ -44,9 +44,9 @@ function createMockFileWatcherRepo() {
     };
 }
 
-function createMockBroadcaster() {
+function createMockBus() {
     return {
-        publish: vi.fn(),
+        emit: vi.fn(),
     };
 }
 
@@ -125,7 +125,7 @@ describe("createFileWatcherRepo", () => {
 describe("FileWatcher", () => {
     let fileWatcher: FileWatcher;
     let mockRepo: ReturnType<typeof createMockFileWatcherRepo>;
-    let mockBroadcaster: ReturnType<typeof createMockBroadcaster>;
+    let mockBus: ReturnType<typeof createMockBus>;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let mockReadFile: any;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -138,8 +138,8 @@ describe("FileWatcher", () => {
     beforeEach(async () => {
         vi.clearAllMocks();
         mockRepo = createMockFileWatcherRepo();
-        mockBroadcaster = createMockBroadcaster();
-        fileWatcher = new FileWatcher(mockRepo as any, mockBroadcaster as any);
+        mockBus = createMockBus();
+        fileWatcher = new FileWatcher(mockRepo as any, mockBus as any);
 
         const fs = await import("node:fs/promises");
         mockReadFile = fs.readFile as ReturnType<typeof vi.fn>;
@@ -318,7 +318,7 @@ describe("FileWatcher", () => {
             );
         });
 
-        it("broadcasts config_changed SSE event via broadcaster.publish", async () => {
+        it("emits stack.config_changed via the bus", async () => {
             const fakePath = "/stacks/my-stack/docker-compose.yml";
             const fakeStack = {id: "stack-1", composeFilePath: fakePath, hash: "old-hash"};
             mockRepo.findStackByPath.mockResolvedValue(fakeStack);
@@ -328,8 +328,9 @@ describe("FileWatcher", () => {
 
             await (fileWatcher as any).handleFileChange(fakePath);
 
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith(
-                expect.objectContaining({type: "config_changed", stackId: fakeStack.id}),
+            expect(mockBus.emit).toHaveBeenCalledWith(
+                "stack.config_changed",
+                expect.objectContaining({stackId: fakeStack.id}),
             );
         });
 
@@ -343,12 +344,13 @@ describe("FileWatcher", () => {
 
             await (fileWatcher as any).handleFileChange(fakePath);
 
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith(
-                expect.objectContaining({type: "config_changed", source: "external"}),
+            expect(mockBus.emit).toHaveBeenCalledWith(
+                "stack.config_changed",
+                expect.objectContaining({source: "external"}),
             );
         });
 
-        it("broadcasts config_error SSE event with message via broadcaster.publish", async () => {
+        it("emits stack.config_error with message via the bus", async () => {
             const fakePath = "/stacks/my-stack/docker-compose.yml";
             const fakeStack = {id: "stack-1", composeFilePath: fakePath, hash: "old-hash"};
             mockRepo.findStackByPath.mockResolvedValue(fakeStack);
@@ -360,8 +362,9 @@ describe("FileWatcher", () => {
 
             await (fileWatcher as any).handleFileChange(fakePath);
 
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith(
-                expect.objectContaining({type: "config_error", stackId: fakeStack.id}),
+            expect(mockBus.emit).toHaveBeenCalledWith(
+                "stack.config_error",
+                expect.objectContaining({stackId: fakeStack.id}),
             );
         });
 
@@ -375,7 +378,7 @@ describe("FileWatcher", () => {
             await (fileWatcher as any).handleFileChange(fakePath);
 
             expect(mockRepo.createStackEvent).not.toHaveBeenCalled();
-            expect(mockBroadcaster.publish).not.toHaveBeenCalled();
+            expect(mockBus.emit).not.toHaveBeenCalled();
         });
 
         it("calls repo.syncServicesFromCompose with stack.id and the parsed ComposeConfig", async () => {
@@ -423,9 +426,7 @@ describe("FileWatcher", () => {
             await expect((fileWatcher as any).handleFileChange(fakePath)).rejects.toThrow("sync failed");
 
             expect(mockRepo.updateStackHash).not.toHaveBeenCalled();
-            expect(mockBroadcaster.publish).not.toHaveBeenCalledWith(
-                expect.objectContaining({type: "config_changed"}),
-            );
+            expect(mockBus.emit).not.toHaveBeenCalledWith("stack.config_changed", expect.anything());
         });
 
         it("does NOT call syncServicesFromCompose when the hash is unchanged", async () => {
@@ -557,15 +558,16 @@ describe("FileWatcher", () => {
             );
         });
 
-        it("publishes a config_changed SSE event on an env change", async () => {
+        it("emits stack.config_changed on an env change", async () => {
             mockRepo.findStackByPath.mockResolvedValue(fakeStack);
             mockReadFile.mockResolvedValue("DB_PASSWORD=secret");
             mockHashContent.mockReturnValue("new-env-hash");
 
             await (fileWatcher as any).handleEnvChange(envPath);
 
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith(
-                expect.objectContaining({type: "config_changed", stackId: "stack-1"}),
+            expect(mockBus.emit).toHaveBeenCalledWith(
+                "stack.config_changed",
+                expect.objectContaining({stackId: "stack-1"}),
             );
         });
 
@@ -576,8 +578,9 @@ describe("FileWatcher", () => {
 
             await (fileWatcher as any).handleEnvChange(envPath);
 
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith(
-                expect.objectContaining({type: "config_changed", stackId: "stack-1", source: "external"}),
+            expect(mockBus.emit).toHaveBeenCalledWith(
+                "stack.config_changed",
+                expect.objectContaining({stackId: "stack-1", source: "external"}),
             );
         });
 
@@ -589,11 +592,11 @@ describe("FileWatcher", () => {
             await (fileWatcher as any).handleEnvChange(envPath);
 
             const eventCall = mockRepo.createStackEvent.mock.calls[0][0];
-            const publishCall = mockBroadcaster.publish.mock.calls[0][0];
+            const emitCall = mockBus.emit.mock.calls[0];
             expect(JSON.stringify(eventCall)).not.toContain("super-secret-value");
             expect(JSON.stringify(eventCall)).not.toContain("DB_PASSWORD");
-            expect(JSON.stringify(publishCall)).not.toContain("super-secret-value");
-            expect(JSON.stringify(publishCall)).not.toContain("DB_PASSWORD");
+            expect(JSON.stringify(emitCall)).not.toContain("super-secret-value");
+            expect(JSON.stringify(emitCall)).not.toContain("DB_PASSWORD");
         });
 
         it("is a no-op when the env hash is unchanged", async () => {
@@ -605,7 +608,7 @@ describe("FileWatcher", () => {
 
             expect(mockRepo.updateEnvHash).not.toHaveBeenCalled();
             expect(mockRepo.createStackEvent).not.toHaveBeenCalled();
-            expect(mockBroadcaster.publish).not.toHaveBeenCalled();
+            expect(mockBus.emit).not.toHaveBeenCalled();
         });
 
         it("treats creating a .env where none existed (stored envHash null) as a change", async () => {
