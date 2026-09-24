@@ -314,4 +314,24 @@ describe("architecture: layering", () => {
             ).toHaveLength(0);
         });
     });
+
+    describe("no source file lives under a 'services' directory (D-11, 10-14)", () => {
+        // server/src/services/ was a leftover from before the current
+        // application/ + repositories/ split (empty except .gitkeep, deleted
+        // by plan 10-14). This rule guards against a future author
+        // recreating it out of habit rather than against a mistaken revert —
+        // the failure message names the layer that actually owns this kind
+        // of code so the fix is obvious, not just "the file is misplaced".
+        const allSrcFiles = listTsFilesRecursive(SRC_ROOT);
+        const offenders = allSrcFiles.filter((f) =>
+            relative(f).split("/").includes("services"),
+        );
+
+        it("no .ts file exists under a 'services' directory anywhere in server/src/", () => {
+            expect(
+                offenders.map(relative),
+                `The following file(s) live under a 'services' directory: ${offenders.map(relative).join(", ")} — application services belong in server/src/application/, not a separate services/ directory`,
+            ).toHaveLength(0);
+        });
+    });
 });
