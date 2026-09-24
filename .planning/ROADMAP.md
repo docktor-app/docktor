@@ -404,7 +404,7 @@ Independent of Phase 11 (separate server/client tracks — can run in parallel).
   4. CLAUDE.md's layering rules are enforced by an automated architecture fitness test rather than by review
   5. All three of D-15's side-effect categories — notifications, the `StackEvent` audit trail, and status/config broadcasts — reach their consumers through the in-process domain-event bus, with the SSE stream a browser observes unchanged (D-18)
 
-**Plans:** 10/15 plans executed
+**Plans:** 11/15 plans executed
 
 Plans:
 **Wave 1**
@@ -440,7 +440,7 @@ Plans:
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
-- [ ] 10-11-PLAN.md — Status and configuration broadcasts move onto the bus; the live-state broadcaster becomes a subscriber (D-15 item 3)
+- [x] 10-11-PLAN.md — Status and configuration broadcasts move onto the bus; the live-state broadcaster becomes a subscriber (D-15 item 3)
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
