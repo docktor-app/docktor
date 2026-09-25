@@ -8,12 +8,15 @@ updated: "2026-09-24T16:50:00Z"
 
 ## Current Test
 
-number: 4
-name: Audit-log freshness after an external edit (deferred by plan 10-13 — D-15 item 2, PD-11)
+number: 5
+name: The five integration test files against a live database (deferred by plan 10-09, consolidated at 10-15 Task 2)
 expected: |
-  With a stack detail page open, edit the stack's compose file directly on disk (valid, then
-  invalid). New StackEvent entries (config_changed, then config_error) appear in the event log
-  section without a manual refresh, rendered identically to pre-refactor entries.
+  On a host with a reachable PostgreSQL/Docker, `yarn workspace @docktor/server test:integration`
+  passes all five files unmodified, including `setup-concurrency.test.ts`'s first-run exclusive-
+  insert lock. Both this session's sandbox (no Docker daemon) and the execution session's sandbox
+  (Docker present, but Postgres wire-protocol handshake blocked, Prisma P1001) independently hit
+  the same long-standing host-level block documented in STATE.md since Phase 05.1 — an
+  unrestricted host is needed to actually run this to a pass/fail outcome.
 awaiting: user response
 
 ## Tests
@@ -70,7 +73,7 @@ expected: |
   With a stack detail page open, edit the stack's compose file directly on disk (valid, then
   invalid). New StackEvent entries (config_changed, then config_error) appear in the event log
   section without a manual refresh, rendered identically to pre-refactor entries.
-result: [pending]
+result: pass
 
 ### 5. The five integration test files against a live database (deferred by plan 10-09, consolidated at 10-15 Task 2)
 expected: |
@@ -85,9 +88,9 @@ result: [pending]
 ## Summary
 
 total: 5
-passed: 1
+passed: 2
 issues: 2
-pending: 2
+pending: 1
 skipped: 0
 blocked: 0
 
