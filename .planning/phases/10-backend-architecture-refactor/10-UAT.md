@@ -1,23 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 10-backend-architecture-refactor
 source: [10-VERIFICATION.md]
 started: "2026-09-24T16:50:00Z"
-updated: "2026-09-24T16:50:00Z"
+updated: "2026-09-25T00:00:00Z"
 ---
 
 ## Current Test
 
-number: 5
-name: The five integration test files against a live database (deferred by plan 10-09, consolidated at 10-15 Task 2)
-expected: |
-  On a host with a reachable PostgreSQL/Docker, `yarn workspace @docktor/server test:integration`
-  passes all five files unmodified, including `setup-concurrency.test.ts`'s first-run exclusive-
-  insert lock. Both this session's sandbox (no Docker daemon) and the execution session's sandbox
-  (Docker present, but Postgres wire-protocol handshake blocked, Prisma P1001) independently hit
-  the same long-standing host-level block documented in STATE.md since Phase 05.1 — an
-  unrestricted host is needed to actually run this to a pass/fail outcome.
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -83,14 +74,32 @@ expected: |
   (Docker present, but Postgres wire-protocol handshake blocked, Prisma P1001) independently hit
   the same long-standing host-level block documented in STATE.md since Phase 05.1 — an
   unrestricted host is needed to actually run this to a pass/fail outcome.
-result: [pending]
+result: issue
+reported: |
+  4 tests failed in test/integration/proxy.test.ts (16 tests, 4 failed, rest passed):
+  - "assigns a domain, writes the routing env vars + network into the compose file, and creates a ProxyConfig row" — expected 500 to be 201
+  - "returns 409 and leaves the target compose file untouched when the domain is already assigned to another service" — expected 500 to be 201 (on the first, setup assignment call)
+  - "returns the created row" (GET /api/stacks/:id/proxy-configs) — expected [] to have length 1 but got 0
+  - "removes the domain and returns 204, then returns 404 on a repeat delete" — expected 500 to be 201 (on the setup assignment call)
+  All 4 failures trace back to the same root action: POST /api/stacks/:id/services/:serviceName/proxy (domain assignment) returns 500 instead of 201. Every other test in the file (401 checks, deploy checks, settings checks, 400 validation checks) passed. This is on the user's own unrestricted host with a reachable live database — not the environmental Docker/Postgres connectivity block documented for this phase's sandboxed sessions; the DB is clearly reachable (other tests in the same file write real rows). Other 4 of the 5 integration test files were not reported as failing.
+severity: blocker
+note: |
+  Traced statically (not yet root-caused): ProxyService.assignDomain() (application/proxy-service.ts:211)
+  calls syncServiceComposeProxy() (line 316), which calls this.stackService.deployStack(stackId)
+  (line 330) after writing the compose file — a 500 here could originate in proxy-service.ts itself,
+  compose-rewriter.ts's setServiceProxyEnv, or stack-service.ts's deployStack, all Phase 10 refactor
+  surfaces. This is a genuine functional regression against the phase's own hard constraint ("the
+  five existing integration test files pass unmodified against a live database") — not an
+  environmental classification like the sandboxed sessions' P1001/no-daemon block. Full root-cause
+  diagnosis deferred to the standard diagnose_issues sub-flow (needs the actual 500 response body /
+  server-side stack trace, not available from the test's assertion-only failure output).
 
 ## Summary
 
 total: 5
 passed: 2
-issues: 2
-pending: 1
+issues: 3
+pending: 0
 skipped: 0
 blocked: 0
 
@@ -126,6 +135,18 @@ blocked: 0
     - path: "server/src/jobs/state-poller.ts"
       issue: "reconcile() (line 349) emits stack.status_changed unconditionally on every 60s tick for every known stack, with no comparison against the stack's previously recorded status — so NotificationWatcher.handleStatusChange logs and processes a 'status change' every tick even when nothing changed."
   missing: []
+
+- gap_id: G-10-4
+  truth: "The five existing integration test files pass unmodified against a live database (roadmap SC3 / the phase's own hard constraint)"
+  status: failed
+  reason: "User reported (on their own unrestricted host, live DB reachable): 4/16 tests in test/integration/proxy.test.ts fail. All 4 trace to POST /api/stacks/:id/services/:serviceName/proxy (domain assignment) returning 500 instead of 201. Every other test in the file passed."
+  severity: blocker
+  test: 5
+  artifacts:
+    - path: "server/src/application/proxy-service.ts"
+      issue: "assignDomain() (line 211) -> syncServiceComposeProxy() (line 316) -> stackService.deployStack() (line 330) is the traced call chain to a 500; exact root cause not yet identified — needs the server-side stack trace from a live run."
+  missing:
+    - "Server-side error/stack trace for the 500 response (test only asserts status code, not body)"
 
 ## Non-Blocking Advisory (from 10-REVIEW.md)
 
