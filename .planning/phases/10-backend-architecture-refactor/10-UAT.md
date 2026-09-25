@@ -107,7 +107,9 @@ blocked: 0
 
 - gap_id: G-10-1
   truth: "Startup log names all seven jobs in sequence (state poller, file watcher, update checker, disk checker, notification watcher, backup scheduler, proxy cert poller)"
-  status: failed
+  status: resolved
+  resolved_by: "10-16-PLAN.md (Task 2, commit 4075560)"
+  resolved_at: "2026-09-25"
   reason: "User reported: startup was successful, but I didnt see the proxy cert poller. Log shows FileWatcher, NotificationWatcher, BackupScheduler, and StatePoller lines but no ProxyCertPoller line."
   severity: major
   test: 1
@@ -127,7 +129,9 @@ blocked: 0
 
 - gap_id: G-10-2
   truth: "Opening a stack's Backups tab does not cause runaway, continuous network requests"
-  status: failed
+  status: resolved
+  resolved_by: "10-17-PLAN.md (Task 1, commit fad393e; freshness restored by Task 2, commit 423e9bc)"
+  resolved_at: "2026-09-25"
   reason: "User reported: when opening the backup tab, infinite requests are fired, and the page gets super slow."
   severity: major
   test: 3
@@ -142,7 +146,9 @@ blocked: 0
 
 - gap_id: G-10-3
   truth: "A notification 'status change' is only received when a stack's status actually changed, not on every poll tick"
-  status: failed
+  status: resolved
+  resolved_by: "10-16-PLAN.md (Task 1, commit c529427)"
+  resolved_at: "2026-09-25"
   reason: "User reported: I regularly get the following message: \"Received status change: stackId=docktor-proxy status=RUNNING\", it appears always directly after the state poller. The issue is that the status before was also RUNNING. I think this is a bug."
   severity: major
   test: 3
