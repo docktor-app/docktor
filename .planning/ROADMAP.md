@@ -22,7 +22,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 7: Release Hardening: Data Safety and Core Workflows** - Verify managed stacks directory survives container recreation before v1.0.0 (completed 2026-09-13)
 - [x] **Phase 8: Live State Consistency** - Make state changes (config errors, config edits, manual actions) reflect live in the UI without a manual refresh (completed 2026-09-20)
 - [x] **Phase 9: Deployment and Release Readiness** - Clean up deployment docs and close remaining release-process gaps for v1.0.0 (completed 2026-09-19)
-- [ ] **Phase 10: Backend Architecture Refactor** - Server-side architecture improvements without changing external API behavior, landed before other phases add new server-side code on top of the current structure — needs `/gsd-discuss-phase 10` to scope before planning ([#16](https://github.com/docktor-app/docktor/issues/16))
+- [x] **Phase 10: Backend Architecture Refactor** - Server-side architecture improvements without changing external API behavior, landed before other phases add new server-side code on top of the current structure — needs `/gsd-discuss-phase 10` to scope before planning ([#16](https://github.com/docktor-app/docktor/issues/16)) (completed 2026-09-25)
 - [ ] **Phase 11: UI Rework** - Clean up the UI's component structure and visual design (shadcn patterns, less Card wrapping, tab-structure reconsideration, consolidated logs, consistent status indicators) before other phases add new UI on top of current patterns — needs `/gsd-discuss-phase 11` to scope before planning ([#15](https://github.com/docktor-app/docktor/issues/15))
 - [ ] **Phase 12: Compose Safety and Templates** - Diff-before-apply, dangerous-config warnings, port-conflict detection, and git-based stack templates ([#18](https://github.com/docktor-app/docktor/issues/18), [#19](https://github.com/docktor-app/docktor/issues/19), [#20](https://github.com/docktor-app/docktor/issues/20), [#21](https://github.com/docktor-app/docktor/issues/21))
 - [ ] **Phase 13: Update Checker Reliability** - Fix misleading update badges, wrong upgrade-dialog messaging, slow post-deploy status, and stale database rows ([#29](https://github.com/docktor-app/docktor/issues/29), [#31](https://github.com/docktor-app/docktor/issues/31), [#32](https://github.com/docktor-app/docktor/issues/32), [#33](https://github.com/docktor-app/docktor/issues/33), [#34](https://github.com/docktor-app/docktor/issues/34))
@@ -404,7 +404,7 @@ Independent of Phase 11 (separate server/client tracks — can run in parallel).
   4. CLAUDE.md's layering rules are enforced by an automated architecture fitness test rather than by review
   5. All three of D-15's side-effect categories — notifications, the `StackEvent` audit trail, and status/config broadcasts — reach their consumers through the in-process domain-event bus, with the SSE stream a browser observes unchanged (D-18)
 
-**Plans:** 14/17 plans executed (15 phase plans, 2 gap closure: UAT diagnosed 3 code defects, 1 closed as environmental)
+**Plans:** 17/17 plans complete
 
 Plans:
 **Wave 1**
@@ -456,12 +456,12 @@ Plans:
 
 **Wave 12** *(blocked on Wave 11 completion)*
 
-- [ ] 10-15-PLAN.md — Phase gate: automated gate, decision-coverage table, live-database integration run, and the five deferred human checks
+- [x] 10-15-PLAN.md — Phase gate: automated gate, decision-coverage table, live-database integration run, and the five deferred human checks
 
 **Gap closure (UAT)** *(both independent, separate server/client files, one parallel wave; G-10-4 closed as environmental, no plan)*
 
-- [ ] 10-16-PLAN.md — G-10-3 + G-10-1: StatePoller reconcile emits `stack.status_changed` only on a real transition (no per-tick RUNNING->RUNNING spam on the notification log or the SSE stream); JobRegistry logs one started line per job so startup names all seven jobs
-- [ ] 10-17-PLAN.md — G-10-2: Backups tab request storm fixed. Fetch/poll lifecycle moves into a `useBackupHistory` hook keyed on stackId only, with a bounded schedule; new backups still appear, driven by the existing SSE status signal
+- [x] 10-16-PLAN.md — G-10-3 + G-10-1: StatePoller reconcile emits `stack.status_changed` only on a real transition (no per-tick RUNNING->RUNNING spam on the notification log or the SSE stream); JobRegistry logs one started line per job so startup names all seven jobs
+- [x] 10-17-PLAN.md — G-10-2: Backups tab request storm fixed. Fetch/poll lifecycle moves into a `useBackupHistory` hook keyed on stackId only, with a bounded schedule; new backups still appear, driven by the existing SSE status signal
 
 ### Phase 11: UI Rework
 
