@@ -60,6 +60,29 @@ describe("startJobs", () => {
         expect(proxyCertPoller.start).toHaveBeenCalledOnce()
     })
 
+    it("prints a started line naming all seven jobs, in registration order, on a successful boot (G-10-1)", async () => {
+        const consoleLog = vi.spyOn(console, "log").mockImplementation(() => undefined)
+
+        await startJobs()
+
+        const startedLines = consoleLog.mock.calls
+            .map((call) => call[0])
+            .filter((line): line is string => typeof line === "string" && line.startsWith("[JobRegistry] Started"))
+        const startedNames = startedLines.map((line) => line.replace(/^\[JobRegistry\] Started (\S+) .*$/, "$1"))
+
+        expect(startedNames).toEqual([
+            "StatePoller",
+            "FileWatcher",
+            "UpdateChecker",
+            "DiskChecker",
+            "NotificationWatcher",
+            "BackupScheduler",
+            "ProxyCertPoller",
+        ])
+
+        consoleLog.mockRestore()
+    })
+
     it("does not throw and still starts the remaining jobs when backup recovery fails (e.g. DB not ready yet on cold start)", async () => {
         vi.mocked(backupService.recoverInProgressBackups).mockRejectedValueOnce(
             new Error("ECONNREFUSED"),

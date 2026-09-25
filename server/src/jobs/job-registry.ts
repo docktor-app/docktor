@@ -61,13 +61,16 @@ export class JobRegistry implements JobHealthReporter {
      * Starts every registered job sequentially, in registration order, each
      * inside its own try/catch. Preserves the cold-start contract a
      * docker-compose start depends on: jobs start one at a time and one
-     * failure never blocks another job or the HTTP server.
+     * failure never blocks another job or the HTTP server. Each successful
+     * start is logged by name, so the startup log lists every running job
+     * in registration order (G-10-1).
      */
     async startAll(): Promise<void> {
         for (const job of this.jobs.values()) {
             try {
                 await job.start()
                 this.markRunning(job.name)
+                console.log(`[JobRegistry] Started ${job.name} (${job.kind})`)
             } catch (err) {
                 console.error(`[JobRegistry] ${job.name} failed to start:`, err)
                 this.markFailedToStart(job.name, err)

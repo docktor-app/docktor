@@ -115,6 +115,80 @@ describe("JobRegistry", () => {
             expect(health?.status).toBe("running")
             expect(health?.lastStartedAt).not.toBeNull()
         })
+
+        it("logs one started line per successfully started job, in registration order, naming each job's kind", async () => {
+            const jobA = createMockJob("A", "interval")
+            const jobB = createMockJob("B", "watcher")
+            registry.register(jobA as unknown as Job)
+            registry.register(jobB as unknown as Job)
+            const consoleLog = vi.spyOn(console, "log").mockImplementation(() => undefined)
+
+            await registry.startAll()
+
+            const startedLines = consoleLog.mock.calls
+                .map((call) => call[0])
+                .filter((line): line is string => typeof line === "string" && line.startsWith("[JobRegistry] Started"))
+            expect(startedLines).toEqual([
+                "[JobRegistry] Started A (interval)",
+                "[JobRegistry] Started B (watcher)",
+            ])
+
+            consoleLog.mockRestore()
+        })
+
+        it("prints no started line for a job whose start() throws synchronously, or whose start() rejects, while a later job still gets one", async () => {
+            const jobA = createMockJob("A", "interval")
+            const jobB = createMockJob("B", "interval")
+            jobA.start.mockImplementation(() => {
+                throw new Error("boom")
+            })
+            registry.register(jobA as unknown as Job)
+            registry.register(jobB as unknown as Job)
+            const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
+            const consoleLog = vi.spyOn(console, "log").mockImplementation(() => undefined)
+
+            await registry.startAll()
+
+            const startedLines = consoleLog.mock.calls
+                .map((call) => call[0])
+                .filter((line): line is string => typeof line === "string" && line.startsWith("[JobRegistry] Started"))
+            expect(startedLines).toEqual(["[JobRegistry] Started B (interval)"])
+
+            consoleError.mockRestore()
+            consoleLog.mockRestore()
+        })
+
+        it("prints the started line only after start() has resolved, not before", async () => {
+            const job = createMockJob("A", "interval")
+            let resolveStart: () => void = () => undefined
+            job.start.mockImplementation(
+                () =>
+                    new Promise<void>((resolve) => {
+                        resolveStart = resolve
+                    }),
+            )
+            registry.register(job as unknown as Job)
+            const consoleLog = vi.spyOn(console, "log").mockImplementation(() => undefined)
+
+            const startAllPromise = registry.startAll()
+            await Promise.resolve()
+            await Promise.resolve()
+
+            const startedLinesBeforeResolve = consoleLog.mock.calls
+                .map((call) => call[0])
+                .filter((line): line is string => typeof line === "string" && line.startsWith("[JobRegistry] Started"))
+            expect(startedLinesBeforeResolve).toEqual([])
+
+            resolveStart()
+            await startAllPromise
+
+            const startedLinesAfterResolve = consoleLog.mock.calls
+                .map((call) => call[0])
+                .filter((line): line is string => typeof line === "string" && line.startsWith("[JobRegistry] Started"))
+            expect(startedLinesAfterResolve).toEqual(["[JobRegistry] Started A (interval)"])
+
+            consoleLog.mockRestore()
+        })
     })
 
     describe("stopAll", () => {
