@@ -1,10 +1,11 @@
 ---
 phase: "11"
 slug: "ui-rework"
-status: draft
+status: approved
 shadcn_initialized: true
 preset: "new-york / neutral base / cssVariables / lucide icons / Tailwind v4 (@shadcn registry only)"
 created: "2026-09-25"
+reviewed_at: "2026-09-25"
 ---
 
 # Phase 11 — UI Design Contract
@@ -56,7 +57,7 @@ Do not edit files under `components/ui/` — they are shadcn-managed (CLAUDE.md)
 | Form | `@/components/ui/form` | All dialog forms — `react-hook-form` + `standardSchemaResolver`, matching `proxy-tab.tsx`/`service-upgrade-dialog.tsx` precedent |
 | Sheet | `@/components/ui/sheet` | Candidate for a mobile-viewport variant of a dialog/drawer if the D-17 mobile audit finds `Dialog` too cramped on small screens |
 | Sidebar | `@/components/ui/sidebar` | Unchanged nav shell — `SidebarTrigger` already used in `PageHeader` |
-| Tooltip | `@/components/ui/tooltip` | Truncated long values in the env table (Pitfall: long secret values) and icon-only buttons (dark-mode toggle, timeline filter icon) need an accessible label |
+| Tooltip | `@/components/ui/tooltip` | Truncated long values in the env table (Pitfall: long secret values) and every icon-only control — dark-mode toggle, timeline filter icon, and the per-row remove/edit icon buttons in the env table and proxy/backup dialogs — need an accessible label via `Tooltip` (or `aria-label` where a visible tooltip would be redundant with adjacent text) |
 | Alert | `@/components/ui/alert` | Existing `config_error` destructive alert precedent — reuse styling for any new inline error banners (e.g. compose save failure) |
 
 ---
@@ -101,6 +102,10 @@ no `font-bold` (700) in new code.
 - Body (14/400): default paragraph/table-cell text, dialog descriptions, env-table values
 - Heading (18/600): `CardTitle`/`DialogTitle`/section headers within the Config tab's two stacked sections (already shadcn's built-in default — no override needed when using those primitives)
 - Display (24/600): page titles (`PageTitle`), StatCard numeric values
+
+**Focal point per screen:** Dashboard — the StatCard row (Display-weight numbers draw the eye first,
+before the stack list below). Stack Detail — the header's status pill/badge and tab bar (the
+visitor's first question is "is this stack running," answered before any tab content loads).
 
 **Exceptions (pre-existing, out of scope to change):**
 - `components/ui/*.tsx` primitives (`Badge`, `Button`, `Label`) keep their built-in `font-medium` (500) — shadcn-managed, not edited per CLAUDE.md.
@@ -157,10 +162,12 @@ when extracting `getServiceColor()` to `lib/service-color.ts`.
 | Empty state — Unified timeline (D-07) | Heading: "No activity yet" · Body: "Deploys, status changes, and events for this stack will appear here." |
 | Empty state — Env table mode | Heading: "No environment variables" · Body: "Add a variable, or switch to raw text mode to paste an existing .env file." |
 | Empty state — Stack list (existing, unchanged) | "No stacks yet" (`DataTable`'s `emptyMessage` prop) |
+| Loading state — Backups log viewer (D-07 fold) | "Waiting for output…" (muted, shown before the backup stream's first line arrives) |
+| Accessible label — Dark-mode toggle (D-15/D-16) | `aria-label="Toggle theme"` on the icon-only sun/moon button |
 | Error state — Dialog/form submit failure | "Couldn't {save/remove/assign} {noun} — {ApiError.message}. Try again." surfaced via `sonner` toast (existing `ApiError` → toast pattern) and field-level errors via `ApiError.fields` → react-hook-form |
 | Error state — Compose YAML syntax (D-19, inline, no toast) | The `yaml` package's own `YAMLParseError.message` rendered verbatim as the CodeMirror gutter/inline diagnostic — do not paraphrase; it already carries line/column context |
 | Update-available copy (D-10) | Concrete new tag known: "Update available → {latestTag}" · Moving/untagged image: "Content updated" (never suppress, never say "update available" without a target when there isn't one) |
-| Destructive confirmation — Remove proxy domain | "Remove domain {domain}?" — body: "This deletes the routing and TLS configuration for this domain and redeploys the service." Buttons: "Remove domain" (destructive) / "Cancel" |
+| Destructive confirmation — Remove proxy domain | "Remove domain {domain}?" — body: "This deletes the routing and TLS configuration for this domain and redeploys the service." Buttons: "Remove domain" (destructive) / "Cancel" — plain "Cancel" is intentional here (unlike the "Keep editing" dismiss below): there is no in-progress edit to return to, just a destructive action to decline |
 | Destructive confirmation — Discard unsaved Config-tab edits | "Discard unsaved changes?" — body: "Your edits to {the compose file / environment variables} haven't been saved." Buttons: "Discard" (destructive) / "Keep editing" — triggered when switching table/raw mode or navigating away while `composeDirty`/`envDirty` is true |
 | Non-destructive — Env row removal (table mode) | No confirmation dialog — removing a row before Save is reversible (undo = don't save); the unsaved-changes guard above is the real safety net |
 
@@ -168,7 +175,8 @@ when extracting `getServiceColor()` to `lib/service-color.ts`.
 
 ## UI Considerations
 
-Applicable state considerations resolved: 17 covered, 3 backstop, 0 unresolved.
+Applicable state considerations resolved: 43 covered (explicit), 1 backstop, 11 dismissed, 0
+unresolved — 55 total across the 9 surfaces this phase introduces or materially changes.
 
 | Category | Element(s) | Status | Resolution / Reason |
 |----------|------------|--------|---------------------|
@@ -179,25 +187,49 @@ Applicable state considerations resolved: 17 covered, 3 backstop, 0 unresolved.
 | partial | Unified timeline (list-collection) | dismissed | All three source records (deployment/statusLog/event) are shaped by shared server schemas with required `id`+timestamp fields — a "partially populated" timeline entry is not a reachable state |
 | overflow | Unified timeline (list-collection) | ✅ covered | `ScrollArea` (see populated row) handles vertical overflow; entries never wrap into multi-column layout |
 | zero-one-many | Unified timeline (list-collection) | dismissed | Entries render as a plain list with no count/plural copy ("3 events") to get wrong — only the empty-vs-populated boundary matters, already covered above |
+| long-text | Unified timeline (static-content) | ✅ covered | Long event/status/deployment messages wrap inside their entry (`break-words`); they are never truncated, so the full message stays readable in place |
 | empty | Env editor table mode (form + list-collection) | ✅ covered | "No environment variables" empty state (see Copywriting) with an inline "Add Variable" affordance |
 | loading | Env editor table mode | dismissed | Env content loads as part of the stack detail page's existing single initial-load skeleton — the table itself has no independent async loading state |
 | error | Env editor table mode (form) | ✅ covered | Save failures surface via the standard `ApiError` → `sonner` toast + `ApiError.fields` → react-hook-form field errors (see Copywriting Error state row) |
 | populated | Env editor table mode (list-collection) | ✅ covered | Standard row-per-variable table via `useFieldArray`, inline-editable per D-21 |
 | partial | Env editor table mode (form) | ✅ covered | A row with a present key and empty value (`KEY=`) is valid `.env` syntax and must be allowed to save; a row with an empty key is invalid and blocks save (validation, not silent drop) |
 | overflow | Env editor table mode (list-collection) | ✅ covered | Row list wrapped in `ScrollArea` once it exceeds the fold, matching the timeline/backup-history precedent |
+| zero-one-many | Env editor table mode (list-collection) | dismissed | Rows render as a plain list with no count/plural copy to get wrong — only the empty-vs-populated boundary matters, already covered above |
 | long-text | Env editor table mode (form) | ✅ covered | Long values (e.g. base64 secrets) truncate in the table cell with a `Tooltip` revealing the full value on hover/focus; masked values (D-22) truncate the mask itself, not the real value |
+| empty | Compose editor (form) | ✅ covered | An empty compose document shows a muted `services:` placeholder in the editor rather than a blank pane; attempting to save an empty/invalid document surfaces the server's validation error as a toast (see Error state row below) |
 | loading | Compose editor (CodeMirror, form) | dismissed | Same page-level initial-load skeleton as the env editor — no independent editor-level loading state |
 | error | Compose editor (form) | ✅ covered | D-19's inline lint diagnostics (see Copywriting) for syntax errors; save failures use the same `ApiError` → toast path as every other form in this phase |
+| partial | Compose editor (form) | dismissed | The editor holds one text document, not discrete fields — there is no "some fields present, others missing" state distinct from "document parses" vs. "document has a YAML error," and the latter is already covered by the error row above |
 | long-text | Compose editor (static-content-like) | ✅ covered | Line-wrapping stays **off** (CodeMirror default) so YAML indentation is never visually ambiguous; long lines scroll horizontally within the fixed-height (400px) editor pane instead of reflowing |
 | overflow | Compose editor | ✅ covered | Same fixed-height editor pane with internal vertical scroll — matches the "Compose editor wired to dark mode" code example's `height="400px"` |
+| empty | Proxy assign dialog (form) | ✅ covered | The Assign flow opens with every field empty; the Edit flow opens pre-filled with the current domain and TLS setting — the two flows share the dialog but never both look empty |
 | loading, error, partial | Proxy assign dialog (form) | ✅ covered | Follows `service-upgrade-dialog.tsx`'s established Dialog-with-form pattern exactly: submit-button loading state via `toast.promise`, field errors via `ApiError.fields`, Zod `superRefine` already enforces required-field pairing (existing `assignDomainSchema`) |
+| long-text | Proxy assign dialog (form) | ✅ covered | Long domain values truncate with a `Tooltip` revealing the full value in the Proxy tab's list (same Tooltip pattern as the env table); inside the dialog's own input the value scrolls natively rather than truncating |
+| empty | Backup schedule dialog (form) | ✅ covered | Opens pre-filled with the current schedule and retention if one is configured, or with sensible defaults if none is set yet — never a blank required field on first open |
 | loading, error, partial | Backup schedule dialog (form) | ✅ covered | Same Dialog-with-form pattern as the proxy dialog — no new interaction model introduced |
+| long-text | Backup schedule dialog (form) | dismissed | Both fields (cron schedule, retention count) are short, bounded-format inputs — no long-text case is reachable |
+| empty | Dashboard StatCards (list-collection) | ✅ covered | Same zero-stacks case as the populated/zero-one-many row below: every card (including the two new ones) renders `0`, not a hidden or broken layout |
+| loading | Dashboard StatCards (list-collection) | ✅ covered | The two new cards (Updates Available, Backups Configured) reuse the exact `Skeleton` placeholder already used by the four existing cards in `dashboard.tsx` — no new loading treatment introduced |
+| error | Dashboard StatCards (list-collection) | ✅ covered | If the underlying stacks query fails, every card shows `—` (em dash) instead of a number; the page's existing error-handling/toast path applies unchanged |
 | populated, zero-one-many | Dashboard StatCards (static-content group) | ✅ covered | A fresh install with zero stacks renders every stat card at `0`, not a broken/hidden layout — matches existing `total`/`running`/`stopped`/`errors` computation pattern extended to the two new stats |
+| partial | Dashboard StatCards (list-collection) | ✅ covered | Missing image-update-check data (no `ImageUpdateCheck` join for a stack) or a stack with no backup schedule counts as `0` toward "Updates Available"/"Backups Configured" rather than excluding the stack or blocking the card |
 | long-text | Dashboard StatCards (static-content) | 🧪 backstop | Large stat values (4+ digits, e.g. a future multi-hundred-stack install) must not overflow the fixed StatCard layout — needs an explicit rendering test at a large synthetic count, not just visual review |
 | overflow | Dashboard StatCards row | ✅ covered | Existing `grid gap-4 md:grid-cols-4` wraps to fewer columns on narrow viewports; extending to 6 cards falls under the D-17 mobile audit's explicit scope |
 | loading | Status pill / pulsing "running" dot (interactive-control-adjacent) | ✅ covered | D-08 (locked): the pulsing dot **is** the in-flight/transitional-state indicator for `RUNNING` and the blue transitional states (`DEPLOYING`/`UPDATING`/`BACKING_UP`) — no separate loading treatment needed |
+| error | Status pill / badges | ✅ covered | An unknown or unmapped status value renders a static gray dot/badge — the same treatment as `STOPPED`/`DRAFT` — rather than crashing, rendering blank, or throwing an unhandled enum case |
 | overflow | Status pills row (badges wrapping) | ✅ covered | Existing `flex flex-wrap items-center gap-1` container (`stack-list.tsx`) already handles multiple simultaneous badges (status + config-error + config-changed + update-available); reuse unchanged |
 | long-text | Status pills | dismissed | Pill labels come from a fixed, short server-defined enum (never free user text) — long-text overflow is not a reachable state |
+| loading | Dark-mode toggle (interactive-control) | ✅ covered | The theme resolves before paint via `next-themes`' script injection (no flash of the wrong theme); the toggle itself renders a neutral placeholder icon until the client has mounted, per `next-themes`' documented SSR/hydration pattern |
+| error | Dark-mode toggle (interactive-control) | ✅ covered | If `localStorage` is unavailable or throws, the toggle falls back to the OS/system preference silently — matches D-15's already-locked default-to-OS-preference behavior; no error UI is shown |
+| long-text | Dark-mode toggle (interactive-control) | dismissed | Icon-only control (sun/moon) with an `aria-label` — there is no text content that can overflow |
+| empty | Backups log viewer (list-collection) | ✅ covered | Mirrors `log-viewer.tsx`'s existing "no output yet" treatment rather than inventing a new empty state for the extracted shared component |
+| loading | Backups log viewer (list-collection) | ✅ covered | A muted "Waiting for output…" line shows while the backup stream connects, before the first line arrives |
+| error | Backups log viewer (list-collection) | ✅ covered | Stream disconnects reuse the log viewer's existing disconnected indicator — no separate error treatment for the backup case |
+| populated | Backups log viewer (list-collection) | ✅ covered | Renders restic output the same way `log-viewer.tsx` already renders container logs — reused verbatim after the presentational extraction (11-RESEARCH.md), not a new rendering path |
+| partial | Backups log viewer (list-collection) | dismissed | Streamed output is a flat sequence of lines with no structured "some fields present" state distinct from "more lines still arriving," which the loading/populated rows already cover |
+| overflow | Backups log viewer (list-collection) | ✅ covered | The existing auto-scrolling `ScrollArea` (same component as the current log viewer) handles vertical overflow unchanged |
+| zero-one-many | Backups log viewer (list-collection) | dismissed | Log output is a raw line stream with no count/plural copy to get wrong — only the empty-vs-populated boundary matters, already covered above |
+| long-text | Backups log viewer (static-content) | ✅ covered | Lines wrap (`whitespace-pre-wrap break-all`) rather than scrolling horizontally — the opposite choice from the compose editor, deliberately: log lines have no indentation semantics worth protecting the way YAML does |
 
 ---
 
@@ -220,15 +252,15 @@ positives from a recency-only heuristic on long-established packages — is alre
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
-- [ ] Dimension 7 Inventory Provenance: PASS
+- [x] Dimension 1 Copywriting: FLAG → addressed (non-blocking recommendation applied: the Remove-domain dialog's "Cancel" now carries a note distinguishing it from "Keep editing")
+- [x] Dimension 2 Visuals: FLAG → addressed (non-blocking recommendations applied: added a Focal Point statement per screen; extended the Tooltip/accessible-label requirement to env-table and dialog row icon buttons)
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
+- [x] Dimension 7 Inventory Provenance: PASS
 
-**Approval:** pending
+**Approval:** approved (2026-09-25) — 5/7 PASS, 2 non-blocking FLAGs recorded above for the planner to pick up opportunistically
 
 ---
 
