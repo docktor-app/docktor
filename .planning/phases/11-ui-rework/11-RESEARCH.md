@@ -453,22 +453,25 @@ export function ComposeEditor({value, onChange}: {value: string; onChange: (v: s
 
 **Note:** All other claims in this research (file paths, line numbers, existing component shapes, server route/join behavior, CSS token presence) were verified by reading the actual source files this session and are tagged `[VERIFIED: <path>:<lines>]` inline where they appear, or stated as plain facts backed by a `Read`/`Bash grep` in this session's tool transcript.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should `StatCard` (D-14) live in `components/common/` or `components/domain/stack/`?**
    - What we know: CONTEXT.md explicitly leaves this to Claude's discretion, and CLAUDE.md's own component checklist says generic (label/value/icon-parameterized) components belong in `common/`.
    - What's unclear: whether the "updates-available count" / "pending-backups count" stat variants need domain-specific formatting logic embedded in the card itself (which would push it toward `domain/`) or can stay purely presentational with the domain logic computed by the caller (`dashboard.tsx`) and passed as props.
    - Recommendation: build `StatCard` as a pure `{label, value, icon, valueClassName?}` presentational component in `components/common/`, per CLAUDE.md's own checklist — compute the updates-available/pending-backups counts in `dashboard.tsx` itself (it already computes `total`/`running`/`stopped`/`errors` the same way).
+   - **RESOLVED:** Recommendation adopted as-is — `StatCard` is a pure presentational component in `components/common/`, with dashboard-specific counts computed in `dashboard.tsx`. Implemented by 11-04-PLAN.md Task 1.
 
 2. **Does D-09's stack-level badge on the detail-page header need a new component, or can it reuse the per-service pill from `services-tab.tsx`?**
    - What we know: The per-service pill already has the D-10 copy logic needed (`update available → x.y.z` vs. a bare fallback) once D-10 is implemented there.
    - What's unclear: whether "stack-level" should aggregate to a single badge (e.g., "3 updates available") or just a boolean presence indicator mirroring the config-changed pill's binary on/off styling.
    - Recommendation: mirror the config-changed pill exactly, as D-09 literally specifies ("mirroring exactly how... config changed badge is placed/styled") — a binary presence pill, not a count, keeping parity with the existing pattern it's explicitly asked to copy.
+   - **RESOLVED:** Recommendation adopted as-is — a binary presence pill mirroring the config-changed pill's styling, not a count. Implemented by 11-02-PLAN.md (component) and 11-06-PLAN.md Task 2 (detail-header placement).
 
 3. **Mobile audit (D-17) scope boundary between "fix in this phase" and "file as follow-up todo"**
    - What we know: D-17 asks for a full component-by-component audit, not a spot-fix.
    - What's unclear: whether every finding must be fixed in-phase or whether low-severity findings can be filed as follow-up GitHub issues (per CLAUDE.md's issue-tracking process) if the audit surfaces more than fits in this phase's scope.
    - Recommendation: the planner should timebox the audit itself as one task, then triage findings into "fix now" (breaks core Docktor UAT flows on mobile — deploy, view logs, view status) vs. "file as issue" (cosmetic misalignment), consistent with how Phase 9's UAT findings were triaged.
+   - **RESOLVED:** Recommendation adopted as-is — the audit is timeboxed as its own task with a fix-now (core UAT flows) vs. file-an-issue (cosmetic) triage. Implemented by 11-13-PLAN.md Task 2.
 
 ## Environment Availability
 
