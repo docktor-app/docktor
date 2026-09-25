@@ -404,7 +404,7 @@ Independent of Phase 11 (separate server/client tracks — can run in parallel).
   4. CLAUDE.md's layering rules are enforced by an automated architecture fitness test rather than by review
   5. All three of D-15's side-effect categories — notifications, the `StackEvent` audit trail, and status/config broadcasts — reach their consumers through the in-process domain-event bus, with the SSE stream a browser observes unchanged (D-18)
 
-**Plans:** 14/15 plans executed
+**Plans:** 14/17 plans executed (15 phase plans, 2 gap closure: UAT diagnosed 3 code defects, 1 closed as environmental)
 
 Plans:
 **Wave 1**
@@ -457,6 +457,11 @@ Plans:
 **Wave 12** *(blocked on Wave 11 completion)*
 
 - [ ] 10-15-PLAN.md — Phase gate: automated gate, decision-coverage table, live-database integration run, and the five deferred human checks
+
+**Gap closure (UAT)** *(both independent, separate server/client files, one parallel wave; G-10-4 closed as environmental, no plan)*
+
+- [ ] 10-16-PLAN.md — G-10-3 + G-10-1: StatePoller reconcile emits `stack.status_changed` only on a real transition (no per-tick RUNNING->RUNNING spam on the notification log or the SSE stream); JobRegistry logs one started line per job so startup names all seven jobs
+- [ ] 10-17-PLAN.md — G-10-2: Backups tab request storm fixed. Fetch/poll lifecycle moves into a `useBackupHistory` hook keyed on stackId only, with a bounded schedule; new backups still appear, driven by the existing SSE status signal
 
 ### Phase 11: UI Rework
 
