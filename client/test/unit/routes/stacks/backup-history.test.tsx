@@ -68,4 +68,36 @@ describe("BackupHistory (tracer)", () => {
         expect(screen.getByText("View details")).toBeInTheDocument();
         expect(mockGetBackups).toHaveBeenCalledTimes(4);
     });
+
+    it("shows a newly started backup after a stackStatus change, driven by the live status signal (Task 2)", async () => {
+        vi.useFakeTimers();
+        mockGetBackups.mockImplementation(async () => [makeBackup({id: "b1", status: "COMPLETED"})]);
+
+        const {rerender} = render(
+            <MemoryRouter>
+                <BackupHistory stackId="s1" stackStatus="RUNNING" />
+            </MemoryRouter>,
+        );
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(40000);
+        });
+
+        mockGetBackups.mockImplementation(async () => [
+            makeBackup({id: "b1", status: "COMPLETED"}),
+            makeBackup({id: "b2", status: "IN_PROGRESS", completedAt: null}),
+        ]);
+
+        rerender(
+            <MemoryRouter>
+                <BackupHistory stackId="s1" stackStatus="BACKING_UP" />
+            </MemoryRouter>,
+        );
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(0);
+        });
+
+        expect(screen.getByText("In progress...")).toBeInTheDocument();
+    });
 });

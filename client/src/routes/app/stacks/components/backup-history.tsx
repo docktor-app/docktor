@@ -8,6 +8,7 @@ import {ScrollArea} from "@/components/ui/scroll-area";
 
 interface BackupHistoryProps {
     readonly stackId: string;
+    readonly stackStatus: string;
 }
 
 function formatDuration(startedAt: string, completedAt: string | null): string {
@@ -37,8 +38,8 @@ const TRIGGER_LABELS: Record<BackupRecord["trigger"], string> = {
     RESTORE: "Restore",
 };
 
-export function BackupHistory({stackId}: Readonly<BackupHistoryProps>) {
-    const {backups, loading} = useBackupHistory(stackId);
+export function BackupHistory({stackId, stackStatus}: Readonly<BackupHistoryProps>) {
+    const {backups, loading} = useBackupHistory(stackId, stackStatus);
 
     return (
         <div className="space-y-3">

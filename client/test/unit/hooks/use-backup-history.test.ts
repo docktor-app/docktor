@@ -248,4 +248,76 @@ describe("useBackupHistory", () => {
         expect(BACKUP_HISTORY_POLL_INTERVAL_MS).toBe(3000);
         expect(BACKUP_HISTORY_GRACE_WINDOW_MS).toBe(30_000);
     });
+
+    describe("status-driven refresh (Task 2)", () => {
+        it("mounts with a stackStatus causing no duplicate fetch, and a same-value re-render adds zero calls", async () => {
+            vi.useFakeTimers();
+            mockGetBackups.mockImplementation(async () => [makeBackup({status: "COMPLETED"})]);
+
+            const {rerender} = renderHook(
+                ({stackId, stackStatus}) => useBackupHistory(stackId, stackStatus),
+                {initialProps: {stackId: "s1", stackStatus: "RUNNING"}},
+            );
+
+            expect(mockGetBackups).toHaveBeenCalledTimes(1);
+
+            rerender({stackId: "s1", stackStatus: "RUNNING"});
+
+            expect(mockGetBackups).toHaveBeenCalledTimes(1);
+        });
+
+        it("a status change after the grace window triggers one immediate refresh, resumes polling while in progress, and stops again once completed", async () => {
+            vi.useFakeTimers();
+            mockGetBackups.mockImplementation(async () => [makeBackup({status: "COMPLETED"})]);
+
+            const {rerender} = renderHook(
+                ({stackId, stackStatus}) => useBackupHistory(stackId, stackStatus),
+                {initialProps: {stackId: "s1", stackStatus: "RUNNING"}},
+            );
+
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(40000);
+            });
+            const countAt40s = mockGetBackups.mock.calls.length;
+
+            mockGetBackups.mockImplementation(async () => [
+                makeBackup({status: "IN_PROGRESS", completedAt: null}),
+            ]);
+            rerender({stackId: "s1", stackStatus: "BACKING_UP"});
+            expect(mockGetBackups.mock.calls.length).toBe(countAt40s + 1);
+
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(10000);
+            });
+            expect(mockGetBackups.mock.calls.length).toBe(countAt40s + 1 + 3);
+            const countAt50s = mockGetBackups.mock.calls.length;
+
+            mockGetBackups.mockImplementation(async () => [makeBackup({status: "COMPLETED"})]);
+            rerender({stackId: "s1", stackStatus: "RUNNING"});
+            expect(mockGetBackups.mock.calls.length).toBe(countAt50s + 1);
+            const countAfterRunningRefresh = mockGetBackups.mock.calls.length;
+
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(30000);
+            });
+            expect(mockGetBackups.mock.calls.length).toBe(countAfterRunningRefresh);
+        });
+
+        it("switching stackId and stackStatus together causes exactly one call for the new stack", async () => {
+            vi.useFakeTimers();
+            mockGetBackups.mockImplementation(async () => [makeBackup({status: "COMPLETED"})]);
+
+            const {rerender} = renderHook(
+                ({stackId, stackStatus}) => useBackupHistory(stackId, stackStatus),
+                {initialProps: {stackId: "s1", stackStatus: "RUNNING"}},
+            );
+
+            const countBeforeSwitch = mockGetBackups.mock.calls.length;
+
+            rerender({stackId: "s2", stackStatus: "BACKING_UP"});
+
+            expect(mockGetBackups.mock.calls.length).toBe(countBeforeSwitch + 1);
+            expect(mockGetBackups).toHaveBeenLastCalledWith("s2");
+        });
+    });
 });

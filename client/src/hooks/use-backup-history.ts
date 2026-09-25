@@ -1,4 +1,4 @@
-import {useEffect, useState} from "react"
+import {useEffect, useRef, useState} from "react"
 
 import {getBackups, type BackupRecord} from "@/lib/backups-api"
 
@@ -26,9 +26,21 @@ export interface UseBackupHistoryResult {
  * `backups` retriggers the effect on every single fetch, producing an
  * unbounded request storm bound only by round-trip latency.
  */
-export function useBackupHistory(stackId: string): UseBackupHistoryResult {
+export function useBackupHistory(stackId: string, stackStatus: string): UseBackupHistoryResult {
     const [backups, setBackups] = useState<BackupRecord[]>([])
     const [loading, setLoading] = useState(true)
+
+    // Holds the current [stackId] effect run's own fetch function, so the
+    // status-change effect below can trigger a refresh without duplicating
+    // any scheduling logic — Task 1's after-fetch logic already re-arms the
+    // interval when the result contains an IN_PROGRESS backup and stops it
+    // once nothing is in progress past the grace window.
+    const refreshRef = useRef<(() => Promise<void>) | null>(null)
+    // Tracks the last {stackId, stackStatus} pair the status effect has
+    // already reacted to, so it can tell an actual status change (refresh)
+    // apart from a stackId change (already handled by the polling effect)
+    // or a same-value re-render (nothing to do).
+    const lastSeenRef = useRef({stackId, stackStatus})
 
     useEffect(() => {
         let cancelled = false
@@ -77,6 +89,8 @@ export function useBackupHistory(stackId: string): UseBackupHistoryResult {
             }
         }
 
+        refreshRef.current = fetchBackups
+
         void fetchBackups()
         ensureIntervalRunning()
         graceTimerHandle = setTimeout(() => {
@@ -90,8 +104,31 @@ export function useBackupHistory(stackId: string): UseBackupHistoryResult {
             cancelled = true
             stopInterval()
             if (graceTimerHandle) clearTimeout(graceTimerHandle)
+            refreshRef.current = null
         }
     }, [stackId])
+
+    // A backup or restore started while the tab is open always moves the
+    // stack through BACKING_UP/RESTORING and back — the page already
+    // receives those transitions over its existing SSE subscription, so a
+    // status change is the refresh signal. This keeps the history fresh
+    // past the grace window with no second EventSource and no open-ended
+    // polling (CLAUDE.md: do not poll for state available via SSE).
+    useEffect(() => {
+        const last = lastSeenRef.current
+
+        if (last.stackId !== stackId) {
+            // The polling effect above already fetches for the new stack;
+            // just record the new pair.
+            lastSeenRef.current = {stackId, stackStatus}
+            return
+        }
+
+        if (last.stackStatus !== stackStatus) {
+            lastSeenRef.current = {stackId, stackStatus}
+            void refreshRef.current?.()
+        }
+    }, [stackId, stackStatus])
 
     return {backups, loading}
 }
