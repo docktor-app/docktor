@@ -341,15 +341,23 @@ export class StatePoller extends WatcherJob {
 
                 console.log(`[StatePoller] Reconcile: stack=${stack.id}, derived=${derivedStatus}, services=[${updatedServices.map((s, i) => `${stack.services[i]?.serviceName}:${s.containerState}`).join(", ")}]`)
 
-                // Update stack status in DB
-                await repo.updateStackStatus(stack.id, derivedStatus)
+                // Update stack status in DB. Returns the created statusLog
+                // row only when the status actually changed — the
+                // repository returns null and skips the write when the
+                // derived status equals the stack's current status. The
+                // event below fires only when the repository reports a
+                // real transition, so a steady-state tick is silent for
+                // both the notification watcher and the live-state stream.
+                const statusLog = await repo.updateStackStatus(stack.id, derivedStatus)
 
                 // Emit the domain event — the state-broadcast subscriber
                 // turns this into the stack_status SSE event.
-                this.bus.emit("stack.status_changed", {
-                    stackId: stack.id,
-                    status: derivedStatus,
-                })
+                if (statusLog) {
+                    this.bus.emit("stack.status_changed", {
+                        stackId: stack.id,
+                        status: derivedStatus,
+                    })
+                }
             } catch (err) {
                 console.error(`[StatePoller] reconcile error for project ${project}:`, err)
             }
