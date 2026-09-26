@@ -122,7 +122,7 @@ test.describe("Proxy UI", () => {
         await expect(page.getByLabel(/^domain$/i)).not.toBeVisible();
     });
 
-    test("shows the empty state and assigns a new domain", async ({page}) => {
+    test("shows the empty state and assigns a new domain via the dialog", async ({page}) => {
         await mockProxyConfigs(page, []);
         await mockProxySettings(page, {deployed: true});
 
@@ -138,15 +138,46 @@ test.describe("Proxy UI", () => {
 
         await expect(page.getByText("No domains configured")).toBeVisible();
 
+        await page.getByRole("button", {name: "Assign Domain"}).click();
+        await expect(page.getByRole("heading", {name: "Assign Domain"})).toBeVisible();
+
         await page.getByLabel(/^domain$/i).fill("new.example.com");
         await page.getByLabel(/internal port/i).fill("8080");
 
-        await page.getByRole("button", {name: "Assign Domain"}).click();
+        await page.getByRole("button", {name: "Save Domain"}).click();
 
         await expect.poll(() => assignBody).toEqual(
             expect.objectContaining({domain: "new.example.com", internalPort: 8080}),
         );
         await expect(page.getByText("Domain assigned")).toBeVisible();
+    });
+
+    test("edits an existing domain's internal port through the dialog", async ({page}) => {
+        await mockProxyConfigs(page, [makeProxyConfig({id: "cfg-1", domain: "app.example.com", internalPort: 80})]);
+        await mockProxySettings(page, {deployed: true});
+
+        let assignBody: Record<string, unknown> | null = null;
+        await page.route("**/api/stacks/test-stack/services/web/proxy", async (route) => {
+            if (route.request().method() === "POST") {
+                assignBody = JSON.parse(route.request().postData() || "{}");
+                await route.fulfill({status: 201, json: makeProxyConfig(assignBody ?? {})});
+            }
+        });
+
+        await page.goto("/stacks/test-stack/proxy");
+        await expect(page.getByText("app.example.com")).toBeVisible();
+
+        await page.getByRole("button", {name: /edit app\.example\.com/i}).click();
+        await expect(page.getByRole("heading", {name: "Edit app.example.com"})).toBeVisible();
+        await expect(page.getByLabel(/^domain$/i)).toHaveValue("app.example.com");
+
+        await page.getByLabel(/internal port/i).fill("9090");
+        await page.getByRole("button", {name: "Save Domain"}).click();
+
+        await expect.poll(() => assignBody).toEqual(
+            expect.objectContaining({domain: "app.example.com", internalPort: 9090}),
+        );
+        await expect(page.getByText("Domain updated")).toBeVisible();
     });
 
     test("renders both live cert statuses for two domains on one service row", async ({page}) => {
@@ -182,10 +213,15 @@ test.describe("Proxy UI", () => {
 
         await page.getByRole("button", {name: /remove app\.example\.com/i}).click();
 
-        await expect(page.getByText(/redeployed without this domain's routing and TLS configuration/i)).toBeVisible();
+        await expect(page.getByText("Remove domain app.example.com?")).toBeVisible();
+        await expect(
+            page.getByText(
+                "This deletes the routing and TLS configuration for this domain and redeploys the service.",
+            ),
+        ).toBeVisible();
         expect(deleteCalled).toBe(false);
 
-        await page.getByRole("button", {name: "Remove"}).click();
+        await page.getByRole("button", {name: "Remove domain"}).click();
 
         await expect.poll(() => deleteCalled).toBe(true);
         await expect(page.getByText("Domain removed")).toBeVisible();
