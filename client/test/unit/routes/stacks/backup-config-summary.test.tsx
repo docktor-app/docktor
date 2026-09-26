@@ -42,6 +42,14 @@ vi.mock("sonner", () => ({
     },
 }));
 
+// Bumped from the 5s default: this suite is CPU-bound (userEvent interactions
+// + full Section/Dialog render) and flakes under this host's
+// full-parallel-suite resource contention, the same documented class of
+// flake as proxy-tab.test.tsx/service-upgrade-dialog.test.tsx
+// (05.1-01-SUMMARY.md/STATE.md) — every test here passes reliably in
+// isolation or in small groups.
+vi.setConfig({testTimeout: 15000});
+
 const mockGetBackupConfig = vi.mocked(getBackupConfig);
 const mockGetVolumeWarnings = vi.mocked(getVolumeWarnings);
 const mockTriggerBackup = vi.mocked(triggerBackup);
