@@ -217,6 +217,10 @@ None - no external service configuration required.
 
 `StatCard`, `computeDashboardStats()`, and `useBackupDefaults()` are stable, reusable contracts for any later phase-11 plan that needs a single-number metric card or the backup-defaults endpoint. `useStacks()`'s `fetchStacks(mode)` split is now consistent with `use-stack.ts`, so 11-06/11-07/11-08 (further D-03 Card-flattening plans) can follow the same background-refresh pattern without reinventing it. 11-05 (server-side `updateAvailable` enrichment) is the next wave-2 plan; until it lands, "Updates Available" truthfully reports 0 for every stack (per the plan's own `key_links` note), which is expected, not a bug.
 
+## Self-Check: PASSED
+
+All created files found on disk (stat-card.tsx, dashboard-stats.ts, use-backup-defaults.ts, dashboard-stat-cards.tsx, and their three unit test files); all three commits (`01c10bd`, `e12d0b1`, `3761fb7`) found in `git log --oneline --all`.
+
 ---
 *Phase: 11-ui-rework*
 *Completed: 2026-09-26*
