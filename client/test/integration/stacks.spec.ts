@@ -92,6 +92,21 @@ async function mockStacksList(page: Page, stacks = mockStacks) {
 }
 
 /**
+ * Mock the dashboard's GET /api/settings/backup-defaults call (useBackupDefaults,
+ * D-14) — every dashboard-rendering test must stub it, or the fixtures.ts
+ * unstubbed-API guard fails the test.
+ */
+async function mockBackupDefaults(page: Page, defaultSchedule: string | null = null) {
+    await page.route("**/api/settings/backup-defaults", (route) =>
+        route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({defaultSchedule, defaultRetention: null}),
+        }),
+    );
+}
+
+/**
  * Mock the stack detail page's Overview > Event Log card
  * (GET /api/stacks/:id/events, via useStackEvents). Every test that renders
  * a stack detail page triggers this call.
@@ -325,7 +340,18 @@ test.describe("Stacks", () => {
 
     test("dashboard shows stack stats and recent stacks", async ({page}) => {
         await mockAuthenticated(page);
-        await mockStacksList(page);
+        // D-14: give one stack a service with an update and a backup
+        // schedule, so both new stat cards report a non-zero count.
+        const dashboardStacks = [
+            {
+                ...mockStacks[0],
+                backupSchedule: "0 3 * * *",
+                services: [{...mockStacks[0].services[0], updateAvailable: true}],
+            },
+            mockStacks[1],
+        ];
+        await mockStacksList(page, dashboardStacks);
+        await mockBackupDefaults(page);
 
         await page.goto("/");
 
@@ -333,6 +359,15 @@ test.describe("Stacks", () => {
         await expect(page.getByText("Total Stacks")).toBeVisible();
         await expect(page.getByText("Running").first()).toBeVisible();
         await expect(page.getByText("My App")).toBeVisible();
+
+        // D-14: the two new stat cards, both showing a value of 1.
+        const updatesCard = page.locator('[data-slot="stat-card"]', {hasText: "Updates Available"});
+        await expect(updatesCard).toBeVisible();
+        await expect(updatesCard.getByText("1", {exact: true})).toBeVisible();
+
+        const backupsCard = page.locator('[data-slot="stat-card"]', {hasText: "Backups Configured"});
+        await expect(backupsCard).toBeVisible();
+        await expect(backupsCard.getByText("1", {exact: true})).toBeVisible();
     });
 
     test("breadcrumbs show correct navigation on detail page", async ({page}) => {
