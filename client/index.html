@@ -3,6 +3,45 @@
 <head>
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <meta name="color-scheme" content="light dark"/>
+    <script>
+      (function () {
+        function prefersDark() {
+          return typeof window.matchMedia === "function"
+            && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        }
+
+        // Mirrors next-themes' storage key/values so the class it settles on
+        // matches this pre-paint guess exactly once React mounts (no flash).
+        // The stored value is only ever compared against these three fixed
+        // strings — never evaluated, injected, or assigned anywhere (T-11-08).
+        var isDark;
+        try {
+          var stored = window.localStorage.getItem("theme");
+          if (stored === "dark") {
+            isDark = true;
+          } else if (stored === "light") {
+            isDark = false;
+          } else {
+            // Missing, "system", or any unrecognized value follows the OS.
+            isDark = prefersDark();
+          }
+        } catch (e) {
+          // localStorage unavailable/throwing (private mode, disabled, etc.)
+          // — fall back to the OS preference silently (T-11-09).
+          isDark = prefersDark();
+        }
+
+        var root = document.documentElement;
+        if (isDark) {
+          root.classList.add("dark");
+          root.style.colorScheme = "dark";
+        } else {
+          root.classList.remove("dark");
+          root.style.colorScheme = "light";
+        }
+      })();
+    </script>
     <title>Docktor</title>
 </head>
 <body>

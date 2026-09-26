@@ -6,7 +6,8 @@ import LoginPage from "./routes/auth/login";
 import SignupPage from "./routes/auth/signup";
 import "./index.css";
 import {AppLayout} from "@/components/app-layout";
-import {Toaster} from "@/components/ui/sonner";
+import {ThemeProvider} from "@/components/common/theme-provider";
+import {ThemedToaster} from "@/components/common/themed-toaster";
 import {FirstRunGate} from "@/components/domain/auth/first-run-gate";
 import Dashboard from "@/routes/app/dashboard";
 import StacksPage from "@/routes/app/stacks/index";
@@ -23,7 +24,7 @@ function ProtectedRoute({children}: Readonly<{children: React.ReactNode}>) {
     if (isPending) {
         return (
             <div className="flex min-h-screen items-center justify-center">
-                <p className="text-gray-500">Loading...</p>
+                <p className="text-muted-foreground">Loading...</p>
             </div>
         );
     }
@@ -42,7 +43,7 @@ function ProtectedRoute({children}: Readonly<{children: React.ReactNode}>) {
 function App() {
     return (
         <BrowserRouter>
-            <Toaster />
+            <ThemedToaster />
             <Routes>
                 <Route
                     path="/login"
@@ -96,6 +97,8 @@ function App() {
 
 createRoot(document.getElementById("root")!).render(
     <StrictMode>
-        <App />
+        <ThemeProvider>
+            <App />
+        </ThemeProvider>
     </StrictMode>,
 );

@@ -24,3 +24,21 @@ if (typeof globalThis.EventSource === "undefined") {
     MockEventSource.CLOSED = 2;
     globalThis.EventSource = MockEventSource;
 }
+
+// jsdom does not implement matchMedia; next-themes' ThemeProvider (enableSystem)
+// and SidebarProvider's mobile-detection hook both call it unconditionally.
+// Guarded so a test file's own more specific local stub (several stack/backup
+// detail page tests define one) is not clobbered — it simply becomes a no-op
+// once this global stub is already in place.
+if (typeof window.matchMedia !== "function") {
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+    }));
+}
