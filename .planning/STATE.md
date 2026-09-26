@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 milestone: v0.1.0
 current_phase: null
 current_phase_name: UI Rework
-current_plan: 2
+current_plan: 3
 status: "Phases 1-9 all complete, tested, and reviewed. Product tracking moved to GitHub Issues (docktor-app/docktor): the vision doc (docs/vision.md scope) and all .planning/todos/pending/ items were triaged into 49 GitHub issues, native Issue Types adopted (Bug/Feature/Chore/Documentation/Task), and CLAUDE.md documents the process (including a project-specific override redirecting gsd-capture's add-todo to GitHub issues instead of .planning/todos/). User curated 23 issues (later 24, adding #15 UI Rework) into GitHub milestone 'v0.1.0 - First Release' (renamed from the working 'v1.0.0' label since this is the first release). ROADMAP.md Phases 10-16 now scope that milestone, sourced 1:1 from those issues (Requirements fields list GitHub issue numbers, not REQ-IDs — REQUIREMENTS.md is frozen at its already-complete v1.0 content and not being extended for new work). Per user request, Phase 10 (Backend Architecture Refactor, #16) and Phase 11 (UI Rework, #15) were resequenced to run BEFORE the feature phases that add new server/client code (12, 14, 15), so that new work lands on the reworked structure instead of needing rework afterward — both are independent of each other (separate server/client tracks) and both are intentionally open-ended, flagged as needing /gsd-discuss-phase before /gsd-plan-phase. Phase 13 (Update Checker Reliability — narrow bug fixes, not new architecture) carries low rework risk and can run anytime. Phase 10 (Backend Architecture Refactor) has since been merged into main (PR #67). Phase 11 progressed through context capture, UI-SPEC approval, and phase planning (13 plans across 5 waves, plan-checker blockers resolved), and Wave 1's tracer plan 11-01 is now complete: the Config tab merge (D-01/D-02/D-03) and the stack-detail-page decomposition to an 89-line orchestrator (CLAUDE.md Known Refactoring Target closed) both landed, with the StackConfigFiles/ConfigTab/OverviewTab/StackDetailHeader contracts and the PLAYWRIGHT_PORT parameterization ready for the remaining 12 plans to build on. Note: the original executing session for 11-01 was interrupted by a container restart between finishing Task 2 and writing its SUMMARY.md — both tasks' commits were already pushed and no work was lost; a follow-up session independently re-verified everything (unit suite, typecheck, full Playwright E2E including the parallel-port case) before writing the SUMMARY. Wave 2's 11-02 (ToneBadge/StatusDot status-indicator unification, D-08/D-09/D-10/D-11) is now complete: same container-restart pattern hit again (interrupted between finishing Task 3's edits and its first commit, with zero commits made), recovered the same way — full verification (all task `<verify>` commands, all acceptance-criteria greps, full client suite, tsc -b) before splitting into 3 retroactive task commits and writing the SUMMARY. 11-03 (dark mode), 11-04 (dashboard StatCard) and 11-05 (server update-info enrichment) remain in wave 2."
-stopped_at: Completed 11-02-PLAN.md
-last_updated: "2026-09-26T10:18:42.985Z"
-state_head: b67890bde322c912ff404a112e2c14ddd0fa28a3
+stopped_at: Completed 11-03-PLAN.md
+last_updated: "2026-09-26T10:49:57.519Z"
+state_head: 33529b41f598f6e995099d0ea1d3a73362aab415
 progress:
   total_phases: 17
   completed_phases: 9
   total_plans: 118
-  completed_plans: 107
+  completed_plans: 108
 milestone_name: milestone
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-22)
 ## Current Position
 
 Phase: 11 (UI Rework) — EXECUTING
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 13
 
 ## Performance Metrics
@@ -142,6 +142,7 @@ Total Plans in Phase: 13
 | Phase 08 P03 | 18min | 1 tasks | 4 files |
 | Phase 08 P04 | 15min | 1 tasks | 2 files |
 | Phase 10-backend-architecture-refactor P01 | 22min | 3 tasks | 11 files |
+| Phase 11 P03 | 30min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -325,6 +326,9 @@ Recent decisions affecting current work:
 - [Phase 10]: [Phase 10-01]: SmtpClientPort.sendMail(config, message) takes the full SmtpConfig on every call so notify() and testSmtp() share one transport operation shape, not two divergent paths
 - [Phase 10]: [Phase 10-01]: settingsRepository singleton added directly to settings-repository.ts (matching the other 6 repos), keeping repositories/index.ts a pure re-export list with no new-instance exceptions
 - [Phase 10]: [Phase 10-01]: application/index.ts keeps its original export names (settingsRepository, repo, certificateRepositoryInstance) now pointing at repositories/index.ts singletons, so out-of-scope route files needed zero edits
+- [Phase null]: [Phase 11-ui-rework 11-03]: Pre-paint flash prevention is a hand-authored static <script> in index.html (not next-themes' own SSR-oriented injected script) — this app is a client-rendered Vite SPA with no hydration step
+- [Phase null]: [Phase 11-ui-rework 11-03]: ThemeToggle is a DropdownMenu (Light/Dark/System), not a two-state button, so users always retain a way back to "follow OS" after overriding
+- [Phase null]: [Phase 11-ui-rework 11-03]: test/setup.ts's global matchMedia stub is guarded by typeof window.matchMedia !== "function" so the pre-existing per-test stubs in stack-detail-page.test.tsx and backup-detail-page.test.tsx become no-ops with zero edits to those files
 
 ### Quick Tasks Completed
 
@@ -395,6 +399,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-09-26T00:00:00.000Z
-Stopped at: Phase 10 merged into main; Phase 11 planned (13 plans, 5 waves), ready to execute
-Resume file: .planning/phases/11-ui-rework/11-01-PLAN.md
+Last session: 2026-09-26T10:49:26.624Z
+Stopped at: Completed 11-03-PLAN.md
+Resume file: None
