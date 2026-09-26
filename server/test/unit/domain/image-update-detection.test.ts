@@ -1,6 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {detectNoUpdates, toImageRef} from "../../../src/domain/image-update-detection.js";
-import {buildImageRefFromService} from "../../../src/jobs/update-checker.js";
+import {buildImageRefFromService, detectNoUpdates, toImageRef} from "../../../src/domain/image-update-detection.js";
 
 describe("toImageRef", () => {
     it("joins image and tag", () => {
@@ -23,7 +22,7 @@ describe("toImageRef", () => {
         expect(toImageRef({image: null, imageTag: null})).toBeNull();
     });
 
-    describe("parity with buildImageRefFromService", () => {
+    describe("agrees with buildImageRefFromService for every shape toImageRef delegates to it", () => {
         const cases: Array<{image: string; imageTag: string | null}> = [
             {image: "nginx", imageTag: "1.25"},
             {image: "nginx", imageTag: null},
@@ -34,6 +33,30 @@ describe("toImageRef", () => {
         it.each(cases)("matches buildImageRefFromService for %o", ({image, imageTag}) => {
             expect(toImageRef({image, imageTag})).toBe(buildImageRefFromService(image, imageTag));
         });
+    });
+});
+
+describe("buildImageRefFromService", () => {
+    // Every case the pre-consolidation jobs/update-checker.test.ts covered
+    // for this function (UPD-02 imageless filter), preserved verbatim
+    // against the single surviving implementation (10-08 Task 1).
+    it("returns null for a build-only service with no image", () => {
+        expect(buildImageRefFromService("", null)).toBeNull();
+        expect(buildImageRefFromService("   ", null)).toBeNull();
+        expect(buildImageRefFromService(null, null)).toBeNull();
+        expect(buildImageRefFromService(undefined, undefined)).toBeNull();
+    });
+
+    it("reconstructs a canonical tag-qualified ref matching findAllImageRefs' spelling", () => {
+        expect(buildImageRefFromService("nginx", "1.25")).toBe("nginx:1.25");
+    });
+
+    it("defaults to :latest when no tag is stored", () => {
+        expect(buildImageRefFromService("nginx", null)).toBe("nginx:latest");
+    });
+
+    it("strips the docker.io/library/ prefix", () => {
+        expect(buildImageRefFromService("docker.io/library/redis", "7")).toBe("redis:7");
     });
 });
 

@@ -1,4 +1,5 @@
 import {parse as parseYaml, stringify as stringifyYaml} from "yaml";
+import type {ComposeRewriterPort} from "../application/ports/compose-rewriter-port.js";
 
 export interface VolumeSelection {
 	originalPath: string;
@@ -12,7 +13,7 @@ export interface RewriteResult {
 	envVars: Record<string, string>;
 }
 
-export class ComposeRewriter {
+export class ComposeRewriter implements ComposeRewriterPort {
 	/**
 	 * Rewrite compose file:
 	 * 1. Update volume paths based on selections
@@ -36,7 +37,7 @@ export class ComposeRewriter {
 		}
 
 		// Rewrite service volumes and extract environment variables
-		for (const [serviceName, service] of Object.entries(doc.services || {})) {
+		for (const [, service] of Object.entries(doc.services || {})) {
 			const svc = service as any;
 
 			// Rewrite volume paths
@@ -111,7 +112,7 @@ export class ComposeRewriter {
 		// Update top-level volumes: mark unconverted named volumes as external
 		if (doc.volumes) {
 			const newVolumes: Record<string, any> = {};
-			for (const [volName, volDef] of Object.entries(doc.volumes)) {
+			for (const [volName] of Object.entries(doc.volumes)) {
 				const shouldConvert = namedVolumeSelections.get(volName);
 				if (shouldConvert) {
 					// Remove from volumes section (now a bind mount)

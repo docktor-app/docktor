@@ -1,4 +1,5 @@
 import {parse as parseYaml} from "yaml";
+import type {ComposeAnalyzerPort} from "../application/ports/compose-analyzer-port.js";
 
 // Matches a whole-value shell-style variable reference: "${VAR}" or "$VAR",
 // optionally with a default ("${VAR:-default}"). A value that IS one of these
@@ -27,7 +28,7 @@ export interface AnalysisResult {
     serviceCount: number;
 }
 
-export class ComposeAnalyzer {
+export class ComposeAnalyzer implements ComposeAnalyzerPort {
     analyzeCompatibility(content: string): AnalysisResult {
         const doc = parseYaml(content);
 

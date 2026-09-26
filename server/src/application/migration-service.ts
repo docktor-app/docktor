@@ -2,14 +2,18 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import {spawn} from "node:child_process";
-import {DockerExecutor, dockerExecutor} from "../infrastructure/docker-executor.js";
-import {VolumeMigrator, volumeMigrator} from "../infrastructure/volume-migrator.js";
-import {ComposeRewriter, composeRewriter, type VolumeSelection} from "../infrastructure/compose-rewriter.js";
+import {dockerExecutor} from "../infrastructure/docker-executor.js";
+import {volumeMigrator} from "../infrastructure/volume-migrator.js";
+import {composeRewriter, type VolumeSelection} from "../infrastructure/compose-rewriter.js";
 import {StackFilesystem} from "../infrastructure/stack-filesystem.js";
 import {StackRepository, stackRepository} from "../repositories/stack-repository.js";
 import {slugify} from "../lib/slugify.js";
 import {createComposeConfig} from "../domain/compose-config.js";
 import {BadRequestError} from "../lib/errors.js";
+import type {DockerExecutorPort} from "./ports/docker-executor-port.js";
+import type {VolumeMigratorPort} from "./ports/volume-migrator-port.js";
+import type {ComposeRewriterPort} from "./ports/compose-rewriter-port.js";
+import type {StackFilesystemPort} from "./ports/stack-filesystem-port.js";
 
 // CR-02: Docker volume names are also passed verbatim as the `-v` source to
 // `docker run`; a name containing `/` is interpreted by Docker as a host bind
@@ -48,10 +52,10 @@ export interface MigrationResult {
 
 export class MigrationService {
 	constructor(
-		private readonly docker: DockerExecutor = dockerExecutor,
-		private readonly migrator: VolumeMigrator = volumeMigrator,
-		private readonly rewriter: ComposeRewriter = composeRewriter,
-		private readonly stackFs: StackFilesystem = new StackFilesystem(),
+		private readonly docker: DockerExecutorPort = dockerExecutor,
+		private readonly migrator: VolumeMigratorPort = volumeMigrator,
+		private readonly rewriter: ComposeRewriterPort = composeRewriter,
+		private readonly stackFs: StackFilesystemPort = new StackFilesystem(),
 		private readonly stackRepo: StackRepository = stackRepository,
 	) {}
 

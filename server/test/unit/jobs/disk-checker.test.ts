@@ -7,9 +7,9 @@ import { statfs } from "node:fs/promises"
 
 const mockStatfs = vi.mocked(statfs)
 
-function createMockNotificationService() {
+function createMockBus() {
     return {
-        notify: vi.fn().mockResolvedValue(undefined),
+        emit: vi.fn(),
     }
 }
 
@@ -39,14 +39,14 @@ function makeStatfsFromBytes(freeBytes: bigint, totalBytes: bigint = 100n * 1024
 
 describe("DiskChecker", () => {
     let checker: DiskChecker
-    let notificationService: ReturnType<typeof createMockNotificationService>
+    let bus: ReturnType<typeof createMockBus>
     let settings: ReturnType<typeof createMockSettings>
 
     beforeEach(() => {
         vi.clearAllMocks()
-        notificationService = createMockNotificationService()
+        bus = createMockBus()
         settings = createMockSettings()
-        checker = new DiskChecker(notificationService as any, settings as any)
+        checker = new DiskChecker(bus as any, settings as any)
 
         // Default settings: disk warning enabled, thresholds at defaults
         settings.getMany.mockResolvedValue({
@@ -57,19 +57,20 @@ describe("DiskChecker", () => {
         settings.findLastDiskAlert.mockResolvedValue(null)
     })
 
-    it("triggers notification when free percent below threshold", async () => {
+    it("emits disk.threshold_crossed when free percent below threshold", async () => {
         // 5% free — below 10% threshold
         mockStatfs.mockResolvedValue(makeStatfs(5) as any)
         settings.findLastDiskAlert.mockResolvedValue({ active: false })
 
         await checker.check()
 
-        expect(notificationService.notify).toHaveBeenCalledWith(
-            expect.objectContaining({ type: "disk_warning" }),
+        expect(bus.emit).toHaveBeenCalledWith(
+            "disk.threshold_crossed",
+            expect.objectContaining({ monitorPath: "/var/lib/docker", thresholdDescription: "below 10%" }),
         )
     })
 
-    it("triggers notification when free bytes below threshold", async () => {
+    it("emits disk.threshold_crossed when free bytes below threshold", async () => {
         // 1GB free — below 2GB threshold
         const oneGB = 1n * 1024n * 1024n * 1024n
         mockStatfs.mockResolvedValue(makeStatfsFromBytes(oneGB) as any)
@@ -77,9 +78,7 @@ describe("DiskChecker", () => {
 
         await checker.check()
 
-        expect(notificationService.notify).toHaveBeenCalledWith(
-            expect.objectContaining({ type: "disk_warning" }),
-        )
+        expect(bus.emit).toHaveBeenCalledWith("disk.threshold_crossed", expect.any(Object))
     })
 
     it("suppresses duplicate when alert already active", async () => {
@@ -88,7 +87,7 @@ describe("DiskChecker", () => {
 
         await checker.check()
 
-        expect(notificationService.notify).not.toHaveBeenCalled()
+        expect(bus.emit).not.toHaveBeenCalled()
     })
 
     it("clears alert when disk recovers above thresholds", async () => {
@@ -99,7 +98,7 @@ describe("DiskChecker", () => {
         await checker.check()
 
         expect(settings.setDiskAlertActive).toHaveBeenCalledWith(false)
-        expect(notificationService.notify).not.toHaveBeenCalled()
+        expect(bus.emit).not.toHaveBeenCalled()
     })
 
     it("skips check when toggle is disabled", async () => {
@@ -112,12 +111,12 @@ describe("DiskChecker", () => {
         await checker.check()
 
         expect(mockStatfs).not.toHaveBeenCalled()
-        expect(notificationService.notify).not.toHaveBeenCalled()
+        expect(bus.emit).not.toHaveBeenCalled()
     })
 
     it("accepts custom monitor path via constructor", async () => {
         const customChecker = new DiskChecker(
-            notificationService as any,
+            bus as any,
             settings as any,
             "/custom/path"
         )
@@ -127,6 +126,20 @@ describe("DiskChecker", () => {
         await customChecker.check()
 
         expect(mockStatfs).toHaveBeenCalledWith("/custom/path")
+    })
+
+    it("completes normally when the bus emit throws — a failing notification subscriber can't strand the check", async () => {
+        mockStatfs.mockResolvedValue(makeStatfs(5) as any)
+        settings.findLastDiskAlert.mockResolvedValue({ active: false })
+        bus.emit.mockImplementation(() => {
+            throw new Error("subscriber exploded")
+        })
+        const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+
+        await expect(checker.check()).resolves.toBeUndefined()
+
+        expect(settings.setDiskAlertActive).toHaveBeenCalledWith(true)
+        consoleError.mockRestore()
     })
 
     it("defaults to /var/lib/docker when no path provided", async () => {

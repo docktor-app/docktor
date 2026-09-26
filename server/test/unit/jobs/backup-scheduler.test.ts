@@ -248,4 +248,53 @@ describe("BackupScheduler", () => {
             );
         });
     });
+
+    describe("Job contract (D-02, D-13 dynamic kind, PD-6)", () => {
+        it("declares name and a dynamic kind", () => {
+            expect(scheduler.name).toBe("BackupScheduler");
+            expect(scheduler.kind).toBe("dynamic");
+        });
+
+        it("start() delegates to loadAll()", async () => {
+            mockStackRepository.findAllWithSchedule.mockResolvedValue([
+                {id: "stack-1", backupSchedule: "0 2 * * *"},
+            ]);
+
+            await scheduler.start();
+
+            expect(mockSchedule).toHaveBeenCalledTimes(1);
+        });
+
+        it("reports a run at the scheduler level when a per-stack task fires", async () => {
+            const reporter = {recordRun: vi.fn(), recordError: vi.fn()};
+            scheduler.setHealthReporter(reporter);
+            mockBackupService.initiateBackup.mockResolvedValue(undefined);
+
+            scheduler.upsert("stack-1", "0 2 * * *");
+            const lastCall = mockSchedule.mock.calls[mockSchedule.mock.calls.length - 1];
+            const cronCallback = lastCall?.[1] as (() => void) | undefined;
+            cronCallback?.();
+
+            await vi.waitFor(() => {
+                expect(reporter.recordRun).toHaveBeenCalledWith("BackupScheduler");
+            });
+            expect(reporter.recordError).not.toHaveBeenCalled();
+        });
+
+        it("reports an error at the scheduler level when initiateBackup() itself throws", async () => {
+            const reporter = {recordRun: vi.fn(), recordError: vi.fn()};
+            scheduler.setHealthReporter(reporter);
+            mockBackupService.initiateBackup.mockRejectedValue(new Error("db down"));
+
+            scheduler.upsert("stack-1", "0 2 * * *");
+            const lastCall = mockSchedule.mock.calls[mockSchedule.mock.calls.length - 1];
+            const cronCallback = lastCall?.[1] as (() => void) | undefined;
+            cronCallback?.();
+
+            await vi.waitFor(() => {
+                expect(reporter.recordError).toHaveBeenCalledWith("BackupScheduler", expect.any(Error));
+            });
+            expect(reporter.recordRun).not.toHaveBeenCalled();
+        });
+    });
 });

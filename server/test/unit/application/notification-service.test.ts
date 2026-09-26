@@ -1,33 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { NotificationService } from "../../../src/application/notification-service.js"
 
-// Use vi.hoisted so these refs are available in the vi.mock factory (which is hoisted to top)
-const {mockVerify, mockSendMail, mockCreateTransport, mockPrismaUserFindMany} = vi.hoisted(() => {
-    const mockVerify = vi.fn()
-    const mockSendMail = vi.fn()
-    const mockCreateTransport = vi.fn().mockReturnValue({
-        verify: mockVerify,
-        sendMail: mockSendMail,
-    })
-    const mockPrismaUserFindMany = vi.fn()
-    return {mockVerify, mockSendMail, mockCreateTransport, mockPrismaUserFindMany}
-})
-
-// Mock nodemailer at module level so ESM imports are intercepted correctly
-vi.mock("nodemailer", () => ({
-    default: {
-        createTransport: mockCreateTransport,
-    },
-}))
-
-// Mock prisma to avoid DATABASE_URL requirement
-vi.mock("../../../src/lib/db.js", () => ({
-    prisma: {
-        user: {
-            findMany: mockPrismaUserFindMany,
-        },
-    },
-}))
+function createMockUsers(emails: string[] = ["user@example.com"]) {
+    return {
+        findAllEmails: vi.fn().mockResolvedValue(emails),
+    }
+}
 
 function createMockRepo() {
     return {
@@ -35,6 +13,7 @@ function createMockRepo() {
         markEmailSent: vi.fn(),
         findLastDiskAlert: vi.fn(),
         setDiskAlertActive: vi.fn(),
+        findRecent: vi.fn(),
     }
 }
 
@@ -46,10 +25,15 @@ function createMockSettings() {
     }
 }
 
-function createMockBroadcaster() {
+function createMockBus() {
     return {
-        publish: vi.fn(),
-        subscribe: vi.fn(),
+        emit: vi.fn(),
+    }
+}
+
+function createMockSmtpClient() {
+    return {
+        sendMail: vi.fn().mockResolvedValue(undefined),
     }
 }
 
@@ -57,23 +41,19 @@ describe("NotificationService", () => {
     let service: NotificationService
     let repo: ReturnType<typeof createMockRepo>
     let settings: ReturnType<typeof createMockSettings>
-    let broadcaster: ReturnType<typeof createMockBroadcaster>
+    let bus: ReturnType<typeof createMockBus>
+    let users: ReturnType<typeof createMockUsers>
+    let smtpClient: ReturnType<typeof createMockSmtpClient>
 
     beforeEach(() => {
         vi.clearAllMocks()
-        // Reset transport mock to default resolved state
-        mockVerify.mockResolvedValue(true)
-        mockSendMail.mockResolvedValue({ messageId: "123" })
-        mockCreateTransport.mockReturnValue({
-            verify: mockVerify,
-            sendMail: mockSendMail,
-        })
-        // Default: mock one user for email sending
-        mockPrismaUserFindMany.mockResolvedValue([{ email: "user@example.com" }])
         repo = createMockRepo()
         settings = createMockSettings()
-        broadcaster = createMockBroadcaster()
-        service = new NotificationService(repo as any, settings as any, broadcaster as any)
+        bus = createMockBus()
+        // Default: two-address recipient list, derived solely from the injected UserReadPort stub
+        users = createMockUsers(["user1@example.com", "user2@example.com"])
+        smtpClient = createMockSmtpClient()
+        service = new NotificationService(repo as any, settings as any, bus as any, users as any, smtpClient as any)
     })
 
     describe("notify", () => {
@@ -97,6 +77,64 @@ describe("NotificationService", () => {
                     emailSent: false,
                 }),
             )
+        })
+
+        it("emits notification.created with the new record's id", async () => {
+            settings.getSetting.mockResolvedValue("true")
+            settings.getSmtpConfig.mockResolvedValue(null)
+            repo.create.mockResolvedValue({ id: "notif-1" })
+
+            await service.notify({
+                type: "stack_error",
+                stackId: "my-stack",
+                subject: "Stack Error",
+                message: "Stack my-stack entered ERROR state",
+            })
+
+            expect(bus.emit).toHaveBeenCalledWith("notification.created", { notificationId: "notif-1" })
+        })
+
+        it("emits notification.created after the record is created, not before", async () => {
+            settings.getSetting.mockResolvedValue("true")
+            settings.getSmtpConfig.mockResolvedValue(null)
+            const order: string[] = []
+            repo.create.mockImplementation(async () => {
+                order.push("repo.create")
+                return { id: "notif-1" }
+            })
+            bus.emit.mockImplementation(() => {
+                order.push("bus.emit")
+            })
+
+            await service.notify({
+                type: "stack_error",
+                stackId: "my-stack",
+                subject: "Stack Error",
+                message: "Stack my-stack entered ERROR state",
+            })
+
+            expect(order).toEqual(["repo.create", "bus.emit"])
+        })
+
+        it("completes normally when the bus emit throws — a failing subscriber can't strand notify()", async () => {
+            settings.getSetting.mockResolvedValue("true")
+            settings.getSmtpConfig.mockResolvedValue(null)
+            repo.create.mockResolvedValue({ id: "notif-1" })
+            bus.emit.mockImplementation(() => {
+                throw new Error("subscriber exploded")
+            })
+            const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+
+            await expect(
+                service.notify({
+                    type: "stack_error",
+                    stackId: "my-stack",
+                    subject: "Stack Error",
+                    message: "Stack my-stack entered ERROR state",
+                }),
+            ).resolves.toBeUndefined()
+
+            consoleError.mockRestore()
         })
 
         it("skips notification when trigger is disabled", async () => {
@@ -132,6 +170,16 @@ describe("NotificationService", () => {
             })
 
             expect(repo.markEmailSent).toHaveBeenCalledWith("notif-2")
+            // Recipient list must come from the injected UserReadPort stub, not a Prisma query
+            expect(users.findAllEmails).toHaveBeenCalled()
+            expect(smtpClient.sendMail).toHaveBeenCalledWith(
+                expect.objectContaining({ host: "smtp.example.com" }),
+                expect.objectContaining({
+                    to: "user1@example.com, user2@example.com",
+                    subject: "Stack Error",
+                    text: "Stack my-stack entered ERROR state",
+                }),
+            )
         })
 
         it("logs to DB but does not send email when SMTP is not configured", async () => {
@@ -161,7 +209,7 @@ describe("NotificationService", () => {
                 recipient: "to@example.com",
             })
             repo.create.mockResolvedValue({ id: "notif-4" })
-            mockSendMail.mockRejectedValue(new Error("SMTP connection refused"))
+            smtpClient.sendMail.mockRejectedValue(new Error("SMTP connection refused"))
 
             // Should not throw even when sendMail fails
             await expect(
@@ -190,12 +238,31 @@ describe("NotificationService", () => {
 
             // For valid config, testSmtp should not throw
             await expect(service.testSmtp(smtpConfig)).resolves.not.toThrow()
-            expect(mockSendMail).toHaveBeenCalledWith({
-                from: "noreply@example.com",
+            expect(smtpClient.sendMail).toHaveBeenCalledWith(smtpConfig, {
                 to: "admin@example.com",
                 subject: "Docktor — SMTP test",
                 text: "SMTP configuration is working correctly.",
             })
+        })
+    })
+
+    describe("getRecent", () => {
+        it("delegates to repo.findRecent with a default limit of 100", async () => {
+            const rows = [{id: "notif-1", type: "stack_error", stack: {id: "s1", displayName: "Stack 1"}}]
+            repo.findRecent.mockResolvedValue(rows)
+
+            const result = await service.getRecent()
+
+            expect(repo.findRecent).toHaveBeenCalledWith(100)
+            expect(result).toBe(rows)
+        })
+
+        it("forwards an explicit limit through to repo.findRecent", async () => {
+            repo.findRecent.mockResolvedValue([])
+
+            await service.getRecent(25)
+
+            expect(repo.findRecent).toHaveBeenCalledWith(25)
         })
     })
 })

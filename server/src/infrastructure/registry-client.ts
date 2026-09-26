@@ -1,4 +1,5 @@
 import {AppError} from "../lib/errors.js"
+import type {RegistryClientPort} from "../application/ports/registry-client-port.js"
 
 /**
  * Strips the tag from an image reference, mirroring splitImageRef() in
@@ -111,7 +112,7 @@ async function readBoundedBody(response: Response): Promise<string | null> {
     return text
 }
 
-export class RegistryClient {
+export class RegistryClient implements RegistryClientPort {
     private async fetchToken(challenge: AuthChallenge, host: string): Promise<string | null> {
         const realmUrl = new URL(challenge.realm)
         if (realmUrl.protocol !== "https:") {

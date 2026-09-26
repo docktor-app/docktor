@@ -8,11 +8,11 @@ interface BackupsTabProps {
     readonly stackStatus: string;
 }
 
-export function BackupsTab({stackId, stackName, stackStatus}: BackupsTabProps) {
+export function BackupsTab({stackId, stackName, stackStatus}: Readonly<BackupsTabProps>) {
     return (
         <div className="space-y-6">
             <BackupConfigCard stackId={stackId} stackStatus={stackStatus} />
-            <BackupHistory stackId={stackId} />
+            <BackupHistory stackId={stackId} stackStatus={stackStatus} />
             <SnapshotsSection stackId={stackId} stackName={stackName} stackStatus={stackStatus} />
         </div>
     );

@@ -1,16 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v0.1.0
-current_phase_name: null
-status: "Phases 1-9 all complete, tested, and reviewed. Product tracking moved to GitHub Issues (docktor-app/docktor): the vision doc (docs/vision.md scope) and all .planning/todos/pending/ items were triaged into 49 GitHub issues, native Issue Types adopted (Bug/Feature/Chore/Documentation/Task), and CLAUDE.md documents the process (including a project-specific override redirecting gsd-capture's add-todo to GitHub issues instead of .planning/todos/). User curated 23 issues (later 24, adding #15 UI Rework) into GitHub milestone 'v0.1.0 - First Release' (renamed from the working 'v1.0.0' label since this is the first release). ROADMAP.md Phases 10-16 now scope that milestone, sourced 1:1 from those issues (Requirements fields list GitHub issue numbers, not REQ-IDs — REQUIREMENTS.md is frozen at its already-complete v1.0 content and not being extended for new work). Per user request, Phase 10 (Backend Architecture Refactor, #16) and Phase 11 (UI Rework, #15) were resequenced to run BEFORE the feature phases that add new server/client code (12, 14, 15), so that new work lands on the reworked structure instead of needing rework afterward — both are independent of each other (separate server/client tracks) and both are intentionally open-ended, flagged as needing /gsd-discuss-phase before /gsd-plan-phase. Phase 13 (Update Checker Reliability — narrow bug fixes, not new architecture) carries low rework risk and can run anytime."
-stopped_at: Phase 11 context gathered
-last_updated: "2026-09-24T22:00:22.888Z"
+current_phase: 11
+current_phase_name: UI Rework
+current_plan: Not started
+status: "Phases 1-9 all complete, tested, and reviewed. Product tracking moved to GitHub Issues (docktor-app/docktor): the vision doc (docs/vision.md scope) and all .planning/todos/pending/ items were triaged into 49 GitHub issues, native Issue Types adopted (Bug/Feature/Chore/Documentation/Task), and CLAUDE.md documents the process (including a project-specific override redirecting gsd-capture's add-todo to GitHub issues instead of .planning/todos/). User curated 23 issues (later 24, adding #15 UI Rework) into GitHub milestone 'v0.1.0 - First Release' (renamed from the working 'v1.0.0' label since this is the first release). ROADMAP.md Phases 10-16 now scope that milestone, sourced 1:1 from those issues (Requirements fields list GitHub issue numbers, not REQ-IDs — REQUIREMENTS.md is frozen at its already-complete v1.0 content and not being extended for new work). Per user request, Phase 10 (Backend Architecture Refactor, #16) and Phase 11 (UI Rework, #15) were resequenced to run BEFORE the feature phases that add new server/client code (12, 14, 15), so that new work lands on the reworked structure instead of needing rework afterward — both are independent of each other (separate server/client tracks) and both are intentionally open-ended, flagged as needing /gsd-discuss-phase before /gsd-plan-phase. Phase 13 (Update Checker Reliability — narrow bug fixes, not new architecture) carries low rework risk and can run anytime. Phase 10 (Backend Architecture Refactor) has since been merged into main (PR #67); Phase 11 discuss-phase (context gathering) is complete on feature/phase-11-ui-rework, ready for /gsd-plan-phase 11."
+stopped_at: Phase 10 merged into main; Phase 11 context gathered, ready to plan
+last_updated: "2026-09-26T00:00:00.000Z"
 state_head: b4d7a8390d38a54acd273630164c7805a5c35b9e
 progress:
   total_phases: 17
   completed_phases: 9
-  total_plans: 88
-  completed_plans: 88
+  total_plans: 105
+  completed_plans: 105
+  percent: 100
 milestone_name: milestone
 current_phase: null
 ---
@@ -22,17 +25,19 @@ current_phase: null
 See: .planning/PROJECT.md (updated 2026-09-22)
 
 **Core value:** Users can deploy, monitor, and manage Docker Compose stacks through a browser UI without needing SSH or Docker CLI access.
-**Current focus:** Discuss/plan and execute Phases 10-16 toward v0.1.0 (first public release), starting with the backend/UI refactors (10, 11)
+**Current focus:** Phase 10 — Backend Architecture Refactor
 
 ## Current Position
 
-Phase: none active — Phases 1-9 COMPLETE; Phases 10-16 roadmapped, none planned yet
+Phase: 11 — UI Rework
+Current Plan: Not started
+Total Plans in Phase: 15
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 73
+- Total plans completed: 90
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -47,6 +52,7 @@ Phase: none active — Phases 1-9 COMPLETE; Phases 10-16 roadmapped, none planne
 | 06 | 7 | - | - |
 | 07 | 2 | - | - |
 | 09 | 8 | - | - |
+| 10 | 17 | - | - |
 
 **Recent Trend:**
 
@@ -137,6 +143,7 @@ Phase: none active — Phases 1-9 COMPLETE; Phases 10-16 roadmapped, none planne
 | Phase 08 P02 | 25min | 2 tasks | 5 files |
 | Phase 08 P03 | 18min | 1 tasks | 4 files |
 | Phase 08 P04 | 15min | 1 tasks | 2 files |
+| Phase 10-backend-architecture-refactor P01 | 22min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -317,6 +324,9 @@ Recent decisions affecting current work:
 - [Phase 08]: [Phase 08-03]: ConfigChangedEvent.source is required (not optional), matching the server-side field from companion plan 08-02, so a future third publisher cannot ship an untagged event that silently no-ops the toast unnoticed
 - [Phase 08]: [Phase 08-03]: every pre-existing config_changed test literal not asserting toast behavior was tagged source: "app" (not "external") per plan guidance, keeping the silent-refresh path exercised across the broadest set of scenarios
 - [Phase 08]: [Phase 08]: [Phase 08-04]: BACKING_UP's statusColors entry set byte-identical to DEPLOYING/UPDATING's existing string (not a near-duplicate) so all three blue-pulsing statuses share one literal value; RESTORING and MIGRATING deliberately left untouched per G-08-7's scoped root_cause
+- [Phase 10]: [Phase 10-01]: SmtpClientPort.sendMail(config, message) takes the full SmtpConfig on every call so notify() and testSmtp() share one transport operation shape, not two divergent paths
+- [Phase 10]: [Phase 10-01]: settingsRepository singleton added directly to settings-repository.ts (matching the other 6 repos), keeping repositories/index.ts a pure re-export list with no new-instance exceptions
+- [Phase 10]: [Phase 10-01]: application/index.ts keeps its original export names (settingsRepository, repo, certificateRepositoryInstance) now pointing at repositories/index.ts singletons, so out-of-scope route files needed zero edits
 
 ### Quick Tasks Completed
 

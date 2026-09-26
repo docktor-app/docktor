@@ -4,17 +4,24 @@ import {readFile} from "node:fs/promises"
 import path from "node:path"
 import os from "node:os"
 import yaml from "yaml"
+import cron from "node-cron"
+import type {StackBackupConfigInput} from "@docktor/shared"
 import {decrypt} from "../lib/crypto.js"
 import {assertTransition} from "../domain/stack-status-machine.js"
 import {createComposeConfig} from "../domain/compose-config.js"
-import {BadRequestError} from "../lib/errors.js"
+import {parseRetentionPolicy} from "../domain/backup-retention-policy.js"
+import {BadRequestError, ConflictError} from "../lib/errors.js"
 import type {StackStatus, BackupTrigger} from "../generated/prisma/enums.js"
-import type {ResticExecutor, BackupRepoConfig, RetentionPolicy, ResticSnapshot} from "../infrastructure/restic-executor.js"
+// The single surviving infrastructure/ import: isRepositoryNotFoundError is
+// a value (a type guard), not a port member — every type this file needs
+// off the restic module comes through the port's re-export instead.
 import {isRepositoryNotFoundError} from "../infrastructure/restic-executor.js"
+import type {BackupRepoConfig, ResticExecutorPort, ResticSnapshot, RetentionPolicy} from "./ports/restic-executor-port.js"
+import type {BackupSchedulePort} from "./ports/backup-schedule-port.js"
 import type {BackupRepository} from "../repositories/backup-repository.js"
-import type {NotificationService} from "./notification-service.js"
-import type {DockerExecutor} from "../infrastructure/docker-executor.js"
-import type {StateBroadcaster} from "../lib/state-broadcaster.js"
+import type {DockerExecutorPort} from "./ports/docker-executor-port.js"
+import type {StackFilesystemPort} from "./ports/stack-filesystem-port.js"
+import type {EventBusPort} from "./ports/event-bus-port.js"
 
 // ─── Module-level broadcaster map ────────────────────────────────────────────
 
@@ -95,17 +102,20 @@ export interface BackupStackRepo {
     clearConfigChanged(id: string): Promise<void>
     updateStackHash(args: {stackId: string; hash: string}): Promise<void>
     replaceServices(stackId: string, composeConfig: any): Promise<void>
+    updateBackupConfig(
+        id: string,
+        data: {
+            backupSchedule: string | null
+            backupRetention: string | null
+            backupPreHook: string | null
+            backupPostHook: string | null
+        },
+    ): Promise<void>
 }
 
 export interface BackupSettingsService {
     getSetting(key: string): Promise<string | null>
     getMany(keys: string[]): Promise<Record<string, string>>
-}
-
-export interface BackupFilesystem {
-    readCompose?(stackId: string): Promise<string>
-    readComposeFile?(stackId: string): Promise<string>
-    getStackDirectory?(stackId: string): string
 }
 
 // ─── Setting key constants ────────────────────────────────────────────────────
@@ -151,14 +161,14 @@ interface StackRecord {
 
 export class BackupService {
     constructor(
-        private readonly resticExecutor: ResticExecutor,
+        private readonly resticExecutor: ResticExecutorPort,
         private readonly backupRepo: BackupRepository,
         private readonly stackRepo: BackupStackRepo,
         private readonly settings: BackupSettingsService,
-        private readonly notificationService: NotificationService,
-        private readonly filesystem: BackupFilesystem,
-        private readonly docker: DockerExecutor,
-        private readonly broadcaster: Pick<StateBroadcaster, "publish">,
+        private readonly filesystem: StackFilesystemPort,
+        private readonly docker: DockerExecutorPort,
+        private readonly bus: Pick<EventBusPort, "emit">,
+        private readonly schedulePort: BackupSchedulePort,
     ) {}
 
     // ── Public API ─────────────────────────────────────────────────────────────
@@ -207,7 +217,9 @@ export class BackupService {
      * Orchestrates the restic backup process.
      * Accepts the pre-fetched backup record, stack record, and repo config.
      * Handles success/failure state transitions, log accumulation, SSE broadcasting,
-     * and sends backup_failure notification on error.
+     * and emits a backup.failed domain event on error (D-15 item 1) — a
+     * subscriber turns that into a notification, this service no longer
+     * knows notifications exist.
      */
     async runBackup(
         backupRecord: BackupRecord,
@@ -242,7 +254,7 @@ export class BackupService {
 
             // Run forget / prune only for scheduled backups, not manual ones
             if (backupRecord.trigger === "SCHEDULED") {
-                const retentionPolicy = this.parseRetentionPolicy(stack.backupRetention)
+                const retentionPolicy = parseRetentionPolicy(stack.backupRetention)
                 const forgetArgs = this.resticExecutor.buildForgetArgs(stack.id, retentionPolicy)
                 await this.resticExecutor.run(forgetArgs, env, onLine, stackPath)
             }
@@ -284,12 +296,20 @@ export class BackupService {
 
             await this.writeStackStatus(stack.id, {status: "ERROR"})
 
-            await this.notificationService.notify({
-                type: "backup_failure",
-                stackId: stack.id,
-                subject: `Backup failed: ${stack.displayName ?? stack.id}`,
-                message: `Backup failed for stack "${stack.displayName ?? stack.id}" (repo: ${repoConfig.repoType}). Error: ${errorMessage}`,
-            })
+            // Defence-in-depth alongside the bus's own per-subscriber
+            // isolation (D-17): emit()'s contract says it never throws, but
+            // this catch keeps a violation of that contract from escaping
+            // the outer catch block and skipping the `finally` below.
+            try {
+                this.bus.emit("backup.failed", {
+                    stackId: stack.id,
+                    displayName: stack.displayName,
+                    repoType: repoConfig.repoType,
+                    errorMessage,
+                })
+            } catch (emitErr) {
+                console.error("[BackupService] bus emit failed", emitErr)
+            }
         } finally {
             emitter.emit("done", finalStatus)
             disposeBackupBroadcaster(backupRecord.id)
@@ -344,7 +364,9 @@ export class BackupService {
      * Orchestrates a restore: stop → restic restore → redeploy.
      * Accepts the pre-fetched backup record and stack record (mirrors runBackup).
      * Handles success/failure state transitions, log accumulation, SSE broadcasting,
-     * and sends restore notifications.
+     * and emits restore-lifecycle domain events (D-15 item 1) — a subscriber
+     * turns each into a notification, this service no longer knows
+     * notifications exist.
      */
     async runRestoreProcess(backupRecord: BackupRecord, stack: StackRecord, snapshotId: string): Promise<void> {
         const emitter = ensureBackupBroadcaster(backupRecord.id)
@@ -352,13 +374,19 @@ export class BackupService {
         const lines = ensureBackupLogBuffer(backupRecord.id)
         let finalStatus: "COMPLETED" | "FAILED" = "FAILED"
 
-        // Send restore start notification
-        await this.notificationService.notify({
-            type: "backup_failure", // Reuse backup_failure type for restore events
-            stackId: stack.id,
-            subject: `Restore started: ${stack.displayName ?? stack.id}`,
-            message: `Restore started for stack "${stack.displayName ?? stack.id}" from snapshot ${snapshotId}`,
-        })
+        // Emit the restore-started domain event (D-15 item 1) — a
+        // subscriber turns this into a notification. Defence-in-depth
+        // try/catch alongside the bus's own per-subscriber isolation
+        // (D-17), matching every other emit site in this file.
+        try {
+            this.bus.emit("restore.started", {
+                stackId: stack.id,
+                displayName: stack.displayName,
+                snapshotId,
+            })
+        } catch (emitErr) {
+            console.error("[BackupService] bus emit failed", emitErr)
+        }
 
         try {
             // Fetch repo config to build env for restic. initiateRestore() already
@@ -416,13 +444,20 @@ export class BackupService {
             await this.writeStackStatus(stack.id, {status: "RUNNING"})
             await this.stackRepo.clearConfigChanged(stack.id)
 
-            // Send restore success notification
-            await this.notificationService.notify({
-                type: "backup_failure", // Reuse backup_failure type
-                stackId: stack.id,
-                subject: `Restore completed: ${stack.displayName ?? stack.id}`,
-                message: `Restore completed successfully for stack "${stack.displayName ?? stack.id}" from snapshot ${snapshotId}`,
-            })
+            // Emit the restore-completed domain event (D-15 item 1) — a
+            // subscriber turns this into a notification. Defence-in-depth
+            // try/catch alongside the bus's own per-subscriber isolation
+            // (D-17): a violation of emit()'s never-throws contract must
+            // not prevent finalStatus from being set to COMPLETED below.
+            try {
+                this.bus.emit("restore.completed", {
+                    stackId: stack.id,
+                    displayName: stack.displayName,
+                    snapshotId,
+                })
+            } catch (emitErr) {
+                console.error("[BackupService] bus emit failed", emitErr)
+            }
             finalStatus = "COMPLETED"
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : String(err)
@@ -441,12 +476,20 @@ export class BackupService {
 
             await this.writeStackStatus(stack.id, {status: "ERROR"})
 
-            await this.notificationService.notify({
-                type: "backup_failure",
-                stackId: stack.id,
-                subject: `Restore failed: ${stack.displayName ?? stack.id}`,
-                message: `Restore failed for stack "${stack.displayName ?? stack.id}". Snapshot: ${snapshotId}. Error: ${errorMessage}`,
-            })
+            // Emit the restore-failed domain event (D-15 item 1) — a
+            // subscriber turns this into a notification. Defence-in-depth
+            // try/catch alongside the bus's own per-subscriber isolation
+            // (D-17), matching every other emit site in this file.
+            try {
+                this.bus.emit("restore.failed", {
+                    stackId: stack.id,
+                    displayName: stack.displayName,
+                    snapshotId,
+                    errorMessage,
+                })
+            } catch (emitErr) {
+                console.error("[BackupService] bus emit failed", emitErr)
+            }
 
             // Attempt to restart containers even if restore failed partially
             try {
@@ -458,6 +501,42 @@ export class BackupService {
         } finally {
             emitter.emit("done", finalStatus)
             disposeBackupBroadcaster(backupRecord.id)
+        }
+    }
+
+    /**
+     * Persists a stack's backup schedule, retention, and pre/post hooks,
+     * then tells the scheduler about the change — one call replacing the
+     * route's inline validate-then-write-then-schedule sequence. Validates
+     * the cron expression with the same refusal the route used to produce
+     * (BadRequestError -> 400 {error: "Invalid cron expression"}, the exact
+     * body the route's `reply.status(400).send(...)` built), resolves the
+     * effective schedule/retention (including the global-defaults branch),
+     * persists through the stack repository, and only then calls the
+     * schedule port. Persist first, notify second: a scheduler registered
+     * against settings that failed to persist would fire against stale data.
+     */
+    async saveBackupConfig(stackId: string, input: StackBackupConfigInput): Promise<void> {
+        const {useGlobalSchedule, schedule, useGlobalRetention, retention, preHook, postHook} = input
+
+        const effectiveSchedule = useGlobalSchedule ? null : (schedule ?? null)
+        if (effectiveSchedule && !cron.validate(effectiveSchedule)) {
+            throw new BadRequestError("Invalid cron expression")
+        }
+
+        const effectiveRetention = useGlobalRetention ? null : (retention ?? null)
+
+        await this.stackRepo.updateBackupConfig(stackId, {
+            backupSchedule: effectiveSchedule,
+            backupRetention: effectiveRetention ? JSON.stringify(effectiveRetention) : null,
+            backupPreHook: preHook ?? null,
+            backupPostHook: postHook ?? null,
+        })
+
+        if (effectiveSchedule) {
+            this.schedulePort.upsert(stackId, effectiveSchedule)
+        } else {
+            this.schedulePort.remove(stackId)
         }
     }
 
@@ -586,13 +665,148 @@ export class BackupService {
     }
 
     /**
+     * Same as getSnapshots(), but first re-checks the stack isn't currently
+     * BACKING_UP/RESTORING — the route's pre-existing 409 guard, moved
+     * here unchanged (including its own stack fetch preceding getSnapshots()'s
+     * own internal one; not a new round trip, the same one the route already
+     * made). ConflictError -> 409 {error: "Backup in progress, try again
+     * shortly"}, byte-identical to the route's own reply.status(409).send(...).
+     */
+    async getSnapshotsIfIdle(stackId: string): Promise<ResticSnapshot[]> {
+        const stack = await this.stackRepo.findByIdOrThrow(stackId)
+        const transitionalStates: StackStatus[] = ["BACKING_UP", "RESTORING"]
+        if (transitionalStates.includes(stack.status)) {
+            throw new ConflictError("Backup in progress, try again shortly")
+        }
+        return this.getSnapshots(stackId)
+    }
+
+    /**
+     * Returns every backup for a stack as DTOs (BigInt sizeBytes converted
+     * to string) — the mapping the route used to apply itself after
+     * fetching the raw rows.
+     */
+    async listBackups(stackId: string): Promise<Record<string, unknown>[]> {
+        const backups = await this.backupRepo.findByStackId(stackId)
+        return backups.map((b) => this.backupRepo.toDto(b))
+    }
+
+    /**
+     * Returns a single backup as a DTO — the mapping GET /api/backups/:id
+     * used to apply itself. Throws the repository's typed NotFoundError
+     * (-> 404) for an unknown id, unchanged.
+     */
+    async getBackupDto(id: string): Promise<Record<string, unknown>> {
+        const backup = await this.backupRepo.findByIdOrThrow(id)
+        return this.backupRepo.toDto(backup)
+    }
+
+    /**
+     * Returns the raw (non-DTO) backup row — the shape the SSE stream
+     * handler needs (backup.status, backup.logLines) both for its initial
+     * fetch and for its re-read when no live broadcaster is registered.
+     * Kept undecorated (no toDto()) since the stream handler never touches
+     * sizeBytes.
+     */
+    async getBackupRecordOrThrow(id: string) {
+        return this.backupRepo.findByIdOrThrow(id)
+    }
+
+    /**
+     * Fetches a backup and its stack concurrently — the shape the restore
+     * route's fire-and-forget dependency fetch needs before calling
+     * runRestoreProcess(). Preserves the original Promise.all's concurrency
+     * (two round trips, not moved to sequential awaits).
+     */
+    async getBackupAndStack(backupId: string, stackId: string): Promise<{
+        backupRecord: BackupRecord
+        stack: StackRecord
+    }> {
+        const [backupRecord, stack] = await Promise.all([
+            this.backupRepo.findByIdOrThrow(backupId),
+            this.stackRepo.findByIdOrThrow(stackId),
+        ])
+        return {backupRecord, stack}
+    }
+
+    /**
+     * Fetches a backup, its stack, and the backup repository config
+     * concurrently — the shape the manual/scheduled backup route's
+     * fire-and-forget dependency fetch needs before calling runBackup().
+     * Preserves the original Promise.all's concurrency (three round trips).
+     */
+    async getBackupRunContext(backupId: string, stackId: string): Promise<{
+        backupRecord: BackupRecord
+        stack: StackRecord
+        repoConfig: BackupRepoConfig | null
+    }> {
+        const [backupRecord, stack, repoConfig] = await Promise.all([
+            this.backupRepo.findByIdOrThrow(backupId),
+            this.stackRepo.findByIdOrThrow(stackId),
+            this.getBackupRepoConfig(),
+        ])
+        return {backupRecord, stack, repoConfig}
+    }
+
+    /**
+     * Returns the per-stack backup-config view GET /api/stacks/:id/backup-config
+     * used to build inline: the stack's own schedule/retention/hooks plus
+     * the global defaults, with the same useGlobalSchedule/useGlobalRetention
+     * derivation (presence of a per-stack override) and the same JSON parse
+     * of the stored retention column.
+     */
+    async getBackupConfig(stackId: string): Promise<{
+        useGlobalSchedule: boolean
+        schedule: string | null
+        useGlobalRetention: boolean
+        retention: RetentionPolicy | null
+        preHook: string | null
+        postHook: string | null
+        globalSchedule: string | null
+        globalRetention: RetentionPolicy | null
+    }> {
+        const stack = await this.stackRepo.findByIdOrThrow(stackId)
+
+        const globalSchedule = await this.settings.getSetting(BACKUP_SETTING_KEYS.DEFAULT_SCHEDULE)
+        const globalRetentionRaw = await this.settings.getSetting(BACKUP_SETTING_KEYS.DEFAULT_RETENTION)
+        const globalRetention = globalRetentionRaw ? (JSON.parse(globalRetentionRaw) as RetentionPolicy) : null
+
+        const retention = stack.backupRetention ? (JSON.parse(stack.backupRetention) as RetentionPolicy) : null
+
+        return {
+            useGlobalSchedule: !stack.backupSchedule,
+            schedule: stack.backupSchedule,
+            useGlobalRetention: !stack.backupRetention,
+            retention,
+            preHook: stack.backupPreHook,
+            postHook: stack.backupPostHook,
+            globalSchedule,
+            globalRetention,
+        }
+    }
+
+    /**
+     * Delegates to the injected restic port's version check — the restic
+     * binary availability probe GET /api/settings/backup/status used to
+     * call the infrastructure module directly for.
+     */
+    async checkResticStatus(): Promise<{available: boolean; version?: string}> {
+        return this.resticExecutor.checkVersion()
+    }
+
+    /**
      * Returns volume warnings for a stack's compose file.
      */
     async getVolumeWarnings(stackId: string): Promise<string[]> {
-        const readFn = this.filesystem.readComposeFile ?? this.filesystem.readCompose
-        if (!readFn) return []
-        const content = await readFn.call(this.filesystem, stackId)
-        const stackPath = this.filesystem.getStackDirectory?.(stackId) ?? ""
+        // BackupFilesystem's readComposeFile?/readCompose? guard and
+        // getStackDirectory?. optional-chaining are dropped here:
+        // StackFilesystemPort declares both readCompose and
+        // getStackDirectory as required members, and readComposeFile was
+        // never implemented by any concrete class this service was ever
+        // constructed with (grep confirms it — dead code, not a caller
+        // dependency to preserve).
+        const content = await this.filesystem.readCompose(stackId)
+        const stackPath = this.filesystem.getStackDirectory(stackId)
         return this.detectAbsolutePathVolumes(content, stackPath)
     }
 
@@ -600,18 +814,23 @@ export class BackupService {
      * Ends an IN_PROGRESS backup that never reached restic — e.g. a missing
      * dependency in the manual-trigger or scheduled fire-and-forget fetch.
      * Marks the row FAILED with the given reason, transitions the stack to
-     * ERROR so it can be acted on again, and sends a backup_failure
-     * notification. Idempotent: a no-op on an unknown backup id or a backup
-     * that has already reached a terminal status (COMPLETED/FAILED), so it
-     * never clobbers a row that runBackup already finished.
+     * ERROR so it can be acted on again, and emits a backup.failed domain
+     * event (D-15 item 1) — a subscriber turns that into a notification.
+     * Idempotent: a no-op on an unknown backup id or a backup that has
+     * already reached a terminal status (COMPLETED/FAILED), so it never
+     * clobbers a row that runBackup already finished.
      */
     async abortBackup(backupId: string, stackId: string, errorMessage: string): Promise<void> {
         const backup = await this.backupRepo.findById(backupId)
         if (!backup || backup.status !== "IN_PROGRESS") return
 
-        // A rejected notify() must not be able to strand a subscribed SSE
-        // client with a stream that never ends — the terminal `done` and the
-        // broadcaster disposal happen in `finally` regardless of outcome.
+        // The bus's emit() contract guarantees it never throws and never
+        // awaits a subscriber, so unlike the notification call this
+        // replaced, a failing notification subscriber can no longer strand
+        // a subscribed SSE client with a stream that never ends — the
+        // terminal `done` and the broadcaster disposal in `finally` still
+        // run regardless of outcome, exactly as before, just no longer
+        // guarded against a rejection that can no longer happen here.
         try {
             await this.backupRepo.update(backupId, {
                 status: "FAILED",
@@ -630,12 +849,15 @@ export class BackupService {
                 // Stack row unreadable — fall back to the stack id in the notification text
             }
 
-            await this.notificationService.notify({
-                type: "backup_failure",
-                stackId,
-                subject: `Backup failed: ${displayName}`,
-                message: `Backup failed for stack "${displayName}". Error: ${errorMessage}`,
-            })
+            // Defence-in-depth try/catch alongside the bus's own
+            // per-subscriber isolation (D-17) — see this method's doc
+            // comment: unlike the direct notification call this replaced,
+            // nothing here can propagate past the `finally` below any more.
+            try {
+                this.bus.emit("backup.failed", {stackId, displayName, errorMessage})
+            } catch (emitErr) {
+                console.error("[BackupService] bus emit failed", emitErr)
+            }
         } finally {
             getBackupBroadcaster(backupId)?.emit("done", "FAILED")
             disposeBackupBroadcaster(backupId)
@@ -669,11 +891,12 @@ export class BackupService {
 
     /**
      * Writes a stack status update through stackRepo.update() and then
-     * publishes a stack_status SSE event so every open browser tab sees the
-     * transition live — mirroring StackService.transitionStatus()'s
-     * broadcaster convention (plan 05.1-02).
+     * emits a stack.status_changed domain event so every open browser tab
+     * sees the transition live (via the state-broadcast subscriber) —
+     * mirroring StackService.transitionStatus()'s convention (plan 05.1-02).
      *
-     * The publish is wrapped in try/catch: a throwing SSE subscriber must
+     * The emit is wrapped in try/catch: the bus contract says emit does not
+     * throw, but this catch is defence-in-depth so a throwing subscriber can
      * never propagate out of here. In abortBackup() especially, an exception
      * escaping this call would skip the caller's `finally` block that emits
      * the terminal `done` frame and disposes the backup broadcaster, leaving
@@ -685,9 +908,9 @@ export class BackupService {
     ): Promise<void> {
         await this.stackRepo.update(stackId, data)
         try {
-            this.broadcaster.publish({type: "stack_status", stackId, stackStatus: data.status})
+            this.bus.emit("stack.status_changed", {stackId, status: data.status})
         } catch (err) {
-            console.error("[BackupService] broadcaster publish failed", err)
+            console.error("[BackupService] bus emit failed", err)
         }
     }
 
@@ -749,20 +972,6 @@ export class BackupService {
                 resolve({stdout: "", exitCode: 1})
             })
         })
-    }
-
-    /**
-     * Parses the retention policy from JSON, falling back to defaults.
-     */
-    private parseRetentionPolicy(retentionJson: string | null): RetentionPolicy {
-        if (retentionJson) {
-            try {
-                return JSON.parse(retentionJson) as RetentionPolicy
-            } catch {
-                // Fall through to defaults
-            }
-        }
-        return {keepDaily: 7, keepWeekly: 4, keepMonthly: 12}
     }
 
     /**

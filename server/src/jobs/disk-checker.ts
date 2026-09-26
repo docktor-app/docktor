@@ -1,9 +1,7 @@
-import cron from "node-cron"
-import type {NotificationEvent} from "../application/notification-service.js"
-
-export interface DiskCheckerNotificationService {
-    notify(event: NotificationEvent): Promise<void>
-}
+import type {EventBusPort} from "../application/ports/event-bus-port.js"
+import {domainEventBus} from "../infrastructure/event-bus.js"
+import type {Job, JobHealthReporter} from "./job.js"
+import {IntervalJob} from "./job.js"
 
 export interface DiskCheckerSettings {
     getMany(keys: string[]): Promise<Record<string, string>>
@@ -11,43 +9,36 @@ export interface DiskCheckerSettings {
     setDiskAlertActive(active: boolean): Promise<void>
 }
 
-export class DiskChecker {
-    private cronTask: cron.ScheduledTask | null = null
+export class DiskChecker extends IntervalJob {
+    readonly name = "DiskChecker"
+    protected readonly cronExpression = "0 0 * * *"
+    protected readonly runImmediatelyOnStart = true
+
     private readonly monitorPath: string
 
     constructor(
-        private readonly notificationService: DiskCheckerNotificationService,
+        private readonly bus: Pick<EventBusPort, "emit">,
         private readonly settings: DiskCheckerSettings,
         monitorPath?: string,
     ) {
+        super()
         this.monitorPath = monitorPath ?? "/var/lib/docker"
     }
 
-    start(): void {
-        void this.check()
-        this.cronTask = cron.schedule("0 0 * * *", () => {
-            void this.check()
-        })
-    }
-
-    stop(): void {
-        this.cronTask?.stop()
-        this.cronTask = null
+    protected async run(): Promise<void> {
+        await this.check()
     }
 
     async check(): Promise<void> {
-        // check() is invoked fire-and-forget (`void this.check()`) from both
-        // start() and the cron callback below — nothing awaits its promise,
-        // so an uncaught rejection here becomes an unhandled promise
-        // rejection that crashes the entire Node process, taking down the
-        // HTTP server and every other job with it. This is most likely to
-        // bite on the very first run against a freshly-provisioned database,
-        // where the Setting table may not exist yet if the startup
-        // schema-sync step (see lib/schema-sync.ts) hasn't completed or was
-        // disabled. The whole body is guarded so a settings-query failure
-        // degrades to a logged skip instead of a server-wide crash loop,
-        // matching the fault-isolation guarantee every other job gets from
-        // its own individually try/caught startJobs() registration.
+        // check() is invoked both as this class's run() body and, in
+        // production, directly by nothing else — this outer try/catch stays
+        // even though IntervalJob's runGuarded() would also catch a thrown
+        // error, because check() is a public method with its own
+        // job-specific log line ("[DiskChecker] check failed:") that the
+        // existing test suite asserts verbatim, and it must keep degrading
+        // to a logged skip (not a rethrow) on a settings-query failure
+        // against a freshly-provisioned database where the Setting table
+        // may not exist yet.
         try {
             const settings = await this.settings.getMany([
                 "notify.diskWarning",
@@ -89,23 +80,28 @@ export class DiskChecker {
         if (triggered && (!lastAlert || !lastAlert.active)) {
             await this.settings.setDiskAlertActive(true)
 
-            const freeMB = Number(freeBytes / (1024n * 1024n))
-            const totalMB = Number(totalBytes / (1024n * 1024n))
-            const thresholdKind = belowPercent ? `below ${thresholdPercent}%` : `below ${Number(thresholdBytes / (1024n * 1024n * 1024n))}GB`
-            const message = [
-                `Disk space warning on ${this.monitorPath}`,
-                ``,
-                `Free space: ${freeMB} MB (${freePercent}%) of ${totalMB} MB total`,
-                `Threshold crossed: ${thresholdKind}`,
-                ``,
-                `This notification will not repeat until disk space recovers above the threshold.`,
-            ].join("\n")
+            const thresholdDescription = belowPercent
+                ? `below ${thresholdPercent}%`
+                : `below ${Number(thresholdBytes / (1024n * 1024n * 1024n))}GB`
 
-            await this.notificationService.notify({
-                type: "disk_warning",
-                subject: "Disk space warning",
-                message,
-            })
+            // Emits the raw facts; the notification subscriber composes the
+            // exact multi-line message the direct notification call used to
+            // build here (D-15 item 1, plan 10-12). Defence-in-depth
+            // try/catch alongside the bus's own per-subscriber isolation
+            // (D-17): emit()'s contract says it never throws, but this
+            // catch keeps a violation of that contract from escaping
+            // check()'s own try/catch and its job-specific log line.
+            try {
+                this.bus.emit("disk.threshold_crossed", {
+                    monitorPath: this.monitorPath,
+                    freeBytes,
+                    totalBytes,
+                    freePercent,
+                    thresholdDescription,
+                })
+            } catch (emitErr) {
+                console.error("[DiskChecker] bus emit failed", emitErr)
+            }
         } else if (!triggered && lastAlert?.active) {
             await this.settings.setDiskAlertActive(false)
         }
@@ -113,9 +109,10 @@ export class DiskChecker {
 }
 
 let _checker: DiskChecker | null = null
+let _healthReporter: JobHealthReporter | null = null
 
 async function createProductionChecker(): Promise<DiskChecker> {
-    const [{notificationService, settingsRepository}, {notificationRepository}] = await Promise.all([
+    const [{settingsRepository}, {notificationRepository}] = await Promise.all([
         import("../application/index.js"),
         import("../repositories/notification-repository.js"),
     ])
@@ -128,13 +125,25 @@ async function createProductionChecker(): Promise<DiskChecker> {
 
     const monitorPath = process.env.DOCKER_DATA_PATH ?? (process.platform === "win32" ? "." : "/var/lib/docker")
 
-    return new DiskChecker(notificationService, combinedSettings, monitorPath)
+    const checker = new DiskChecker(domainEventBus, combinedSettings, monitorPath)
+    if (_healthReporter) checker.setHealthReporter(_healthReporter)
+    return checker
 }
 
-export const diskChecker = {
+// A Job facade over the lazily-constructed production DiskChecker — the
+// lazy construction itself (not this facade) is what keeps db.ts and the
+// rest of the production dependency chain out of the unit-test module
+// graph; several suites depend on that staying true.
+export const diskChecker: Job = {
+    name: "DiskChecker",
+    kind: "interval",
     start: async () => {
         _checker = await createProductionChecker()
-        _checker.start()
+        await _checker.start()
     },
     stop: () => _checker?.stop(),
+    setHealthReporter: (reporter: JobHealthReporter) => {
+        _healthReporter = reporter
+        _checker?.setHealthReporter(reporter)
+    },
 }

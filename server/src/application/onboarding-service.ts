@@ -2,6 +2,8 @@ import fs from "node:fs/promises";
 import {auth} from "../lib/auth.js";
 import {StackRepository} from "../repositories/stack-repository.js";
 import {SettingsRepository} from "../repositories/settings-repository.js";
+import type {UserRepository} from "../repositories/user-repository.js";
+import {userRepository} from "../repositories/index.js";
 import {encrypt} from "../lib/crypto.js";
 import {slugify} from "../lib/slugify.js";
 import {AppError, BadRequestError, ConflictError} from "../lib/errors.js";
@@ -10,6 +12,8 @@ import {createComposeConfig} from "../domain/compose-config.js";
 // so there is no circular dependency.
 import {proxyService} from "./index.js";
 import type {ProxyService} from "./proxy-service.js";
+import {brownfieldScanner} from "../infrastructure/brownfield-scanner.js";
+import type {BrownfieldScannerPort, ScanResult} from "./ports/brownfield-scanner-port.js";
 import type {
     WizardStep1Input,
     WizardStep2Input,
@@ -32,6 +36,11 @@ export interface Step1Result {
 // finishes. See completeWizard()/isWizardComplete() below.
 export const SETUP_WIZARD_COMPLETE_KEY = "setup.wizardComplete";
 
+// WR-07: unique-key row used as an atomic "first admin" lock — see
+// createAdminWithLock() below. `Setting.key` is the table's primary key, so
+// Postgres itself guarantees only one concurrent insert can ever win.
+const SETUP_STEP1_LOCK_KEY = "setup.step1Lock";
+
 export class OnboardingService {
     constructor(
         private readonly authClient: typeof auth.api,
@@ -45,6 +54,14 @@ export class OnboardingService {
         // WR-05: injectable so adoptInPlace's file read is unit-testable
         // without touching the real filesystem.
         private readonly fsLib: {readFile: typeof fs.readFile} = fs,
+        // Setup-completeness question (routes/setup.ts's four check points)
+        // and the WR-07 lock both key off "does any user exist yet".
+        private readonly userRepo: Pick<UserRepository, "count"> = userRepository,
+        // D-07: narrow port, not the concrete BrownfieldScanner — shared by
+        // both routes/setup.ts (pre-wizard-complete) and routes/imports.ts
+        // (post-setup) so the two callers can never drift onto different
+        // scan behaviours (T-10-16).
+        private readonly scanner: BrownfieldScannerPort = brownfieldScanner,
     ) {}
 
     /**
@@ -74,6 +91,42 @@ export class OnboardingService {
             },
             sessionToken: result.token,
         };
+    }
+
+    /**
+     * The single setup-completeness question, asked at routes/setup.ts's
+     * four check points (status, step1, step6, complete) and answered the
+     * same way every time: does an admin account already exist?
+     */
+    async hasAnyUser(): Promise<boolean> {
+        return (await this.userRepo.count()) > 0;
+    }
+
+    /**
+     * WR-07: the count-then-create sequence in routes/setup.ts's step1
+     * handler (checked via hasAnyUser() immediately before this call) is not
+     * atomic — two concurrent requests (double-clicked "Next", two browser
+     * tabs) could both observe zero users and both proceed. Atomically claim
+     * a one-time lock row before creating the account; the unique primary
+     * key on Setting.key means Postgres guarantees only one concurrent
+     * insert can win, so a losing request is rejected here before it ever
+     * reaches signUpEmail. The lock is always released afterward (`finally`)
+     * — it only needs to survive the race window, since `hasAnyUser()`
+     * becomes the durable "already complete" guard for every request from
+     * then on.
+     */
+    async createAdminWithLock(input: WizardStep1Input): Promise<Step1Result> {
+        try {
+            await this.settingsRepo.insertExclusive(SETUP_STEP1_LOCK_KEY, new Date().toISOString());
+        } catch {
+            throw new BadRequestError("Setup already complete");
+        }
+
+        try {
+            return await this.handleWizardStep1(input);
+        } finally {
+            await this.settingsRepo.deleteIfPresent(SETUP_STEP1_LOCK_KEY);
+        }
     }
 
     /**
@@ -148,6 +201,16 @@ export class OnboardingService {
                 this.cryptoLib.encrypt(input.password),
             );
         }
+    }
+
+    /**
+     * D-07/T-10-16: brownfield filesystem scan, behind the injected scanner
+     * port. Both routes/setup.ts (pre-wizard-complete) and routes/imports.ts
+     * (post-setup) call this one method, so they can never reach the
+     * scanner through two different code paths.
+     */
+    async scan(directories: string[]): Promise<ScanResult> {
+        return this.scanner.scan(directories);
     }
 
     /**

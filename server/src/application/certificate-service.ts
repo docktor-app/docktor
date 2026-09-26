@@ -9,7 +9,7 @@ import {
 } from "../domain/certificate-validation.js";
 import {Prisma} from "../generated/prisma/client.js";
 import type {CertificateDto, CertificateRepository} from "../repositories/certificate-repository.js";
-import type {CertificateFilesystem} from "../infrastructure/certificate-filesystem.js";
+import type {CertificateFilesystemPort} from "./ports/certificate-filesystem-port.js";
 
 export interface CreateCertificateInput {
     domainPattern: string;
@@ -24,7 +24,7 @@ export class CertificateService {
             CertificateRepository,
             "create" | "toDto" | "delete" | "findAll" | "findByIdOrThrow" | "findReferencingDomains"
         >,
-        private readonly fs: Pick<CertificateFilesystem, "writeCertificateFiles" | "removeCertificateFiles">,
+        private readonly fs: CertificateFilesystemPort,
     ) {}
 
     /**

@@ -17,9 +17,9 @@ const CONFIGURED_REPO_SETTINGS = {
     "backup.password": "encrypted:abc",
 };
 
-function createMockBroadcaster() {
+function createMockBus() {
     return {
-        publish: vi.fn(),
+        emit: vi.fn(),
     };
 }
 
@@ -34,6 +34,7 @@ function createMockResticExecutor() {
         buildBackupArgs: vi.fn().mockReturnValue(["backup", "/path"]),
         buildForgetArgs: vi.fn().mockReturnValue(["forget", "--prune"]),
         snapshots: vi.fn().mockResolvedValue([]),
+        checkVersion: vi.fn().mockResolvedValue({available: true, version: "0.16.0"}),
     };
 }
 
@@ -42,7 +43,12 @@ function createMockBackupRepository() {
         create: vi.fn().mockResolvedValue({id: "backup-1", logLines: []}),
         update: vi.fn().mockResolvedValue(undefined),
         findById: vi.fn(),
+        findByIdOrThrow: vi.fn(),
         findByStackId: vi.fn().mockResolvedValue([]),
+        toDto: vi.fn((b: {sizeBytes: bigint | null; [key: string]: unknown}) => ({
+            ...b,
+            sizeBytes: b.sizeBytes !== null ? String(b.sizeBytes) : null,
+        })),
     };
 }
 
@@ -54,6 +60,14 @@ function createMockStackRepository() {
         clearConfigChanged: vi.fn().mockResolvedValue(undefined),
         updateStackHash: vi.fn().mockResolvedValue(undefined),
         replaceServices: vi.fn().mockResolvedValue(undefined),
+        updateBackupConfig: vi.fn().mockResolvedValue(undefined),
+    };
+}
+
+function createMockSchedulePort() {
+    return {
+        upsert: vi.fn(),
+        remove: vi.fn(),
     };
 }
 
@@ -65,16 +79,10 @@ function createMockSettingsService() {
     };
 }
 
-function createMockNotificationService() {
-    return {
-        notify: vi.fn().mockResolvedValue(undefined),
-    };
-}
-
 function createMockStackFilesystem() {
     return {
         getStackDirectory: vi.fn().mockReturnValue("/stacks/myapp"),
-        readComposeFile: vi.fn().mockResolvedValue("services:\n  web:\n    image: nginx"),
+        readCompose: vi.fn().mockResolvedValue("services:\n  web:\n    image: nginx"),
     };
 }
 
@@ -92,10 +100,10 @@ describe("BackupService", () => {
     let mockBackupRepository: ReturnType<typeof createMockBackupRepository>;
     let mockStackRepository: ReturnType<typeof createMockStackRepository>;
     let mockSettingsService: ReturnType<typeof createMockSettingsService>;
-    let mockNotificationService: ReturnType<typeof createMockNotificationService>;
     let mockStackFilesystem: ReturnType<typeof createMockStackFilesystem>;
     let mockDockerExecutor: ReturnType<typeof createMockDockerExecutor>;
-    let mockBroadcaster: ReturnType<typeof createMockBroadcaster>;
+    let mockBus: ReturnType<typeof createMockBus>;
+    let mockSchedulePort: ReturnType<typeof createMockSchedulePort>;
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -103,20 +111,20 @@ describe("BackupService", () => {
         mockBackupRepository = createMockBackupRepository();
         mockStackRepository = createMockStackRepository();
         mockSettingsService = createMockSettingsService();
-        mockNotificationService = createMockNotificationService();
         mockStackFilesystem = createMockStackFilesystem();
         mockDockerExecutor = createMockDockerExecutor();
-        mockBroadcaster = createMockBroadcaster();
+        mockBus = createMockBus();
+        mockSchedulePort = createMockSchedulePort();
 
         service = new BackupService(
             mockResticExecutor as any,
             mockBackupRepository as any,
             mockStackRepository as any,
             mockSettingsService as any,
-            mockNotificationService as any,
             mockStackFilesystem as any,
             mockDockerExecutor as any,
-            mockBroadcaster as any,
+            mockBus as any,
+            mockSchedulePort as any,
         );
 
         // Default: stack exists and is running
@@ -252,10 +260,9 @@ describe("BackupService", () => {
 
             await service.initiateBackup("stack-1");
 
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith({
-                type: "stack_status",
+            expect(mockBus.emit).toHaveBeenCalledWith("stack.status_changed", {
                 stackId: "stack-1",
-                stackStatus: "BACKING_UP",
+                status: "BACKING_UP",
             });
         });
     });
@@ -371,13 +378,36 @@ describe("BackupService", () => {
             );
         });
 
-        it("calls notificationService.notify with type backup_failure on failure", async () => {
+        it("emits backup.failed on failure, with the repo type from the resolved repo config", async () => {
             mockResticExecutor.run.mockRejectedValue(new Error("restic failed"));
 
             await service.runBackup(backupRecord as any, stack as any, repoConfig);
 
-            expect(mockNotificationService.notify).toHaveBeenCalledWith(
-                expect.objectContaining({type: "backup_failure"}),
+            // This describe block's `stack` fixture carries no displayName
+            // field — the payload's displayName is `undefined` here, which
+            // the notification subscriber (Task 1) falls back to the stack
+            // id for.
+            expect(mockBus.emit).toHaveBeenCalledWith("backup.failed", {
+                stackId: "stack-1",
+                displayName: undefined,
+                repoType: repoConfig.repoType,
+                errorMessage: "restic failed",
+            });
+        });
+
+        it("completes normally when the bus emit throws — a failing notification subscriber can't strand a backup run", async () => {
+            mockResticExecutor.run.mockRejectedValue(new Error("restic failed"));
+            mockBus.emit.mockImplementation((event: string) => {
+                if (event === "backup.failed") throw new Error("subscriber exploded");
+            });
+
+            await expect(
+                service.runBackup(backupRecord as any, stack as any, repoConfig),
+            ).resolves.toBeUndefined();
+
+            expect(mockStackRepository.update).toHaveBeenCalledWith(
+                "stack-1",
+                expect.objectContaining({status: "ERROR"}),
             );
         });
 
@@ -533,10 +563,9 @@ describe("BackupService", () => {
         it("publishes stack_status with the stack's restored previous status on success", async () => {
             await service.runBackup(backupRecord as any, stack as any, repoConfig);
 
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith({
-                type: "stack_status",
+            expect(mockBus.emit).toHaveBeenCalledWith("stack.status_changed", {
                 stackId: "stack-1",
-                stackStatus: "RUNNING",
+                status: "RUNNING",
             });
         });
 
@@ -545,11 +574,24 @@ describe("BackupService", () => {
 
             await service.runBackup(backupRecord as any, stack as any, repoConfig);
 
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith({
-                type: "stack_status",
+            expect(mockBus.emit).toHaveBeenCalledWith("stack.status_changed", {
                 stackId: "stack-1",
-                stackStatus: "ERROR",
+                status: "ERROR",
             });
+        });
+
+        it("resolves the stack repository write before emitting stack.status_changed", async () => {
+            const order: string[] = [];
+            mockStackRepository.update.mockImplementation(async () => {
+                order.push("stackRepo.update");
+            });
+            mockBus.emit.mockImplementation(() => {
+                order.push("bus.emit");
+            });
+
+            await service.runBackup(backupRecord as any, stack as any, repoConfig);
+
+            expect(order).toEqual(["stackRepo.update", "bus.emit"]);
         });
     });
 
@@ -758,10 +800,9 @@ services:
         it("publishes stack_status with RESTORING when a repository is configured", async () => {
             await service.initiateRestore("stack-1", snapshotId);
 
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith({
-                type: "stack_status",
+            expect(mockBus.emit).toHaveBeenCalledWith("stack.status_changed", {
                 stackId: "stack-1",
-                stackStatus: "RESTORING",
+                status: "RESTORING",
             });
         });
     });
@@ -951,10 +992,9 @@ services:
         it("publishes stack_status with RUNNING on successful restore", async () => {
             await service.runRestoreProcess(backupRecord as any, stack as any, snapshotId);
 
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith({
-                type: "stack_status",
+            expect(mockBus.emit).toHaveBeenCalledWith("stack.status_changed", {
                 stackId: "stack-1",
-                stackStatus: "RUNNING",
+                status: "RUNNING",
             });
         });
 
@@ -963,11 +1003,58 @@ services:
 
             await service.runRestoreProcess(backupRecord as any, stack as any, snapshotId);
 
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith({
-                type: "stack_status",
+            expect(mockBus.emit).toHaveBeenCalledWith("stack.status_changed", {
                 stackId: "stack-1",
-                stackStatus: "ERROR",
+                status: "ERROR",
             });
+        });
+
+        it("emits restore.started before any restic work begins", async () => {
+            await service.runRestoreProcess(backupRecord as any, stack as any, snapshotId);
+
+            expect(mockBus.emit).toHaveBeenCalledWith("restore.started", {
+                stackId: "stack-1",
+                displayName: "My App",
+                snapshotId,
+            });
+        });
+
+        it("emits restore.completed on successful restore", async () => {
+            await service.runRestoreProcess(backupRecord as any, stack as any, snapshotId);
+
+            expect(mockBus.emit).toHaveBeenCalledWith("restore.completed", {
+                stackId: "stack-1",
+                displayName: "My App",
+                snapshotId,
+            });
+        });
+
+        it("emits restore.failed on restore failure, with the error message", async () => {
+            mockResticExecutor.run.mockRejectedValue(new Error("restore: corrupted data"));
+
+            await service.runRestoreProcess(backupRecord as any, stack as any, snapshotId);
+
+            expect(mockBus.emit).toHaveBeenCalledWith("restore.failed", {
+                stackId: "stack-1",
+                displayName: "My App",
+                snapshotId,
+                errorMessage: "restore: corrupted data",
+            });
+        });
+
+        it("completes normally when the bus emit throws for every restore-lifecycle event", async () => {
+            mockBus.emit.mockImplementation((event: string) => {
+                if (event.startsWith("restore.")) throw new Error("subscriber exploded");
+            });
+
+            await expect(
+                service.runRestoreProcess(backupRecord as any, stack as any, snapshotId),
+            ).resolves.toBeUndefined();
+
+            expect(mockStackRepository.update).toHaveBeenCalledWith(
+                "stack-1",
+                expect.objectContaining({status: "RUNNING"}),
+            );
         });
     });
 
@@ -999,14 +1086,31 @@ services:
             );
         });
 
-        it("calls notificationService.notify with type backup_failure and the stack id", async () => {
+        it("emits backup.failed with the stack id, the resolved stack's display name, and no repo type", async () => {
             mockBackupRepository.findById.mockResolvedValue({id: "backup-1", status: "IN_PROGRESS"});
 
             await service.abortBackup("backup-1", "stack-1", "boom");
 
-            expect(mockNotificationService.notify).toHaveBeenCalledWith(
-                expect.objectContaining({type: "backup_failure", stackId: "stack-1"}),
-            );
+            // mockStackRepository.findByIdOrThrow resolves to displayName
+            // "My App" per the outer beforeEach's default stub.
+            expect(mockBus.emit).toHaveBeenCalledWith("backup.failed", {
+                stackId: "stack-1",
+                displayName: "My App",
+                errorMessage: "boom",
+            });
+        });
+
+        it("falls back to the stack id as the display name when the stack row can't be read", async () => {
+            mockBackupRepository.findById.mockResolvedValue({id: "backup-1", status: "IN_PROGRESS"});
+            mockStackRepository.findByIdOrThrow.mockRejectedValueOnce(new Error("stack not found"));
+
+            await service.abortBackup("backup-1", "stack-1", "boom");
+
+            expect(mockBus.emit).toHaveBeenCalledWith("backup.failed", {
+                stackId: "stack-1",
+                displayName: "stack-1",
+                errorMessage: "boom",
+            });
         });
 
         it("is a no-op on a row that is already COMPLETED", async () => {
@@ -1016,7 +1120,7 @@ services:
 
             expect(mockBackupRepository.update).not.toHaveBeenCalled();
             expect(mockStackRepository.update).not.toHaveBeenCalled();
-            expect(mockNotificationService.notify).not.toHaveBeenCalled();
+            expect(mockBus.emit).not.toHaveBeenCalled();
         });
 
         it("is a no-op on a row that is already FAILED", async () => {
@@ -1026,7 +1130,7 @@ services:
 
             expect(mockBackupRepository.update).not.toHaveBeenCalled();
             expect(mockStackRepository.update).not.toHaveBeenCalled();
-            expect(mockNotificationService.notify).not.toHaveBeenCalled();
+            expect(mockBus.emit).not.toHaveBeenCalled();
         });
 
         it("is a no-op and does not throw on an unknown backup id", async () => {
@@ -1036,7 +1140,7 @@ services:
 
             expect(mockBackupRepository.update).not.toHaveBeenCalled();
             expect(mockStackRepository.update).not.toHaveBeenCalled();
-            expect(mockNotificationService.notify).not.toHaveBeenCalled();
+            expect(mockBus.emit).not.toHaveBeenCalled();
         });
 
         it("on a still-IN_PROGRESS row, emits done with FAILED on the registered emitter, then removes it", async () => {
@@ -1051,14 +1155,25 @@ services:
             expect(getBackupBroadcaster("backup-1")).toBeUndefined();
         });
 
-        it("emits done even when the notification send rejects", async () => {
+        // Behavioural change (D-17, plan 10-12): abortBackup() used to
+        // `await this.notificationService.notify(...)` directly inside its
+        // try block with no catch — a rejecting notify() propagated past
+        // this method's own return, even though the `finally` below still
+        // ran the terminal `done` emit and broadcaster disposal first. Now
+        // that the notification path is a `bus.emit()` wrapped in its own
+        // try/catch (never awaited, never able to throw), that propagation
+        // path is gone entirely — proven below by a throwing bus.emit no
+        // longer causing abortBackup() itself to reject, only logging.
+        it("resolves normally even when the bus emit throws — a rejecting notification path can no longer propagate past abortBackup's finally", async () => {
             mockBackupRepository.findById.mockResolvedValue({id: "backup-1", status: "IN_PROGRESS"});
-            mockNotificationService.notify.mockRejectedValueOnce(new Error("smtp down"));
+            mockBus.emit.mockImplementation(() => {
+                throw new Error("subscriber exploded");
+            });
             const emitter = ensureBackupBroadcaster("backup-1");
             const onDone = vi.fn();
             emitter.on("done", onDone);
 
-            await expect(service.abortBackup("backup-1", "stack-1", "boom")).rejects.toThrow("smtp down");
+            await expect(service.abortBackup("backup-1", "stack-1", "boom")).resolves.toBeUndefined();
 
             expect(onDone).toHaveBeenCalledWith("FAILED");
             expect(getBackupBroadcaster("backup-1")).toBeUndefined();
@@ -1081,16 +1196,15 @@ services:
 
             await service.abortBackup("backup-1", "stack-1", "boom");
 
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith({
-                type: "stack_status",
+            expect(mockBus.emit).toHaveBeenCalledWith("stack.status_changed", {
                 stackId: "stack-1",
-                stackStatus: "ERROR",
+                status: "ERROR",
             });
         });
 
-        it("swallows a throwing broadcaster publish — the status write and the terminal done frame still complete", async () => {
+        it("swallows a throwing bus emit — the status write and the terminal done frame still complete", async () => {
             mockBackupRepository.findById.mockResolvedValue({id: "backup-1", status: "IN_PROGRESS"});
-            mockBroadcaster.publish.mockImplementation(() => {
+            mockBus.emit.mockImplementation(() => {
                 throw new Error("subscriber exploded");
             });
             const emitter = ensureBackupBroadcaster("backup-1");
@@ -1146,6 +1260,265 @@ services:
             // path.resolve on Windows converts Unix paths to Windows format
             const expected = path.resolve(unixPath, "backups");
             expect(env.RESTIC_REPOSITORY).toBe(expected);
+        });
+    });
+
+    describe("saveBackupConfig() (Task 1, 10-10)", () => {
+        const baseInput = {
+            useGlobalSchedule: false,
+            schedule: "0 3 * * *",
+            useGlobalRetention: true,
+            retention: null,
+            preHook: null,
+            postHook: null,
+        };
+
+        it("persists via stackRepo.updateBackupConfig before calling the schedule port's upsert", async () => {
+            const callOrder: string[] = [];
+            mockStackRepository.updateBackupConfig.mockImplementation(async () => {
+                callOrder.push("persist");
+            });
+            mockSchedulePort.upsert.mockImplementation(() => {
+                callOrder.push("upsert");
+            });
+
+            await service.saveBackupConfig("stack-1", baseInput as any);
+
+            expect(callOrder).toEqual(["persist", "upsert"]);
+            expect(mockStackRepository.updateBackupConfig).toHaveBeenCalledWith("stack-1", {
+                backupSchedule: "0 3 * * *",
+                backupRetention: null,
+                backupPreHook: null,
+                backupPostHook: null,
+            });
+            expect(mockSchedulePort.upsert).toHaveBeenCalledWith("stack-1", "0 3 * * *");
+            expect(mockSchedulePort.remove).not.toHaveBeenCalled();
+        });
+
+        it("calls the schedule port's remove (not upsert) when no effective schedule is set", async () => {
+            await service.saveBackupConfig("stack-1", {
+                ...baseInput,
+                useGlobalSchedule: true,
+                schedule: null,
+            } as any);
+
+            expect(mockSchedulePort.remove).toHaveBeenCalledWith("stack-1");
+            expect(mockSchedulePort.upsert).not.toHaveBeenCalled();
+        });
+
+        it("rejects an invalid cron expression with BadRequestError and never persists or notifies the scheduler", async () => {
+            await expect(
+                service.saveBackupConfig("stack-1", {
+                    ...baseInput,
+                    schedule: "not a cron expression",
+                } as any),
+            ).rejects.toBeInstanceOf(BadRequestError);
+
+            expect(mockStackRepository.updateBackupConfig).not.toHaveBeenCalled();
+            expect(mockSchedulePort.upsert).not.toHaveBeenCalled();
+            expect(mockSchedulePort.remove).not.toHaveBeenCalled();
+        });
+
+        it("resolves retention through the global-defaults branch (useGlobalRetention -> null, no JSON.stringify)", async () => {
+            await service.saveBackupConfig("stack-1", {
+                ...baseInput,
+                useGlobalRetention: true,
+                retention: {keepDaily: 1, keepWeekly: 1, keepMonthly: 1},
+            } as any);
+
+            expect(mockStackRepository.updateBackupConfig).toHaveBeenCalledWith(
+                "stack-1",
+                expect.objectContaining({backupRetention: null}),
+            );
+        });
+
+        it("JSON-stringifies a per-stack retention override", async () => {
+            await service.saveBackupConfig("stack-1", {
+                ...baseInput,
+                useGlobalRetention: false,
+                retention: {keepDaily: 3, keepWeekly: 2, keepMonthly: 1},
+            } as any);
+
+            expect(mockStackRepository.updateBackupConfig).toHaveBeenCalledWith(
+                "stack-1",
+                expect.objectContaining({
+                    backupRetention: JSON.stringify({keepDaily: 3, keepWeekly: 2, keepMonthly: 1}),
+                }),
+            );
+        });
+    });
+
+    describe("getSnapshotsIfIdle() (Task 2, 10-10)", () => {
+        it("throws ConflictError when the stack is BACKING_UP", async () => {
+            mockStackRepository.findByIdOrThrow.mockResolvedValue({id: "stack-1", status: "BACKING_UP"});
+
+            await expect(service.getSnapshotsIfIdle("stack-1")).rejects.toMatchObject({
+                statusCode: 409,
+                message: "Backup in progress, try again shortly",
+            });
+        });
+
+        it("throws ConflictError when the stack is RESTORING", async () => {
+            mockStackRepository.findByIdOrThrow.mockResolvedValue({id: "stack-1", status: "RESTORING"});
+
+            await expect(service.getSnapshotsIfIdle("stack-1")).rejects.toMatchObject({statusCode: 409});
+        });
+
+        it("returns snapshots when the stack is idle", async () => {
+            mockStackRepository.findByIdOrThrow.mockResolvedValue({id: "stack-1", status: "RUNNING", hostPath: "/stacks/s1"});
+            mockSettingsService.getMany.mockResolvedValue(CONFIGURED_REPO_SETTINGS);
+            mockResticExecutor.snapshots.mockResolvedValue([{id: "snap-1"}]);
+
+            const result = await service.getSnapshotsIfIdle("stack-1");
+
+            expect(result).toEqual([{id: "snap-1"}]);
+        });
+    });
+
+    describe("listBackups() (Task 2, 10-10)", () => {
+        it("returns backupRepo.findByStackId() results mapped through toDto()", async () => {
+            mockBackupRepository.findByStackId.mockResolvedValue([
+                {id: "b1", sizeBytes: 123n},
+                {id: "b2", sizeBytes: null},
+            ]);
+
+            const result = await service.listBackups("stack-1");
+
+            expect(mockBackupRepository.findByStackId).toHaveBeenCalledWith("stack-1");
+            expect(result).toEqual([
+                {id: "b1", sizeBytes: "123"},
+                {id: "b2", sizeBytes: null},
+            ]);
+        });
+    });
+
+    describe("getBackupDto() (Task 2, 10-10)", () => {
+        it("returns a single backup mapped through toDto()", async () => {
+            mockBackupRepository.findByIdOrThrow.mockResolvedValue({id: "b1", sizeBytes: 456n});
+
+            const result = await service.getBackupDto("b1");
+
+            expect(result).toEqual({id: "b1", sizeBytes: "456"});
+        });
+
+        it("propagates the repository's NotFoundError for an unknown id, unchanged", async () => {
+            mockBackupRepository.findByIdOrThrow.mockRejectedValue(new NotFoundError('Backup "missing" not found'));
+
+            await expect(service.getBackupDto("missing")).rejects.toBeInstanceOf(NotFoundError);
+        });
+    });
+
+    describe("getBackupRecordOrThrow() (Task 2, 10-10)", () => {
+        it("returns the raw (non-DTO) backup row", async () => {
+            mockBackupRepository.findByIdOrThrow.mockResolvedValue({id: "b1", status: "IN_PROGRESS", logLines: ["a"]});
+
+            const result = await service.getBackupRecordOrThrow("b1");
+
+            expect(result).toEqual({id: "b1", status: "IN_PROGRESS", logLines: ["a"]});
+        });
+
+        it("propagates the repository's NotFoundError for an unknown id, unchanged", async () => {
+            mockBackupRepository.findByIdOrThrow.mockRejectedValue(new NotFoundError('Backup "missing" not found'));
+
+            await expect(service.getBackupRecordOrThrow("missing")).rejects.toBeInstanceOf(NotFoundError);
+        });
+    });
+
+    describe("getBackupAndStack() / getBackupRunContext() (Task 2, 10-10)", () => {
+        it("getBackupAndStack fetches the backup and stack concurrently", async () => {
+            mockBackupRepository.findByIdOrThrow.mockResolvedValue({id: "b1", stackId: "stack-1", logLines: []});
+            mockStackRepository.findByIdOrThrow.mockResolvedValue({id: "stack-1", status: "RUNNING"});
+
+            const result = await service.getBackupAndStack("b1", "stack-1");
+
+            expect(result.backupRecord).toEqual({id: "b1", stackId: "stack-1", logLines: []});
+            expect(result.stack).toEqual({id: "stack-1", status: "RUNNING"});
+        });
+
+        it("getBackupRunContext fetches the backup, stack, and repo config concurrently", async () => {
+            mockBackupRepository.findByIdOrThrow.mockResolvedValue({id: "b1", stackId: "stack-1", logLines: []});
+            mockStackRepository.findByIdOrThrow.mockResolvedValue({id: "stack-1", status: "RUNNING"});
+            mockSettingsService.getMany.mockResolvedValue(CONFIGURED_REPO_SETTINGS);
+
+            const result = await service.getBackupRunContext("b1", "stack-1");
+
+            expect(result.backupRecord).toEqual({id: "b1", stackId: "stack-1", logLines: []});
+            expect(result.stack).toEqual({id: "stack-1", status: "RUNNING"});
+            expect(result.repoConfig).not.toBeNull();
+        });
+
+        it("getBackupRunContext resolves repoConfig to null when no backup repository is configured", async () => {
+            mockBackupRepository.findByIdOrThrow.mockResolvedValue({id: "b1", stackId: "stack-1", logLines: []});
+            mockStackRepository.findByIdOrThrow.mockResolvedValue({id: "stack-1", status: "RUNNING"});
+            mockSettingsService.getMany.mockResolvedValue({});
+
+            const result = await service.getBackupRunContext("b1", "stack-1");
+
+            expect(result.repoConfig).toBeNull();
+        });
+    });
+
+    describe("getBackupConfig() (Task 2, 10-10)", () => {
+        it("returns useGlobalSchedule: true and the global defaults when the stack has no override", async () => {
+            mockStackRepository.findByIdOrThrow.mockResolvedValue({
+                id: "stack-1",
+                backupSchedule: null,
+                backupRetention: null,
+                backupPreHook: null,
+                backupPostHook: null,
+            });
+            mockSettingsService.getSetting.mockImplementation(async (key: string) => {
+                if (key === "backup.defaultSchedule") return "0 1 * * *";
+                if (key === "backup.defaultRetention") return JSON.stringify({keepDaily: 7, keepWeekly: 4, keepMonthly: 12});
+                return null;
+            });
+
+            const result = await service.getBackupConfig("stack-1");
+
+            expect(result).toEqual({
+                useGlobalSchedule: true,
+                schedule: null,
+                useGlobalRetention: true,
+                retention: null,
+                preHook: null,
+                postHook: null,
+                globalSchedule: "0 1 * * *",
+                globalRetention: {keepDaily: 7, keepWeekly: 4, keepMonthly: 12},
+            });
+        });
+
+        it("returns useGlobalSchedule: false and the parsed per-stack override when present", async () => {
+            mockStackRepository.findByIdOrThrow.mockResolvedValue({
+                id: "stack-1",
+                backupSchedule: "0 5 * * *",
+                backupRetention: JSON.stringify({keepDaily: 1, keepWeekly: 1, keepMonthly: 1}),
+                backupPreHook: "echo pre",
+                backupPostHook: "echo post",
+            });
+            mockSettingsService.getSetting.mockResolvedValue(null);
+
+            const result = await service.getBackupConfig("stack-1");
+
+            expect(result).toEqual({
+                useGlobalSchedule: false,
+                schedule: "0 5 * * *",
+                useGlobalRetention: false,
+                retention: {keepDaily: 1, keepWeekly: 1, keepMonthly: 1},
+                preHook: "echo pre",
+                postHook: "echo post",
+                globalSchedule: null,
+                globalRetention: null,
+            });
+        });
+    });
+
+    describe("checkResticStatus() (Task 2, 10-10)", () => {
+        it("delegates to the injected restic port's checkVersion()", async () => {
+            mockResticExecutor.checkVersion.mockResolvedValue({available: true, version: "0.16.0"});
+
+            const result = await service.checkResticStatus();
+
+            expect(result).toEqual({available: true, version: "0.16.0"});
         });
     });
 });

@@ -1,8 +1,6 @@
 import type {FastifyPluginAsyncZod} from "fastify-type-provider-zod";
 import {z} from "zod";
-import {prisma} from "../lib/db.js";
 import {onboardingService} from "../application/onboarding-service.js";
-import {brownfieldScanner} from "../infrastructure/brownfield-scanner.js";
 import {migrationService} from "../application/migration-service.js";
 import {
     wizardStep1Schema,
@@ -12,11 +10,6 @@ import {
     wizardStep5Schema,
     wizardStep6Schema,
 } from "@docktor/shared";
-
-// WR-07: unique-key row used as an atomic "first admin" lock — see step1
-// handler below. `Setting.key` is the table's primary key, so Postgres
-// itself guarantees only one concurrent insert can ever win.
-const SETUP_STEP1_LOCK_KEY = "setup.step1Lock";
 
 const setupRoutes: FastifyPluginAsyncZod = async (app) => {
     // CR-01/T-05-09: every /api/setup/* route beyond step 1 must stop being
@@ -38,8 +31,8 @@ const setupRoutes: FastifyPluginAsyncZod = async (app) => {
 
     // Check if setup is complete (users exist)
     app.get("/api/setup/status", async () => {
-        const userCount = await prisma.user.count();
-        return {setupComplete: userCount > 0};
+        const setupComplete = await onboardingService.hasAnyUser();
+        return {setupComplete};
     });
 
     // Step 1: Create admin account (public)
@@ -52,35 +45,15 @@ const setupRoutes: FastifyPluginAsyncZod = async (app) => {
         },
         async (request, reply) => {
             // Prevent creating more users if setup is complete
-            const userCount = await prisma.user.count();
-            if (userCount > 0) {
+            if (await onboardingService.hasAnyUser()) {
                 return reply.status(400).send({error: "Setup already complete"});
             }
 
-            // WR-07: the count-then-create sequence above is not atomic — two
-            // concurrent requests (double-clicked "Next", two browser tabs)
-            // could both observe userCount === 0 and both proceed. Atomically
-            // claim a one-time lock row before creating the account; the
-            // unique primary key on Setting.key means Postgres guarantees
-            // only one concurrent insert can win, so a losing request is
-            // rejected here before it ever reaches signUpEmail. The lock is
-            // always released afterward (`finally`) — it only needs to
-            // survive the race window, since `userCount > 0` becomes the
-            // durable "already complete" guard for every request from then on.
-            try {
-                await prisma.setting.create({
-                    data: {key: SETUP_STEP1_LOCK_KEY, value: new Date().toISOString()},
-                });
-            } catch {
-                return reply.status(400).send({error: "Setup already complete"});
-            }
-
-            try {
-                const result = await onboardingService.handleWizardStep1(request.body);
-                return result;
-            } finally {
-                await prisma.setting.delete({where: {key: SETUP_STEP1_LOCK_KEY}}).catch(() => {});
-            }
+            // WR-07: the concurrency guard (an atomic lock-row insert whose
+            // uniqueness violation rejects a losing concurrent request) now
+            // lives in OnboardingService.createAdminWithLock() — see its
+            // doc comment for the full race-window explanation.
+            return onboardingService.createAdminWithLock(request.body);
         },
     );
 
@@ -136,7 +109,7 @@ const setupRoutes: FastifyPluginAsyncZod = async (app) => {
         },
         async (request) => {
             const {directories} = request.body;
-            const result = await brownfieldScanner.scan(directories);
+            const result = await onboardingService.scan(directories);
             return result;
         },
     );
@@ -226,11 +199,10 @@ const setupRoutes: FastifyPluginAsyncZod = async (app) => {
         async (request, reply) => {
             // The plugin's preHandler above only closes this route once the
             // wizard is *finished* (isWizardComplete()) — before an admin
-            // exists it would otherwise stay reachable, since userCount only
-            // becomes >0 once step1 succeeds. Mirrors /api/setup/complete's
-            // own guard below.
-            const userCount = await prisma.user.count();
-            if (userCount === 0) {
+            // exists it would otherwise stay reachable, since hasAnyUser()
+            // only becomes true once step1 succeeds. Mirrors
+            // /api/setup/complete's own guard below.
+            if (!(await onboardingService.hasAnyUser())) {
                 return reply
                     .status(400)
                     .send({error: "Cannot deploy the proxy stack before creating an admin account"});
@@ -247,8 +219,7 @@ const setupRoutes: FastifyPluginAsyncZod = async (app) => {
     // /api/setup/* route beyond /status, same as the old (broken)
     // "userCount > 0" gate intended.
     app.post("/api/setup/complete", async (_request, reply) => {
-        const userCount = await prisma.user.count();
-        if (userCount === 0) {
+        if (!(await onboardingService.hasAnyUser())) {
             return reply
                 .status(400)
                 .send({error: "Cannot complete setup before creating an admin account"});
