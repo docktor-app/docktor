@@ -479,11 +479,11 @@ Independent of Phase 10 (separate client/server tracks — can run in parallel).
   5. Compose editing uses CodeMirror 6 with YAML syntax diagnostics; env editing offers a table mode (default) and a raw mode with heuristic secret masking (D-18..D-22)
   6. Dark mode follows the OS by default with a persisted header toggle; dashboard stats use a reusable StatCard; the UI passes a full phone-width audit (D-14..D-17)
 
-**Plans:** 13 plans
+**Plans:** 1/13 plans executed
 
 Plans:
 
-- [ ] 11-01-PLAN.md — Tracer: merged Config tab end to end + stack detail page decomposition, Section primitive, Playwright port parameter (wave 1)
+- [x] 11-01-PLAN.md — Tracer: merged Config tab end to end + stack detail page decomposition, Section primitive, Playwright port parameter (wave 1)
 - [ ] 11-02-PLAN.md — ToneBadge/StatusDot single badge scheme, pulsing running dot, update badges (D-10 copy), service color/port utilities (wave 2)
 - [ ] 11-03-PLAN.md — Dark mode via next-themes: no-flash OS default, header sun/moon toggle, themed toasts (wave 2)
 - [ ] 11-04-PLAN.md — Dashboard: reusable StatCard, six stats, flat Recent Stacks, live list refresh (wave 2)
