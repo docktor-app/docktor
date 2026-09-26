@@ -1,23 +1,18 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
-import {render, screen, waitFor} from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import {render, screen, waitFor, within} from "@testing-library/react";
 import {MemoryRouter, Route, Routes} from "react-router";
 import StackDetailPage from "../../../../src/routes/app/stacks/[id]";
 import {useStack} from "@/hooks/use-stack";
-import {getComposeContent, getEnvContent, updateStack} from "@/lib/stacks-api";
+import {getComposeContent, getEnvContent} from "@/lib/stacks-api";
 import type {StackDetail} from "@/lib/stacks-api";
 import {SidebarProvider} from "@/components/ui/sidebar";
 
-// Task 3 (05.1-02): handleSaveCompose()/handleSaveEnv() must call refetch()
-// after a successful save (so the configChanged banner reflects the save on
-// the same tab that made it, with no manual reload) and must NOT call it on
-// a failed save (so the editor contents and dirty flag are left alone).
-//
-// useStack is mocked wholesale rather than exercised through the real hook:
-// this test is only asserting the page's call-site sequencing around
-// updateStack() — that refetch is reached exactly when the save succeeds —
-// which is orthogonal to what refetch() itself does once invoked (already
-// covered by client/test/unit/hooks/use-stack.test.ts).
+// D-01/D-02: [id].tsx is now a composition-only orchestrator (CLAUDE.md
+// Known Refactoring Target, closed by Task 2 of 11-01-PLAN.md) — this test
+// only asserts composition: the correct tab is selected per URL, legacy
+// URLs redirect, the loading/error shells render, and the breadcrumb shows
+// the active tab's label. Tab *content* (Overview/Config) is covered by
+// overview-tab.test.tsx / config-tab.test.tsx / use-stack-config-files.test.ts.
 
 vi.mock("@/hooks/use-stack", () => ({
     useStack: vi.fn(),
@@ -29,30 +24,15 @@ vi.mock("@/lib/stacks-api", () => ({
     updateStack: vi.fn(),
 }));
 
-// Mirrors the pattern in service-upgrade-dialog.test.tsx: resolve/reject the
-// underlying promise and invoke sonner's success/error callbacks directly,
-// without needing a mounted <Toaster/>.
 vi.mock("sonner", () => ({
     toast: {
-        promise: vi.fn((promise: Promise<unknown>, opts: any) => {
-            // success/error here may be a static string (as [id].tsx passes)
-            // rather than a callback — only invoke when it's actually a function.
-            promise.then(
-                (result) => {
-                    if (typeof opts.success === "function") opts.success(result);
-                },
-                (err) => {
-                    if (typeof opts.error === "function") opts.error(err);
-                },
-            );
-            return promise.catch(() => {});
-        }),
+        promise: vi.fn((promise: Promise<unknown>) => promise.catch(() => {})),
     },
 }));
 
 // Every child component below fetches its own data or renders unrelated
 // concerns; stubbing them keeps this test isolated to the page's own
-// save/refetch wiring instead of re-testing StackActions, BackupsTab, etc.
+// tab-resolution/composition wiring.
 vi.mock("@/components/domain/stack/stack-status-badge", () => ({
     StackStatusBadge: () => null,
 }));
@@ -65,20 +45,19 @@ vi.mock("../../../../src/routes/app/stacks/components/stack-actions", () => ({
 vi.mock("../../../../src/routes/app/stacks/components/backups-tab", () => ({
     BackupsTab: () => null,
 }));
-vi.mock("../../../../src/routes/app/stacks/components/services-tab", () => ({
-    ServicesTab: () => null,
+vi.mock("../../../../src/routes/app/stacks/components/proxy-tab", () => ({
+    ProxyTab: () => null,
 }));
-vi.mock("../../../../src/routes/app/stacks/components/event-log-card", () => ({
-    EventLogCard: () => null,
+vi.mock("../../../../src/routes/app/stacks/components/overview-tab", () => ({
+    OverviewTab: () => null,
 }));
-vi.mock("../../../../src/routes/app/stacks/components/status-log-card", () => ({
-    StatusLogCard: () => null,
+vi.mock("../../../../src/routes/app/stacks/components/config-tab", () => ({
+    ConfigTab: () => null,
 }));
 
 const mockUseStack = vi.mocked(useStack);
 const mockGetComposeContent = vi.mocked(getComposeContent);
 const mockGetEnvContent = vi.mocked(getEnvContent);
-const mockUpdateStack = vi.mocked(updateStack);
 
 function makeStack(overrides: Partial<StackDetail> = {}): StackDetail {
     return {
@@ -88,7 +67,9 @@ function makeStack(overrides: Partial<StackDetail> = {}): StackDetail {
         hostPath: "/stacks/my-app",
         status: "RUNNING",
         configChanged: false,
+        configError: null,
         lastKnownHash: "hash-1",
+        isProtected: false,
         createdAt: "2026-01-01T00:00:00Z",
         updatedAt: "2026-01-01T00:00:00Z",
         services: [],
@@ -98,12 +79,12 @@ function makeStack(overrides: Partial<StackDetail> = {}): StackDetail {
     };
 }
 
-function renderPage(tab: "compose" | "environment" = "compose") {
+function renderPage(path: string) {
     return render(
         <SidebarProvider>
-            <MemoryRouter initialEntries={[`/stacks/my-app/${tab}`]}>
+            <MemoryRouter initialEntries={[path]}>
                 <Routes>
-                    <Route path="/stacks/:id/:tab" element={<StackDetailPage />} />
+                    <Route path="/stacks/:id/:tab?" element={<StackDetailPage />} />
                 </Routes>
             </MemoryRouter>
         </SidebarProvider>,
@@ -116,11 +97,10 @@ beforeEach(() => {
     mockUseStack.mockReset();
     mockGetComposeContent.mockReset();
     mockGetEnvContent.mockReset();
-    mockUpdateStack.mockReset();
     refetch = vi.fn();
 
-    mockGetComposeContent.mockResolvedValue({content: "services:\n  web:\n    image: nginx\n"});
-    mockGetEnvContent.mockResolvedValue({content: "FOO=bar"});
+    mockGetComposeContent.mockResolvedValue({content: ""});
+    mockGetEnvContent.mockResolvedValue({content: ""});
 
     mockUseStack.mockReturnValue({
         stack: makeStack(),
@@ -146,70 +126,70 @@ beforeEach(() => {
     }
 });
 
-// Timeouts bumped to 15s: this suite is CPU-bound (userEvent.type + full
-// StackDetailPage render) and flakes under this host's full-parallel-suite
-// resource contention at the 5s vitest default, even though every test
-// passes reliably in isolation or in small groups — the same host-memory-
-// pressure class of flake documented for Playwright in
-// 05.1-01-SUMMARY.md/STATE.md, not a defect in the assertions themselves.
-describe("StackDetailPage — save-triggered refetch (Task 3)", () => {
-    it("calls refetch after a successful compose save", async () => {
-        mockUpdateStack.mockResolvedValue(makeStack({configChanged: true}));
-        const user = userEvent.setup();
+describe("StackDetailPage — composition (D-01/D-02)", () => {
+    it("selects the Overview tab by default", async () => {
+        renderPage("/stacks/my-app");
+        await waitFor(() =>
+            expect(screen.getByRole("tab", {name: "Overview", selected: true})).toBeInTheDocument(),
+        );
+    });
 
-        renderPage("compose");
-        const textarea = await screen.findByRole("textbox");
-        await user.type(textarea, " ");
+    it("selects the Config tab at /stacks/my-app/config", async () => {
+        renderPage("/stacks/my-app/config");
+        await waitFor(() =>
+            expect(screen.getByRole("tab", {name: "Config", selected: true})).toBeInTheDocument(),
+        );
+    });
 
-        const saveButton = screen.getByRole("button", {name: /save/i});
-        await user.click(saveButton);
+    it("selects the Logs tab at /stacks/my-app/logs", async () => {
+        renderPage("/stacks/my-app/logs");
+        await waitFor(() =>
+            expect(screen.getByRole("tab", {name: "Logs", selected: true})).toBeInTheDocument(),
+        );
+    });
 
-        await waitFor(() => expect(mockUpdateStack).toHaveBeenCalledTimes(1));
-        await waitFor(() => expect(refetch).toHaveBeenCalledTimes(1));
-    }, 15000);
+    it("redirects the legacy /compose URL to the Config tab", async () => {
+        renderPage("/stacks/my-app/compose");
+        await waitFor(() =>
+            expect(screen.getByRole("tab", {name: "Config", selected: true})).toBeInTheDocument(),
+        );
+    });
 
-    it("does not call refetch when the compose save fails", async () => {
-        mockUpdateStack.mockRejectedValue(new Error("save failed"));
-        const user = userEvent.setup();
+    it("redirects the legacy /environment URL to the Config tab", async () => {
+        renderPage("/stacks/my-app/environment");
+        await waitFor(() =>
+            expect(screen.getByRole("tab", {name: "Config", selected: true})).toBeInTheDocument(),
+        );
+    });
 
-        renderPage("compose");
-        const textarea = await screen.findByRole("textbox");
-        await user.type(textarea, " ");
+    it("shows the loading shell while the stack has not loaded yet", () => {
+        mockUseStack.mockReturnValue({
+            stack: null,
+            loading: true,
+            isRefreshing: false,
+            error: null,
+            refetch,
+        });
+        renderPage("/stacks/my-app");
+        expect(screen.getAllByText("Loading...").length).toBeGreaterThan(0);
+    });
 
-        const saveButton = screen.getByRole("button", {name: /save/i});
-        await user.click(saveButton);
+    it("shows the error shell when the stack fails to load", () => {
+        mockUseStack.mockReturnValue({
+            stack: null,
+            loading: false,
+            isRefreshing: false,
+            error: "Not found",
+            refetch,
+        });
+        renderPage("/stacks/my-app");
+        expect(screen.getByText("Not found")).toBeInTheDocument();
+    });
 
-        await waitFor(() => expect(mockUpdateStack).toHaveBeenCalledTimes(1));
-        expect(refetch).not.toHaveBeenCalled();
-    }, 15000);
-
-    it("calls refetch after a successful env save", async () => {
-        mockUpdateStack.mockResolvedValue(makeStack({configChanged: true}));
-        const user = userEvent.setup();
-
-        renderPage("environment");
-        const textarea = await screen.findByRole("textbox");
-        await user.type(textarea, " ");
-
-        const saveButton = screen.getByRole("button", {name: /save/i});
-        await user.click(saveButton);
-
-        await waitFor(() => expect(mockUpdateStack).toHaveBeenCalledTimes(1));
-        await waitFor(() => expect(refetch).toHaveBeenCalledTimes(1));
-    }, 15000);
-
-    it("does not call refetch when the env save fails", async () => {
-        mockUpdateStack.mockRejectedValue(new Error("save failed"));
-        const user = userEvent.setup();
-
-        renderPage("environment");
-        const textarea = await screen.findByRole("textbox");
-        await user.type(textarea, " ");
-
-        const saveButton = screen.getByRole("button", {name: /save/i});
-        await user.click(saveButton);
-
-        await waitFor(() => expect(mockUpdateStack).toHaveBeenCalledTimes(1));
-        expect(refetch).not.toHaveBeenCalled();
-    }, 15000);
+    it("shows the active tab's label in the breadcrumb", async () => {
+        renderPage("/stacks/my-app/logs");
+        await waitFor(() =>
+            expect(within(screen.getByLabelText("breadcrumb")).getByText("Logs")).toBeInTheDocument(),
+        );
+    });
 });

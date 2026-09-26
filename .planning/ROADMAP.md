@@ -23,7 +23,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 8: Live State Consistency** - Make state changes (config errors, config edits, manual actions) reflect live in the UI without a manual refresh (completed 2026-09-20)
 - [x] **Phase 9: Deployment and Release Readiness** - Clean up deployment docs and close remaining release-process gaps for v1.0.0 (completed 2026-09-19)
 - [x] **Phase 10: Backend Architecture Refactor** - Server-side architecture improvements without changing external API behavior, landed before other phases add new server-side code on top of the current structure — needs `/gsd-discuss-phase 10` to scope before planning ([#16](https://github.com/docktor-app/docktor/issues/16)) (completed 2026-09-25)
-- [ ] **Phase 11: UI Rework** - Clean up the UI's component structure and visual design (shadcn patterns, less Card wrapping, tab-structure reconsideration, consolidated logs, consistent status indicators) before other phases add new UI on top of current patterns — needs `/gsd-discuss-phase 11` to scope before planning ([#15](https://github.com/docktor-app/docktor/issues/15))
+- [ ] **Phase 11: UI Rework** - Clean up the UI's component structure and visual design (shadcn patterns, less Card wrapping, tab-structure reconsideration, consolidated logs, consistent status indicators) before other phases add new UI on top of current patterns — scoped and planned (13 plans) ([#15](https://github.com/docktor-app/docktor/issues/15))
 - [ ] **Phase 12: Compose Safety and Templates** - Diff-before-apply, dangerous-config warnings, port-conflict detection, and git-based stack templates ([#18](https://github.com/docktor-app/docktor/issues/18), [#19](https://github.com/docktor-app/docktor/issues/19), [#20](https://github.com/docktor-app/docktor/issues/20), [#21](https://github.com/docktor-app/docktor/issues/21))
 - [ ] **Phase 13: Update Checker Reliability** - Fix misleading update badges, wrong upgrade-dialog messaging, slow post-deploy status, and stale database rows ([#29](https://github.com/docktor-app/docktor/issues/29), [#31](https://github.com/docktor-app/docktor/issues/31), [#32](https://github.com/docktor-app/docktor/issues/32), [#33](https://github.com/docktor-app/docktor/issues/33), [#34](https://github.com/docktor-app/docktor/issues/34))
 - [ ] **Phase 14: Health, Uptime and Disk Visibility** - HTTP health probes with history, per-stack uptime, and disk usage per stack/volume ([#23](https://github.com/docktor-app/docktor/issues/23), [#24](https://github.com/docktor-app/docktor/issues/24), [#27](https://github.com/docktor-app/docktor/issues/27))
@@ -465,23 +465,37 @@ Plans:
 
 ### Phase 11: UI Rework
 
-**Goal:** [Needs scoping — run `/gsd-discuss-phase 11` before `/gsd-plan-phase 11`] Clean up the UI's component structure and visual design: adopt shadcn patterns consistently, refactor toward a clean component architecture (hooks, compound components, SRP), consolidate the three separate log tables (deployments/event/status) into a clearer surface, reduce unnecessary Card wrapping, reconsider whether tabs are the right page structure, use dialogs for add/edit flows (certificates, proxy config), unify inconsistent status-indicator sizing, and rework the backup/backup-detail pages to reuse the existing log-viewer component. Sequenced before Phases 12/14/15 so their new UI (template picker, diff dialog, health/uptime/disk views, 2FA enrollment) is built on the reworked patterns instead of needing re-skinning afterward.
+**Goal:** (Scoped by 11-CONTEXT.md D-01..D-22, 2026-09-24.) Clean up the UI's component structure and visual design: adopt shadcn patterns consistently, refactor toward a clean component architecture (hooks, compound components, SRP), consolidate the three separate log tables (deployments/event/status) into a clearer surface, reduce unnecessary Card wrapping, reconsider whether tabs are the right page structure, use dialogs for add/edit flows (certificates, proxy config), unify inconsistent status-indicator sizing, and rework the backup/backup-detail pages to reuse the existing log-viewer component. Sequenced before Phases 12/14/15 so their new UI (template picker, diff dialog, health/uptime/disk views, 2FA enrollment) is built on the reworked patterns instead of needing re-skinning afterward.
 **Requirements**: GitHub issue [#15](https://github.com/docktor-app/docktor/issues/15) — the issue itself is an open list ("there are more things to improve, this is just a small list"), not a concrete spec; success criteria here are placeholders pending discussion
 **Depends on:** Phase 9
 
 Independent of Phase 10 (separate client/server tracks — can run in parallel). Later phases that add new UI should follow this one; see their own "Depends on" entries.
-**Success Criteria** (what must be TRUE) — **draft, confirm during discuss-phase:**
+**Success Criteria** (what must be TRUE) — confirmed by 11-CONTEXT.md:
 
-  1. TBD — concrete scope agreed from #15's list (log-table consolidation, Card-wrapping reduction, tab-structure decision, dialogs for add/edit flows, status-indicator sizing, backup-page rework, form layout/sizing)
-  2. Deployments/event/status logs are consolidated into fewer, clearer surfaces
+  1. The stack detail page keeps tabs, reduced to Overview/Config/Logs/Backups/Proxy (Compose + Environment merged), with Cards reserved for genuinely distinct groupings; proxy domain and backup schedule editing happen in dialogs (D-01..D-05)
+  2. Deployments/event/status logs are consolidated into one filterable activity timeline (D-07)
   3. Backup and backup-detail pages reuse the existing log-viewer component
-  4. Status indicators (badges) use a single consistent sizing scheme across the app
+  4. Status indicators (badges) use a single consistent sizing scheme across the app, with a pulsing dot for running and a stack-level update badge (D-08..D-10)
+  5. Compose editing uses CodeMirror 6 with YAML syntax diagnostics; env editing offers a table mode (default) and a raw mode with heuristic secret masking (D-18..D-22)
+  6. Dark mode follows the OS by default with a persisted header toggle; dashboard stats use a reusable StatCard; the UI passes a full phone-width audit (D-14..D-17)
 
-**Plans:** 0 plans
+**Plans:** 1/13 plans executed
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 11 to break down)
+- [x] 11-01-PLAN.md — Tracer: merged Config tab end to end + stack detail page decomposition, Section primitive, Playwright port parameter (wave 1)
+- [ ] 11-02-PLAN.md — ToneBadge/StatusDot single badge scheme, pulsing running dot, update badges (D-10 copy), service color/port utilities (wave 2)
+- [ ] 11-03-PLAN.md — Dark mode via next-themes: no-flash OS default, header sun/moon toggle, themed toasts (wave 2)
+- [ ] 11-04-PLAN.md — Dashboard: reusable StatCard, six stats, flat Recent Stacks, live list refresh (wave 2)
+- [ ] 11-05-PLAN.md — Server: GET /api/stacks returns per-service update info (precondition: Phase 10 merged) (wave 2)
+- [ ] 11-06-PLAN.md — Overview: unified filterable activity timeline, flat Services section, header update badge (wave 3)
+- [ ] 11-07-PLAN.md — Proxy assign/edit dialog and backup schedule dialog; flat Proxy/Backups tabs (wave 3)
+- [ ] 11-08-PLAN.md — Shared LogTerminal for stack logs and backup detail; backup detail decomposition; history fetch-loop fix (wave 3)
+- [ ] 11-09-PLAN.md — CodeMirror 6 compose editor with YAML syntax linting on Config tab and Create page (package-legitimacy checkpoint) (wave 3)
+- [ ] 11-10-PLAN.md — Data router + discard-unsaved-changes guard for the Config tab (wave 3)
+- [ ] 11-11-PLAN.md — Settings page extraction into per-section components (wave 3)
+- [ ] 11-12-PLAN.md — Structured env editor: table/raw modes, lossless .env round trip, secret masking (wave 4)
+- [ ] 11-13-PLAN.md — Mobile audit + Playwright mobile project, phase-wide gates, CLAUDE.md update, folded todos closed (wave 5)
 
 ### Phase 12: Compose Safety and Templates
 
