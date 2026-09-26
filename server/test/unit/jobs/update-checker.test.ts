@@ -4,7 +4,6 @@ import {
     compareVersions,
     getNextImageToCheck,
     splitImageRef,
-    buildImageRefFromService,
     selectUpgradeCandidates,
     selectLatestTag,
 } from "../../../../src/jobs/update-checker.js";
@@ -26,9 +25,9 @@ function createMockDockerExecutor() {
     };
 }
 
-function createMockBroadcaster() {
+function createMockBus() {
     return {
-        publish: vi.fn(),
+        emit: vi.fn(),
     };
 }
 
@@ -42,14 +41,14 @@ describe("UpdateChecker", () => {
     let checker: UpdateChecker;
     let mockRepo: ReturnType<typeof createMockUpdateCheckerRepo>;
     let mockDockerExecutor: ReturnType<typeof createMockDockerExecutor>;
-    let mockBroadcaster: ReturnType<typeof createMockBroadcaster>;
+    let mockBus: ReturnType<typeof createMockBus>;
     let mockRegistryClient: ReturnType<typeof createMockRegistryClient>;
 
     beforeEach(() => {
         vi.clearAllMocks();
         mockRepo = createMockUpdateCheckerRepo();
         mockDockerExecutor = createMockDockerExecutor();
-        mockBroadcaster = createMockBroadcaster();
+        mockBus = createMockBus();
         mockRegistryClient = createMockRegistryClient();
         // Safe default so hasUpdate=true scenarios that don't care about the
         // broadcast fan-out list don't hit "stacks is not iterable" — tests
@@ -63,7 +62,7 @@ describe("UpdateChecker", () => {
         checker = new UpdateChecker(
             mockRepo as any,
             mockDockerExecutor as any,
-            mockBroadcaster as any,
+            mockBus as any,
             mockRegistryClient as any,
         );
     });
@@ -136,39 +135,6 @@ describe("UpdateChecker", () => {
         });
     });
 
-    describe("triggerUpdate() (UPD-04)", () => {
-        it("calls docker pull then docker compose up -d for the stack", async () => {
-            const stack = {id: "stack-1", composeFilePath: "/stacks/myapp/docker-compose.yml"};
-            mockRepo.findStacksByImageRef.mockResolvedValue([stack]);
-
-            await (checker as any).triggerUpdate("nginx:1.25", stack as any);
-
-            expect(mockDockerExecutor.manifestInspect).toHaveBeenCalled();
-        });
-
-        it("transitions stack status to UPDATING then back to RUNNING on success", async () => {
-            const stack = {id: "stack-1", composeFilePath: "/stacks/myapp/docker-compose.yml", status: "RUNNING"};
-
-            await (checker as any).triggerUpdate("nginx:1.25", stack as any);
-
-            // Implementation should transition: RUNNING → UPDATING → RUNNING
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith(
-                expect.objectContaining({stackId: stack.id}),
-            );
-        });
-
-        it("transitions stack to ERROR on pull/recreate failure", async () => {
-            const stack = {id: "stack-1", composeFilePath: "/stacks/myapp/docker-compose.yml", status: "RUNNING"};
-            mockDockerExecutor.manifestInspect.mockRejectedValue(new Error("pull failed"));
-
-            await (checker as any).triggerUpdate("nginx:1.25", stack as any);
-
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith(
-                expect.objectContaining({stackId: stack.id, type: "update_error"}),
-            );
-        });
-    });
-
     describe("splitImageRef() (UPD-01)", () => {
         it("splits name and tag on the tag separator", () => {
             expect(splitImageRef("nginx:1.25")).toEqual({name: "nginx", tag: "1.25"});
@@ -197,22 +163,9 @@ describe("UpdateChecker", () => {
         });
     });
 
-    describe("buildImageRefFromService() (UPD-02 imageless filter)", () => {
-        it("returns null for a build-only service with no image", () => {
-            expect(buildImageRefFromService("", null)).toBeNull();
-            expect(buildImageRefFromService("   ", null)).toBeNull();
-            expect(buildImageRefFromService(null, null)).toBeNull();
-            expect(buildImageRefFromService(undefined, undefined)).toBeNull();
-        });
-
-        it("reconstructs a canonical tag-qualified ref matching findAllImageRefs' spelling", () => {
-            expect(buildImageRefFromService("nginx", "1.25")).toBe("nginx:1.25");
-        });
-
-        it("defaults to :latest when no tag is stored", () => {
-            expect(buildImageRefFromService("nginx", null)).toBe("nginx:latest");
-        });
-    });
+    // buildImageRefFromService() moved to domain/image-update-detection.ts
+    // (10-08 Task 1) — its tests moved with it, to
+    // test/unit/domain/image-update-detection.test.ts.
 
     describe("selectUpgradeCandidates() (UPD-01)", () => {
         it("returns only tags comparing newer than 1.25, ordered newest first, dropping moving and non-version tags", () => {
@@ -317,8 +270,9 @@ describe("UpdateChecker", () => {
                     hasUpdate: true,
                 }),
             );
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith(
-                expect.objectContaining({type: "update_available", stackId: "stack-1"}),
+            expect(mockBus.emit).toHaveBeenCalledWith(
+                "stack.update_available",
+                expect.objectContaining({stackId: "stack-1"}),
             );
         });
 
@@ -332,7 +286,7 @@ describe("UpdateChecker", () => {
             expect(mockRepo.upsertImageUpdateCheck).toHaveBeenCalledWith(
                 expect.objectContaining({hasUpdate: false, currentDigest: "sha256:aaaa", latestDigest: "sha256:aaaa"}),
             );
-            expect(mockBroadcaster.publish).not.toHaveBeenCalled();
+            expect(mockBus.emit).not.toHaveBeenCalled();
         });
 
         it("persists a non-null currentDigest and latestDigest on a successful check", async () => {
@@ -420,8 +374,9 @@ describe("UpdateChecker", () => {
                     availableTags: ["1.26"],
                 }),
             );
-            expect(mockBroadcaster.publish).toHaveBeenCalledWith(
-                expect.objectContaining({type: "update_available", stackId: "stack-1", latestTag: "1.26"}),
+            expect(mockBus.emit).toHaveBeenCalledWith(
+                "stack.update_available",
+                expect.objectContaining({stackId: "stack-1", latestTag: "1.26"}),
             );
         });
 

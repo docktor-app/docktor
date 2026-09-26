@@ -1,11 +1,12 @@
-import cron from "node-cron"
 import semver from "semver"
-import type {DockerExecutor} from "../infrastructure/docker-executor.js"
 import {dockerExecutor} from "../infrastructure/docker-executor.js"
-import type {RegistryClient} from "../infrastructure/registry-client.js"
+import type {DockerExecutorPort} from "../application/ports/docker-executor-port.js"
 import {registryClient, RegistryUnavailableError} from "../infrastructure/registry-client.js"
-import type {StateBroadcaster} from "../lib/state-broadcaster.js"
-import {stateEventBroadcaster} from "../lib/state-broadcaster.js"
+import type {RegistryClientPort} from "../application/ports/registry-client-port.js"
+import type {EventBusPort} from "../application/ports/event-bus-port.js"
+import {domainEventBus} from "../infrastructure/event-bus.js"
+import {buildImageRefFromService} from "../domain/image-update-detection.js"
+import {IntervalJob} from "./job.js"
 
 // Tags with no version-ordered meaning — a moving tag always points at
 // whatever was last pushed, so ordering it against other tags is undefined.
@@ -19,29 +20,12 @@ export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000 // 6 hours
 // Pure exported functions (unit-testable without class instantiation)
 // ---------------------------------------------------------------------------
 
-export function normalizeImageRef(imageRef: string): string {
+function normalizeImageRef(imageRef: string): string {
     let ref = imageRef
         .replace(/^docker\.io\/library\//, "")
         .replace(/^docker\.io\//, "")
     if (!ref.includes(":")) ref = ref + ":latest"
     return ref
-}
-
-/**
- * Reconstructs the canonical imageRef for a service's stored image + tag
- * columns, using the same spelling as `findAllImageRefs()` so callers that
- * need to look up an ImageUpdateCheck row for a specific service (e.g. the
- * stack detail route's badge lookup) always agree with what was persisted.
- * Returns null for build-only services (no image), which must be excluded
- * from the checked image set rather than producing a guaranteed-failure ref.
- */
-export function buildImageRefFromService(
-    image: string | null | undefined,
-    imageTag: string | null | undefined,
-): string | null {
-    if (!image || !image.trim()) return null
-    const ref = imageTag ? `${image}:${imageTag}` : image
-    return normalizeImageRef(ref)
 }
 
 /**
@@ -60,17 +44,7 @@ export function splitImageRef(imageRef: string): {name: string; tag: string} {
     return {name: imageRef.slice(0, lastColon), tag: imageRef.slice(lastColon + 1)}
 }
 
-export function detectRegistry(imageRef: string): "dockerhub" | "ghcr" | "private" {
-    const normalized = normalizeImageRef(imageRef)
-    const firstSlash = normalized.indexOf("/")
-    if (firstSlash === -1) return "dockerhub"
-    const host = normalized.substring(0, firstSlash)
-    if (!host.includes(".")) return "dockerhub"
-    if (host === "ghcr.io") return "ghcr"
-    return "private"
-}
-
-export function parseDateTag(tag: string): Date | null {
+function parseDateTag(tag: string): Date | null {
     const DATE_PATTERNS = [
         /^(\d{4})-(\d{2})-(\d{2})$/,
         /^(\d{4})(\d{2})(\d{2})$/,
@@ -89,9 +63,9 @@ export function parseDateTag(tag: string): Date | null {
     return null
 }
 
-export type CompareResult = "newer" | "same" | "older" | "unknown"
+type CompareResult = "newer" | "same" | "older" | "unknown"
 
-export interface CompareOptions {
+interface CompareOptions {
     currentDigest?: string | null
     latestDigest?: string | null
 }
@@ -226,7 +200,7 @@ export function getNextImageToCheck(
 // Repository interface (matches mock in tests)
 // ---------------------------------------------------------------------------
 
-export interface ImageUpdateCheckRecord {
+interface ImageUpdateCheckRecord {
     imageRef: string
     lastCheckedAt: Date | null
     latestTag?: string | null
@@ -235,7 +209,7 @@ export interface ImageUpdateCheckRecord {
     hasUpdate?: boolean
 }
 
-export interface UpdateCheckerRepo {
+interface UpdateCheckerRepo {
     findAllImageRefs(): Promise<string[]>
     getImageUpdateCheck(imageRef: string): Promise<ImageUpdateCheckRecord | null>
     upsertImageUpdateCheck(input: {
@@ -256,10 +230,9 @@ export interface UpdateCheckerRepo {
 // ---------------------------------------------------------------------------
 
 async function createProductionRepo(): Promise<UpdateCheckerRepo> {
-    const [{prisma}, {imageUpdateCheckRepository}, {stackRepository}] = await Promise.all([
+    const [{prisma}, {imageUpdateCheckRepository}] = await Promise.all([
         import("../lib/db.js"),
         import("../repositories/image-update-check-repository.js"),
-        import("../repositories/stack-repository.js"),
     ])
 
     return {
@@ -314,22 +287,26 @@ async function createProductionRepo(): Promise<UpdateCheckerRepo> {
 // UpdateChecker class
 // ---------------------------------------------------------------------------
 
-export class UpdateChecker {
-    private cronTask: cron.ScheduledTask | null = null
+export class UpdateChecker extends IntervalJob {
+    readonly name = "UpdateChecker"
+    protected readonly cronExpression = "*/5 * * * *"
+    protected readonly runImmediatelyOnStart = false
+
     private readonly repo: UpdateCheckerRepo | null
-    private readonly docker: Pick<DockerExecutor, "manifestInspect" | "imageDigest">
-    private readonly broadcaster: Pick<StateBroadcaster, "publish">
-    private readonly registry: Pick<RegistryClient, "listTags">
+    private readonly docker: Pick<DockerExecutorPort, "manifestInspect" | "imageDigest">
+    private readonly bus: Pick<EventBusPort, "emit">
+    private readonly registry: Pick<RegistryClientPort, "listTags">
 
     constructor(
         repo?: UpdateCheckerRepo,
-        docker?: Pick<DockerExecutor, "manifestInspect" | "imageDigest">,
-        broadcaster?: Pick<StateBroadcaster, "publish">,
-        registry?: Pick<RegistryClient, "listTags">,
+        docker?: Pick<DockerExecutorPort, "manifestInspect" | "imageDigest">,
+        bus?: Pick<EventBusPort, "emit">,
+        registry?: Pick<RegistryClientPort, "listTags">,
     ) {
+        super()
         this.repo = repo ?? null
         this.docker = docker ?? dockerExecutor
-        this.broadcaster = broadcaster ?? stateEventBroadcaster
+        this.bus = bus ?? domainEventBus
         this.registry = registry ?? registryClient
     }
 
@@ -338,20 +315,8 @@ export class UpdateChecker {
         return createProductionRepo()
     }
 
-    async start(): Promise<void> {
-        this.cronTask = cron.schedule("*/5 * * * *", async () => {
-            try {
-                await this.checkNextImage()
-            } catch (err) {
-                console.error("[UpdateChecker] error:", err)
-            }
-        })
-        console.log("[UpdateChecker] started — checking every 5 minutes, staggered over 6-hour window")
-    }
-
-    stop(): void {
-        this.cronTask?.stop()
-        this.cronTask = null
+    protected async run(): Promise<void> {
+        await this.checkNextImage()
     }
 
     async checkNextImage(): Promise<void> {
@@ -459,8 +424,7 @@ export class UpdateChecker {
             if (hasUpdate) {
                 const stacks = await repo.findStacksByImageRef(imageRef)
                 for (const stack of stacks) {
-                    this.broadcaster.publish({
-                        type: "update_available",
+                    this.bus.emit("stack.update_available", {
                         stackId: stack.id,
                         imageRef,
                         latestTag: latestTag ?? null,
@@ -477,29 +441,6 @@ export class UpdateChecker {
                 checkError,
             })
             console.error(`[UpdateChecker] failed to check ${imageRef}:`, err)
-        }
-    }
-
-    async triggerUpdate(imageRef: string, stack: {id: string}): Promise<void> {
-        try {
-            // Verify manifest is accessible (also serves as a connectivity check)
-            await this.docker.manifestInspect(imageRef)
-
-            this.broadcaster.publish({
-                type: "update_available",
-                stackId: stack.id,
-                imageRef,
-                latestTag: null,
-                hasUpdate: true,
-            })
-        } catch (err: any) {
-            console.error(`[UpdateChecker] triggerUpdate failed for ${imageRef}:`, err)
-            this.broadcaster.publish({
-                type: "update_error",
-                stackId: stack.id,
-                imageRef,
-                error: err.message ?? String(err),
-            } as any)
         }
     }
 }

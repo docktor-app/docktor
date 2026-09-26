@@ -1,9 +1,7 @@
 import type {FastifyPluginAsyncZod} from "fastify-type-provider-zod"
 import {z} from "zod"
 import {requireAuth} from "../lib/auth-middleware.js"
-import {settingsService, settingsRepository, notificationService} from "../application/index.js"
-import {encrypt} from "../lib/crypto.js"
-import {prisma} from "../lib/db.js"
+import {settingsService, notificationService} from "../application/index.js"
 
 const updateGeneralSettingsSchema = z.object({
     instanceName: z.string().optional(),
@@ -63,16 +61,7 @@ const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
 
     // GET /api/settings/smtp — Returns SMTP config with password masked
     app.get("/api/settings/smtp", async () => {
-        const keys = ["smtp.host", "smtp.port", "smtp.encryption", "smtp.username", "smtp.password", "smtp.from"]
-        const values = await settingsRepository.getMany(keys)
-        return {
-            host: values["smtp.host"] ?? "",
-            port: Number(values["smtp.port"] ?? "587"),
-            encryption: (values["smtp.encryption"] ?? "starttls") as "none" | "starttls" | "ssl",
-            username: values["smtp.username"] ?? "",
-            hasPassword: !!values["smtp.password"],
-            from: values["smtp.from"] ?? "",
-        }
+        return settingsService.getMaskedSmtpConfig()
     })
 
     // PUT /api/settings/smtp — Saves SMTP config, encrypts password
@@ -80,20 +69,7 @@ const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
         "/api/settings/smtp",
         {schema: {body: smtpConfigSchema}},
         async (request) => {
-            const {host, port, encryption, username, password, from} = request.body
-            await settingsRepository.upsert("smtp.host", host)
-            await settingsRepository.upsert("smtp.port", String(port))
-            await settingsRepository.upsert("smtp.encryption", encryption)
-            await settingsRepository.upsert("smtp.username", username)
-            await settingsRepository.upsert("smtp.from", from)
-            if (password) {
-                const encryptedPassword = encrypt(password)
-                await prisma.setting.upsert({
-                    where: {key: "smtp.password"},
-                    create: {key: "smtp.password", value: encryptedPassword, encrypted: true},
-                    update: {value: encryptedPassword, encrypted: true},
-                })
-            }
+            await settingsService.saveSmtpConfig(request.body)
             return {success: true}
         },
     )
@@ -111,13 +87,7 @@ const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
 
     // GET /api/settings/notification-triggers — Returns trigger toggle values
     app.get("/api/settings/notification-triggers", async () => {
-        const values = await settingsRepository.getMany(["notify.stackError", "notify.diskWarning", "disk.thresholdPercent", "disk.thresholdBytes"])
-        return {
-            stackError: values["notify.stackError"] !== "false",
-            diskWarning: values["notify.diskWarning"] !== "false",
-            diskThresholdPercent: Number(values["disk.thresholdPercent"] ?? "10"),
-            diskThresholdBytes: Number(values["disk.thresholdBytes"] ?? "2147483648"),
-        }
+        return settingsService.getNotificationTriggers()
     })
 
     // PUT /api/settings/notification-triggers — Updates toggle values
@@ -125,19 +95,7 @@ const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
         "/api/settings/notification-triggers",
         {schema: {body: notificationTriggersSchema}},
         async (request) => {
-            const {stackError, diskWarning, diskThresholdPercent, diskThresholdBytes} = request.body
-            if (stackError !== undefined) {
-                await settingsRepository.upsert("notify.stackError", String(stackError))
-            }
-            if (diskWarning !== undefined) {
-                await settingsRepository.upsert("notify.diskWarning", String(diskWarning))
-            }
-            if (diskThresholdPercent !== undefined) {
-                await settingsRepository.upsert("disk.thresholdPercent", String(diskThresholdPercent))
-            }
-            if (diskThresholdBytes !== undefined) {
-                await settingsRepository.upsert("disk.thresholdBytes", String(diskThresholdBytes))
-            }
+            await settingsService.updateNotificationTriggers(request.body)
             return {success: true}
         },
     )

@@ -1,5 +1,6 @@
 import Dockerode from "dockerode"
 import {processDockerLogChunk} from "../lib/docker-log-parser.js"
+import type {DockerodeClientPort} from "../application/ports/dockerode-client-port.js"
 
 // Vitest mocks Dockerode as a plain function (vi.fn()), not a class.
 // Using a factory wrapper lets tests inject the mock without `new`.
@@ -9,7 +10,7 @@ function createDockerInstance(): Dockerode {
     return Docker() // Auto-detects socket path based on platform
 }
 
-export class DockerodeClient {
+export class DockerodeClient implements DockerodeClientPort {
     private readonly docker: Dockerode
 
     constructor() {

@@ -1,9 +1,9 @@
-import cron from "node-cron"
-import type {DockerodeClient} from "../infrastructure/dockerode-client.js"
 import {dockerodeClient} from "../infrastructure/dockerode-client.js"
-import type {StateBroadcaster} from "../lib/state-broadcaster.js"
-import {stateEventBroadcaster} from "../lib/state-broadcaster.js"
+import type {DockerodeClientPort} from "../application/ports/dockerode-client-port.js"
+import type {EventBusPort} from "../application/ports/event-bus-port.js"
+import {domainEventBus} from "../infrastructure/event-bus.js"
 import type {StackStatus} from "../generated/prisma/enums.js"
+import {WatcherJob} from "./job.js"
 
 export interface ServiceState {
     serviceName: string
@@ -75,22 +75,26 @@ function deriveStackStatus(services: Array<{containerState?: string | null; heal
     return "RUNNING"
 }
 
-export class StatePoller {
+export class StatePoller extends WatcherJob {
+    readonly name = "StatePoller"
+    // Reconcile every 60 seconds as a safety net alongside the event stream.
+    protected readonly reconcileCronExpression = "*/60 * * * * *"
+
     private abortController: AbortController | null = null
-    private cronTask: cron.ScheduledTask | null = null
-    private readonly docker: Pick<DockerodeClient, "getEventStream" | "inspectContainer" | "listContainers">
+    private readonly docker: Pick<DockerodeClientPort, "getEventStream" | "inspectContainer" | "listContainers">
     private readonly repo: StatePollerRepo | null
-    private readonly broadcaster: Pick<StateBroadcaster, "publish">
+    private readonly bus: Pick<EventBusPort, "emit">
 
     constructor(
-        docker?: Pick<DockerodeClient, "getEventStream" | "inspectContainer" | "listContainers">,
+        docker?: Pick<DockerodeClientPort, "getEventStream" | "inspectContainer" | "listContainers">,
         repo?: StatePollerRepo,
-        broadcaster?: Pick<StateBroadcaster, "publish">,
+        bus?: Pick<EventBusPort, "emit">,
     ) {
+        super()
         this.docker = docker ?? dockerodeClient
         // repo is stored as-is; if undefined, getRepo() will load it lazily
         this.repo = repo ?? null
-        this.broadcaster = broadcaster ?? stateEventBroadcaster
+        this.bus = bus ?? domainEventBus
     }
 
     private async getRepo(): Promise<StatePollerRepo> {
@@ -100,26 +104,14 @@ export class StatePoller {
         return stackRepository as unknown as StatePollerRepo
     }
 
-    async start(): Promise<void> {
+    protected async attach(): Promise<void> {
         await this.startEventStream()
-        // Run reconcile every 60 seconds as a safety net
-        this.cronTask = cron.schedule("*/60 * * * * *", async () => {
-            try {
-                await this.reconcile()
-            } catch (err) {
-                console.error("[StatePoller] reconcile error:", err)
-            }
-        })
     }
 
-    stop(): void {
+    protected async detach(): Promise<void> {
         if (this.abortController) {
             this.abortController.abort()
             this.abortController = null
-        }
-        if (this.cronTask) {
-            this.cronTask.stop()
-            this.cronTask = null
         }
     }
 
@@ -234,8 +226,7 @@ export class StatePoller {
                 )
                 console.log(`[StatePoller] Container 404: service=${serviceName}, state=${containerState}, derived=${derivedStatus}`)
                 await repo.updateStackStatus(stack.id, derivedStatus)
-                this.broadcaster.publish({
-                    type: "container_state",
+                this.bus.emit("stack.container_state_changed", {
                     stackId: stack.id,
                     serviceName,
                     containerState,
@@ -275,9 +266,9 @@ export class StatePoller {
         // Update stack status in DB (returns statusLog if status changed)
         const statusLog = await repo.updateStackStatus(stack.id, derivedStatus)
 
-        // Publish SSE event
-        this.broadcaster.publish({
-            type: "container_state",
+        // Emit the domain event — the state-broadcast subscriber turns this
+        // into the container_state SSE event.
+        this.bus.emit("stack.container_state_changed", {
             stackId: stack.id,
             serviceName,
             containerState,
@@ -295,7 +286,7 @@ export class StatePoller {
         })
     }
 
-    async reconcile(): Promise<void> {
+    protected async reconcile(): Promise<void> {
         console.log("[StatePoller] Starting reconcile...")
         const repo = await this.getRepo()
         const containers = await this.docker.listContainers(true)
@@ -350,15 +341,23 @@ export class StatePoller {
 
                 console.log(`[StatePoller] Reconcile: stack=${stack.id}, derived=${derivedStatus}, services=[${updatedServices.map((s, i) => `${stack.services[i]?.serviceName}:${s.containerState}`).join(", ")}]`)
 
-                // Update stack status in DB
-                await repo.updateStackStatus(stack.id, derivedStatus)
+                // Update stack status in DB. Returns the created statusLog
+                // row only when the status actually changed — the
+                // repository returns null and skips the write when the
+                // derived status equals the stack's current status. The
+                // event below fires only when the repository reports a
+                // real transition, so a steady-state tick is silent for
+                // both the notification watcher and the live-state stream.
+                const statusLog = await repo.updateStackStatus(stack.id, derivedStatus)
 
-                // Broadcast SSE event
-                this.broadcaster.publish({
-                    type: "stack_status",
-                    stackId: stack.id,
-                    stackStatus: derivedStatus,
-                })
+                // Emit the domain event — the state-broadcast subscriber
+                // turns this into the stack_status SSE event.
+                if (statusLog) {
+                    this.bus.emit("stack.status_changed", {
+                        stackId: stack.id,
+                        status: derivedStatus,
+                    })
+                }
             } catch (err) {
                 console.error(`[StatePoller] reconcile error for project ${project}:`, err)
             }

@@ -1,38 +1,60 @@
-import {StackRepository} from "../repositories/stack-repository.js";
 import {StackFilesystem} from "../infrastructure/stack-filesystem.js";
 import {DockerExecutor} from "../infrastructure/docker-executor.js";
-import {stackEventRepository} from "../repositories/stack-event-repository.js";
+import {
+    stackRepository,
+    stackEventRepository,
+    settingsRepository,
+    notificationRepository,
+    backupRepository,
+    proxyRepository,
+    certificateRepository,
+    userRepository,
+    imageUpdateCheckRepository,
+} from "../repositories/index.js";
 import {StackService} from "./stack-service.js";
-import {SettingsRepository} from "../repositories/settings-repository.js";
 import {SettingsService} from "./settings-service.js";
-import {NotificationRepository} from "../repositories/notification-repository.js";
 import {NotificationService} from "./notification-service.js";
-import {BackupRepository} from "../repositories/backup-repository.js";
 import {ResticExecutor} from "../infrastructure/restic-executor.js";
 import {BackupService} from "./backup-service.js";
-import {ProxyRepository} from "../repositories/proxy-repository.js";
 import {ProxyService} from "./proxy-service.js";
-import {CertificateRepository} from "../repositories/certificate-repository.js";
 import {CertificateService} from "./certificate-service.js";
+import {LogService, type LogServiceStackReadPort} from "./log-service.js";
 import {certificateFilesystem} from "../infrastructure/certificate-filesystem.js";
 import {stateEventBroadcaster} from "../lib/state-broadcaster.js";
 import {dockerodeClient} from "../infrastructure/dockerode-client.js";
+import {smtpClient} from "../infrastructure/smtp-client.js";
+import {backupScheduler} from "../jobs/backup-scheduler.js";
+import {NotFoundError} from "../lib/errors.js";
 import type {BackupStackRepo} from "./backup-service.js";
 import type {StackStatus} from "../generated/prisma/enums.js";
+import {domainEventBus} from "../infrastructure/event-bus.js";
+import {registerDomainSubscribers} from "./subscribers/register.js";
 
-const repo = new StackRepository();
+const repo = stackRepository;
 const fs = new StackFilesystem();
 const docker = new DockerExecutor();
 
-export const settingsRepository = new SettingsRepository();
+export {settingsRepository};
 export const settingsService = new SettingsService(settingsRepository);
 
-export const stackService = new StackService(repo, fs, docker, stackEventRepository, stateEventBroadcaster, settingsService);
+export const stackService = new StackService(repo, fs, docker, stackEventRepository, domainEventBus, settingsService, imageUpdateCheckRepository);
 export const notificationService = new NotificationService(
-    new NotificationRepository(),
+    notificationRepository,
     settingsService,
-    stateEventBroadcaster,
+    domainEventBus,
+    userRepository,
+    smtpClient,
 );
+
+// D-15: registers all three subscriber categories (audit trail, plan 10-13;
+// notifications, plan 10-12; live-state bridge, plan 10-11) from one place
+// in the fixed, documented order subscribers/register.ts explains. Exported
+// so a test can tear it down.
+export const disposeDomainSubscribers = registerDomainSubscribers(domainEventBus, {
+    stackEventRepo: stackEventRepository,
+    notificationService,
+    broadcaster: stateEventBroadcaster,
+});
 
 // Adapter: StackRepository -> BackupStackRepo interface
 const backupStackRepo: BackupStackRepo = {
@@ -50,25 +72,34 @@ const backupStackRepo: BackupStackRepo = {
     clearConfigChanged: (id: string) => repo.clearConfigChanged(id),
     updateStackHash: (args: {stackId: string; hash: string}) => repo.updateStackHash(args),
     replaceServices: (stackId: string, composeConfig: any) => repo.replaceServices(stackId, composeConfig),
+    updateBackupConfig: (
+        id: string,
+        data: {
+            backupSchedule: string | null
+            backupRetention: string | null
+            backupPreHook: string | null
+            backupPostHook: string | null
+        },
+    ) => repo.updateBackupConfig(id, data),
 }
 
 export const backupService = new BackupService(
     new ResticExecutor(),
-    new BackupRepository(),
+    backupRepository,
     backupStackRepo,
     settingsService,
-    notificationService,
     fs,
     docker,
-    stateEventBroadcaster,
+    domainEventBus,
+    backupScheduler,
 );
 
 export {getBackupBroadcaster, getBackupLogBuffer} from "./backup-service.js";
 
-const certificateRepositoryInstance = new CertificateRepository();
+const certificateRepositoryInstance = certificateRepository;
 
 export const proxyService = new ProxyService(
-    new ProxyRepository(),
+    proxyRepository,
     repo,
     fs,
     stackService,
@@ -78,3 +109,21 @@ export const proxyService = new ProxyService(
 );
 
 export const certificateService = new CertificateService(certificateRepositoryInstance, certificateFilesystem);
+
+// Adapter: StackRepository.findByIdWithRelations() throws NotFoundError for
+// an unknown stack; LogService's port resolves to null instead, so the
+// service is free to raise its own NotFoundError with the exact literal
+// message text the log route always sent, rather than the repository's
+// id-interpolated one.
+const logServiceStackRepo: LogServiceStackReadPort = {
+    findByIdWithRelations: async (id: string) => {
+        try {
+            return await repo.findByIdWithRelations(id);
+        } catch (err) {
+            if (err instanceof NotFoundError) return null;
+            throw err;
+        }
+    },
+};
+
+export const logService = new LogService(dockerodeClient, logServiceStackRepo);

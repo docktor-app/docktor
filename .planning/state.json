@@ -47,47 +47,12 @@
       "number": "9",
       "name": "Deployment and Release Readiness",
       "status": "complete"
-    },
-    {
-      "number": "10",
-      "name": "Backend Architecture Refactor",
-      "status": "pending"
-    },
-    {
-      "number": "11",
-      "name": "UI Rework",
-      "status": "pending"
-    },
-    {
-      "number": "12",
-      "name": "Compose Safety and Templates",
-      "status": "pending"
-    },
-    {
-      "number": "13",
-      "name": "Update Checker Reliability",
-      "status": "pending"
-    },
-    {
-      "number": "14",
-      "name": "Health, Uptime and Disk Visibility",
-      "status": "pending"
-    },
-    {
-      "number": "15",
-      "name": "Access Hardening",
-      "status": "pending"
-    },
-    {
-      "number": "16",
-      "name": "Release Readiness for v0.1.0",
-      "status": "pending"
     }
   ],
   "next": {
-    "command": "/gsd:discuss-phase 10",
-    "label": "Discuss Phase 10 (Backend Architecture Refactor)",
-    "reason": "Phases 1-9 complete · Phases 10 (backend) and 11 (UI) are both open-ended issues sequenced first so Phases 12/14/15's new code lands on the reworked structure instead of needing rework — each needs /gsd:discuss-phase before /gsd:plan-phase · 10 and 11 are independent (separate server/client tracks, can run in parallel) · Phase 13 (bug fixes only) carries low rework risk and can run anytime · Phase 16 depends on 10-15"
+    "command": "/gsd:new-milestone",
+    "label": "Start a new milestone",
+    "reason": "All phases complete — start a new milestone"
   },
-  "updated_at": "2026-09-22T00:00:00.000Z"
+  "updated_at": "2026-09-25T22:30:44.462Z"
 }

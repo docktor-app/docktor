@@ -18,9 +18,9 @@ function createMockRepo() {
     };
 }
 
-function createMockBroadcaster() {
+function createMockBus() {
     return {
-        publish: vi.fn(),
+        emit: vi.fn(),
     };
 }
 
@@ -86,7 +86,7 @@ const ACME_CONTAINER = {
 describe("ProxyCertPoller", () => {
     let docker: ReturnType<typeof createMockDockerodeClient>;
     let repo: ReturnType<typeof createMockRepo>;
-    let broadcaster: ReturnType<typeof createMockBroadcaster>;
+    let bus: ReturnType<typeof createMockBus>;
     let fs: ReturnType<typeof createMockFs>;
     let poller: ProxyCertPoller;
 
@@ -94,9 +94,9 @@ describe("ProxyCertPoller", () => {
         vi.clearAllMocks();
         docker = createMockDockerodeClient();
         repo = createMockRepo();
-        broadcaster = createMockBroadcaster();
+        bus = createMockBus();
         fs = createMockFs();
-        poller = new ProxyCertPoller(docker as any, repo as any, broadcaster as any, fs as any);
+        poller = new ProxyCertPoller(docker as any, repo as any, bus as any, fs as any);
     });
 
     describe("reconcile — TLS-disabled rows", () => {
@@ -107,7 +107,7 @@ describe("ProxyCertPoller", () => {
 
             expect(fs.access).not.toHaveBeenCalled();
             expect(repo.updateCertStatus).not.toHaveBeenCalled();
-            expect(broadcaster.publish).not.toHaveBeenCalled();
+            expect(bus.emit).not.toHaveBeenCalled();
         });
     });
 
@@ -127,10 +127,9 @@ describe("ProxyCertPoller", () => {
                 row.id,
                 expect.objectContaining({certStatus: "issued"}),
             );
-            expect(broadcaster.publish).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    type: "proxy_cert_status",
-                    proxyConfigId: row.id,
+            expect(bus.emit).toHaveBeenCalledWith(
+                "proxy.cert_status_changed",
+                expect.objectContaining({proxyConfigId: row.id,
                     stackId: row.stackId,
                     domain: row.domain,
                     status: "issued",
@@ -183,7 +182,7 @@ describe("ProxyCertPoller", () => {
             await poller.reconcile();
 
             expect(repo.updateCertStatus).not.toHaveBeenCalled();
-            expect(broadcaster.publish).not.toHaveBeenCalled();
+            expect(bus.emit).not.toHaveBeenCalled();
         });
     });
 
@@ -197,7 +196,7 @@ describe("ProxyCertPoller", () => {
             await poller.reconcile();
 
             expect(repo.updateCertStatus).not.toHaveBeenCalled();
-            expect(broadcaster.publish).not.toHaveBeenCalled();
+            expect(bus.emit).not.toHaveBeenCalled();
             expect(consoleErrorSpy).toHaveBeenCalledOnce();
 
             consoleErrorSpy.mockRestore();
@@ -221,7 +220,8 @@ describe("ProxyCertPoller", () => {
                 row.id,
                 expect.objectContaining({certStatus: "pending"}),
             );
-            expect(broadcaster.publish).toHaveBeenCalledWith(
+            expect(bus.emit).toHaveBeenCalledWith(
+                "proxy.cert_status_changed",
                 expect.objectContaining({status: "pending"}),
             );
         });
@@ -243,7 +243,8 @@ describe("ProxyCertPoller", () => {
                 row.id,
                 expect.objectContaining({certStatus: "failed", certMessage: errorLine}),
             );
-            expect(broadcaster.publish).toHaveBeenCalledWith(
+            expect(bus.emit).toHaveBeenCalledWith(
+                "proxy.cert_status_changed",
                 expect.objectContaining({status: "failed", message: errorLine}),
             );
         });
@@ -391,7 +392,8 @@ describe("ProxyCertPoller", () => {
                     certMessage: expect.stringContaining(expiresAt.toISOString().slice(0, 10)),
                 }),
             );
-            expect(broadcaster.publish).toHaveBeenCalledWith(
+            expect(bus.emit).toHaveBeenCalledWith(
+                "proxy.cert_status_changed",
                 expect.objectContaining({status: "expiring"}),
             );
         });
@@ -446,10 +448,9 @@ describe("ProxyCertPoller", () => {
 
             await poller.reconcile();
 
-            expect(broadcaster.publish).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    type: "proxy_cert_status",
-                    status: expect.stringMatching(/^(pending|issued|failed|expiring)$/),
+            expect(bus.emit).toHaveBeenCalledWith(
+                "proxy.cert_status_changed",
+                expect.objectContaining({status: expect.stringMatching(/^(pending|issued|failed|expiring)$/),
                 }),
             );
         });

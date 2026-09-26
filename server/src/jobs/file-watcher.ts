@@ -1,14 +1,13 @@
-import cron from "node-cron"
 import {watch} from "chokidar"
 import type {FSWatcher} from "chokidar"
 import {readFile} from "node:fs/promises"
 import path from "node:path"
-import type {StateBroadcaster} from "../lib/state-broadcaster.js"
-import {stateEventBroadcaster} from "../lib/state-broadcaster.js"
+import type {EventBusPort} from "../application/ports/event-bus-port.js"
+import {domainEventBus} from "../infrastructure/event-bus.js"
 import {hashComposeContent} from "../lib/compose-parser.js"
 import {createComposeConfig, type ComposeConfig} from "../domain/compose-config.js"
 import {getStacksDir} from "../lib/stacks-dir.js"
-import type {StackEventType} from "../generated/prisma/enums.js"
+import {WatcherJob} from "./job.js"
 
 interface FileWatcherStackRecord {
     id: string
@@ -31,7 +30,6 @@ export interface FileWatcherRepo {
     updateStackHash(args: {stackId: string; hash: string}): Promise<void>
     updateEnvHash(args: {stackId: string; hash: string}): Promise<void>
     syncServicesFromCompose(stackId: string, composeConfig: ComposeConfig): Promise<void>
-    createStackEvent(args: {stackId: string; type: StackEventType; message?: string; payload?: string}): Promise<void>
     setConfigError(stackId: string, message: string): Promise<void>
     clearConfigError(stackId: string): Promise<void>
 }
@@ -52,21 +50,17 @@ interface FileWatcherStackRepo {
     clearConfigError: FileWatcherRepo["clearConfigError"]
 }
 
-/** Narrow local interface covering just the event repository's write member. */
-interface FileWatcherEventRepo {
-    createEvent(input: {stackId: string; type: StackEventType; message?: string; payload?: string}): Promise<unknown>
-}
-
 /**
- * Builds the FileWatcherRepo adapter from the two repositories that
- * actually own this data: StackRepository for stack reads/writes, and
- * StackEventRepository for the StackEvent audit trail. This is the single
- * write path for that table — the ad-hoc method that used to live on
- * StackRepository (and cast its type argument past the enum) is gone.
+ * Builds the FileWatcherRepo adapter from the one repository that owns this
+ * data: StackRepository for stack reads/writes. The watcher no longer
+ * touches the StackEvent audit table at all (plan 10-13) — the audit
+ * subscriber (application/subscribers/stack-event-subscriber.ts) is now the
+ * single write path for that table, reacting to the same
+ * stack.config_changed / stack.config_error events this watcher already
+ * emitted before this plan.
  */
 export function createFileWatcherRepo(
     stacks: FileWatcherStackRepo,
-    events: FileWatcherEventRepo,
 ): FileWatcherRepo {
     return {
         findAllStacks: (...args) => stacks.findAllStacks(...args),
@@ -76,41 +70,41 @@ export function createFileWatcherRepo(
         syncServicesFromCompose: (...args) => stacks.syncServicesFromCompose(...args),
         setConfigError: (...args) => stacks.setConfigError(...args),
         clearConfigError: (...args) => stacks.clearConfigError(...args),
-        async createStackEvent(args) {
-            await events.createEvent(args)
-        },
     }
 }
 
 const WATCHED_FILENAMES = new Set(["docker-compose.yml", ".env"])
 
-export class FileWatcher {
+export class FileWatcher extends WatcherJob {
+    readonly name = "FileWatcher"
+    // Reconcile every 60 seconds as a safety net alongside the chokidar watcher.
+    protected readonly reconcileCronExpression = "*/60 * * * * *"
+
     private watcher: FSWatcher | null = null
-    private cronTask: cron.ScheduledTask | null = null
     private readonly repo: FileWatcherRepo | null
-    private readonly broadcaster: Pick<StateBroadcaster, "publish">
+    private readonly bus: Pick<EventBusPort, "emit">
 
     constructor(
         repo?: FileWatcherRepo,
-        broadcaster?: Pick<StateBroadcaster, "publish">,
+        bus?: Pick<EventBusPort, "emit">,
     ) {
+        super()
         this.repo = repo ?? null
-        this.broadcaster = broadcaster ?? stateEventBroadcaster
+        this.bus = bus ?? domainEventBus
     }
 
     private async getRepo(): Promise<FileWatcherRepo> {
         if (this.repo !== null) return this.repo
         // Lazy-load to avoid pulling db.ts into the module graph at test time
         const {stackRepository} = await import("../repositories/stack-repository.js")
-        const {stackEventRepository} = await import("../repositories/stack-event-repository.js")
-        return createFileWatcherRepo(stackRepository, stackEventRepository)
+        return createFileWatcherRepo(stackRepository)
     }
 
     isWatching(): boolean {
         return this.watcher !== null
     }
 
-    async start(): Promise<void> {
+    protected async attach(): Promise<void> {
         const stacksRoot = getStacksDir()
         console.log(`[FileWatcher] Starting file watcher on: ${stacksRoot}`)
 
@@ -167,24 +161,12 @@ export class FileWatcher {
         this.watcher.on("error", (err) => {
             console.error("[FileWatcher] chokidar error:", err)
         })
-
-        this.cronTask = cron.schedule("*/60 * * * * *", async () => {
-            try {
-                await this.reconcile()
-            } catch (err) {
-                console.error("[FileWatcher] reconcile error:", err)
-            }
-        })
     }
 
-    async stop(): Promise<void> {
+    protected async detach(): Promise<void> {
         if (this.watcher) {
             await this.watcher.close()
             this.watcher = null
-        }
-        if (this.cronTask) {
-            this.cronTask.stop()
-            this.cronTask = null
         }
     }
 
@@ -237,13 +219,7 @@ export class FileWatcher {
             // Invalid YAML or no services key
             console.log(`[FileWatcher] Config error for ${stack.id}: ${err.message}`)
             await repo.setConfigError(stack.id, err.message)
-            await repo.createStackEvent({
-                stackId: stack.id,
-                type: "config_error",
-                message: err.message,
-            })
-            this.broadcaster.publish({
-                type: "config_error",
+            this.bus.emit("stack.config_error", {
                 stackId: stack.id,
                 message: err.message,
             })
@@ -260,17 +236,13 @@ export class FileWatcher {
         // stale configError before proceeding. Only reached once sync succeeds.
         await repo.clearConfigError(stack.id)
         await repo.updateStackHash({stackId: stack.id, hash: newHash})
-        await repo.createStackEvent({
-            stackId: stack.id,
-            type: "config_changed",
-            payload: JSON.stringify({oldHash, newHash}),
-        })
         console.log(`[FileWatcher] Broadcasting config_changed event for ${stack.id}`)
-        this.broadcaster.publish({
-            type: "config_changed",
+        this.bus.emit("stack.config_changed", {
             stackId: stack.id,
             newHash,
             source: "external",
+            previousHash: oldHash,
+            changedFile: "compose",
         })
     }
 
@@ -313,20 +285,16 @@ export class FileWatcher {
 
         console.log(`[FileWatcher] .env hash changed for ${stack.id}`)
         await repo.updateEnvHash({stackId: stack.id, hash: newHash})
-        await repo.createStackEvent({
-            stackId: stack.id,
-            type: "config_changed",
-            payload: JSON.stringify({oldHash, newHash, source: "env"}),
-        })
-        this.broadcaster.publish({
-            type: "config_changed",
+        this.bus.emit("stack.config_changed", {
             stackId: stack.id,
             newHash,
             source: "external",
+            previousHash: oldHash,
+            changedFile: "env",
         })
     }
 
-    async reconcile(): Promise<void> {
+    protected async reconcile(): Promise<void> {
         const repo = await this.getRepo()
         const stacks = await repo.findAllStacks()
 

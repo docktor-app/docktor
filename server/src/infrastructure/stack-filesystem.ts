@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import {getComposePath, getEnvPath, getStackPath,} from "../lib/stacks-dir.js";
+import type {StackFilesystemPort} from "../application/ports/stack-filesystem-port.js";
 
-export class StackFilesystem {
+export class StackFilesystem implements StackFilesystemPort {
     getStackDirectory(stackId: string): string {
         return getStackPath(stackId);
     }

@@ -22,7 +22,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 7: Release Hardening: Data Safety and Core Workflows** - Verify managed stacks directory survives container recreation before v1.0.0 (completed 2026-09-13)
 - [x] **Phase 8: Live State Consistency** - Make state changes (config errors, config edits, manual actions) reflect live in the UI without a manual refresh (completed 2026-09-20)
 - [x] **Phase 9: Deployment and Release Readiness** - Clean up deployment docs and close remaining release-process gaps for v1.0.0 (completed 2026-09-19)
-- [ ] **Phase 10: Backend Architecture Refactor** - Server-side architecture improvements without changing external API behavior, landed before other phases add new server-side code on top of the current structure — needs `/gsd-discuss-phase 10` to scope before planning ([#16](https://github.com/docktor-app/docktor/issues/16))
+- [x] **Phase 10: Backend Architecture Refactor** - Server-side architecture improvements without changing external API behavior, landed before other phases add new server-side code on top of the current structure — needs `/gsd-discuss-phase 10` to scope before planning ([#16](https://github.com/docktor-app/docktor/issues/16)) (completed 2026-09-25)
 - [ ] **Phase 11: UI Rework** - Clean up the UI's component structure and visual design (shadcn patterns, less Card wrapping, tab-structure reconsideration, consolidated logs, consistent status indicators) before other phases add new UI on top of current patterns — needs `/gsd-discuss-phase 11` to scope before planning ([#15](https://github.com/docktor-app/docktor/issues/15))
 - [ ] **Phase 12: Compose Safety and Templates** - Diff-before-apply, dangerous-config warnings, port-conflict detection, and git-based stack templates ([#18](https://github.com/docktor-app/docktor/issues/18), [#19](https://github.com/docktor-app/docktor/issues/19), [#20](https://github.com/docktor-app/docktor/issues/20), [#21](https://github.com/docktor-app/docktor/issues/21))
 - [ ] **Phase 13: Update Checker Reliability** - Fix misleading update badges, wrong upgrade-dialog messaging, slow post-deploy status, and stale database rows ([#29](https://github.com/docktor-app/docktor/issues/29), [#31](https://github.com/docktor-app/docktor/issues/31), [#32](https://github.com/docktor-app/docktor/issues/32), [#33](https://github.com/docktor-app/docktor/issues/33), [#34](https://github.com/docktor-app/docktor/issues/34))
@@ -391,22 +391,77 @@ Plans:
 
 ### Phase 10: Backend Architecture Refactor
 
-**Goal:** [Needs scoping — run `/gsd-discuss-phase 10` before `/gsd-plan-phase 10`] Improve the server's internal architecture (event-driven patterns, DDD/hexagonal layering, a reconsideration of cron-based job handling, dead-code removal) without changing external API behavior or breaking integration tests. Sequenced before Phases 12/14/15 so their new server-side code (template service, health-probe jobs, 2FA/rate-limiting) lands on the refactored structure instead of needing rework afterward.
-**Requirements**: GitHub issue [#16](https://github.com/docktor-app/docktor/issues/16) — the issue itself is a discussion prompt, not a concrete spec; success criteria here are placeholders pending discussion
+**Goal:** Improve the server's internal architecture — DDD/hexagonal layering with explicit ports, a formal Job abstraction and registry, an in-process domain-event bus, and a dedicated dead-code audit — without changing external API behavior or breaking integration tests. Sequenced before Phases 12/14/15 so their new server-side code (template service, health-probe jobs, 2FA/rate-limiting) lands on the refactored structure instead of needing rework afterward.
+**Requirements**: GitHub issue [#16](https://github.com/docktor-app/docktor/issues/16), scoped into 18 decisions (D-01 through D-18) in `.planning/phases/10-backend-architecture-refactor/10-CONTEXT.md`
 **Depends on:** Phase 9
 
 Independent of Phase 11 (separate server/client tracks — can run in parallel). Later phases that add new server-side code should follow this one; see their own "Depends on" entries.
-**Success Criteria** (what must be TRUE) — **draft, confirm during discuss-phase:**
+**Success Criteria** (what must be TRUE):
 
-  1. TBD — concrete architectural target(s) chosen from #16's open list (event-driven architecture / DDD & hexagonal layering / job-handling reconsideration / dead-code removal)
+  1. Every decision D-01 through D-18 is implemented and traceable to an artifact in the tree and a passing check
   2. No existing API endpoint's request/response contract changes
-  3. Existing integration tests pass unmodified
+  3. Existing integration tests (`server/test/integration/`, 5 files) pass unmodified
+  4. CLAUDE.md's layering rules are enforced by an automated architecture fitness test rather than by review
+  5. All three of D-15's side-effect categories — notifications, the `StackEvent` audit trail, and status/config broadcasts — reach their consumers through the in-process domain-event bus, with the SSE stream a browser observes unchanged (D-18)
 
-**Plans:** 0 plans
+**Plans:** 17/17 plans complete
 
 Plans:
+**Wave 1**
 
-- [ ] TBD (run /gsd-plan-phase 10 to break down)
+- [x] 10-01-PLAN.md — Layering contract proven end-to-end on the notification service: `repositories/index.ts`, the first port, the architecture fitness test
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 10-02-PLAN.md — Named port interfaces for the four infrastructure dependencies D-07 lists explicitly
+- [x] 10-03-PLAN.md — The domain-event bus: event catalog, port, and in-memory implementation with per-subscriber failure isolation
+- [x] 10-04-PLAN.md — The `Job` lifecycle contract, the two job kinds, and the health-tracking registry
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 10-05-PLAN.md — Ports for the remaining six infrastructure classes, plus the fitness rule that keeps the convention true
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 10-06-PLAN.md — Application services depend on ports only; pure business rules move down into `domain/`
+- [x] 10-07-PLAN.md — All seven background jobs adopt the `Job` contract; `jobs/index.ts` becomes a registry
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [x] 10-08-PLAN.md — `routes/stacks.ts` stops reaching past its layer; a new `LogService`
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [x] 10-09-PLAN.md — The settings, notifications, setup and imports routes stop reaching past their layer
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [x] 10-10-PLAN.md — `routes/backups.ts` cleaned, plus the routes rule in the fitness test
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [x] 10-11-PLAN.md — Status and configuration broadcasts move onto the bus; the live-state broadcaster becomes a subscriber (D-15 item 3)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [x] 10-12-PLAN.md — Notifications move onto the bus; a subscriber composes them (D-15 item 1)
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
+- [x] 10-13-PLAN.md — The `StackEvent` audit trail moves onto the bus, plus one ordered subscriber registration (D-15 item 2)
+
+**Wave 11** *(blocked on Wave 10 completion)*
+
+- [x] 10-14-PLAN.md — The dedicated dead-code audit: the unreachable update-trigger method, the dead `src/services/` directory, and the workspace sweep (D-03, D-11)
+
+**Wave 12** *(blocked on Wave 11 completion)*
+
+- [x] 10-15-PLAN.md — Phase gate: automated gate, decision-coverage table, live-database integration run, and the five deferred human checks
+
+**Gap closure (UAT)** *(both independent, separate server/client files, one parallel wave; G-10-4 closed as environmental, no plan)*
+
+- [x] 10-16-PLAN.md — G-10-3 + G-10-1: StatePoller reconcile emits `stack.status_changed` only on a real transition (no per-tick RUNNING->RUNNING spam on the notification log or the SSE stream); JobRegistry logs one started line per job so startup names all seven jobs
+- [x] 10-17-PLAN.md — G-10-2: Backups tab request storm fixed. Fetch/poll lifecycle moves into a `useBackupHistory` hook keyed on stackId only, with a bounded schedule; new backups still appear, driven by the existing SSE status signal
 
 ### Phase 11: UI Rework
 

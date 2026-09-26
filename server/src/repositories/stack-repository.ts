@@ -409,6 +409,22 @@ export class StackRepository {
         });
     }
 
+    // Writes the four per-stack backup-config columns in one call — the
+    // single write path BackupService.saveBackupConfig() uses (via the
+    // BackupStackRepo adapter in application/index.ts), replacing the
+    // inline prisma.stack.update() that used to live in routes/backups.ts.
+    async updateBackupConfig(
+        id: string,
+        data: {
+            backupSchedule: string | null;
+            backupRetention: string | null;
+            backupPreHook: string | null;
+            backupPostHook: string | null;
+        },
+    ) {
+        await prisma.stack.update({where: {id}, data});
+    }
+
 }
 
 export const stackRepository = new StackRepository();

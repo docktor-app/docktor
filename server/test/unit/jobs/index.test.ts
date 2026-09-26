@@ -1,25 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("../../../src/jobs/state-poller.js", () => ({
-    statePoller: { start: vi.fn(), stop: vi.fn() },
+    statePoller: { name: "StatePoller", kind: "watcher", start: vi.fn(), stop: vi.fn(), setHealthReporter: vi.fn() },
 }))
 vi.mock("../../../src/jobs/file-watcher.js", () => ({
-    fileWatcher: { start: vi.fn(), stop: vi.fn() },
+    fileWatcher: { name: "FileWatcher", kind: "watcher", start: vi.fn(), stop: vi.fn(), setHealthReporter: vi.fn() },
 }))
 vi.mock("../../../src/jobs/update-checker.js", () => ({
-    updateChecker: { start: vi.fn(), stop: vi.fn() },
+    updateChecker: { name: "UpdateChecker", kind: "interval", start: vi.fn(), stop: vi.fn(), setHealthReporter: vi.fn() },
 }))
 vi.mock("../../../src/jobs/disk-checker.js", () => ({
-    diskChecker: { start: vi.fn(), stop: vi.fn() },
+    diskChecker: { name: "DiskChecker", kind: "interval", start: vi.fn(), stop: vi.fn(), setHealthReporter: vi.fn() },
 }))
 vi.mock("../../../src/jobs/notification-watcher.js", () => ({
-    notificationWatcher: { start: vi.fn(), stop: vi.fn() },
+    notificationWatcher: { name: "NotificationWatcher", kind: "watcher", start: vi.fn(), stop: vi.fn(), setHealthReporter: vi.fn() },
 }))
 vi.mock("../../../src/jobs/backup-scheduler.js", () => ({
-    backupScheduler: { start: vi.fn(), stop: vi.fn() },
+    backupScheduler: { name: "BackupScheduler", kind: "dynamic", start: vi.fn(), stop: vi.fn(), setHealthReporter: vi.fn() },
 }))
 vi.mock("../../../src/jobs/proxy-cert-poller.js", () => ({
-    proxyCertPoller: { start: vi.fn(), stop: vi.fn() },
+    proxyCertPoller: { name: "ProxyCertPoller", kind: "interval", start: vi.fn(), stop: vi.fn(), setHealthReporter: vi.fn() },
 }))
 vi.mock("../../../src/application/index.js", () => ({
     backupService: { recoverInProgressBackups: vi.fn() },
@@ -60,6 +60,29 @@ describe("startJobs", () => {
         expect(proxyCertPoller.start).toHaveBeenCalledOnce()
     })
 
+    it("prints a started line naming all seven jobs, in registration order, on a successful boot (G-10-1)", async () => {
+        const consoleLog = vi.spyOn(console, "log").mockImplementation(() => undefined)
+
+        await startJobs()
+
+        const startedLines = consoleLog.mock.calls
+            .map((call) => call[0])
+            .filter((line): line is string => typeof line === "string" && line.startsWith("[JobRegistry] Started"))
+        const startedNames = startedLines.map((line) => line.replace(/^\[JobRegistry\] Started (\S+) .*$/, "$1"))
+
+        expect(startedNames).toEqual([
+            "StatePoller",
+            "FileWatcher",
+            "UpdateChecker",
+            "DiskChecker",
+            "NotificationWatcher",
+            "BackupScheduler",
+            "ProxyCertPoller",
+        ])
+
+        consoleLog.mockRestore()
+    })
+
     it("does not throw and still starts the remaining jobs when backup recovery fails (e.g. DB not ready yet on cold start)", async () => {
         vi.mocked(backupService.recoverInProgressBackups).mockRejectedValueOnce(
             new Error("ECONNREFUSED"),
@@ -93,8 +116,19 @@ describe("startJobs", () => {
 })
 
 describe("stopJobs", () => {
-    it("stops every job", () => {
-        stopJobs()
+    let consoleErrorSpy: ReturnType<typeof vi.spyOn>
+
+    beforeEach(() => {
+        vi.clearAllMocks()
+        consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    })
+
+    afterEach(() => {
+        consoleErrorSpy.mockRestore()
+    })
+
+    it("stops every job", async () => {
+        await stopJobs()
 
         expect(statePoller.stop).toHaveBeenCalledOnce()
         expect(fileWatcher.stop).toHaveBeenCalledOnce()
@@ -103,5 +137,21 @@ describe("stopJobs", () => {
         expect(notificationWatcher.stop).toHaveBeenCalledOnce()
         expect(backupScheduler.stop).toHaveBeenCalledOnce()
         expect(proxyCertPoller.stop).toHaveBeenCalledOnce()
+    })
+
+    it("isolates a single job's stop() failure so a later job's stop() still runs — closes the pre-10-07 shutdown-leak gap (10-RESEARCH.md Pitfall 4)", async () => {
+        vi.mocked(fileWatcher.stop).mockRejectedValueOnce(new Error("stop boom"))
+
+        await expect(stopJobs()).resolves.toBeUndefined()
+
+        expect(fileWatcher.stop).toHaveBeenCalledOnce()
+        // updateChecker is registered immediately after fileWatcher — proves
+        // a throwing stop() does not abort the remaining stops.
+        expect(updateChecker.stop).toHaveBeenCalledOnce()
+        expect(diskChecker.stop).toHaveBeenCalledOnce()
+        expect(notificationWatcher.stop).toHaveBeenCalledOnce()
+        expect(backupScheduler.stop).toHaveBeenCalledOnce()
+        expect(proxyCertPoller.stop).toHaveBeenCalledOnce()
+        expect(consoleErrorSpy).toHaveBeenCalled()
     })
 })

@@ -3,6 +3,7 @@ import path from "node:path";
 import {getStackPath} from "../lib/stacks-dir.js";
 import {PROXY_STACK_ID} from "../application/proxy-service.js";
 import {PROXY_CERTS_SUBPATH} from "../lib/proxy-stack-compose.js";
+import type {CertificateFilesystemPort} from "../application/ports/certificate-filesystem-port.js";
 
 // Owner-only permissions — the private key file must never be group/world
 // readable on the host (T-09-35). The certs directory itself is already
@@ -21,7 +22,7 @@ export interface CertificateFileContent {
  * Owns all certificate file I/O so CertificateService stays testable with a
  * plain object. Never logs the content of anything it writes (T-09-30).
  */
-export class CertificateFilesystem {
+export class CertificateFilesystem implements CertificateFilesystemPort {
     /**
      * Resolves the proxy stack's certificates directory. Derived from the
      * existing single definitions (PROXY_STACK_ID, PROXY_CERTS_SUBPATH)

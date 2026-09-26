@@ -1,8 +1,6 @@
-import nodemailer from "nodemailer"
-import {decrypt} from "../lib/crypto.js"
-import {prisma} from "../lib/db.js"
 import type {NotificationRepository} from "../repositories/notification-repository.js"
-import type {StateBroadcaster} from "../lib/state-broadcaster.js"
+import type {EventBusPort} from "./ports/event-bus-port.js"
+import type {SmtpClientPort} from "./ports/smtp-client-port.js"
 
 export interface SmtpConfig {
     host: string
@@ -13,7 +11,7 @@ export interface SmtpConfig {
     from: string
 }
 
-export interface SmtpTestConfig extends SmtpConfig {
+interface SmtpTestConfig extends SmtpConfig {
     recipient: string
 }
 
@@ -24,16 +22,28 @@ export interface NotificationEvent {
     message: string
 }
 
-export interface NotificationSettings {
+interface NotificationSettings {
     getSetting(key: string): Promise<string | null>
     getSmtpConfig(): Promise<SmtpConfig | null>
+}
+
+/**
+ * Read port for recipient-email resolution. Declared here rather than
+ * importing the concrete UserRepository, so this service stays
+ * unit-testable with a plain object and the dependency arrow keeps
+ * pointing inward (application depends on a port, not on repositories/).
+ */
+export interface UserReadPort {
+    findAllEmails(): Promise<string[]>
 }
 
 export class NotificationService {
     constructor(
         private readonly repo: NotificationRepository,
         private readonly settings: NotificationSettings,
-        private readonly broadcaster: StateBroadcaster,
+        private readonly bus: Pick<EventBusPort, "emit">,
+        private readonly users: UserReadPort,
+        private readonly smtpClient: SmtpClientPort,
     ) {}
 
     async notify(event: NotificationEvent): Promise<void> {
@@ -61,11 +71,17 @@ export class NotificationService {
         })
         console.log(`[NotificationService] Notification record created: ${notification.id}`)
 
-        // Broadcast notification creation event to all SSE clients
-        this.broadcaster.publish({
-            type: "notification_created",
-            notificationId: notification.id,
-        })
+        // Emit the notification-created domain event (D-15 item 1, last
+        // inline publish in the server) — the state-broadcast bridge
+        // subscriber (plan 10-11) delivers it to connected SSE clients in
+        // the same shape at the same point. Defence-in-depth try/catch
+        // alongside the bus's own per-subscriber isolation (D-17), matching
+        // every other emit site added in this phase.
+        try {
+            this.bus.emit("notification.created", {notificationId: notification.id})
+        } catch (err) {
+            console.error("[NotificationService] bus emit failed", err)
+        }
 
         const smtpConfig = await this.settings.getSmtpConfig()
         if (!smtpConfig) {
@@ -73,17 +89,15 @@ export class NotificationService {
             return
         }
 
-        const users = await prisma.user.findMany({select: {email: true}})
-        if (users.length === 0) {
+        const emails = await this.users.findAllEmails()
+        if (emails.length === 0) {
             console.log("[NotificationService] No users found, skipping email")
             return
         }
 
         try {
-            const transport = this.createTransport(smtpConfig)
-            await transport.sendMail({
-                from: smtpConfig.from,
-                to: users.map((u) => u.email).join(", "),
+            await this.smtpClient.sendMail(smtpConfig, {
+                to: emails.join(", "),
                 subject: event.subject,
                 text: event.message,
             })
@@ -95,9 +109,7 @@ export class NotificationService {
     }
 
     async testSmtp(config: SmtpTestConfig): Promise<void> {
-        const transport = this.createTransport(config)
-        await transport.sendMail({
-            from: config.from,
+        await this.smtpClient.sendMail(config, {
             to: config.recipient,
             subject: "Docktor — SMTP test",
             text: "SMTP configuration is working correctly.",
@@ -108,13 +120,7 @@ export class NotificationService {
         return this.settings.getSmtpConfig()
     }
 
-    private createTransport(config: SmtpConfig) {
-        return nodemailer.createTransport({
-            host: config.host,
-            port: config.port,
-            secure: config.encryption === "ssl",
-            requireTLS: config.encryption === "starttls",
-            auth: config.username ? {user: config.username, pass: config.password} : undefined,
-        })
+    async getRecent(limit: number = 100): Promise<Awaited<ReturnType<NotificationRepository["findRecent"]>>> {
+        return this.repo.findRecent(limit)
     }
 }

@@ -1,8 +1,10 @@
 /**
  * Pure comparison logic for deciding whether an "Update Images" run actually
- * changed anything. Deliberately has no imports from repositories,
- * infrastructure, jobs or Prisma, and performs no I/O of any kind — the
- * caller (StackService.updateImages()) is responsible for resolving the
+ * changed anything, plus the canonical image-ref builder every caller that
+ * needs to reconstruct a service's tag-qualified image reference shares.
+ * Deliberately has no imports from repositories, infrastructure, jobs or
+ * Prisma, and performs no I/O of any kind — the caller
+ * (StackService.updateImages()) is responsible for resolving the
  * before/after digests via DockerExecutor.imageDigest() and handing the
  * results here.
  */
@@ -21,33 +23,52 @@ export interface ImageDigestComparison {
 
 /**
  * Reconstructs the canonical imageRef for a service's stored `image` +
- * `imageTag` fields, using the same spelling as
- * `buildImageRefFromService`/`normalizeImageRef` in
- * `jobs/update-checker.ts` — that spelling is the one already proven to
- * resolve against the local image store (it is what UpdateChecker already
- * passes to `imageDigest()`).
- *
- * Duplicated locally rather than imported: the domain layer must not depend
- * on `jobs/`, and importing `jobs/update-checker.ts` here would drag
- * node-cron, semver and the registry-client singleton into the application
- * unit-test module graph. The parity test in
- * `image-update-detection.test.ts` is the guard against the two copies
- * drifting apart — this mirrors the precedent and reasoning already
- * documented at the top of `infrastructure/registry-client.ts`.
+ * `imageTag` columns: strips the implicit docker.io/library/ and docker.io/
+ * prefixes, then defaults a missing tag to `latest` — the same
+ * normalisation Docker itself applies when resolving a ref against the
+ * local image store. This is the single definition; every caller that
+ * needs to look up or persist an `ImageUpdateCheck` row for a service
+ * (`jobs/update-checker.ts`'s `findAllImageRefs()`/`checkImage()`, and
+ * `StackService`'s stack-detail/upgrade-candidate methods) shares this
+ * exact spelling, so its output must stay stable.
  *
  * Returns null when there is no non-blank image — a build-only service has
  * no image to compare, so it must be excluded rather than turned into a ref
  * that can never resolve.
+ *
+ * Moved here from `jobs/update-checker.ts` (10-08 Task 1): it is a pure
+ * normalisation rule over an image name and tag, with no I/O, so the domain
+ * layer is its correct home. It used to live in the jobs module solely so
+ * this file's `toImageRef` (needed by `StackService.updateImages()`) never
+ * had to import `jobs/`, which would have dragged node-cron, semver and the
+ * registry-client singleton into the application unit-test module graph.
+ * Moving the original down removes the reason the second copy existed —
+ * the two implementations were byte-identical by inspection (same prefix
+ * strip, same default-tag rule), so no caller's output changes.
  */
-export function toImageRef(service: {image: string | null; imageTag: string | null}): string | null {
-    if (!service.image || !service.image.trim()) return null;
+export function buildImageRefFromService(
+    image: string | null | undefined,
+    imageTag: string | null | undefined,
+): string | null {
+    if (!image || !image.trim()) return null;
 
-    let ref = service.imageTag ? `${service.image}:${service.imageTag}` : service.image;
+    let ref = imageTag ? `${image}:${imageTag}` : image;
     ref = ref
         .replace(/^docker\.io\/library\//, "")
         .replace(/^docker\.io\//, "");
     if (!ref.includes(":")) ref = `${ref}:latest`;
     return ref;
+}
+
+/**
+ * Same reconstruction as `buildImageRefFromService`, taking a service
+ * object instead of two positional arguments — the shape
+ * `StackService.collectImageRefs()` already has on hand from
+ * `ComposeConfig.services`. Delegates to `buildImageRefFromService` so both
+ * call shapes share exactly one implementation.
+ */
+export function toImageRef(service: {image: string | null; imageTag: string | null}): string | null {
+    return buildImageRefFromService(service.image, service.imageTag);
 }
 
 /**

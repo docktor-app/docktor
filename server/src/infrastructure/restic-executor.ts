@@ -1,4 +1,5 @@
 import {spawn} from "node:child_process";
+import type {ResticExecutorPort} from "../application/ports/restic-executor-port.js";
 
 export interface ResticRunResult {
     exitCode: number;
@@ -48,7 +49,7 @@ export interface RetentionPolicy {
     keepMonthly: number;
 }
 
-export class ResticExecutor {
+export class ResticExecutor implements ResticExecutorPort {
     private readonly binary: string;
 
     constructor(binary?: string) {
@@ -142,7 +143,7 @@ export class ResticExecutor {
      *
      * IMPORTANT: Caller must set cwd to stackPath when calling run() so that "." resolves correctly.
      */
-    buildBackupArgs(stackPath: string, stackId: string): string[] {
+    buildBackupArgs(_stackPath: string, stackId: string): string[] {
         return [
             ".",
             "--exclude", "./logs",
@@ -173,7 +174,7 @@ export class ResticExecutor {
      *
      * IMPORTANT: Caller must set cwd to stackPath when calling run() so that "." resolves correctly.
      */
-    buildRestoreArgs(snapshotId: string, targetPath: string): string[] {
+    buildRestoreArgs(snapshotId: string, _targetPath: string): string[] {
         return ["restore", snapshotId, "--target", "."];
     }
 
