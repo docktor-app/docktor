@@ -148,8 +148,8 @@ describe("StackService", () => {
 
     describe("listStacks", () => {
         const allStacks = [
-            {id: "my-app", displayName: "My App", isProtected: false},
-            {id: "docktor-proxy", displayName: "Docktor Proxy", isProtected: true},
+            {id: "my-app", displayName: "My App", isProtected: false, services: []},
+            {id: "docktor-proxy", displayName: "Docktor Proxy", isProtected: true, services: []},
         ];
 
         it("omits protected stacks when showInDashboard is false", async () => {
@@ -177,6 +177,113 @@ describe("StackService", () => {
             const result = await service.listStacks();
 
             expect(result.some((s: any) => s.id === "my-app")).toBe(true);
+        });
+
+        it("augments each listed stack's services with updateAvailable/latestTag from a matching stored row, defaulting a row-less service", async () => {
+            repo.findAll.mockResolvedValue([
+                {
+                    id: "stack-a",
+                    displayName: "Stack A",
+                    isProtected: false,
+                    services: [{serviceName: "web", image: "nginx", imageTag: "1.2.0"}],
+                },
+                {
+                    id: "stack-b",
+                    displayName: "Stack B",
+                    isProtected: false,
+                    services: [{serviceName: "db", image: "postgres", imageTag: "16"}],
+                },
+            ]);
+            settings.getProxySettings.mockResolvedValue({acmeEmail: "", showInDashboard: true});
+            updateChecks.findByImageRefs.mockResolvedValue([
+                {imageRef: "nginx:1.2.0", hasUpdate: true, latestTag: "1.2.3"},
+            ]);
+
+            const result = await service.listStacks();
+
+            expect(result[0]!.services[0]).toMatchObject({
+                serviceName: "web",
+                updateAvailable: true,
+                latestTag: "1.2.3",
+            });
+            expect(result[1]!.services[0]).toMatchObject({
+                serviceName: "db",
+                updateAvailable: false,
+                latestTag: null,
+            });
+        });
+
+        it("defaults updateAvailable: false / latestTag: null for a service whose image ref cannot be built", async () => {
+            repo.findAll.mockResolvedValue([
+                {
+                    id: "stack-a",
+                    displayName: "Stack A",
+                    isProtected: false,
+                    services: [{serviceName: "web", image: "", imageTag: null}],
+                },
+            ]);
+            settings.getProxySettings.mockResolvedValue({acmeEmail: "", showInDashboard: true});
+
+            const result = await service.listStacks();
+
+            expect(result[0]!.services[0]).toMatchObject({
+                updateAvailable: false,
+                latestTag: null,
+            });
+            expect(updateChecks.findByImageRefs).not.toHaveBeenCalled();
+        });
+
+        it("calls findByImageRefs exactly once per listStacks() call, with the de-duplicated union of refs across all stacks", async () => {
+            repo.findAll.mockResolvedValue([
+                {
+                    id: "stack-a",
+                    displayName: "Stack A",
+                    isProtected: false,
+                    services: [
+                        {serviceName: "web", image: "nginx", imageTag: "1.2.0"},
+                        {serviceName: "cache", image: "redis", imageTag: "7"},
+                    ],
+                },
+                {
+                    id: "stack-b",
+                    displayName: "Stack B",
+                    isProtected: false,
+                    // same ref as stack-a's "web" service — must be de-duplicated
+                    services: [{serviceName: "web", image: "nginx", imageTag: "1.2.0"}],
+                },
+            ]);
+            settings.getProxySettings.mockResolvedValue({acmeEmail: "", showInDashboard: true});
+
+            await service.listStacks();
+
+            expect(updateChecks.findByImageRefs).toHaveBeenCalledTimes(1);
+            const refsArg = updateChecks.findByImageRefs.mock.calls[0]![0] as string[];
+            expect(new Set(refsArg)).toEqual(new Set(["nginx:1.2.0", "redis:7"]));
+        });
+
+        it("excludes a protected stack's services from the batched lookup when showInDashboard is false", async () => {
+            repo.findAll.mockResolvedValue([
+                {
+                    id: "my-app",
+                    displayName: "My App",
+                    isProtected: false,
+                    services: [{serviceName: "web", image: "nginx", imageTag: "1.2.0"}],
+                },
+                {
+                    id: "docktor-proxy",
+                    displayName: "Docktor Proxy",
+                    isProtected: true,
+                    services: [{serviceName: "nginx-proxy", image: "nginxproxy/nginx-proxy", imageTag: "1.11-alpine"}],
+                },
+            ]);
+            settings.getProxySettings.mockResolvedValue({acmeEmail: "", showInDashboard: false});
+
+            const result = await service.listStacks();
+
+            expect(result).toHaveLength(1);
+            expect(result[0]!.id).toBe("my-app");
+            const refsArg = updateChecks.findByImageRefs.mock.calls[0]![0] as string[];
+            expect(refsArg).not.toContain("nginxproxy/nginx-proxy:1.11-alpine");
         });
     });
 

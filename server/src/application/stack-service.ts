@@ -92,12 +92,21 @@ export class StackService {
      * Filters out protected stacks (e.g. the Docktor-managed proxy stack)
      * from the dashboard list unless the user opts in via
      * proxy.showInDashboard — kept in the service, not the route, per
-     * CLAUDE.md's "routes only call application services" rule.
+     * CLAUDE.md's "routes only call application services" rule. Runs
+     * BEFORE the update-info enrichment below so a protected, hidden
+     * stack's service image refs are never looked up (T-11-16).
+     *
+     * Each listed stack's services are augmented with updateAvailable/
+     * latestTag from the ImageUpdateCheck table via withServiceUpdateInfo,
+     * sharing its single batched lookup and matching semantics with
+     * getStackWithUpdateInfo() (11-05, D-09) — the list surface used to be
+     * the only place these fields were never populated (RESEARCH Pitfall 1).
      */
     async listStacks() {
         const all = await this.repo.findAll();
         const {showInDashboard} = await this.settings.getProxySettings();
-        return showInDashboard ? all : all.filter((s) => !s.isProtected);
+        const filtered = showInDashboard ? all : all.filter((s) => !s.isProtected);
+        return this.withServiceUpdateInfo(filtered);
     }
 
     async getStack(id: string) {
@@ -105,41 +114,75 @@ export class StackService {
     }
 
     /**
-     * Same as getStack(), with each service augmented by its
-     * update-availability and latest tag from the ImageUpdateCheck table —
-     * moved in from GET /api/stacks/:id's route-level join (10-08 Task 2,
-     * D-01/D-10). The lookup key must reconstruct the same tag-qualified
-     * ref that UpdateChecker.findAllImageRefs() persists (image +
-     * imageTag), not just the untagged `image` column — otherwise a
-     * service on an explicit tag never matches its own ImageUpdateCheck
-     * row. `getStack()`'s repo call already throws NotFoundError for an
-     * unknown stack before this method's own body runs, so the `!stack`
-     * branch below is unreachable in production — kept only because the
-     * route it replaces had the identical dead branch and this move must
-     * not change observable behaviour either way.
+     * Same as getStack(), with the stack's services augmented via
+     * withServiceUpdateInfo — moved in from GET /api/stacks/:id's
+     * route-level join (10-08 Task 2, D-01/D-10). `getStack()`'s repo call
+     * already throws NotFoundError for an unknown stack before this
+     * method's own body runs, so the `!stack` branch below is unreachable
+     * in production — kept only because the route it replaces had the
+     * identical dead branch and this move must not change observable
+     * behaviour either way.
      */
     async getStackWithUpdateInfo(id: string) {
         const stack = await this.getStack(id);
         if (!stack) return null;
 
-        const serviceKeys = stack.services.map((svc) => ({
-            svc,
-            key: buildImageRefFromService(svc.image, svc.imageTag),
-        }));
-        const imageRefs = serviceKeys
-            .map(({key}) => key)
-            .filter((key): key is string => key !== null);
-        const updateChecks = await this.updateChecks.findByImageRefs(imageRefs);
+        const [enriched] = await this.withServiceUpdateInfo([stack]);
+        return enriched;
+    }
+
+    /**
+     * Augments every service of every given stack with its
+     * update-availability and latest tag from the ImageUpdateCheck table,
+     * via ONE batched `findByImageRefs` lookup across the de-duplicated
+     * union of every stack's service refs — never one query per stack or
+     * per service (T-11-15). Shared by listStacks() and
+     * getStackWithUpdateInfo() (11-05, D-09) so both surfaces apply the
+     * identical matching rule.
+     *
+     * The lookup key must reconstruct the same tag-qualified ref that
+     * UpdateChecker.findAllImageRefs() persists (image + imageTag), not
+     * just the untagged `image` column — otherwise a service on an
+     * explicit tag never matches its own ImageUpdateCheck row
+     * (buildImageRefFromService). A service whose ref cannot be built
+     * (e.g. a build-only service with no image) defaults to
+     * updateAvailable: false / latestTag: null, same as a ref with no
+     * stored row.
+     */
+    private async withServiceUpdateInfo<
+        T extends {services: Array<{image: string; imageTag: string | null}>},
+    >(stacks: T[]): Promise<Array<Omit<T, "services"> & {
+        services: Array<T["services"][number] & {updateAvailable: boolean; latestTag: string | null}>;
+    }>> {
+        const stackServiceKeys = stacks.map((stack) =>
+            stack.services.map((svc) => ({
+                svc,
+                key: buildImageRefFromService(svc.image, svc.imageTag),
+            })),
+        );
+
+        const imageRefs = Array.from(
+            new Set(
+                stackServiceKeys
+                    .flat()
+                    .map(({key}) => key)
+                    .filter((key): key is string => key !== null),
+            ),
+        );
+
+        const updateChecks = imageRefs.length > 0
+            ? await this.updateChecks.findByImageRefs(imageRefs)
+            : [];
         const updateMap = new Map(updateChecks.map((u) => [u.imageRef, u]));
 
-        return {
+        return stacks.map((stack, i) => ({
             ...stack,
-            services: serviceKeys.map(({svc, key}) => ({
+            services: stackServiceKeys[i]!.map(({svc, key}) => ({
                 ...svc,
                 updateAvailable: (key !== null ? updateMap.get(key)?.hasUpdate : undefined) ?? false,
                 latestTag: (key !== null ? updateMap.get(key)?.latestTag : undefined) ?? null,
             })),
-        };
+        }));
     }
 
     /**
