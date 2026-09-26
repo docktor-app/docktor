@@ -3,6 +3,7 @@ import * as React from "react"
 import {cn} from "@/lib/utils"
 import {SidebarTrigger} from "@/components/ui/sidebar"
 import {Separator} from "@/components/ui/separator"
+import {ThemeToggle} from "@/components/common/theme-toggle"
 
 function Page({className, ...props}: React.ComponentProps<"div">) {
     return (
@@ -31,9 +32,12 @@ function PageHeader({
                 <div className={"px-1"}>
                     {breadcrumbs}
                 </div>
+                <div className="ml-auto">
+                    <ThemeToggle/>
+                </div>
             </div>
             <Separator/>
-            <div className="flex items-center justify-between px-6">{children}</div>
+            <div className="flex flex-wrap items-center justify-between gap-2 px-6">{children}</div>
         </header>
     )
 }
@@ -42,7 +46,7 @@ function PageTitle({className, children, ...props}: React.ComponentProps<"h1">) 
     return (
         <h1
             data-slot="page-title"
-            className={cn("text-2xl font-bold", className)}
+            className={cn("text-2xl font-semibold", className)}
             {...props}
         >
             {children}

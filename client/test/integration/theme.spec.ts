@@ -106,4 +106,42 @@ test.describe("Dark mode (D-15/D-16)", () => {
 
         await expect(page.locator("html")).not.toHaveClass(/dark/);
     });
+
+    test("a manual Dark override persists across a reload, even against an OS dark preference already set", async ({page}) => {
+        await mockApiRoutes(page);
+        await page.emulateMedia({colorScheme: "dark"});
+        await page.goto("/stacks");
+
+        await page.getByRole("button", {name: "Toggle theme"}).click();
+        await page.getByRole("menuitem", {name: "Dark"}).click();
+        await expect(page.locator("html")).toHaveClass(/dark/);
+
+        await page.reload();
+
+        await expect(page.locator("html")).toHaveClass(/dark/);
+    });
+
+    test("a manual Light override persists across a reload, even against an OS dark preference", async ({page}) => {
+        await mockApiRoutes(page);
+        await page.emulateMedia({colorScheme: "dark"});
+        await page.goto("/stacks");
+
+        await page.getByRole("button", {name: "Toggle theme"}).click();
+        await page.getByRole("menuitem", {name: "Light"}).click();
+        await expect(page.locator("html")).not.toHaveClass(/dark/);
+
+        await page.reload();
+
+        await expect(page.locator("html")).not.toHaveClass(/dark/);
+    });
+
+    test("the 'Toggle theme' button is visible on the stacks list and a stack detail page", async ({page}) => {
+        await mockApiRoutes(page);
+
+        await page.goto("/stacks");
+        await expect(page.getByRole("button", {name: "Toggle theme"})).toBeVisible();
+
+        await page.goto("/stacks/my-app");
+        await expect(page.getByRole("button", {name: "Toggle theme"})).toBeVisible();
+    });
 });
