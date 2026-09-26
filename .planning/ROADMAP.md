@@ -479,7 +479,7 @@ Independent of Phase 10 (separate client/server tracks — can run in parallel).
   5. Compose editing uses CodeMirror 6 with YAML syntax diagnostics; env editing offers a table mode (default) and a raw mode with heuristic secret masking (D-18..D-22)
   6. Dark mode follows the OS by default with a persisted header toggle; dashboard stats use a reusable StatCard; the UI passes a full phone-width audit (D-14..D-17)
 
-**Plans:** 4/13 plans executed
+**Plans:** 5/13 plans executed
 
 Plans:
 
@@ -487,7 +487,7 @@ Plans:
 - [x] 11-02-PLAN.md — ToneBadge/StatusDot single badge scheme, pulsing running dot, update badges (D-10 copy), service color/port utilities (wave 2)
 - [x] 11-03-PLAN.md — Dark mode via next-themes: no-flash OS default, header sun/moon toggle, themed toasts (wave 2)
 - [x] 11-04-PLAN.md — Dashboard: reusable StatCard, six stats, flat Recent Stacks, live list refresh (wave 2)
-- [ ] 11-05-PLAN.md — Server: GET /api/stacks returns per-service update info (precondition: Phase 10 merged) (wave 2)
+- [x] 11-05-PLAN.md — Server: GET /api/stacks returns per-service update info (precondition: Phase 10 merged) (wave 2)
 - [ ] 11-06-PLAN.md — Overview: unified filterable activity timeline, flat Services section, header update badge (wave 3)
 - [ ] 11-07-PLAN.md — Proxy assign/edit dialog and backup schedule dialog; flat Proxy/Backups tabs (wave 3)
 - [ ] 11-08-PLAN.md — Shared LogTerminal for stack logs and backup detail; backup detail decomposition; history fetch-loop fix (wave 3)

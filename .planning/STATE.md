@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 milestone: v0.1.0
 current_phase: null
 current_phase_name: UI Rework
-current_plan: 4
+current_plan: 5
 status: "Phases 1-9 all complete, tested, and reviewed. Product tracking moved to GitHub Issues (docktor-app/docktor): the vision doc (docs/vision.md scope) and all .planning/todos/pending/ items were triaged into 49 GitHub issues, native Issue Types adopted (Bug/Feature/Chore/Documentation/Task), and CLAUDE.md documents the process (including a project-specific override redirecting gsd-capture's add-todo to GitHub issues instead of .planning/todos/). User curated 23 issues (later 24, adding #15 UI Rework) into GitHub milestone 'v0.1.0 - First Release' (renamed from the working 'v1.0.0' label since this is the first release). ROADMAP.md Phases 10-16 now scope that milestone, sourced 1:1 from those issues (Requirements fields list GitHub issue numbers, not REQ-IDs — REQUIREMENTS.md is frozen at its already-complete v1.0 content and not being extended for new work). Per user request, Phase 10 (Backend Architecture Refactor, #16) and Phase 11 (UI Rework, #15) were resequenced to run BEFORE the feature phases that add new server/client code (12, 14, 15), so that new work lands on the reworked structure instead of needing rework afterward — both are independent of each other (separate server/client tracks) and both are intentionally open-ended, flagged as needing /gsd-discuss-phase before /gsd-plan-phase. Phase 13 (Update Checker Reliability — narrow bug fixes, not new architecture) carries low rework risk and can run anytime. Phase 10 (Backend Architecture Refactor) has since been merged into main (PR #67). Phase 11 progressed through context capture, UI-SPEC approval, and phase planning (13 plans across 5 waves, plan-checker blockers resolved), and Wave 1's tracer plan 11-01 is now complete: the Config tab merge (D-01/D-02/D-03) and the stack-detail-page decomposition to an 89-line orchestrator (CLAUDE.md Known Refactoring Target closed) both landed, with the StackConfigFiles/ConfigTab/OverviewTab/StackDetailHeader contracts and the PLAYWRIGHT_PORT parameterization ready for the remaining 12 plans to build on. Note: the original executing session for 11-01 was interrupted by a container restart between finishing Task 2 and writing its SUMMARY.md — both tasks' commits were already pushed and no work was lost; a follow-up session independently re-verified everything (unit suite, typecheck, full Playwright E2E including the parallel-port case) before writing the SUMMARY. Wave 2's 11-02 (ToneBadge/StatusDot status-indicator unification, D-08/D-09/D-10/D-11) is now complete: same container-restart pattern hit again (interrupted between finishing Task 3's edits and its first commit, with zero commits made), recovered the same way — full verification (all task `<verify>` commands, all acceptance-criteria greps, full client suite, tsc -b) before splitting into 3 retroactive task commits and writing the SUMMARY. 11-03 (dark mode), 11-04 (dashboard StatCard) and 11-05 (server update-info enrichment) remain in wave 2."
-stopped_at: Completed 11-04-PLAN.md
-last_updated: "2026-09-26T11:12:03.847Z"
-state_head: e12d0b13e69c9a9a71572da86f7acd81e6d8bf81
+stopped_at: Completed 11-05-PLAN.md
+last_updated: "2026-09-26T21:37:11.597Z"
+state_head: dc5279149c333948d2c7a8d34f46fe98fa0b183d
 progress:
   total_phases: 17
   completed_phases: 9
   total_plans: 118
-  completed_plans: 109
+  completed_plans: 110
 milestone_name: milestone
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-22)
 ## Current Position
 
 Phase: 11 (UI Rework) — EXECUTING
-Current Plan: 4
+Current Plan: 5
 Total Plans in Phase: 13
 
 ## Performance Metrics
@@ -144,6 +144,7 @@ Total Plans in Phase: 13
 | Phase 10-backend-architecture-refactor P01 | 22min | 3 tasks | 11 files |
 | Phase 11 P03 | 30min | 2 tasks | 11 files |
 | Phase 11 P04 | 55min | 2 tasks | 16 files |
+| Phase 11 P05 | 20min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -331,6 +332,7 @@ Recent decisions affecting current work:
 - [Phase null]: [Phase 11-ui-rework 11-03]: ThemeToggle is a DropdownMenu (Light/Dark/System), not a two-state button, so users always retain a way back to "follow OS" after overriding
 - [Phase null]: [Phase 11-ui-rework 11-03]: test/setup.ts's global matchMedia stub is guarded by typeof window.matchMedia !== "function" so the pre-existing per-test stubs in stack-detail-page.test.tsx and backup-detail-page.test.tsx become no-ops with zero edits to those files
 - [Phase 11]: [Phase 11-ui-rework 11-04]: dashboard.tsx decomposed into StatCard/computeDashboardStats/useBackupDefaults/DashboardStatCards; useStacks() gained the same fetchStacks(mode) initial/background split use-stack.ts already has, so update_available events refetch in the background without flipping loading back to true. — Matches the existing use-stack.ts precedent exactly and keeps StatCard reusable/generic per CLAUDE.md's components/common checklist.
+- [Phase null]: [Phase 11-ui-rework 11-05]: withServiceUpdateInfo<T> shared by listStacks() and getStackWithUpdateInfo() — one batched findByImageRefs lookup across the de-duplicated union of refs, protected-stack filtering runs before enrichment so hidden stacks' refs are never looked up, and the call is skipped entirely when there are no refs.
 
 ### Quick Tasks Completed
 
@@ -401,6 +403,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-09-26T11:12:02.450Z
-Stopped at: Completed 11-04-PLAN.md
+Last session: 2026-09-26T21:36:57.819Z
+Stopped at: Completed 11-05-PLAN.md
 Resume file: None
