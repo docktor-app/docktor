@@ -5,6 +5,17 @@ import {ServicesSection} from "../../../../src/routes/app/stacks/components/serv
 import {getServiceColor} from "@/lib/service-color";
 import type {Service} from "@/lib/stacks-api";
 
+// jsdom has no ResizeObserver — Radix's Tooltip content (via
+// @radix-ui/react-use-size / positioning internals) requires one, same
+// pattern as stack-actions.test.tsx.
+if (typeof globalThis.ResizeObserver === "undefined") {
+    globalThis.ResizeObserver = class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+    } as unknown as typeof ResizeObserver;
+}
+
 vi.mock("../../../../src/routes/app/stacks/components/service-upgrade-dialog", () => ({
     ServiceUpgradeDialog: ({serviceName}: {serviceName: string}) => (
         <div data-testid="upgrade-dialog">Upgrade dialog for {serviceName}</div>

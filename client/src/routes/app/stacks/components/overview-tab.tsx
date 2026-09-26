@@ -1,7 +1,7 @@
 import type {StackDetail} from "@/lib/stacks-api";
 import {useStackEvents} from "@/hooks/use-stack-events";
 import {useStackTimeline} from "@/hooks/use-stack-timeline";
-import {ServicesTab} from "./services-tab";
+import {ServicesSection} from "./services-section";
 import {ActivityTimeline} from "./activity-timeline";
 
 export interface OverviewTabProps {
@@ -21,7 +21,7 @@ export function OverviewTab({stack, onViewLogs, onUpgraded}: Readonly<OverviewTa
 
     return (
         <div className="space-y-8">
-            <ServicesTab
+            <ServicesSection
                 services={stack.services}
                 stackId={stack.id}
                 stackStatus={stack.status}

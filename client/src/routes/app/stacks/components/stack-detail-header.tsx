@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import {PageActions, PageDescription, PageHeader, PageTitle} from "@/components/common/layout/page";
 import {StackStatusBadge} from "@/components/domain/stack/stack-status-badge";
+import {StackUpdateBadge} from "@/components/domain/stack/stack-update-badge";
 import {STACK_TAB_LABELS, type StackTab} from "@/lib/stack-tabs";
 import type {StackDetail} from "@/lib/stacks-api";
 import {StackActions} from "./stack-actions";
@@ -23,9 +24,9 @@ export interface StackDetailHeaderProps {
 }
 
 // The stack detail page's header block — breadcrumb (with tab context
-// preserved), title/description, and the status/actions row. The
-// `flex flex-wrap items-center gap-1` wrapper around StackStatusBadge is the
-// slot plan 11-06 adds the stack-level "update available" badge (D-09) to.
+// preserved), title/description, and the status/actions row. D-09: the
+// stack-level "update available" pill sits immediately after
+// StackStatusBadge inside the same flex-wrap container.
 export function StackDetailHeader({stack, activeTab, isRefreshing, onAction}: Readonly<StackDetailHeaderProps>) {
     return (
         <PageHeader
@@ -70,6 +71,7 @@ export function StackDetailHeader({stack, activeTab, isRefreshing, onAction}: Re
                 </span>
                 <div className="flex flex-wrap items-center gap-1">
                     <StackStatusBadge status={stack.status}/>
+                    <StackUpdateBadge services={stack.services}/>
                 </div>
                 <StackActions
                     stackId={stack.id}
