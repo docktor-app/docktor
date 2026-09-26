@@ -221,10 +221,12 @@ test.describe("Stacks", () => {
         await expect(page.getByText("web")).toBeVisible();
         await expect(page.getByText("nginx")).toBeVisible();
 
-        // Tabs
+        // Tabs (D-01/D-02: Overview, Config, Logs, Backups, Proxy)
         await expect(page.getByRole("tab", {name: "Overview"})).toBeVisible();
-        await expect(page.getByRole("tab", {name: "Compose"})).toBeVisible();
-        await expect(page.getByRole("tab", {name: "Environment"})).toBeVisible();
+        await expect(page.getByRole("tab", {name: "Config"})).toBeVisible();
+        await expect(page.getByRole("tab", {name: "Logs"})).toBeVisible();
+        await expect(page.getByRole("tab", {name: "Backups"})).toBeVisible();
+        await expect(page.getByRole("tab", {name: "Proxy"})).toBeVisible();
     });
 
     test("stack detail page shows deploy button and stop/restart in the actions menu for a running stack", async ({page}) => {
@@ -255,11 +257,21 @@ test.describe("Stacks", () => {
         await expect(page.getByRole("menuitem", {name: /restart/i})).toBeVisible();
     });
 
-    test("stack detail compose tab shows editor", async ({page}) => {
+    test("stack detail config tab: edit and save the compose file (D-02/D-03)", async ({page}) => {
         await mockAuthenticated(page);
+        let putBody: unknown = null;
         await page.route("**/api/stacks/my-app", (route) => {
-            if (route.request().url().endsWith("/compose") || route.request().url().endsWith("/env")) {
+            const url = route.request().url();
+            if (url.endsWith("/compose") || url.endsWith("/env")) {
                 return route.continue();
+            }
+            if (route.request().method() === "PUT") {
+                putBody = route.request().postDataJSON();
+                return route.fulfill({
+                    status: 200,
+                    contentType: "application/json",
+                    body: JSON.stringify(mockStackDetail),
+                });
             }
             return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(mockStackDetail)});
         });
@@ -275,13 +287,40 @@ test.describe("Stacks", () => {
         );
         await mockStackEvents(page, "my-app");
 
-        await page.goto("/stacks/my-app");
+        await page.goto("/stacks/my-app/config");
 
-        await page.getByRole("tab", {name: "Compose"}).click();
-        await expect(page.getByText("docker-compose.yml")).toBeVisible();
+        await expect(page.getByRole("heading", {name: "Compose File"})).toBeVisible();
+        await expect(page.getByRole("heading", {name: "Environment Variables"})).toBeVisible();
 
-        await page.getByRole("tab", {name: "Environment"}).click();
-        await expect(page.getByText(".env")).toBeVisible();
+        const composeBox = page.getByRole("textbox", {name: "Docker Compose File"});
+        await composeBox.fill("services:\n  web:\n    image: nginx:1.27\n");
+
+        await page.getByRole("button", {name: "Save compose file"}).click();
+
+        await expect.poll(() => putBody).toEqual(
+            expect.objectContaining({composeContent: "services:\n  web:\n    image: nginx:1.27\n"}),
+        );
+    });
+
+    test("legacy /compose URL redirects to /config (D-02)", async ({page}) => {
+        await mockAuthenticated(page);
+        await page.route("**/api/stacks/my-app", (route) => {
+            if (route.request().url().endsWith("/compose") || route.request().url().endsWith("/env")) {
+                return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: ""})});
+            }
+            return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(mockStackDetail)});
+        });
+        await page.route("**/api/stacks/my-app/compose", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: ""})}),
+        );
+        await page.route("**/api/stacks/my-app/env", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: ""})}),
+        );
+        await mockStackEvents(page, "my-app");
+
+        await page.goto("/stacks/my-app/compose");
+
+        await expect(page).toHaveURL(/\/stacks\/my-app\/config$/);
     });
 
     test("dashboard shows stack stats and recent stacks", async ({page}) => {
@@ -338,18 +377,18 @@ test.describe("Stacks", () => {
         );
         await mockStackEvents(page, "my-app");
 
-        await page.goto("/stacks/my-app/compose");
-        await expect(page.locator("[aria-current='page']", {hasText: "Compose"})).toBeVisible();
+        await page.goto("/stacks/my-app/config");
+        await expect(page.locator("[aria-current='page']", {hasText: "Config"})).toBeVisible();
 
         // The breadcrumb stack-name link must navigate to the path form
         // (/stacks/:id/:tab), not a query string the router doesn't consume —
         // otherwise clicking it silently drops back to Overview.
         const breadcrumbLink = page.getByLabel("breadcrumb").getByRole("link", {name: "My App"});
-        await expect(breadcrumbLink).toHaveAttribute("href", "/stacks/my-app/compose");
+        await expect(breadcrumbLink).toHaveAttribute("href", "/stacks/my-app/config");
 
         await breadcrumbLink.click();
-        await expect(page.locator("[aria-current='page']", {hasText: "Compose"})).toBeVisible();
-        await expect(page).toHaveURL(/\/stacks\/my-app\/compose$/);
+        await expect(page.locator("[aria-current='page']", {hasText: "Config"})).toBeVisible();
+        await expect(page).toHaveURL(/\/stacks\/my-app\/config$/);
     });
 
     test("stack detail shows 404 for non-existent stack", async ({page}) => {

@@ -1,21 +1,15 @@
-import {useEffect, useState} from "react";
-import {Link, useNavigate, useParams} from "react-router";
-import {toast} from "sonner";
+import {useState} from "react";
+import {Link, Navigate, useNavigate, useParams} from "react-router";
 import {useStack} from "@/hooks/use-stack";
-import {
-    getComposeContent,
-    getEnvContent,
-    updateStack,
-} from "@/lib/stacks-api";
+import {useStackConfigFiles} from "@/hooks/use-stack-config-files";
+import {resolveStackTab, STACK_TAB_LABELS, STACK_TABS} from "@/lib/stack-tabs";
 import {StackStatusBadge} from "@/components/domain/stack/stack-status-badge";
 import {LogViewer} from "@/components/domain/stack/log-viewer";
 import {Card, CardContent, CardHeader, CardTitle} from "@/components/ui/card";
-import {Button} from "@/components/ui/button";
-import {Textarea} from "@/components/ui/textarea";
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow,} from "@/components/ui/table";
 import {Tabs, TabsContent, TabsList, TabsTrigger} from "@/components/ui/tabs";
 import {Alert, AlertDescription} from "@/components/ui/alert";
-import {AlertTriangle, RefreshCw, Save,} from "lucide-react";
+import {AlertTriangle, RefreshCw,} from "lucide-react";
 import {cn} from "@/lib/utils";
 import {
     Breadcrumb,
@@ -33,32 +27,22 @@ import {ServicesTab} from "./components/services-tab";
 import {EventLogCard} from "./components/event-log-card";
 import {StatusLogCard} from "./components/status-log-card";
 import {ProxyTab} from "./components/proxy-tab";
+import {ConfigTab} from "./components/config-tab";
 
 export default function StackDetailPage() {
     const {id = "", tab} = useParams<{ id: string; tab?: string }>();
     const navigate = useNavigate();
     const {stack, loading, isRefreshing, error, refetch} = useStack(id);
-
-    const VALID_TABS = ["overview", "compose", "environment", "logs", "backups", "proxy"] as const;
-    type Tab = typeof VALID_TABS[number];
-    const activeTab: Tab = VALID_TABS.includes(tab as Tab) ? (tab as Tab) : "overview";
-
-    const [composeContent, setComposeContent] = useState("");
-    const [envContent, setEnvContent] = useState("");
-    const [composeDirty, setComposeDirty] = useState(false);
-    const [envDirty, setEnvDirty] = useState(false);
+    const files = useStackConfigFiles(id, stack?.lastKnownHash, refetch);
     const [logsService, setLogsService] = useState<string | undefined>(undefined);
 
-    useEffect(() => {
-        if (!id) return;
-        // Only reload compose/env content if user hasn't made local changes
-        if (!composeDirty) {
-            getComposeContent(id).then((r) => setComposeContent(r.content));
-        }
-        if (!envDirty) {
-            getEnvContent(id).then((r) => setEnvContent(r.content));
-        }
-    }, [id, stack?.lastKnownHash, composeDirty, envDirty]);
+    const resolution = resolveStackTab(tab);
+
+    if (resolution.kind === "redirect") {
+        return <Navigate to={`/stacks/${id}/${resolution.tab}`} replace />;
+    }
+
+    const activeTab = resolution.tab;
 
     if (loading && !stack) {
         return (
@@ -120,46 +104,7 @@ export default function StackDetailPage() {
         );
     }
 
-    function handleSaveCompose() {
-        toast.promise(
-            (async () => {
-                await updateStack(id, {composeContent});
-                setComposeDirty(false);
-                refetch();
-            })(),
-            {
-                loading: "Saving compose...",
-                success: "Save compose completed",
-                error: (err: Error) => err?.message ?? "Save compose failed",
-            },
-        );
-    }
-
-    function handleSaveEnv() {
-        toast.promise(
-            (async () => {
-                await updateStack(id, {envContent});
-                setEnvDirty(false);
-                refetch();
-            })(),
-            {
-                loading: "Saving environment...",
-                success: "Save environment completed",
-                error: (err: Error) => err?.message ?? "Save environment failed",
-            },
-        );
-    }
-
     const status = stack.status;
-
-    const tabLabels: Record<Tab, string> = {
-        overview: "Overview",
-        compose: "Compose",
-        environment: "Environment",
-        logs: "Logs",
-        backups: "Backups",
-        proxy: "Proxy",
-    };
 
     return (
         <Page>
@@ -180,7 +125,7 @@ export default function StackDetailPage() {
                             </BreadcrumbItem>
                             <BreadcrumbSeparator/>
                             <BreadcrumbItem>
-                                <BreadcrumbPage>{tabLabels[activeTab]}</BreadcrumbPage>
+                                <BreadcrumbPage>{STACK_TAB_LABELS[activeTab]}</BreadcrumbPage>
                             </BreadcrumbItem>
                         </BreadcrumbList>
                     </Breadcrumb>
@@ -236,12 +181,9 @@ export default function StackDetailPage() {
 
                 <Tabs value={activeTab} onValueChange={(v) => navigate(`/stacks/${id}/${v}`)}>
                     <TabsList>
-                        <TabsTrigger value="overview">Overview</TabsTrigger>
-                        <TabsTrigger value="compose">Compose</TabsTrigger>
-                        <TabsTrigger value="environment">Environment</TabsTrigger>
-                        <TabsTrigger value="logs">Logs</TabsTrigger>
-                        <TabsTrigger value="backups">Backups</TabsTrigger>
-                        <TabsTrigger value="proxy">Proxy</TabsTrigger>
+                        {STACK_TABS.map((t) => (
+                            <TabsTrigger key={t} value={t}>{STACK_TAB_LABELS[t]}</TabsTrigger>
+                        ))}
                     </TabsList>
 
                     <TabsContent value="overview" className="space-y-4 mt-4">
@@ -312,56 +254,8 @@ export default function StackDetailPage() {
                         <EventLogCard stackId={id}/>
                     </TabsContent>
 
-                    <TabsContent value="compose" className="space-y-4 mt-4">
-                        <Card>
-                            <CardHeader className="flex flex-row items-center justify-between">
-                                <CardTitle>docker-compose.yml</CardTitle>
-                                <Button
-                                    size="sm"
-                                    disabled={!composeDirty}
-                                    onClick={handleSaveCompose}
-                                >
-                                    <Save className="h-4 w-4 mr-1"/>
-                                    Save
-                                </Button>
-                            </CardHeader>
-                            <CardContent>
-                                <Textarea
-                                    value={composeContent}
-                                    onChange={(e) => {
-                                        setComposeContent(e.target.value);
-                                        setComposeDirty(true);
-                                    }}
-                                    className="font-mono text-sm min-h-[400px]"
-                                />
-                            </CardContent>
-                        </Card>
-                    </TabsContent>
-
-                    <TabsContent value="environment" className="space-y-4 mt-4">
-                        <Card>
-                            <CardHeader className="flex flex-row items-center justify-between">
-                                <CardTitle>.env</CardTitle>
-                                <Button
-                                    size="sm"
-                                    disabled={!envDirty}
-                                    onClick={handleSaveEnv}
-                                >
-                                    <Save className="h-4 w-4 mr-1"/>
-                                    Save
-                                </Button>
-                            </CardHeader>
-                            <CardContent>
-                                <Textarea
-                                    value={envContent}
-                                    onChange={(e) => {
-                                        setEnvContent(e.target.value);
-                                        setEnvDirty(true);
-                                    }}
-                                    className="font-mono text-sm min-h-[300px]"
-                                />
-                            </CardContent>
-                        </Card>
+                    <TabsContent value="config" className="mt-4">
+                        <ConfigTab files={files} />
                     </TabsContent>
 
                     <TabsContent value="logs" className="mt-4 w-full max-w-full overflow-hidden">
