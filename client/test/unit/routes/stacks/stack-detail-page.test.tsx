@@ -1,5 +1,5 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
-import {render, screen, waitFor} from "@testing-library/react";
+import {render, screen, waitFor, within} from "@testing-library/react";
 import {MemoryRouter, Route, Routes} from "react-router";
 import StackDetailPage from "../../../../src/routes/app/stacks/[id]";
 import {useStack} from "@/hooks/use-stack";
@@ -7,11 +7,12 @@ import {getComposeContent, getEnvContent} from "@/lib/stacks-api";
 import type {StackDetail} from "@/lib/stacks-api";
 import {SidebarProvider} from "@/components/ui/sidebar";
 
-// D-01/D-02: the Compose/Environment tabs are merged into a single Config
-// tab, driven by lib/stack-tabs.ts's resolveStackTab(). The save-triggered
-// refetch behaviour that used to live here moved to
-// use-stack-config-files.test.ts, alongside the rest of the file-loading/
-// dirty-guard/save logic it now owns.
+// D-01/D-02: [id].tsx is now a composition-only orchestrator (CLAUDE.md
+// Known Refactoring Target, closed by Task 2 of 11-01-PLAN.md) — this test
+// only asserts composition: the correct tab is selected per URL, legacy
+// URLs redirect, the loading/error shells render, and the breadcrumb shows
+// the active tab's label. Tab *content* (Overview/Config) is covered by
+// overview-tab.test.tsx / config-tab.test.tsx / use-stack-config-files.test.ts.
 
 vi.mock("@/hooks/use-stack", () => ({
     useStack: vi.fn(),
@@ -23,8 +24,6 @@ vi.mock("@/lib/stacks-api", () => ({
     updateStack: vi.fn(),
 }));
 
-// Mirrors the pattern in service-upgrade-dialog.test.tsx: resolve/reject the
-// underlying promise directly, without needing a mounted <Toaster/>.
 vi.mock("sonner", () => ({
     toast: {
         promise: vi.fn((promise: Promise<unknown>) => promise.catch(() => {})),
@@ -46,17 +45,14 @@ vi.mock("../../../../src/routes/app/stacks/components/stack-actions", () => ({
 vi.mock("../../../../src/routes/app/stacks/components/backups-tab", () => ({
     BackupsTab: () => null,
 }));
-vi.mock("../../../../src/routes/app/stacks/components/services-tab", () => ({
-    ServicesTab: () => null,
-}));
-vi.mock("../../../../src/routes/app/stacks/components/event-log-card", () => ({
-    EventLogCard: () => null,
-}));
-vi.mock("../../../../src/routes/app/stacks/components/status-log-card", () => ({
-    StatusLogCard: () => null,
-}));
 vi.mock("../../../../src/routes/app/stacks/components/proxy-tab", () => ({
     ProxyTab: () => null,
+}));
+vi.mock("../../../../src/routes/app/stacks/components/overview-tab", () => ({
+    OverviewTab: () => null,
+}));
+vi.mock("../../../../src/routes/app/stacks/components/config-tab", () => ({
+    ConfigTab: () => null,
 }));
 
 const mockUseStack = vi.mocked(useStack);
@@ -103,8 +99,8 @@ beforeEach(() => {
     mockGetEnvContent.mockReset();
     refetch = vi.fn();
 
-    mockGetComposeContent.mockResolvedValue({content: "services:\n  web:\n    image: nginx\n"});
-    mockGetEnvContent.mockResolvedValue({content: "FOO=bar"});
+    mockGetComposeContent.mockResolvedValue({content: ""});
+    mockGetEnvContent.mockResolvedValue({content: ""});
 
     mockUseStack.mockReturnValue({
         stack: makeStack(),
@@ -130,24 +126,70 @@ beforeEach(() => {
     }
 });
 
-describe("StackDetailPage — tabs (D-01/D-02)", () => {
-    it("shows the Config tab selected with both headings at /stacks/my-app/config", async () => {
-        renderPage("/stacks/my-app/config");
+describe("StackDetailPage — composition (D-01/D-02)", () => {
+    it("selects the Overview tab by default", async () => {
+        renderPage("/stacks/my-app");
+        await waitFor(() =>
+            expect(screen.getByRole("tab", {name: "Overview", selected: true})).toBeInTheDocument(),
+        );
+    });
 
-        await waitFor(() => expect(screen.getByRole("heading", {name: "Compose File"})).toBeVisible());
-        expect(screen.getByRole("heading", {name: "Environment Variables"})).toBeVisible();
-        expect(screen.getByRole("tab", {name: "Config", selected: true})).toBeInTheDocument();
+    it("selects the Config tab at /stacks/my-app/config", async () => {
+        renderPage("/stacks/my-app/config");
+        await waitFor(() =>
+            expect(screen.getByRole("tab", {name: "Config", selected: true})).toBeInTheDocument(),
+        );
+    });
+
+    it("selects the Logs tab at /stacks/my-app/logs", async () => {
+        renderPage("/stacks/my-app/logs");
+        await waitFor(() =>
+            expect(screen.getByRole("tab", {name: "Logs", selected: true})).toBeInTheDocument(),
+        );
     });
 
     it("redirects the legacy /compose URL to the Config tab", async () => {
         renderPage("/stacks/my-app/compose");
-        await waitFor(() => expect(screen.getByRole("heading", {name: "Compose File"})).toBeVisible());
-        expect(screen.getByRole("tab", {name: "Config", selected: true})).toBeInTheDocument();
+        await waitFor(() =>
+            expect(screen.getByRole("tab", {name: "Config", selected: true})).toBeInTheDocument(),
+        );
     });
 
     it("redirects the legacy /environment URL to the Config tab", async () => {
         renderPage("/stacks/my-app/environment");
-        await waitFor(() => expect(screen.getByRole("heading", {name: "Environment Variables"})).toBeVisible());
-        expect(screen.getByRole("tab", {name: "Config", selected: true})).toBeInTheDocument();
+        await waitFor(() =>
+            expect(screen.getByRole("tab", {name: "Config", selected: true})).toBeInTheDocument(),
+        );
+    });
+
+    it("shows the loading shell while the stack has not loaded yet", () => {
+        mockUseStack.mockReturnValue({
+            stack: null,
+            loading: true,
+            isRefreshing: false,
+            error: null,
+            refetch,
+        });
+        renderPage("/stacks/my-app");
+        expect(screen.getAllByText("Loading...").length).toBeGreaterThan(0);
+    });
+
+    it("shows the error shell when the stack fails to load", () => {
+        mockUseStack.mockReturnValue({
+            stack: null,
+            loading: false,
+            isRefreshing: false,
+            error: "Not found",
+            refetch,
+        });
+        renderPage("/stacks/my-app");
+        expect(screen.getByText("Not found")).toBeInTheDocument();
+    });
+
+    it("shows the active tab's label in the breadcrumb", async () => {
+        renderPage("/stacks/my-app/logs");
+        await waitFor(() =>
+            expect(within(screen.getByLabelText("breadcrumb")).getByText("Logs")).toBeInTheDocument(),
+        );
     });
 });
