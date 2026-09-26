@@ -2,33 +2,12 @@ import {useEffect, useRef, useState} from "react";
 import Ansi from "ansi-to-react";
 import {type LogLineEvent, useLogStream} from "@/hooks/use-log-stream";
 import {Button} from "@/components/ui/button";
+import {getServiceColor} from "@/lib/service-color";
 
 interface LogViewerProps {
     stackId: string
     serviceNames?: string[]
     initialService?: string
-}
-
-// Generate a color for a service name (deterministic)
-function getServiceColor(serviceName: string): string {
-    const colors = [
-        "text-cyan-400",
-        "text-yellow-400",
-        "text-pink-400",
-        "text-purple-400",
-        "text-orange-400",
-        "text-lime-400",
-        "text-sky-400",
-        "text-rose-400",
-        "text-indigo-400",
-        "text-emerald-400",
-    ]
-
-    let hash = 0
-    for (let i = 0; i < serviceName.length; i++) {
-        hash = serviceName.charCodeAt(i) + ((hash << 5) - hash)
-    }
-    return colors[Math.abs(hash) % colors.length]
 }
 
 function formatLine(line: LogLineEvent, showTimestamps: boolean, showServicePrefix: boolean): string {
