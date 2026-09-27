@@ -190,13 +190,43 @@ describe("BackupDetailPage", () => {
         ).toBeInTheDocument();
     });
 
-    it("renders the original empty message for a record still IN_PROGRESS with no lines yet", async () => {
+    it("renders the loading empty message for a record still IN_PROGRESS with no lines yet", async () => {
         mockGetBackup.mockResolvedValueOnce(makeBackup({status: "IN_PROGRESS", logLines: []}));
         setStream([], "streaming");
 
         render(<Page />);
 
-        expect(await screen.findByText("No output yet...")).toBeInTheDocument();
+        expect(await screen.findByText("Waiting for output…")).toBeInTheDocument();
+    });
+
+    it("renders the captured-nothing message for a COMPLETED record with no lines", async () => {
+        mockGetBackup.mockResolvedValueOnce(makeBackup({status: "COMPLETED", logLines: []}));
+
+        render(<Page />);
+
+        expect(
+            await screen.findByText("No log output was captured for this backup."),
+        ).toBeInTheDocument();
+    });
+
+    it("shows the Disconnected indicator next to the Output heading while streaming and disconnected", async () => {
+        mockGetBackup.mockResolvedValueOnce(makeBackup({status: "IN_PROGRESS"}));
+        setStream([], "disconnected");
+
+        render(<Page />);
+
+        await screen.findByText("In Progress");
+        expect(screen.getByText("Disconnected")).toBeInTheDocument();
+    });
+
+    it("does not show the Disconnected indicator once the backup is no longer streaming", async () => {
+        mockGetBackup.mockResolvedValueOnce(makeBackup({status: "COMPLETED"}));
+        setStream([], "streaming");
+
+        render(<Page />);
+
+        await screen.findByText("Completed");
+        expect(screen.queryByText("Disconnected")).not.toBeInTheDocument();
     });
 
     it("switches autoScroll off once the stream is no longer streaming", async () => {
