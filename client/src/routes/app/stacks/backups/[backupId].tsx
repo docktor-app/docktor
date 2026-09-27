@@ -1,29 +1,14 @@
-import {Link, useParams} from "react-router";
+import {useParams} from "react-router";
 
-import {type BackupRecord} from "@/lib/backups-api";
 import {useBackupDetail} from "@/hooks/use-backup-detail";
-import {BackupStatusBadge} from "@/components/domain/backup/backup-status-badge";
 import {LogTerminal} from "@/components/domain/stack/log-terminal";
 import {LogConnectionStatus} from "@/components/domain/stack/log-connection-status";
-import {Page, PageContent, PageHeader, PageTitle} from "@/components/common/layout/page";
+import {BackupDetailHeader} from "@/routes/app/stacks/backups/components/backup-detail-header";
+import {BackupMetadata} from "@/routes/app/stacks/backups/components/backup-metadata";
+import {Page, PageContent} from "@/components/common/layout/page";
 import {Section, SectionActions, SectionHeader, SectionTitle} from "@/components/common/layout/section";
-import {Card, CardContent} from "@/components/ui/card";
 import {Alert, AlertDescription} from "@/components/ui/alert";
-import {BACKUP_TRIGGER_LABELS, formatDuration, formatSize} from "@/lib/backup-format";
-import {
-    Breadcrumb,
-    BreadcrumbItem,
-    BreadcrumbLink,
-    BreadcrumbList,
-    BreadcrumbPage,
-    BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
-
-function getOutputEmptyMessage(status: BackupRecord["status"] | undefined): string {
-    return status === "IN_PROGRESS"
-        ? "Waiting for output…"
-        : "No log output was captured for this backup.";
-}
+import {getBackupOutputEmptyMessage} from "@/lib/backup-format";
 
 export default function BackupDetailPage() {
     const {id = "", backupId = ""} = useParams<{id: string; backupId: string}>();
@@ -41,31 +26,7 @@ export default function BackupDetailPage() {
     if (loading) {
         return (
             <Page>
-                <PageHeader
-                    breadcrumbs={
-                        <Breadcrumb>
-                            <BreadcrumbList>
-                                <BreadcrumbItem>
-                                    <BreadcrumbLink asChild>
-                                        <Link to="/stacks">Stacks</Link>
-                                    </BreadcrumbLink>
-                                </BreadcrumbItem>
-                                <BreadcrumbSeparator />
-                                <BreadcrumbItem>
-                                    <BreadcrumbLink asChild>
-                                        <Link to={`/stacks/${id}`}>Stack</Link>
-                                    </BreadcrumbLink>
-                                </BreadcrumbItem>
-                                <BreadcrumbSeparator />
-                                <BreadcrumbItem>
-                                    <BreadcrumbPage>Loading...</BreadcrumbPage>
-                                </BreadcrumbItem>
-                            </BreadcrumbList>
-                        </Breadcrumb>
-                    }
-                >
-                    <PageTitle>Loading...</PageTitle>
-                </PageHeader>
+                <BackupDetailHeader stackId={id} stackLabel="Stack" crumb="Loading..." title="Loading..." />
                 <PageContent>
                     <p className="text-muted-foreground">Loading backup details...</p>
                 </PageContent>
@@ -76,31 +37,7 @@ export default function BackupDetailPage() {
     if (error || !backup) {
         return (
             <Page>
-                <PageHeader
-                    breadcrumbs={
-                        <Breadcrumb>
-                            <BreadcrumbList>
-                                <BreadcrumbItem>
-                                    <BreadcrumbLink asChild>
-                                        <Link to="/stacks">Stacks</Link>
-                                    </BreadcrumbLink>
-                                </BreadcrumbItem>
-                                <BreadcrumbSeparator />
-                                <BreadcrumbItem>
-                                    <BreadcrumbLink asChild>
-                                        <Link to={`/stacks/${id}`}>Stack</Link>
-                                    </BreadcrumbLink>
-                                </BreadcrumbItem>
-                                <BreadcrumbSeparator />
-                                <BreadcrumbItem>
-                                    <BreadcrumbPage>Error</BreadcrumbPage>
-                                </BreadcrumbItem>
-                            </BreadcrumbList>
-                        </Breadcrumb>
-                    }
-                >
-                    <PageTitle>Error</PageTitle>
-                </PageHeader>
+                <BackupDetailHeader stackId={id} stackLabel="Stack" crumb="Error" title="Error" />
                 <PageContent>
                     <Alert variant="destructive">
                         <AlertDescription>{error ?? "Backup not found"}</AlertDescription>
@@ -112,61 +49,11 @@ export default function BackupDetailPage() {
 
     return (
         <Page>
-            <PageHeader
-                breadcrumbs={
-                    <Breadcrumb>
-                        <BreadcrumbList>
-                            <BreadcrumbItem>
-                                <BreadcrumbLink asChild>
-                                    <Link to="/stacks">Stacks</Link>
-                                </BreadcrumbLink>
-                            </BreadcrumbItem>
-                            <BreadcrumbSeparator />
-                            <BreadcrumbItem>
-                                <BreadcrumbLink asChild>
-                                    <Link to={`/stacks/${id}`}>{backup.stackId}</Link>
-                                </BreadcrumbLink>
-                            </BreadcrumbItem>
-                            <BreadcrumbSeparator />
-                            <BreadcrumbItem>
-                                <BreadcrumbLink asChild>
-                                    <Link to={`/stacks/${id}/backups`}>Backups</Link>
-                                </BreadcrumbLink>
-                            </BreadcrumbItem>
-                            <BreadcrumbSeparator />
-                            <BreadcrumbItem>
-                                <BreadcrumbPage>{shortId}</BreadcrumbPage>
-                            </BreadcrumbItem>
-                        </BreadcrumbList>
-                    </Breadcrumb>
-                }
-            >
-                <PageTitle>{pageTitle}</PageTitle>
-            </PageHeader>
+            <BackupDetailHeader stackId={id} stackLabel={backup.stackId} crumb={shortId} title={pageTitle} />
 
             <PageContent className="space-y-4">
-                {/* Metadata card */}
-                <Card>
-                    <CardContent className="pt-6">
-                        <div className="flex flex-wrap items-center gap-4 text-sm">
-                            <BackupStatusBadge status={backup.status} />
-                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground">
-                                {BACKUP_TRIGGER_LABELS[backup.trigger]}
-                            </span>
-                            <span className="text-muted-foreground">
-                                Started: {new Date(backup.startedAt).toLocaleString()}
-                            </span>
-                            <span className="text-muted-foreground">
-                                Duration: {formatDuration(backup.startedAt, backup.completedAt)}
-                            </span>
-                            <span className="text-muted-foreground">
-                                Size: {formatSize(backup.sizeBytes)}
-                            </span>
-                        </div>
-                    </CardContent>
-                </Card>
+                <BackupMetadata backup={backup} />
 
-                {/* Log output */}
                 <Section>
                     <SectionHeader>
                         <SectionTitle>Output</SectionTitle>
@@ -182,11 +69,10 @@ export default function BackupDetailPage() {
                         autoScroll={isStillStreaming}
                         lineWrap
                         showServicePrefix={false}
-                        emptyMessage={getOutputEmptyMessage(backup.status)}
+                        emptyMessage={getBackupOutputEmptyMessage(backup.status)}
                     />
                 </Section>
 
-                {/* Error alert */}
                 {backup.status === "FAILED" && backup.errorMessage && (
                     <Alert variant="destructive">
                         <AlertDescription>

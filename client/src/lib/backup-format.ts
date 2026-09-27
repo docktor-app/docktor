@@ -36,3 +36,14 @@ export const BACKUP_TRIGGER_LABELS: Record<BackupRecord["trigger"], string> = {
     SCHEDULED: "Scheduled",
     RESTORE: "Restore",
 };
+
+/**
+ * The backup detail page's Output empty-state copy (UI-SPEC): a still-running
+ * backup with no lines yet is "waiting", not "empty" — everything else
+ * (COMPLETED/FAILED with no captured lines) reads as nothing was captured.
+ */
+export function getBackupOutputEmptyMessage(status: BackupRecord["status"] | undefined): string {
+    return status === "IN_PROGRESS"
+        ? "Waiting for output…"
+        : "No log output was captured for this backup.";
+}
