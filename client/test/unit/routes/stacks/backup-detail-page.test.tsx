@@ -210,7 +210,7 @@ describe("BackupDetailPage", () => {
     });
 
     it("shows the Disconnected indicator next to the Output heading while streaming and disconnected", async () => {
-        mockGetBackup.mockResolvedValueOnce(makeBackup({status: "IN_PROGRESS"}));
+        mockGetBackup.mockResolvedValue(makeBackup({status: "IN_PROGRESS"}));
         setStream([], "disconnected");
 
         render(<Page />);
