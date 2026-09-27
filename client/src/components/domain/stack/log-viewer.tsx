@@ -1,8 +1,11 @@
-import {useEffect, useRef, useState} from "react";
-import Ansi from "ansi-to-react";
-import {type LogLineEvent, useLogStream} from "@/hooks/use-log-stream";
+import {useEffect, useState} from "react";
+import {useLogStream} from "@/hooks/use-log-stream";
 import {Button} from "@/components/ui/button";
 import {getServiceColor} from "@/lib/service-color";
+import {LogTerminal} from "@/components/domain/stack/log-terminal";
+import {LogConnectionStatus} from "@/components/domain/stack/log-connection-status";
+import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/components/ui/select";
+import {cn} from "@/lib/utils";
 
 interface LogViewerProps {
     stackId: string
@@ -10,29 +13,11 @@ interface LogViewerProps {
     initialService?: string
 }
 
-function formatLine(line: LogLineEvent, showTimestamps: boolean, showServicePrefix: boolean): string {
-    let parts = ""
-    if (showTimestamps && line.timestamp) {
-        // Format as HH:MM:SS
-        const ts = new Date(line.timestamp)
-        const hh = ts.getHours().toString().padStart(2, "0")
-        const mm = ts.getMinutes().toString().padStart(2, "0")
-        const ss = ts.getSeconds().toString().padStart(2, "0")
-        parts += `${hh}:${mm}:${ss} `
-    }
-    if (showServicePrefix) {
-        parts += `[${line.service}] `
-    }
-    parts += line.line
-    return parts
-}
-
 export function LogViewer({stackId, serviceNames = [], initialService}: LogViewerProps) {
     const [selectedService, setSelectedService] = useState<string>(initialService ?? "all")
     const [autoScroll, setAutoScroll] = useState(true)
     const [showTimestamps, setShowTimestamps] = useState(false)
     const [lineWrap, setLineWrap] = useState(false)
-    const scrollRef = useRef<HTMLDivElement>(null)
 
     const {lines, connected, clear} = useLogStream(stackId, selectedService, true)
 
@@ -43,44 +28,39 @@ export function LogViewer({stackId, serviceNames = [], initialService}: LogViewe
         }
     }, [initialService])
 
-    // Auto-scroll effect
-    useEffect(() => {
-        if (autoScroll && scrollRef.current) {
-            const el = scrollRef.current
-            if (typeof el.scrollTo === "function") {
-                el.scrollTo(0, el.scrollHeight)
-            } else {
-                el.scrollTop = el.scrollHeight
-            }
-        }
-    }, [lines, autoScroll])
-
     const showServicePrefix = selectedService === "all"
 
     return (
         <div className="space-y-2 w-full max-w-full overflow-hidden">
             {/* Toolbar */}
             <div className="flex flex-wrap items-center gap-2">
-                <select
-                    className="h-8 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs focus:outline-none focus:ring-2 focus:ring-ring"
+                <Select
                     value={selectedService}
-                    onChange={(e) => {
-                        setSelectedService(e.target.value)
+                    onValueChange={(value) => {
+                        setSelectedService(value)
                         clear()
                     }}
-                    aria-label="Select service"
                 >
-                    <option value="all">All services</option>
-                    {serviceNames.map((name) => (
-                        <option key={name} value={name}>
-                            {name}
-                        </option>
-                    ))}
-                </select>
+                    <SelectTrigger size="sm" aria-label="Select service" className="w-auto">
+                        <SelectValue>
+                            {selectedService === "all" ? "All services" : selectedService}
+                        </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All services</SelectItem>
+                        {serviceNames.map((name) => (
+                            <SelectItem key={name} value={name}>
+                                <span className={cn("inline-block size-2 rounded-full bg-current", getServiceColor(name))} />
+                                {name}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
 
                 <Button
                     size="sm"
                     variant={autoScroll ? "default" : "outline"}
+                    aria-pressed={autoScroll}
                     onClick={() => setAutoScroll(v => !v)}
                     title="Toggle auto-scroll"
                 >
@@ -90,6 +70,7 @@ export function LogViewer({stackId, serviceNames = [], initialService}: LogViewe
                 <Button
                     size="sm"
                     variant={showTimestamps ? "default" : "outline"}
+                    aria-pressed={showTimestamps}
                     onClick={() => setShowTimestamps(v => !v)}
                     title="Toggle timestamps"
                 >
@@ -99,6 +80,7 @@ export function LogViewer({stackId, serviceNames = [], initialService}: LogViewe
                 <Button
                     size="sm"
                     variant={lineWrap ? "default" : "outline"}
+                    aria-pressed={lineWrap}
                     onClick={() => setLineWrap(v => !v)}
                     title="Toggle line wrap"
                 >
@@ -114,31 +96,20 @@ export function LogViewer({stackId, serviceNames = [], initialService}: LogViewe
                     Clear
                 </Button>
 
-                <span className="text-xs text-muted-foreground ml-auto">
-                    {connected ? "Connected" : "Disconnected"}
-                </span>
+                <div className="ml-auto">
+                    <LogConnectionStatus connected={connected} />
+                </div>
             </div>
 
             {/* Terminal */}
-            <div
-                data-testid="log-viewer-terminal"
-                ref={scrollRef}
-                className="bg-black rounded font-mono text-sm text-white h-96 overflow-auto p-2 w-full"
-            >
-                {lines.length === 0 ? (
-                    <span className="text-gray-500">No log output yet...</span>
-                ) : (
-                    lines.map((line, i) => (
-                        <div key={i} className={lineWrap ? "break-all" : "whitespace-pre-wrap"}>
-                            <span className={getServiceColor(line.service)}>
-                                [{line.service}]
-                            </span>
-                            {" "}
-                            <Ansi>{line.line}</Ansi>
-                        </div>
-                    ))
-                )}
-            </div>
+            <LogTerminal
+                testId="log-viewer-terminal"
+                lines={lines}
+                autoScroll={autoScroll}
+                showTimestamps={showTimestamps}
+                lineWrap={lineWrap}
+                showServicePrefix={showServicePrefix}
+            />
         </div>
     )
 }
