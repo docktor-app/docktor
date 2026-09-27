@@ -84,6 +84,18 @@ afterEach(() => {
 });
 
 describe("BackupDetailPage", () => {
+    it("the Backups breadcrumb link points at the path route, not a query string (Backups tab reachable while errored)", async () => {
+        mockGetBackup.mockResolvedValueOnce(makeBackup({status: "COMPLETED"}));
+
+        render(<Page />);
+
+        await screen.findByText("Completed");
+        expect(screen.getByRole("link", {name: "Backups"})).toHaveAttribute(
+            "href",
+            "/stacks/s1/backups",
+        );
+    });
+
     it("requests the record once on mount and renders its status badge", async () => {
         mockGetBackup.mockResolvedValueOnce(makeBackup({status: "IN_PROGRESS"}));
 
