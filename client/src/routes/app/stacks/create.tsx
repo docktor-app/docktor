@@ -9,6 +9,7 @@ import {Input} from "@/components/ui/input";
 import {Textarea} from "@/components/ui/textarea";
 import {Card, CardContent, CardHeader, CardTitle} from "@/components/ui/card";
 import {Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage,} from "@/components/ui/form";
+import {ComposeEditor} from "@/components/domain/stack/compose-editor";
 import {
     Breadcrumb,
     BreadcrumbItem,
@@ -130,13 +131,15 @@ export default function CreateStackPage() {
                                             <FormLabel>
                                                 Docker Compose File
                                             </FormLabel>
-                                            <FormControl>
-                                                <Textarea
-                                                    placeholder={`services:\n  web:\n    image: nginx:latest\n    ports:\n      - "8080:80"`}
-                                                    className="font-mono text-sm min-h-[200px]"
-                                                    {...field}
-                                                />
-                                            </FormControl>
+                                            {/* Not wrapped in FormControl: its Slot would forward
+                                                ids to ComposeEditor's wrapper div instead of the
+                                                CodeMirror textbox — the accessible name comes from
+                                                ComposeEditor's own ariaLabel below. */}
+                                            <ComposeEditor
+                                                value={field.value}
+                                                onChange={field.onChange}
+                                                height="300px"
+                                            />
                                             <FormDescription>
                                                 Paste your docker-compose.yml
                                                 content

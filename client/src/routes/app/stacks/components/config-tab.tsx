@@ -3,6 +3,7 @@ import {Button} from "@/components/ui/button";
 import {Textarea} from "@/components/ui/textarea";
 import {Separator} from "@/components/ui/separator";
 import {Section, SectionActions, SectionHeader, SectionTitle} from "@/components/common/layout/section";
+import {ComposeEditor} from "@/components/domain/stack/compose-editor";
 import type {StackConfigFiles} from "@/hooks/use-stack-config-files";
 
 export interface ConfigTabProps {
@@ -31,12 +32,7 @@ export function ConfigTab({files}: Readonly<ConfigTabProps>) {
                         </Button>
                     </SectionActions>
                 </SectionHeader>
-                <Textarea
-                    aria-label="Docker Compose File"
-                    value={files.composeContent}
-                    onChange={(e) => files.setComposeContent(e.target.value)}
-                    className="font-mono text-sm min-h-[400px]"
-                />
+                <ComposeEditor value={files.composeContent} onChange={files.setComposeContent} />
             </Section>
 
             <Separator />
