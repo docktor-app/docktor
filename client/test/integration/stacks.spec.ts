@@ -117,6 +117,21 @@ async function mockStackEvents(page: Page, stackId: string) {
     );
 }
 
+/**
+ * Replace a CodeMirror-backed editor's full content (11-09, D-18). `.fill()`
+ * doesn't work on CodeMirror's contenteditable root, and `.type()` fires
+ * real keystrokes that trip the YAML language extension's auto-indent on
+ * Enter — `keyboard.insertText()` dispatches a single input event instead,
+ * bypassing that and matching exactly what a paste/autofill would produce.
+ */
+async function replaceCodeEditorContent(page: Page, name: RegExp | string, text: string) {
+    const editor = page.getByRole("textbox", {name});
+    await editor.click();
+    await page.keyboard.press("ControlOrMeta+a");
+    await page.keyboard.press("Backspace");
+    await page.keyboard.insertText(text);
+}
+
 test.describe("Stacks", () => {
     test("stacks list page shows all stacks", async ({page}) => {
         await mockAuthenticated(page);
@@ -197,7 +212,7 @@ test.describe("Stacks", () => {
         await page.goto("/stacks/create");
 
         await page.getByLabel(/name/i).fill("New Stack");
-        await page.getByLabel(/docker compose file/i).fill("services:\n  web:\n    image: nginx");
+        await replaceCodeEditorContent(page, /docker compose file/i, "services:\n  web:\n    image: nginx");
         await page.getByRole("button", {name: /create stack/i}).click();
 
         await expect(page).toHaveURL("/stacks/new-stack", {timeout: 10_000});
@@ -307,14 +322,53 @@ test.describe("Stacks", () => {
         await expect(page.getByRole("heading", {name: "Compose File"})).toBeVisible();
         await expect(page.getByRole("heading", {name: "Environment Variables"})).toBeVisible();
 
-        const composeBox = page.getByRole("textbox", {name: "Docker Compose File"});
-        await composeBox.fill("services:\n  web:\n    image: nginx:1.27\n");
+        await replaceCodeEditorContent(page, "Docker Compose File", "services:\n  web:\n    image: nginx:1.27\n");
 
         await page.getByRole("button", {name: "Save compose file"}).click();
 
         await expect.poll(() => putBody).toEqual(
             expect.objectContaining({composeContent: "services:\n  web:\n    image: nginx:1.27\n"}),
         );
+    });
+
+    test("stack detail config tab: invalid YAML shows a CodeMirror lint marker, fixing it clears it (D-19)", async ({page}) => {
+        await mockAuthenticated(page);
+        await page.route("**/api/stacks/my-app", (route) => {
+            const url = route.request().url();
+            if (url.endsWith("/compose") || url.endsWith("/env")) {
+                return route.continue();
+            }
+            return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(mockStackDetail)});
+        });
+        await page.route("**/api/stacks/my-app/compose", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({content: "services:\n  web:\n    image: nginx:latest\n"}),
+            }),
+        );
+        await page.route("**/api/stacks/my-app/env", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: ""})}),
+        );
+        await mockStackEvents(page, "my-app");
+
+        await page.goto("/stacks/my-app/config");
+
+        // Duplicate mapping keys (rather than an unclosed quote) so the
+        // parser's error range lands on a real character ("w" of the second
+        // "web:") — CodeMirror renders a zero-width/line-break-only range as
+        // a point marker (`cm-lintPoint`) instead of a `cm-lintRange`.
+        await replaceCodeEditorContent(
+            page,
+            "Docker Compose File",
+            "services:\n  web:\n    image: nginx\n  web:\n    image: redis\n",
+        );
+
+        await expect(page.locator(".cm-lintRange-error")).toBeVisible();
+
+        await replaceCodeEditorContent(page, "Docker Compose File", "services:\n  web:\n    image: nginx:latest\n");
+
+        await expect(page.locator(".cm-lintRange-error")).toHaveCount(0);
     });
 
     test("legacy /compose URL redirects to /config (D-02)", async ({page}) => {
