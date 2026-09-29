@@ -1,9 +1,22 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
-import {render, screen} from "@testing-library/react";
+import {render, screen, waitFor} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import {MemoryRouter, Route, Routes} from "react-router";
 import SettingsPage from "@/routes/app/settings";
 import {SidebarProvider} from "@/components/ui/sidebar";
-import {getGeneralSettings} from "@/lib/settings-api";
+import {getGeneralSettings, updateGeneralSettings} from "@/lib/settings-api";
+import {ApiError} from "@/lib/api";
+
+// jsdom has no ResizeObserver — Radix's Switch (via @radix-ui/react-use-size)
+// requires one to measure the thumb on mount; ProxySettingsCard's dashboard
+// toggle switch renders on the Proxy tab.
+if (typeof globalThis.ResizeObserver === "undefined") {
+    globalThis.ResizeObserver = class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+    } as unknown as typeof ResizeObserver;
+}
 import {
     getSmtpSettings,
     getNotificationTriggers,
@@ -56,6 +69,7 @@ vi.mock("@/hooks/use-container-events", () => ({
 }));
 
 const mockGetGeneralSettings = vi.mocked(getGeneralSettings);
+const mockUpdateGeneralSettings = vi.mocked(updateGeneralSettings);
 const mockGetSmtpSettings = vi.mocked(getSmtpSettings);
 const mockGetNotificationTriggers = vi.mocked(getNotificationTriggers);
 const mockGetNotifications = vi.mocked(getNotifications);
@@ -140,5 +154,62 @@ describe("SettingsPage", () => {
         expect(await screen.findByText("SMTP")).toBeInTheDocument();
         expect(screen.getByText("Notification Triggers")).toBeInTheDocument();
         expect(screen.getByText("Notification Log")).toBeInTheDocument();
+    });
+
+    it("renders the General card populated from getGeneralSettings on the General tab", async () => {
+        mockGetGeneralSettings.mockResolvedValue({
+            instanceName: "My Docktor",
+            baseUrl: "https://docktor.example.com",
+            timezone: "Europe/Berlin",
+        });
+
+        renderSettingsAt("/settings/general");
+
+        expect(await screen.findByDisplayValue("My Docktor")).toBeInTheDocument();
+        expect(screen.getByDisplayValue("https://docktor.example.com")).toBeInTheDocument();
+        expect(screen.getByText("Europe/Berlin")).toBeInTheDocument();
+    });
+
+    it("shows a 400 ApiError mentioning instance name under the Instance name field", async () => {
+        mockUpdateGeneralSettings.mockRejectedValue(
+            new ApiError("Instance name is already taken", 400),
+        );
+        const user = userEvent.setup();
+
+        renderSettingsAt("/settings/general");
+        await screen.findByDisplayValue("Docktor");
+
+        await user.click(screen.getByRole("button", {name: "Save"}));
+
+        expect(await screen.findByText("Instance name is already taken")).toBeInTheDocument();
+    });
+
+    it("renders Backup Repository and Default Backup Settings on the Backup tab", async () => {
+        renderSettingsAt("/settings/backup");
+
+        expect(await screen.findByText("Backup Repository")).toBeInTheDocument();
+        expect(screen.getByText("Default Backup Settings")).toBeInTheDocument();
+    });
+
+    it("renders the proxy settings and certificates cards on the Proxy tab", async () => {
+        renderSettingsAt("/settings/proxy");
+
+        expect(await screen.findByText("ACME Email")).toBeInTheDocument();
+        expect(await screen.findByText(/no certificates uploaded yet/i)).toBeInTheDocument();
+    });
+
+    it("falls back to the General tab for an unknown tab value", async () => {
+        renderSettingsAt("/settings/does-not-exist");
+
+        expect(await screen.findByLabelText("Instance Name")).toBeInTheDocument();
+    });
+
+    it("scrolls the tab list horizontally instead of widening the page on narrow screens", async () => {
+        renderSettingsAt("/settings/general");
+        await screen.findByLabelText("Instance Name");
+
+        const tabsList = screen.getByRole("tablist");
+        expect(tabsList.parentElement).toHaveClass("overflow-x-auto");
+        expect(tabsList).toHaveClass("w-max");
     });
 });
