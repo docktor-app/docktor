@@ -3,6 +3,17 @@ import {render, screen} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {ConfigTab} from "@/routes/app/stacks/components/config-tab";
 import type {StackConfigFiles} from "@/hooks/use-stack-config-files";
+import type {ComposeEditorProps} from "@/components/domain/stack/compose-editor";
+
+// CodeMirror itself is covered by 11-09 Task 2's own tests
+// (yaml-syntax-linter.test.ts, code-editor.test.tsx) — mock ComposeEditor
+// here with a minimal controlled textarea exposing the same aria-label so
+// this file only asserts ConfigTab's wiring to `files`.
+vi.mock("@/components/domain/stack/compose-editor", () => ({
+    ComposeEditor: ({value, onChange, ariaLabel = "Docker Compose File"}: ComposeEditorProps) => (
+        <textarea data-testid="compose-editor-mock" aria-label={ariaLabel} value={value} onChange={(e) => onChange(e.target.value)} />
+    ),
+}));
 
 function makeFiles(overrides: Partial<StackConfigFiles> = {}): StackConfigFiles {
     return {
@@ -81,5 +92,17 @@ describe("ConfigTab", () => {
     it("renders no Card component (D-03)", () => {
         const {container} = render(<ConfigTab files={makeFiles()} />);
         expect(container.querySelector('[data-slot="card"]')).toBeNull();
+    });
+
+    it("renders the Compose File section via ComposeEditor, not a plain textarea (D-18)", () => {
+        render(<ConfigTab files={makeFiles()} />);
+        expect(screen.getByTestId("compose-editor-mock")).toBeInTheDocument();
+    });
+
+    it("keeps the Environment section on a plain textarea (11-12 owns replacing it)", () => {
+        render(<ConfigTab files={makeFiles()} />);
+        const envBox = screen.getByRole("textbox", {name: "Environment Variables"});
+        expect(envBox.tagName).toBe("TEXTAREA");
+        expect(envBox).not.toHaveAttribute("data-testid", "compose-editor-mock");
     });
 });
