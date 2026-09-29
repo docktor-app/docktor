@@ -8,6 +8,10 @@ export interface StackConfigFiles {
     readonly composeDirty: boolean;
     readonly envDirty: boolean;
     readonly isDirty: boolean;
+    // 11-10: human-readable summary of which file(s) have unsaved edits, for
+    // the "Discard unsaved changes?" dialog's body copy; null when nothing
+    // is dirty.
+    readonly unsavedSummary: string | null;
     setComposeContent(value: string): void;
     setEnvContent(value: string): void;
     saveCompose(): void;
@@ -122,12 +126,22 @@ export function useStackConfigFiles(
         );
     }, [stackId, envContent, onSaved, setEnvDirty]);
 
+    const unsavedSummary =
+        composeDirty && envDirty
+            ? "the compose file and environment variables"
+            : composeDirty
+              ? "the compose file"
+              : envDirty
+                ? "the environment variables"
+                : null;
+
     return {
         composeContent,
         envContent,
         composeDirty,
         envDirty,
         isDirty: composeDirty || envDirty,
+        unsavedSummary,
         setComposeContent,
         setEnvContent,
         saveCompose,

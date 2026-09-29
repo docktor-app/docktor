@@ -1,5 +1,6 @@
 import {describe, expect, it} from "vitest";
 import {
+    isStackTabPath,
     LEGACY_STACK_TAB_ALIASES,
     resolveStackTab,
     STACK_TAB_LABELS,
@@ -42,6 +43,32 @@ describe("stack-tabs", () => {
 
         it("resolves the legacy environment alias to a config redirect", () => {
             expect(resolveStackTab("environment")).toEqual({kind: "redirect", tab: "config"});
+        });
+    });
+
+    describe("isStackTabPath (11-10 unsaved-changes guard)", () => {
+        it("matches the stack's own base path", () => {
+            expect(isStackTabPath("my-app", "/stacks/my-app")).toBe(true);
+        });
+
+        it("matches a tab path for the same stack", () => {
+            expect(isStackTabPath("my-app", "/stacks/my-app/config")).toBe(true);
+        });
+
+        it("matches a legacy tab alias for the same stack", () => {
+            expect(isStackTabPath("my-app", "/stacks/my-app/compose")).toBe(true);
+        });
+
+        it("does not match a different page nested under the same stack (backup detail)", () => {
+            expect(isStackTabPath("my-app", "/stacks/my-app/backups/b1")).toBe(false);
+        });
+
+        it("does not match the same tab path for a different stack", () => {
+            expect(isStackTabPath("my-app", "/stacks/other/config")).toBe(false);
+        });
+
+        it("does not match an unrelated route", () => {
+            expect(isStackTabPath("my-app", "/")).toBe(false);
         });
     });
 });

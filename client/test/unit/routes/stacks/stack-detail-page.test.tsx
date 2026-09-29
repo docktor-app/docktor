@@ -1,6 +1,6 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import {render, screen, waitFor, within} from "@testing-library/react";
-import {MemoryRouter, Route, Routes} from "react-router";
+import {createMemoryRouter, RouterProvider} from "react-router";
 import StackDetailPage from "../../../../src/routes/app/stacks/[id]";
 import {useStack} from "@/hooks/use-stack";
 import {getComposeContent, getEnvContent} from "@/lib/stacks-api";
@@ -80,14 +80,21 @@ function makeStack(overrides: Partial<StackDetail> = {}): StackDetail {
     };
 }
 
+// useBlocker (used by UnsavedChangesGuard, rendered inside StackDetailPage)
+// only works under a data router — MemoryRouter/Routes throws. A second
+// route is not exercised by this file's assertions but keeps the router a
+// realistic data router shape.
 function renderPage(path: string) {
+    const router = createMemoryRouter(
+        [
+            {path: "/stacks/:id/:tab?", element: <StackDetailPage />},
+            {path: "/", element: <div>Dashboard</div>},
+        ],
+        {initialEntries: [path]},
+    );
     return render(
         <SidebarProvider>
-            <MemoryRouter initialEntries={[path]}>
-                <Routes>
-                    <Route path="/stacks/:id/:tab?" element={<StackDetailPage />} />
-                </Routes>
-            </MemoryRouter>
+            <RouterProvider router={router} />
         </SidebarProvider>,
     );
 }

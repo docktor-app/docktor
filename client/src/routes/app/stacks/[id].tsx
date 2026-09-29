@@ -2,10 +2,11 @@ import {useState} from "react";
 import {Navigate, useNavigate, useParams} from "react-router";
 import {useStack} from "@/hooks/use-stack";
 import {useStackConfigFiles} from "@/hooks/use-stack-config-files";
-import {resolveStackTab, STACK_TAB_LABELS, STACK_TABS} from "@/lib/stack-tabs";
+import {isStackTabPath, resolveStackTab, STACK_TAB_LABELS, STACK_TABS} from "@/lib/stack-tabs";
 import {LogViewer} from "@/components/domain/stack/log-viewer";
 import {Tabs, TabsContent, TabsList, TabsTrigger} from "@/components/ui/tabs";
 import {Page, PageContent} from "@/components/common/layout/page";
+import {UnsavedChangesGuard} from "@/components/common/unsaved-changes-guard";
 import {StackPageState} from "./components/stack-page-state";
 import {StackDetailHeader} from "./components/stack-detail-header";
 import {StackAlerts} from "./components/stack-alerts";
@@ -37,12 +38,12 @@ export default function StackDetailPage() {
 
     return (
         <Page>
-            <StackDetailHeader
-                stack={stack}
-                activeTab={activeTab}
-                isRefreshing={isRefreshing}
-                onAction={refetch}
+            <UnsavedChangesGuard
+                when={files.isDirty}
+                description={`Your edits to ${files.unsavedSummary} haven't been saved.`}
+                isSameContext={(pathname) => isStackTabPath(id, pathname)}
             />
+            <StackDetailHeader stack={stack} activeTab={activeTab} isRefreshing={isRefreshing} onAction={refetch} />
 
             <PageContent>
                 <StackAlerts stack={stack} />

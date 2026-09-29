@@ -209,4 +209,43 @@ describe("useStackConfigFiles", () => {
         expect(result.current.composeContent).toBe("user typed this");
         expect(result.current.composeDirty).toBe(true);
     });
+
+    describe("unsavedSummary (11-10 unsaved-changes guard)", () => {
+        it("is null when nothing is dirty", async () => {
+            const {result} = renderHook(() => useStackConfigFiles("my-app", "hash-1", vi.fn()));
+            await waitFor(() => expect(result.current.composeContent).not.toBe(""));
+
+            expect(result.current.unsavedSummary).toBeNull();
+        });
+
+        it("names the compose file when only compose is dirty", async () => {
+            const {result} = renderHook(() => useStackConfigFiles("my-app", "hash-1", vi.fn()));
+            await waitFor(() => expect(result.current.composeContent).not.toBe(""));
+
+            act(() => result.current.setComposeContent("services: {}"));
+
+            expect(result.current.unsavedSummary).toBe("the compose file");
+        });
+
+        it("names the environment variables when only env is dirty", async () => {
+            const {result} = renderHook(() => useStackConfigFiles("my-app", "hash-1", vi.fn()));
+            await waitFor(() => expect(result.current.envContent).not.toBe(""));
+
+            act(() => result.current.setEnvContent("FOO=baz"));
+
+            expect(result.current.unsavedSummary).toBe("the environment variables");
+        });
+
+        it("names both files when both are dirty", async () => {
+            const {result} = renderHook(() => useStackConfigFiles("my-app", "hash-1", vi.fn()));
+            await waitFor(() => expect(result.current.composeContent).not.toBe(""));
+
+            act(() => {
+                result.current.setComposeContent("services: {}");
+                result.current.setEnvContent("FOO=baz");
+            });
+
+            expect(result.current.unsavedSummary).toBe("the compose file and environment variables");
+        });
+    });
 });
