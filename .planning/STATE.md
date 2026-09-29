@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 milestone: v0.1.0
 current_phase: null
 current_phase_name: UI Rework
-current_plan: 8
+current_plan: 9
 status: "Phases 1-9 all complete, tested, and reviewed. Product tracking moved to GitHub Issues (docktor-app/docktor): the vision doc (docs/vision.md scope) and all .planning/todos/pending/ items were triaged into 49 GitHub issues, native Issue Types adopted (Bug/Feature/Chore/Documentation/Task), and CLAUDE.md documents the process (including a project-specific override redirecting gsd-capture's add-todo to GitHub issues instead of .planning/todos/). User curated 23 issues (later 24, adding #15 UI Rework) into GitHub milestone 'v0.1.0 - First Release' (renamed from the working 'v1.0.0' label since this is the first release). ROADMAP.md Phases 10-16 now scope that milestone, sourced 1:1 from those issues (Requirements fields list GitHub issue numbers, not REQ-IDs — REQUIREMENTS.md is frozen at its already-complete v1.0 content and not being extended for new work). Per user request, Phase 10 (Backend Architecture Refactor, #16) and Phase 11 (UI Rework, #15) were resequenced to run BEFORE the feature phases that add new server/client code (12, 14, 15), so that new work lands on the reworked structure instead of needing rework afterward — both are independent of each other (separate server/client tracks) and both are intentionally open-ended, flagged as needing /gsd-discuss-phase before /gsd-plan-phase. Phase 13 (Update Checker Reliability — narrow bug fixes, not new architecture) carries low rework risk and can run anytime. Phase 10 (Backend Architecture Refactor) has since been merged into main (PR #67). Phase 11 progressed through context capture, UI-SPEC approval, and phase planning (13 plans across 5 waves, plan-checker blockers resolved), and Wave 1's tracer plan 11-01 is now complete: the Config tab merge (D-01/D-02/D-03) and the stack-detail-page decomposition to an 89-line orchestrator (CLAUDE.md Known Refactoring Target closed) both landed, with the StackConfigFiles/ConfigTab/OverviewTab/StackDetailHeader contracts and the PLAYWRIGHT_PORT parameterization ready for the remaining 12 plans to build on. Note: the original executing session for 11-01 was interrupted by a container restart between finishing Task 2 and writing its SUMMARY.md — both tasks' commits were already pushed and no work was lost; a follow-up session independently re-verified everything (unit suite, typecheck, full Playwright E2E including the parallel-port case) before writing the SUMMARY. Wave 2's 11-02 (ToneBadge/StatusDot status-indicator unification, D-08/D-09/D-10/D-11) is now complete: same container-restart pattern hit again (interrupted between finishing Task 3's edits and its first commit, with zero commits made), recovered the same way — full verification (all task `<verify>` commands, all acceptance-criteria greps, full client suite, tsc -b) before splitting into 3 retroactive task commits and writing the SUMMARY. Wave 2 completed with 11-03 (dark mode via next-themes), 11-04 (dashboard StatCard extraction) and 11-05 (server update-info enrichment on GET /api/stacks — same interruption-and-recovery pattern as 11-02). Wave 3 is now underway: 11-06 (unified activity timeline + flat Services section) and 11-07 (proxy/backup dialogs) landed cleanly; 11-08 (shared LogTerminal + backup detail rebuild) fixed Phase 10 UAT gap G-10-2 (backup-history polling loop) and was interrupted twice — once by a Claude usage-limit error before any edits existed (clean restart), once by a container restart after Task 3's RED commit but before its GREEN commit (recovered in place after independent re-verification). Remaining in wave 3: 11-09 (CodeMirror YAML editor, a checkpoint plan), 11-10 (unsaved-changes guard), 11-11 (settings.tsx split). 11-09's Task 1 blocking-human package-legitimacy checkpoint (four new client deps: @uiw/react-codemirror, yaml, @codemirror/lang-yaml, @codemirror/lint — the first two SUS-flagged by the automated gate on recency only) was presented to the developer on 2026-09-27T17:32:19Z and explicitly approved as-is, no replacements. Session paused here (weekly usage limit) before Task 2's install/build work began — client/package.json and yarn.lock are untouched, so the next execute-phase run for 11-09 should proceed straight to Task 2 without re-presenting the checkpoint, and must record this approval (developer, 2026-09-27T17:32:19Z, all four packages approved) in 11-09-SUMMARY.md per the plan's own instruction."
-stopped_at: 11-09 Task 1 checkpoint approved by developer; execution paused before Task 2 (weekly usage limit)
-last_updated: "2026-09-27T17:32:19Z"
-state_head: 2438017dc14a00f699cde6e0a4dfe288fcc2e6f3
+stopped_at: Completed 11-09-PLAN.md
+last_updated: "2026-09-29T16:35:34.809Z"
+state_head: 11f084189e1a54b3f468d504230817f7109c5ed0
 progress:
   total_phases: 17
   completed_phases: 9
   total_plans: 118
-  completed_plans: 113
+  completed_plans: 114
 milestone_name: milestone
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-22)
 ## Current Position
 
 Phase: 11 (UI Rework) — EXECUTING
-Current Plan: 8
+Current Plan: 9
 Total Plans in Phase: 13
 
 ## Performance Metrics
@@ -147,6 +147,7 @@ Total Plans in Phase: 13
 | Phase 11 P05 | 20min | 2 tasks | 3 files |
 | Phase 11 P06 | 50min | 2 tasks | 11 files |
 | Phase 11 P07 | 35min | 2 tasks | 14 files |
+| Phase 11 P09 | 55min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -339,6 +340,8 @@ Recent decisions affecting current work:
 - [Phase null]: [Phase 11-ui-rework 11-06]: ActivityTimeline owns the type-filter's local useState itself rather than lifting it into useStackTimeline, keeping the merge a pure function over the three source lists
 - [Phase null]: [Phase 11-ui-rework 11-06]: services-section.tsx wraps each row's action buttons in their own TooltipProvider (stack-actions.tsx precedent), with the disabled Upgrade button's Tooltip trigger on a wrapping span since a disabled Radix trigger stops receiving hover/focus
 - [Phase null]: [Phase 11-07]: ProxyAssignDialog keeps service selection as plain useState (not RHF) since assignDomainSchema has no serviceName field; BackupScheduleDialog uses a dedicated BackupScheduleFormValues type (not stackBackupConfigSchema's own z.infer) so retention.keepDaily-style FormField paths stay concrete instead of nullable
+- [Phase 11]: [Phase 11] [11-09]: EditorView.contentAttributes.of wires the accessible aria-label onto CodeMirror's built-in role=textbox content element; create.tsx renders ComposeEditor directly inside FormItem (not FormControl, whose Slot would misdirect the generated id onto CodeMirror's wrapper div)
+- [Phase 11]: [Phase 11] [11-09]: E2E invalid-YAML fixture uses duplicate mapping keys, not an unclosed quote — CodeMirror renders a zero-width/line-break-only lint range as a .cm-lintPoint widget instead of a .cm-lintRange mark, so duplicate keys (pointing at a real character) were needed to exercise the plan's .cm-lintRange-error acceptance criterion
 
 ### Quick Tasks Completed
 
@@ -409,6 +412,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-09-26T22:41:23.630Z
-Stopped at: Completed 11-07-PLAN.md
+Last session: 2026-09-29T16:35:23.201Z
+Stopped at: Completed 11-09-PLAN.md
 Resume file: None

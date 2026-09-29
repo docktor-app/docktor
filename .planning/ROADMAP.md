@@ -479,7 +479,7 @@ Independent of Phase 10 (separate client/server tracks — can run in parallel).
   5. Compose editing uses CodeMirror 6 with YAML syntax diagnostics; env editing offers a table mode (default) and a raw mode with heuristic secret masking (D-18..D-22)
   6. Dark mode follows the OS by default with a persisted header toggle; dashboard stats use a reusable StatCard; the UI passes a full phone-width audit (D-14..D-17)
 
-**Plans:** 8/13 plans executed
+**Plans:** 9/13 plans executed
 
 Plans:
 
@@ -491,7 +491,7 @@ Plans:
 - [x] 11-06-PLAN.md — Overview: unified filterable activity timeline, flat Services section, header update badge (wave 3)
 - [x] 11-07-PLAN.md — Proxy assign/edit dialog and backup schedule dialog; flat Proxy/Backups tabs (wave 3)
 - [x] 11-08-PLAN.md — Shared LogTerminal for stack logs and backup detail; backup detail decomposition; history fetch-loop fix (wave 3)
-- [ ] 11-09-PLAN.md — CodeMirror 6 compose editor with YAML syntax linting on Config tab and Create page (package-legitimacy checkpoint) (wave 3)
+- [x] 11-09-PLAN.md — CodeMirror 6 compose editor with YAML syntax linting on Config tab and Create page (package-legitimacy checkpoint) (wave 3)
 - [ ] 11-10-PLAN.md — Data router + discard-unsaved-changes guard for the Config tab (wave 3)
 - [ ] 11-11-PLAN.md — Settings page extraction into per-section components (wave 3)
 - [ ] 11-12-PLAN.md — Structured env editor: table/raw modes, lossless .env round trip, secret masking (wave 4)
