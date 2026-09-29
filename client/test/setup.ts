@@ -42,3 +42,36 @@ if (typeof window.matchMedia !== "function") {
         dispatchEvent: vi.fn(),
     }));
 }
+
+// jsdom does not implement Range.getClientRects()/getBoundingClientRect() —
+// CodeMirror 6 (11-09) calls both while measuring text during layout.
+// Guarded by existence checks so a future jsdom release that implements
+// these (or a browser-based test runner) is left untouched.
+if (typeof Range !== "undefined") {
+    if (!Range.prototype.getClientRects) {
+        Range.prototype.getClientRects = function (): DOMRectList {
+            return {
+                length: 0,
+                item: () => null,
+                [Symbol.iterator]: function* () {},
+            } as unknown as DOMRectList;
+        };
+    }
+    if (!Range.prototype.getBoundingClientRect) {
+        Range.prototype.getBoundingClientRect = function (): DOMRect {
+            return {
+                bottom: 0,
+                height: 0,
+                left: 0,
+                right: 0,
+                top: 0,
+                width: 0,
+                x: 0,
+                y: 0,
+                toJSON() {
+                    return this;
+                },
+            } as DOMRect;
+        };
+    }
+}
