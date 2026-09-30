@@ -257,7 +257,10 @@ test.describe("Stacks", () => {
 
         await expect(page.getByRole("heading", {name: "My App"})).toBeVisible();
         await expect(page.getByText("A test application")).toBeVisible();
-        await expect(page.getByText("Running", {exact: true})).toBeVisible();
+        // Scoped to the header: the Overview tab's activity timeline (11-06) also renders a
+        // compact "Running" status badge for the seeded DRAFT->RUNNING status-log entry, so an
+        // unscoped page-wide match hits both and trips Playwright's strict-mode violation.
+        await expect(page.locator("header").getByText("Running", {exact: true})).toBeVisible();
 
         // Services table
         await expect(page.getByText("web")).toBeVisible();
