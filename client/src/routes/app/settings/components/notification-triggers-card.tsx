@@ -155,9 +155,8 @@ export function NotificationTriggersCard() {
                                         value={diskThresholdPercent}
                                         onChange={(e) => {
                                             const val = Number(e.target.value);
-                                            if (val >= 1 && val <= 99) {
-                                                setDiskThresholdPercent(val);
-                                            }
+                                            if (Number.isNaN(val)) return;
+                                            setDiskThresholdPercent(Math.min(99, Math.max(1, val)));
                                         }}
                                         onBlur={() => handleThresholdUpdate("diskThresholdPercent", diskThresholdPercent)}
                                         placeholder="10"
@@ -172,9 +171,7 @@ export function NotificationTriggersCard() {
                                         value={formatBytes(diskThresholdBytes)}
                                         onChange={(e) => {
                                             const bytes = parseBytes(e.target.value);
-                                            if (bytes > 0) {
-                                                setDiskThresholdBytes(bytes);
-                                            }
+                                            setDiskThresholdBytes(Math.max(1, bytes));
                                         }}
                                         onBlur={() => handleThresholdUpdate("diskThresholdBytes", diskThresholdBytes)}
                                         placeholder="2 GB"
