@@ -25,4 +25,5 @@ plan's own file changes).
   `stack-detail-header.tsx` (11-06's owning plan already shipped; file as a
   new GitHub issue per CLAUDE.md's issue-tracking process if no phase-11 plan
   claims it before phase close).
-- **Status:** open
+- **Status:** resolved
+- **Resolution:** Applied the suggested fix — scoped the assertion to `page.locator("header").getByText("Running", {exact: true})` — in commit `a34d4c0`. This was reachable in real CI (failed deterministically, 3/3 attempts, on `feature/phase-11-ui-rework`'s pull request), not just a theoretical risk from local sandbox runs; fixed as part of closing out the phase's CI run rather than left for a future plan to claim.
