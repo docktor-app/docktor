@@ -44,8 +44,8 @@ export default function CreateStackPage() {
         try {
             const stack = await createStack(values);
             navigate(`/stacks/${stack.id}`);
-        } catch (err: any) {
-            setError(err.message ?? "Failed to create stack");
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : "Failed to create stack");
             setLoading(false);
         }
     }
