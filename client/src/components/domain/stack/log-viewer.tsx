@@ -13,7 +13,7 @@ interface LogViewerProps {
     initialService?: string
 }
 
-export function LogViewer({stackId, serviceNames = [], initialService}: LogViewerProps) {
+export function LogViewer({stackId, serviceNames = [], initialService}: Readonly<LogViewerProps>) {
     const [selectedService, setSelectedService] = useState<string>(initialService ?? "all")
     const [autoScroll, setAutoScroll] = useState(true)
     const [showTimestamps, setShowTimestamps] = useState(false)
