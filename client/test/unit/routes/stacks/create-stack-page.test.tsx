@@ -30,6 +30,13 @@ vi.mock("@/components/domain/stack/env-editor", () => ({
     },
 }));
 
+// Bumped from the 5s default: userEvent interactions + full CreateStackPage
+// render (Form/Sidebar) are CPU-bound and flake under this host's
+// full-parallel-suite resource contention — the same documented class of
+// flake as proxy-tab.test.tsx/stack-detail-page.test.tsx; every test here
+// passes reliably in isolation or in small groups.
+vi.setConfig({testTimeout: 15000});
+
 const mockCreateStack = vi.mocked(createStack);
 
 function renderPage() {
