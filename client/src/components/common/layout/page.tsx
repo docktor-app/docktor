@@ -9,7 +9,17 @@ function Page({className, ...props}: React.ComponentProps<"div">) {
     return (
         <div
             data-slot="page"
-            className={cn("flex flex-col flex-1", className)}
+            // min-w-0 (D-17, defense-in-depth): Page is a flex item of
+            // shadcn's SidebarInset (`flex w-full flex-1 flex-col`,
+            // components/ui/, not editable). Flex items default to
+            // `min-width: auto`, which resolves to their content's
+            // min-content size — without this, a wide-enough descendant
+            // could silently grow the whole page past the viewport instead
+            // of scrolling inside its own overflow-x-auto container. The
+            // concrete D-17 finding this phase fixed (EnvEditor's table on
+            // Create Stack/Config) is capped at its own grid-item boundary
+            // in env-editor.tsx; this is the page-level backstop.
+            className={cn("flex flex-col flex-1 min-w-0", className)}
             {...props}
         />
     )

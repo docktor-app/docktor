@@ -193,7 +193,7 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
                       </Label>
                       <Alert className="py-1 px-2">
                         <AlertDescription className="text-xs flex items-center gap-1">
-                          <AlertTriangle className="h-3 w-3 text-yellow-600" />
+                          <AlertTriangle className="h-3 w-3 text-yellow-600 dark:text-yellow-500" />
                           Absolute path - not recommended for Docktor
                         </AlertDescription>
                       </Alert>

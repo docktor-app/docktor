@@ -218,7 +218,7 @@ export function CertificatesCard() {
                                                 {isExpiringSoon(cert.expiresAt) && (
                                                     <Badge
                                                         variant="outline"
-                                                        className="text-amber-600 border-amber-300"
+                                                        className="text-amber-600 dark:text-amber-400 border-amber-300 dark:border-amber-800"
                                                     >
                                                         Expiring soon
                                                     </Badge>

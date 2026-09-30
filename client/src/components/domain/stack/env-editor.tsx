@@ -150,7 +150,15 @@ export function EnvEditor({
     const passthroughCount = countPassthroughLines(parseEnvFile(value));
 
     return (
-        <div className="space-y-3">
+        // min-w-0 (D-17): this div is a grid item of shadcn's FormItem
+        // (`grid gap-2`, components/ui/, not editable) when EnvEditor is used
+        // directly inside a FormItem (create.tsx, ConfigTab). Grid/flex items
+        // default to `min-width: auto`, which resolves to their content's
+        // min-content size — the table's whitespace-nowrap cells plus the
+        // Name/Value inputs' explicit min-w-32/min-w-48 give it a wide
+        // min-content that would otherwise widen the whole page instead of
+        // scrolling inside the table's own overflow-x-auto wrapper.
+        <div className="space-y-3 min-w-0">
             <div className="flex items-center gap-2">
                 <Switch
                     id="env-editor-raw-mode"

@@ -17,7 +17,7 @@ export function FirstRunGate({children}: Readonly<FirstRunGateProps>): React.JSX
     if (status === "idle" || status === "loading") {
         return (
             <div className="flex min-h-screen items-center justify-center">
-                <p className="text-gray-500">Loading...</p>
+                <p className="text-muted-foreground">Loading...</p>
             </div>
         );
     }

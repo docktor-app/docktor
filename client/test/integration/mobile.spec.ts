@@ -295,6 +295,23 @@ test.describe("Mobile (D-17, 390-412px viewport)", () => {
         await expectNoHorizontalOverflow(page);
     });
 
+    test("setup wizard: the six-step stepper scrolls horizontally instead of widening the page (D-17 fix)", async ({
+        page,
+    }) => {
+        await page.route("**/api/setup/status", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({setupComplete: false})}),
+        );
+        await page.route("**/api/auth/get-session", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(null)}),
+        );
+
+        await page.goto("/setup");
+
+        await expect(page.getByText("Create Admin Account")).toBeVisible();
+        await expect(page.getByRole("button", {name: /step 6: proxy/i})).toBeVisible();
+        await expectNoHorizontalOverflow(page);
+    });
+
     test("stack detail Overview: tabs reachable, Deploy clickable, status badge visible, timeline filter works", async ({
         page,
     }) => {
