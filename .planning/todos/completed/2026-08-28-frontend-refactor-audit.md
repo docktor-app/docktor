@@ -11,6 +11,8 @@ files:
 audit_acknowledged:
   milestone: v1.0
   at: 2026-09-20
+completed: 2026-09-30
+status: completed
 ---
 
 ## Problem
@@ -30,3 +32,19 @@ and `client/src/components/domain/` to find other candidates for
 extraction to `components/common/`/`components/domain/`, not just the log
 viewer. Check against CLAUDE.md's "Known Refactoring Targets" table for
 already-known duplication before scoping new work.
+
+## Resolution
+
+Closed by Phase 11 (UI Rework). The specific example this todo named —
+`log-viewer.tsx`'s streaming/filtering/rendering logic not being shared with
+the Backups tab — was resolved by **11-08**, which extracted a shared
+`LogTerminal` component used by both container logs and the backup detail
+page's restic output. The broader "audit for reusable-component refactors"
+ask was carried out across the rest of the phase's decomposition work:
+**11-01** (stack-detail page split into `routes/app/stacks/components/`),
+**11-02** (`ToneBadge`/`StatusDot` status-indicator unification),
+**11-06** (unified activity timeline + flat Services section extraction),
+and **11-11** (settings.tsx split into one-component-per-file Settings
+cards). CLAUDE.md's Known Refactoring Targets table and Page Composition
+example list were updated in **11-13** to reflect the resulting component
+layout.

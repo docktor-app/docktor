@@ -10,6 +10,8 @@ files:
 audit_acknowledged:
   milestone: v1.0
   at: 2026-09-20
+completed: 2026-09-30
+status: completed
 ---
 
 ## Problem
@@ -34,3 +36,12 @@ showing it but make the no-`latestTag` case visually/textually distinct
 from the has-`latestTag` case (e.g. different badge color/copy: "content
 updated" vs "update available → 1.31.4"), so a moving tag's badge doesn't
 imply a pickable version exists when it doesn't.
+
+## Resolution
+
+Closed by **D-10**, implemented in **11-02** (the D-08 ToneBadge scheme's
+update-available tone mapping distinguishes the digest-only case from the
+has-`latestTag` case) and **11-06** (services table rendering). The badge
+no longer implies a pickable version exists when only the image digest
+changed — a moving-tag/digest-only update surfaces distinctly from a
+discrete-tag update.

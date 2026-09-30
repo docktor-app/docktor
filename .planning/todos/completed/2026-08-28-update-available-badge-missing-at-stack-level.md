@@ -13,6 +13,8 @@ files:
 audit_acknowledged:
   milestone: v1.0
   at: 2026-09-20
+completed: 2026-09-30
+status: completed
 ---
 
 ## Problem
@@ -32,3 +34,14 @@ TBD — aggregate `services.some(svc => svc.updateAvailable)` (or a count)
 at the stack level and render a badge matching the existing
 `configChanged` badge's placement/styling in `stack-list.tsx` and the
 stack detail page header.
+
+## Resolution
+
+Closed by **D-09**, implemented across **11-02** (server-side update-info
+aggregation and the initial ToneBadge scheme), **11-04** (dashboard
+surfacing), **11-05** (server `GET /api/stacks` update-info enrichment so
+the stack-level aggregate is available without an extra round-trip), and
+**11-06** (stack detail header). The stack-level "update available"
+indicator now appears consistently on the dashboard, the stack list, and
+the stack detail header, matching the existing `configChanged` badge's
+placement/styling pattern this todo asked for.

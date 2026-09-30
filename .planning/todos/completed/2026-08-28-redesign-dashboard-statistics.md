@@ -10,6 +10,8 @@ files:
 audit_acknowledged:
   milestone: v1.0
   at: 2026-09-20
+completed: 2026-09-30
+status: completed
 ---
 
 ## Problem
@@ -27,3 +29,12 @@ part of the rework rather than leaving the inline cards in place.
 
 TBD — needs a design pass on what statistics matter (resource usage over
 time? deploy frequency? update lag?) before implementation.
+
+## Resolution
+
+Closed by **D-14** (**11-04**), which extracted the inline stat cards into a
+reusable `StatCard`/dashboard stat-cards component and closed CLAUDE.md's
+`dashboard.tsx` Known Refactoring Target at the same time. Resource-usage-
+over-time / deploy-frequency / update-lag style statistics were not part of
+D-14's scope and remain a candidate for a future dashboard-statistics
+GitHub issue if wanted post-milestone.

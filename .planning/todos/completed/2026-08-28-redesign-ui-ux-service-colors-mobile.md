@@ -11,6 +11,8 @@ files:
 audit_acknowledged:
   milestone: v1.0
   at: 2026-09-20
+completed: 2026-09-30
+status: completed
 ---
 
 ## Problem
@@ -34,3 +36,19 @@ TBD. Needs a design pass (colors: derive from a fixed palette keyed by
 service name, or let users pick per-service; tabs: consider whether all 5
 tabs still make sense post-redesign; mobile: audit current layout's
 responsiveness component by component).
+
+## Resolution
+
+Closed by Phase 11 (UI Rework). Tab layout and consistent status/badge
+colors were resolved by **D-11** (single ToneBadge/StatusDot scheme applied
+across **11-02**, **11-06**, **11-08**) and the tab-layout merge decisions
+**D-01**/**D-02** (Config tab merges the former Compose/Environment tabs,
+landed in **11-01**). Mobile support — the explicit "audit current layout's
+responsiveness component by component" ask — is **D-17**, closed by this
+plan (**11-13**): a Playwright `mobile-chromium` project plus a
+component-by-component 390px light/dark audit, with core-flow breaks fixed
+inline and cosmetic findings filed as GitHub issues (see #71). Per-service
+log-line coloring (a distinct ask from "service colors" in the tab/mobile
+sense) remains deferred as decision D-12 and was not introduced here, per
+this phase's explicit prohibition on filing or implementing deferred
+color work.

@@ -77,12 +77,16 @@ lib/                           ← API clients, HTTP helper, auth client, utilit
 **Section component rule:** Every distinct visual/functional section of a page gets its own component file. Co-locate it next to the route file when it is only used by that page:
 
 ```
-routes/app/stacks/[id].tsx                         ← page: composes sections
-routes/app/stacks/components/stack-actions.tsx     ← header action buttons
-routes/app/stacks/components/services-tab.tsx      ← Overview > Services card
-routes/app/stacks/components/deployments-tab.tsx   ← Overview > Deployments card
-routes/app/stacks/components/compose-tab.tsx       ← Compose editor tab
-routes/app/stacks/components/environment-tab.tsx   ← Env editor tab
+routes/app/stacks/[id].tsx                             ← page: composes sections
+routes/app/stacks/components/stack-detail-header.tsx   ← title, badges, Deploy + actions menu
+routes/app/stacks/components/stack-actions.tsx         ← header action buttons
+routes/app/stacks/components/stack-alerts.tsx          ← config-changed / config-error banners
+routes/app/stacks/components/overview-tab.tsx          ← Overview: services + activity timeline
+routes/app/stacks/components/services-section.tsx      ← Overview > Services table
+routes/app/stacks/components/activity-timeline.tsx     ← Overview > unified activity/status timeline
+routes/app/stacks/components/config-tab.tsx            ← Compose + Environment editor tab (merged)
+routes/app/stacks/components/proxy-tab.tsx             ← Proxy domains/TLS tab
+routes/app/stacks/components/backups-tab.tsx           ← Backups summary/schedule/history tab
 ```
 
 If a section component is used by more than one page, promote it to `components/domain/` or `components/common/`.
@@ -274,6 +278,13 @@ Apply patterns where they improve clarity — never for their own sake.
 - Styling: **TailwindCSS v4** utility classes; use `clsx` + `tailwind-merge` (`cn()` helper) for conditional class names
 - Use **CVA (class-variance-authority)** for components with multiple visual variants
 - Forms: always use `react-hook-form` with a Zod resolver — no uncontrolled or ad-hoc form state
+- Status/config pills always render through `ToneBadge` (`components/common/tone-badge.tsx`) + `StatusDot` (`components/common/status-dot.tsx`) — never hand-rolled pill classes (e.g. `rounded-full px-2 py-0.5`) outside `components/ui/`
+- Prefer flat `Section` primitives (`components/common/layout/section.tsx`) for page layout; reserve `Card` for genuinely distinct groupings (StatCard, settings groups, auth/setup forms, create/import form cards)
+- Code editing (compose YAML) goes through `CodeEditor`/`ComposeEditor` (`components/common/code-editor.tsx`, `components/domain/stack/compose-editor.tsx`) — not a plain `<textarea>`
+- `.env` content editing goes through `EnvEditor` (`components/domain/stack/env-editor.tsx`) — a structured table/raw-mode editor, not a raw textarea
+- Every light-only color utility (`text-`/`bg-`/`border-{gray,green,red,blue,yellow,orange,amber}-NNN`) needs a `dark:` counterpart — this project uses next-themes' class strategy, so dark mode is a real, tested surface, not an afterthought
+- Pages with in-place editors (compose, env, forms with unsaved input) wrap their content in `UnsavedChangesGuard` (`components/common/unsaved-changes-guard.tsx`) to warn on navigation — requires the data router (`createBrowserRouter`)
+- Playwright test runs take a `PLAYWRIGHT_PORT` env var (`PLAYWRIGHT_PORT=5182 yarn workspace @docktor/client test:integration`) to avoid port collisions between the desktop `chromium` and `mobile-chromium` projects
 
 ---
 
@@ -389,9 +400,15 @@ These are existing violations of the rules above — fix them when touching the 
 
 | File | Issue | Fix |
 |------|-------|-----|
-| `routes/app/stacks/[id].tsx` | ~587 lines; all tab sections inline; `ServiceStatusBadge` defined locally | Extract each tab to `routes/app/stacks/components/`, move `ServiceStatusBadge` to `components/domain/stack/` |
-| `routes/app/settings.tsx` | `SmtpCard`, `NotificationTriggersCard`, `NotificationLogCard`, `TimezoneCombobox` all defined in the same file | Extract to `routes/app/settings/components/` |
-| `routes/app/dashboard.tsx` | Stat cards (Total, Running, Stopped, Errors) rendered inline | Extract a generic `StatCard` to `components/common/`, or a domain `StackStatCards` to `components/domain/stack/` |
+| `routes/app/settings/components/general-settings-card.tsx` | `instanceName`/`baseUrl`/`timezone` each their own `useState`, manual `errors` record, manual `ApiError.message` substring-matching to pick which field to blame | Migrate to `react-hook-form` + Zod resolver per the Forms rule |
+| `routes/app/settings/components/smtp-card.tsx` | Nine separate `useState` fields, manual `smtpErrors` record keyed by field name | Migrate to `react-hook-form` + Zod resolver |
+| `routes/app/settings/components/notification-triggers-card.tsx` | Five separate `useState` fields plus manual optimistic-update/rollback logic per toggle | Migrate to `react-hook-form` + Zod resolver |
+| `routes/app/settings/components/backup-repository-card.tsx` | Ten separate `useState` fields, no field-level validation errors surfaced | Migrate to `react-hook-form` + Zod resolver |
+| `routes/app/settings/components/backup-defaults-card.tsx` | Four separate `useState` fields, no field-level validation | Migrate to `react-hook-form` + Zod resolver |
+
+`ProxySettingsCard` and `CertificatesCard` already use `react-hook-form` and are the target pattern for the migration above (flagged by 11-11-SUMMARY.md during the Settings decomposition).
+
+The three page-file monoliths this table used to track (`routes/app/stacks/[id].tsx`, `routes/app/settings.tsx`, `routes/app/dashboard.tsx`) were closed in Phase 11 (UI Rework, plans 11-01/11-11/11-04) — each is now a composition-only orchestrator under its line budget (see Page Composition above for the current section layout).
 
 ---
 

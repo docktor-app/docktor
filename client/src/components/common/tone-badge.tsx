@@ -32,7 +32,8 @@ export type ToneBadgeProps = Omit<React.ComponentProps<typeof Badge>, "variant">
 
 /**
  * Generic status/config pill. Built on the shadcn Badge (outline variant) so
- * every pill in the app shares one size (rounded-full px-2 py-0.5 text-xs).
+ * every pill in the app shares one size (fully rounded, `text-xs`, the
+ * Badge component's own compact padding).
  * Domain components choose a `Tone`; this component owns no domain vocabulary.
  */
 export function ToneBadge({tone, pulse, className, ...props}: Readonly<ToneBadgeProps>) {
