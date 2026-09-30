@@ -4,14 +4,29 @@ import userEvent from "@testing-library/user-event";
 import {ConfigTab} from "@/routes/app/stacks/components/config-tab";
 import type {StackConfigFiles} from "@/hooks/use-stack-config-files";
 import type {ComposeEditorProps} from "@/components/domain/stack/compose-editor";
+import type {EnvEditorProps} from "@/components/domain/stack/env-editor";
 
-// CodeMirror itself is covered by 11-09 Task 2's own tests
-// (yaml-syntax-linter.test.ts, code-editor.test.tsx) — mock ComposeEditor
-// here with a minimal controlled textarea exposing the same aria-label so
-// this file only asserts ConfigTab's wiring to `files`.
+// CodeMirror itself is covered by 11-09/11-12's own component tests — mock
+// both editors here with minimal controlled stubs exposing the same
+// aria-label/callbacks so this file only asserts ConfigTab's wiring to
+// `files` (and, for env, the envValid state introduced by 11-12).
 vi.mock("@/components/domain/stack/compose-editor", () => ({
     ComposeEditor: ({value, onChange, ariaLabel = "Docker Compose File"}: ComposeEditorProps) => (
         <textarea data-testid="compose-editor-mock" aria-label={ariaLabel} value={value} onChange={(e) => onChange(e.target.value)} />
+    ),
+}));
+
+vi.mock("@/components/domain/stack/env-editor", () => ({
+    EnvEditor: ({value, onChange, onValidityChange, ariaLabel = "Environment Variables"}: EnvEditorProps) => (
+        <div data-testid="env-editor-mock">
+            <textarea aria-label={ariaLabel} value={value} onChange={(e) => onChange(e.target.value)} />
+            <button type="button" onClick={() => onValidityChange(false)}>
+                Make env invalid
+            </button>
+            <button type="button" onClick={() => onValidityChange(true)}>
+                Make env valid
+            </button>
+        </div>
     ),
 }));
 
@@ -22,6 +37,7 @@ function makeFiles(overrides: Partial<StackConfigFiles> = {}): StackConfigFiles 
         composeDirty: false,
         envDirty: false,
         isDirty: false,
+        unsavedSummary: null,
         setComposeContent: vi.fn(),
         setEnvContent: vi.fn(),
         saveCompose: vi.fn(),
@@ -61,7 +77,7 @@ describe("ConfigTab", () => {
         expect(files.saveCompose).toHaveBeenCalledTimes(1);
     });
 
-    it("enables Save environment variables once envDirty is true and calls saveEnv on click", async () => {
+    it("enables Save environment variables once envDirty is true (editor valid by default) and calls saveEnv on click", async () => {
         const files = makeFiles({envDirty: true});
         render(<ConfigTab files={files} />);
         const button = screen.getByRole("button", {name: "Save environment variables"});
@@ -69,6 +85,19 @@ describe("ConfigTab", () => {
 
         await userEvent.click(button);
         expect(files.saveEnv).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps Save environment variables disabled when the editor reports invalid, even though envDirty is true", async () => {
+        const files = makeFiles({envDirty: true});
+        render(<ConfigTab files={files} />);
+        const button = screen.getByRole("button", {name: "Save environment variables"});
+        expect(button).toBeEnabled();
+
+        await userEvent.click(screen.getByRole("button", {name: "Make env invalid"}));
+        expect(button).toBeDisabled();
+
+        await userEvent.click(screen.getByRole("button", {name: "Make env valid"}));
+        expect(button).toBeEnabled();
     });
 
     it("calls setComposeContent when the compose textbox changes", async () => {
@@ -99,10 +128,8 @@ describe("ConfigTab", () => {
         expect(screen.getByTestId("compose-editor-mock")).toBeInTheDocument();
     });
 
-    it("keeps the Environment section on a plain textarea (11-12 owns replacing it)", () => {
+    it("renders the Environment section via EnvEditor, not a plain textarea (D-20/D-21)", () => {
         render(<ConfigTab files={makeFiles()} />);
-        const envBox = screen.getByRole("textbox", {name: "Environment Variables"});
-        expect(envBox.tagName).toBe("TEXTAREA");
-        expect(envBox).not.toHaveAttribute("data-testid", "compose-editor-mock");
+        expect(screen.getByTestId("env-editor-mock")).toBeInTheDocument();
     });
 });
