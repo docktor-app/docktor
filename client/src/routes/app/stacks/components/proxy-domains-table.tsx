@@ -58,7 +58,13 @@ export function ProxyDomainsTable({configs, statuses, onEdit, onRemove}: Readonl
                                 </div>
                             </TableCell>
                             <TableCell>{svcName}</TableCell>
-                            <TableCell>{rows[0].internalPort}</TableCell>
+                            <TableCell>
+                                <div className="flex flex-col gap-1">
+                                    {rows.map((row) => (
+                                        <span key={row.id}>{row.internalPort}</span>
+                                    ))}
+                                </div>
+                            </TableCell>
                             <TableCell>
                                 <div className="flex flex-col gap-1">
                                     {rows.map((row) => (
