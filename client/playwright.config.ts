@@ -35,6 +35,17 @@ export default defineConfig({
         {
             name: "chromium",
             use: {...devices["Desktop Chrome"]},
+            testIgnore: /mobile\.spec\.ts/,
+        },
+        {
+            // D-17: phone-width regression coverage. Pixel 7 is a Chromium
+            // device descriptor (only Chromium browsers are installed in
+            // this environment) and this project matches mobile.spec.ts
+            // exclusively, so the existing desktop suite's runtime and
+            // assertions are unchanged.
+            name: "mobile-chromium",
+            use: {...devices["Pixel 7"]},
+            testMatch: /mobile\.spec\.ts/,
         },
     ],
     webServer: {
