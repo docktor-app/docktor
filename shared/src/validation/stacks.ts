@@ -49,9 +49,29 @@ export const upgradeServiceSchema = z.object({
     targetTag: dockerTagSchema,
 });
 
+// D-20/D-21: the EnvEditor's table mode. A variable name must be a valid
+// shell/.env identifier — letters, digits and underscores, not starting with
+// a digit. `client/src/lib/env-file.ts` imports this pattern's source
+// (stripped of its anchors) to recognize `KEY=value` lines during parsing,
+// so the "what counts as a variable line" rule is defined exactly once.
+export const ENV_VARIABLE_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+export const envVariableRowSchema = z.object({
+    key: z
+        .string()
+        .min(1, "Variable name is required")
+        .regex(ENV_VARIABLE_KEY_PATTERN, "Use letters, digits and underscores, not starting with a digit"),
+    value: z.string(),
+});
+
+export const envTableFormSchema = z.object({
+    variables: z.array(envVariableRowSchema),
+});
+
 export type StackParams = z.infer<typeof stackParamsSchema>;
 export type StackServiceParams = z.infer<typeof stackServiceParamsSchema>;
 export type CreateStackInput = z.infer<typeof createStackSchema>;
 export type UpdateStackInput = z.infer<typeof updateStackSchema>;
 export type UpgradeServiceParams = z.infer<typeof upgradeServiceParamsSchema>;
 export type UpgradeServiceInput = z.infer<typeof upgradeServiceSchema>;
+export type EnvTableFormInput = z.infer<typeof envTableFormSchema>;

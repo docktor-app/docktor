@@ -107,7 +107,7 @@ describe("EnvEditor", () => {
 
     it("toggling Raw text mode shows a textbox named Environment Variables with the exact current string", async () => {
         const user = userEvent.setup();
-        render(<ControlledEnvEditor initialValue="A=1\nB=2" />);
+        render(<ControlledEnvEditor initialValue={"A=1\nB=2"} />);
 
         await user.click(screen.getByRole("switch", {name: "Raw text mode"}));
 
