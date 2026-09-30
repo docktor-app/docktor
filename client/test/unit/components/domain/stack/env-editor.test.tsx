@@ -1,6 +1,6 @@
 import {useState} from "react";
 import {describe, expect, it, vi} from "vitest";
-import {render, screen, waitFor} from "@testing-library/react";
+import {render, screen, waitFor, within} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {EnvEditor} from "@/components/domain/stack/env-editor";
 import type {CodeEditorProps} from "@/components/common/code-editor";
@@ -95,6 +95,27 @@ describe("EnvEditor", () => {
         await user.click(screen.getByRole("button", {name: "Remove A"}));
 
         await waitFor(() => expect(onChange).toHaveBeenLastCalledWith("B=2"));
+    });
+
+    it("typing a new row's key/value one keystroke at a time never leaves a stray blank line (regression)", async () => {
+        const user = userEvent.setup();
+        render(<ControlledEnvEditor initialValue="FOO=bar" />);
+
+        await user.click(screen.getByRole("button", {name: "Add Variable"}));
+        const keyInput = screen.getByRole("textbox", {name: "Variable name 2"});
+        await user.type(keyInput, "NEW_KEY");
+        // NEW_KEY matches the D-22 heuristic, so its value input is masked —
+        // query it directly rather than by its dynamic aria-label.
+        const rows = screen.getAllByRole("row");
+        const secondDataRow = rows[2];
+        const valueInput = within(secondDataRow).getByDisplayValue("");
+        await user.type(valueInput, "42");
+
+        await user.click(screen.getByRole("switch", {name: "Raw text mode"}));
+
+        await waitFor(() =>
+            expect(screen.getByRole("textbox", {name: "Environment Variables"})).toHaveValue("FOO=bar\nNEW_KEY=42"),
+        );
     });
 
     it("has no Dialog element and no form element of its own (D-06)", () => {

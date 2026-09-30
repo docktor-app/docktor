@@ -59,7 +59,20 @@ export function EnvEditor({
 }: Readonly<EnvEditorProps>): React.JSX.Element {
     const [mode, setMode] = useState<"table" | "raw">("table");
     const [revealedIds, setRevealedIds] = useState<ReadonlySet<string>>(new Set());
+    // `lastEmittedRef` distinguishes a self-caused `value` prop update (skip
+    // reset) from a genuine external one (raw-mode edit, external reload —
+    // reset the table). `baseLinesRef` is the document the *next*
+    // `applyTableRows` call reconstructs from; it only ever advances on a
+    // genuine external change, never on our own emission. Advancing it on
+    // every self-emitted change would be wrong: a still-empty new row
+    // doesn't match the variable pattern when re-parsed, so it would get
+    // baked in as an unclaimed passthrough line on the next base, while the
+    // same row (its `lineIndex` staying `null` in form state) gets appended
+    // again as a *second*, duplicate line — corrupting the document a
+    // keystroke at a time. Keeping the base stable across self-edits means
+    // every row is reconstructed from its one live entry in `rows`, once.
     const lastEmittedRef = useRef(value);
+    const baseLinesRef = useRef(parseEnvFile(value));
     const justAppendedRef = useRef(false);
     const keyInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -69,7 +82,7 @@ export function EnvEditor({
         // just papers over standardSchemaResolver's generic inference.
         resolver: standardSchemaResolver(clientEnvTableFormSchema) as Resolver<ClientEnvTableFormInput>,
         mode: "onChange",
-        defaultValues: {variables: toTableRows(parseEnvFile(value))},
+        defaultValues: {variables: toTableRows(baseLinesRef.current)},
     });
     const {fields, append, remove} = useFieldArray({control: form.control, name: "variables"});
     const watchedVariables = useWatch({control: form.control, name: "variables"});
@@ -81,7 +94,8 @@ export function EnvEditor({
     useEffect(() => {
         if (value !== lastEmittedRef.current) {
             lastEmittedRef.current = value;
-            form.reset({variables: toTableRows(parseEnvFile(value))});
+            baseLinesRef.current = parseEnvFile(value);
+            form.reset({variables: toTableRows(baseLinesRef.current)});
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [value]);
@@ -95,7 +109,7 @@ export function EnvEditor({
                     value: row.value ?? "",
                     lineIndex: row.lineIndex ?? null,
                 }));
-            const next = applyTableRows(parseEnvFile(lastEmittedRef.current), rows);
+            const next = applyTableRows(baseLinesRef.current, rows);
             if (next !== lastEmittedRef.current) {
                 lastEmittedRef.current = next;
                 onChange(next);

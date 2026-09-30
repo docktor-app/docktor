@@ -1,9 +1,10 @@
+import {useState} from "react";
 import {Save} from "lucide-react";
 import {Button} from "@/components/ui/button";
-import {Textarea} from "@/components/ui/textarea";
 import {Separator} from "@/components/ui/separator";
 import {Section, SectionActions, SectionHeader, SectionTitle} from "@/components/common/layout/section";
 import {ComposeEditor} from "@/components/domain/stack/compose-editor";
+import {EnvEditor} from "@/components/domain/stack/env-editor";
 import type {StackConfigFiles} from "@/hooks/use-stack-config-files";
 
 export interface ConfigTabProps {
@@ -12,9 +13,14 @@ export interface ConfigTabProps {
 
 // D-02/D-03: the merged Compose+Environment tab — a single stacked column of
 // two flat Sections (UI-SPEC Discretion Decision 4), no Card, no nested Tabs.
-// Plans 11-09 (CodeMirror) and 11-12 (table/raw env editor) swap the two
-// text areas below for richer editors behind this same `files` prop.
+// 11-09 gave Compose File a CodeMirror editor; 11-12 gives Environment
+// Variables a table/raw EnvEditor (D-20/D-21/D-22) — both behind this same
+// `files` prop.
 export function ConfigTab({files}: Readonly<ConfigTabProps>) {
+    // EnvEditor validates its own table rows (invalid key -> can't save);
+    // true by default so an untouched/raw-mode editor never blocks Save.
+    const [envValid, setEnvValid] = useState(true);
+
     return (
         <div className="space-y-6">
             <Section>
@@ -43,7 +49,7 @@ export function ConfigTab({files}: Readonly<ConfigTabProps>) {
                     <SectionActions>
                         <Button
                             size="sm"
-                            disabled={!files.envDirty}
+                            disabled={!files.envDirty || !envValid}
                             aria-label="Save environment variables"
                             onClick={files.saveEnv}
                         >
@@ -52,11 +58,10 @@ export function ConfigTab({files}: Readonly<ConfigTabProps>) {
                         </Button>
                     </SectionActions>
                 </SectionHeader>
-                <Textarea
-                    aria-label="Environment Variables"
+                <EnvEditor
                     value={files.envContent}
-                    onChange={(e) => files.setEnvContent(e.target.value)}
-                    className="font-mono text-sm min-h-[300px]"
+                    onChange={files.setEnvContent}
+                    onValidityChange={setEnvValid}
                 />
             </Section>
         </div>

@@ -132,6 +132,18 @@ async function replaceCodeEditorContent(page: Page, name: RegExp | string, text:
     await page.keyboard.insertText(text);
 }
 
+/**
+ * Reads a CodeMirror-backed editor's current content (11-09/11-12). CodeMirror
+ * renders each line as its own `.cm-line` element with no literal `"\n"` in
+ * the DOM, so `toHaveValue` (input/textarea only) doesn't apply — join the
+ * per-line text content instead.
+ */
+async function getCodeEditorContent(page: Page, name: RegExp | string): Promise<string> {
+    const editor = page.getByRole("textbox", {name});
+    const lines = await editor.locator(".cm-line").allTextContents();
+    return lines.join("\n");
+}
+
 test.describe("Stacks", () => {
     test("stacks list page shows all stacks", async ({page}) => {
         await mockAuthenticated(page);
@@ -329,6 +341,63 @@ test.describe("Stacks", () => {
         await expect.poll(() => putBody).toEqual(
             expect.objectContaining({composeContent: "services:\n  web:\n    image: nginx:1.27\n"}),
         );
+    });
+
+    test("stack detail config tab: EnvEditor table mode add + save, raw mode reflects the same edit (D-20/D-21)", async ({page}) => {
+        await mockAuthenticated(page);
+        let putBody: unknown = null;
+        await page.route("**/api/stacks/my-app", (route) => {
+            const url = route.request().url();
+            if (url.endsWith("/compose") || url.endsWith("/env")) {
+                return route.continue();
+            }
+            if (route.request().method() === "PUT") {
+                putBody = route.request().postDataJSON();
+                return route.fulfill({
+                    status: 200,
+                    contentType: "application/json",
+                    body: JSON.stringify(mockStackDetail),
+                });
+            }
+            return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(mockStackDetail)});
+        });
+        await page.route("**/api/stacks/my-app/compose", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({content: "services:\n  web:\n    image: nginx:latest"}),
+            }),
+        );
+        await page.route("**/api/stacks/my-app/env", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: "FOO=bar"})}),
+        );
+        await mockStackEvents(page, "my-app");
+
+        await page.goto("/stacks/my-app/config");
+
+        // Table mode shows the FOO row by default (D-21).
+        await expect(page.getByRole("textbox", {name: "Variable name 1"})).toHaveValue("FOO");
+        await expect(page.getByLabel("Value for FOO", {exact: true})).toHaveValue("bar");
+
+        await page.getByRole("button", {name: "Add Variable"}).click();
+        await page.getByRole("textbox", {name: "Variable name 2"}).fill("NEW_KEY");
+        // NEW_KEY matches D-22's intentionally broad secret heuristic (it
+        // contains "KEY"), so its value input is masked — {exact: true}
+        // disambiguates it from the "Show value for NEW_KEY" reveal button,
+        // whose accessible name is a case-insensitive superstring match.
+        await page.getByLabel("Value for NEW_KEY", {exact: true}).fill("42");
+
+        // Lossless mode switch (D-06/D-21 "no dialog"): raw mode reflects the
+        // table edit before it's ever saved.
+        await page.getByRole("switch", {name: "Raw text mode"}).click();
+        await expect
+            .poll(() => getCodeEditorContent(page, "Environment Variables"))
+            .toBe("FOO=bar\nNEW_KEY=42");
+        await page.getByRole("switch", {name: "Raw text mode"}).click();
+
+        await page.getByRole("button", {name: "Save environment variables"}).click();
+
+        await expect.poll(() => putBody).toEqual(expect.objectContaining({envContent: "FOO=bar\nNEW_KEY=42"}));
     });
 
     test("stack detail config tab: invalid YAML shows a CodeMirror lint marker, fixing it clears it (D-19)", async ({page}) => {
