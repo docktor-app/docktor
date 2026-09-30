@@ -181,4 +181,24 @@ describe("EnvEditor", () => {
 
         expect(screen.queryByRole("table")).toBeNull();
     });
+
+    // Regression for WR-03: each row's key was validated independently, with
+    // no cross-row uniqueness check — renaming a second row to an existing
+    // key reported the form as valid even though the .env file would
+    // silently drop one of the two values on save.
+    it("reports invalid and flags both rows when a new row's key duplicates an existing one", async () => {
+        const user = userEvent.setup();
+        const onValidityChange = vi.fn();
+        render(<EnvEditor value="FOO=bar" onChange={vi.fn()} onValidityChange={onValidityChange} />);
+
+        await waitFor(() => expect(onValidityChange).toHaveBeenLastCalledWith(true));
+
+        await user.click(screen.getByRole("button", {name: "Add Variable"}));
+        const secondKeyInput = screen.getByRole("textbox", {name: "Variable name 2"});
+        await user.type(secondKeyInput, "FOO");
+
+        await waitFor(() => expect(onValidityChange).toHaveBeenLastCalledWith(false));
+        const duplicateErrors = await screen.findAllByText("Duplicate variable name");
+        expect(duplicateErrors).toHaveLength(2);
+    });
 });

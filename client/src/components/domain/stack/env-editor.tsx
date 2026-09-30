@@ -2,7 +2,7 @@ import {useEffect, useRef, useState} from "react";
 import {useFieldArray, useForm, useWatch, type Resolver} from "react-hook-form";
 import {standardSchemaResolver} from "@hookform/resolvers/standard-schema";
 import {z} from "zod";
-import {envVariableRowSchema} from "@docktor/shared";
+import {checkDuplicateEnvKeys, envVariableRowSchema} from "@docktor/shared";
 import {Eye, EyeOff, Plus, Trash2} from "lucide-react";
 import {CodeEditor} from "@/components/common/code-editor";
 import {Button} from "@/components/ui/button";
@@ -34,9 +34,16 @@ export interface EnvEditorProps {
 const clientEnvRowSchema = envVariableRowSchema.extend({
     lineIndex: z.number().int().nullable(),
 });
-const clientEnvTableFormSchema = z.object({
-    variables: z.array(clientEnvRowSchema),
-});
+// WR-03: reuse the shared cross-row duplicate-key check (see stacks.ts) so a
+// row that shares its key with another row is flagged the same way here as
+// it would be by envTableFormSchema — without it, two rows named e.g.
+// DATABASE_URL both report valid and silently collide when serialized to
+// the .env file (applyTableRows takes the last write).
+const clientEnvTableFormSchema = z
+    .object({
+        variables: z.array(clientEnvRowSchema),
+    })
+    .superRefine(checkDuplicateEnvKeys);
 type ClientEnvTableFormInput = z.infer<typeof clientEnvTableFormSchema>;
 
 const LONG_VALUE_THRESHOLD = 40;
@@ -87,6 +94,21 @@ export function EnvEditor({
     const {fields, append, remove} = useFieldArray({control: form.control, name: "variables"});
     const watchedVariables = useWatch({control: form.control, name: "variables"});
     const isValid = form.formState.isValid;
+
+    // React Hook Form's onChange-mode schema validation only patches the
+    // errors subtree for the field that actually changed (e.g.
+    // `variables.1.key`) — a cross-row check like `checkDuplicateEnvKeys`
+    // (WR-03) can report an issue on a *sibling* row (`variables.0.key`)
+    // that the user never touched, and that sibling's error never gets
+    // applied without an explicit revalidation of the whole array. Watching
+    // the keys (not full row objects, so value-only edits don't re-trigger)
+    // and re-running `trigger("variables")` keeps every row's duplicate
+    // error in sync, not just the row that was last edited.
+    const variableKeys = (watchedVariables ?? []).map((row) => row?.key ?? "").join("\u0000");
+    useEffect(() => {
+        void form.trigger("variables");
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [variableKeys]);
 
     // External value changes (raw-mode edits, an external reload) reset the
     // table — but only when the incoming string isn't one EnvEditor itself

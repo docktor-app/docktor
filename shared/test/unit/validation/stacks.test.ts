@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {createStackSchema, dockerTagSchema, stackIdSchema, updateStackSchema, upgradeServiceSchema} from "../../../src/validation/stacks.js";
+import {createStackSchema, dockerTagSchema, envTableFormSchema, stackIdSchema, updateStackSchema, upgradeServiceSchema} from "../../../src/validation/stacks.js";
 
 describe("stackIdSchema", () => {
     it("accepts valid slug", () => {
@@ -157,6 +157,41 @@ describe("dockerTagSchema", () => {
 
     it("accepts a tag at exactly 128 characters", () => {
         expect(dockerTagSchema.safeParse("a".repeat(128)).success).toBe(true);
+    });
+});
+
+describe("envTableFormSchema", () => {
+    // Regression for WR-03: each row's key was validated independently, with
+    // no cross-row uniqueness check — two rows sharing a key both reported
+    // valid, and the .env file silently kept only the last one on save.
+    it("rejects two rows sharing the same key", () => {
+        const result = envTableFormSchema.safeParse({
+            variables: [
+                {key: "DATABASE_URL", value: "postgres://a"},
+                {key: "DATABASE_URL", value: "postgres://b"},
+            ],
+        });
+        expect(result.success).toBe(false);
+        if (!result.success) {
+            const paths = result.error.issues.map((issue) => issue.path.join("."));
+            expect(paths).toContain("variables.0.key");
+            expect(paths).toContain("variables.1.key");
+        }
+    });
+
+    it("accepts rows with distinct keys", () => {
+        const result = envTableFormSchema.safeParse({
+            variables: [
+                {key: "A", value: "1"},
+                {key: "B", value: "2"},
+            ],
+        });
+        expect(result.success).toBe(true);
+    });
+
+    it("accepts a single row and an empty list", () => {
+        expect(envTableFormSchema.safeParse({variables: [{key: "A", value: "1"}]}).success).toBe(true);
+        expect(envTableFormSchema.safeParse({variables: []}).success).toBe(true);
     });
 });
 

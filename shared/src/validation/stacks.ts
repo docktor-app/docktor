@@ -64,9 +64,40 @@ export const envVariableRowSchema = z.object({
     value: z.string(),
 });
 
-export const envTableFormSchema = z.object({
-    variables: z.array(envVariableRowSchema),
-});
+// Cross-row uniqueness: each row's `key` is validated independently above,
+// but two rows sharing the same key both serialize into the same .env file
+// (client/src/lib/env-file.ts's applyTableRows) — most .env/shell consumers
+// take the *last* definition, silently discarding the other value on save.
+// Flag every row that shares its key with another row so EnvEditor can
+// surface a per-row error the same way it already renders `keyError`.
+// Exported so EnvEditor's client-local row schema (which extends
+// envVariableRowSchema with a client-only `lineIndex` field) can reuse the
+// exact same check via `.superRefine`.
+export function checkDuplicateEnvKeys<TRow extends {key: string}>(
+    data: {variables: TRow[]},
+    ctx: z.RefinementCtx,
+): void {
+    const counts = new Map<string, number>();
+    for (const row of data.variables) {
+        if (!row.key) continue;
+        counts.set(row.key, (counts.get(row.key) ?? 0) + 1);
+    }
+    data.variables.forEach((row, index) => {
+        if (row.key && (counts.get(row.key) ?? 0) > 1) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: "Duplicate variable name",
+                path: ["variables", index, "key"],
+            });
+        }
+    });
+}
+
+export const envTableFormSchema = z
+    .object({
+        variables: z.array(envVariableRowSchema),
+    })
+    .superRefine(checkDuplicateEnvKeys);
 
 export type StackParams = z.infer<typeof stackParamsSchema>;
 export type StackServiceParams = z.infer<typeof stackServiceParamsSchema>;
