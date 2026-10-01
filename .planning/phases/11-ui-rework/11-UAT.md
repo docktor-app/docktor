@@ -1,14 +1,21 @@
 ---
-status: diagnosed
+status: testing
 phase: 11-ui-rework
 source: [11-VERIFICATION.md]
 started: "2026-09-30T15:53:17Z"
-updated: "2026-10-01T00:00:00Z"
+updated: "2026-10-01T10:30:00Z"
 ---
 
 ## Current Test
 
-[testing complete]
+number: 2
+name: Theme menu shows the current selection (re-test of G-11-1)
+expected: |
+  Click the sun/moon theme toggle in the page header. The dropdown lists
+  Light, Dark and System, and a check mark appears next to the active one
+  (System on a fresh profile). Choosing another option moves the check to it
+  and the theme changes immediately, in both desktop and 390px widths.
+awaiting: user response
 
 ## Tests
 
@@ -18,12 +25,16 @@ result: issue
 reported: "pass, however, the dropdown for the theme has no check to show the current selected."
 severity: minor
 
+### 2. Theme menu shows the current selection (re-test of G-11-1)
+expected: Click the theme toggle; a check mark sits next to the active option (Light/Dark/System). Choosing another option moves the check and changes the theme immediately.
+result: [pending]
+
 ## Summary
 
-total: 1
+total: 2
 passed: 0
 issues: 1
-pending: 0
+pending: 1
 skipped: 0
 blocked: 0
 
