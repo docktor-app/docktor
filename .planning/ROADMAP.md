@@ -23,7 +23,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 8: Live State Consistency** - Make state changes (config errors, config edits, manual actions) reflect live in the UI without a manual refresh (completed 2026-09-20)
 - [x] **Phase 9: Deployment and Release Readiness** - Clean up deployment docs and close remaining release-process gaps for v1.0.0 (completed 2026-09-19)
 - [x] **Phase 10: Backend Architecture Refactor** - Server-side architecture improvements without changing external API behavior, landed before other phases add new server-side code on top of the current structure — needs `/gsd-discuss-phase 10` to scope before planning ([#16](https://github.com/docktor-app/docktor/issues/16)) (completed 2026-09-25)
-- [ ] **Phase 11: UI Rework** - Clean up the UI's component structure and visual design (shadcn patterns, less Card wrapping, tab-structure reconsideration, consolidated logs, consistent status indicators) before other phases add new UI on top of current patterns — scoped and planned (13 plans) ([#15](https://github.com/docktor-app/docktor/issues/15))
+- [x] **Phase 11: UI Rework** - Clean up the UI's component structure and visual design (shadcn patterns, less Card wrapping, tab-structure reconsideration, consolidated logs, consistent status indicators) before other phases add new UI on top of current patterns — scoped and planned (13 plans) ([#15](https://github.com/docktor-app/docktor/issues/15)) (completed 2026-10-01)
 - [ ] **Phase 12: Compose Safety and Templates** - Diff-before-apply, dangerous-config warnings, port-conflict detection, and git-based stack templates ([#18](https://github.com/docktor-app/docktor/issues/18), [#19](https://github.com/docktor-app/docktor/issues/19), [#20](https://github.com/docktor-app/docktor/issues/20), [#21](https://github.com/docktor-app/docktor/issues/21))
 - [ ] **Phase 13: Update Checker Reliability** - Fix misleading update badges, wrong upgrade-dialog messaging, slow post-deploy status, and stale database rows ([#29](https://github.com/docktor-app/docktor/issues/29), [#31](https://github.com/docktor-app/docktor/issues/31), [#32](https://github.com/docktor-app/docktor/issues/32), [#33](https://github.com/docktor-app/docktor/issues/33), [#34](https://github.com/docktor-app/docktor/issues/34))
 - [ ] **Phase 14: Health, Uptime and Disk Visibility** - HTTP health probes with history, per-stack uptime, and disk usage per stack/volume ([#23](https://github.com/docktor-app/docktor/issues/23), [#24](https://github.com/docktor-app/docktor/issues/24), [#27](https://github.com/docktor-app/docktor/issues/27))
@@ -479,7 +479,7 @@ Independent of Phase 10 (separate client/server tracks — can run in parallel).
   5. Compose editing uses CodeMirror 6 with YAML syntax diagnostics; env editing offers a table mode (default) and a raw mode with heuristic secret masking (D-18..D-22)
   6. Dark mode follows the OS by default with a persisted header toggle; dashboard stats use a reusable StatCard; the UI passes a full phone-width audit (D-14..D-17)
 
-**Plans:** 13/13 plans executed
+**Plans:** 13/13 plans complete
 
 Plans:
 
