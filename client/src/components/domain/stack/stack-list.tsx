@@ -1,5 +1,7 @@
 import {DataTable, type TableColumn} from "@/components/common/data/table";
+import {ToneBadge} from "@/components/common/tone-badge";
 import {StackStatusBadge} from "@/components/domain/stack/stack-status-badge";
+import {StackUpdateBadge} from "@/components/domain/stack/stack-update-badge";
 import type {StackWithServices} from "@/lib/stacks-api";
 
 interface StackListProps {
@@ -27,17 +29,10 @@ const columns: TableColumn<StackWithServices>[] = [
         name: "Status",
         render: (stack) => (
             <div className="flex flex-wrap items-center gap-1">
-                <StackStatusBadge status={stack.status} />
-                {stack.configError && (
-                    <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
-                        config error
-                    </span>
-                )}
-                {stack.configChanged && (
-                    <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
-                        config changed
-                    </span>
-                )}
+                <StackStatusBadge status={stack.status} display="compact" />
+                {stack.configError && <ToneBadge tone="red">config error</ToneBadge>}
+                {stack.configChanged && <ToneBadge tone="yellow">config changed</ToneBadge>}
+                <StackUpdateBadge services={stack.services} />
             </div>
         ),
     },

@@ -70,4 +70,40 @@ describe("useStacks", () => {
 
         await waitFor(() => expect(result.current.stacks).toEqual(refetchedStacks));
     });
+
+    it("an update_available event triggers a background refetch exactly once, without flipping loading back to true", async () => {
+        const stacks = [{id: "my-app", displayName: "My App", services: []}];
+        const refetchedStacks = [{id: "my-app", displayName: "My App", services: [{serviceName: "web", updateAvailable: true}]}];
+        mockListStacks.mockResolvedValueOnce(stacks as any);
+        mockListStacks.mockResolvedValueOnce(refetchedStacks as any);
+
+        const {result} = renderHook(() => useStacks());
+        await waitFor(() => expect(result.current.loading).toBe(false));
+
+        const loadingStates: boolean[] = [];
+        act(() => {
+            capturedHandler!({
+                type: "update_available",
+                stackId: "my-app",
+                imageRef: "nginx:latest",
+                latestTag: "1.28",
+                hasUpdate: true,
+            });
+            loadingStates.push(result.current.loading);
+        });
+
+        expect(loadingStates).toEqual([false]);
+        await waitFor(() => expect(result.current.stacks).toEqual(refetchedStacks));
+        expect(mockListStacks).toHaveBeenCalledTimes(2);
+    });
+
+    it("a failed initial fetch with a non-Error rejection sets a generic message", async () => {
+        mockListStacks.mockRejectedValue("boom");
+
+        const {result} = renderHook(() => useStacks());
+
+        await waitFor(() => expect(result.current.loading).toBe(false));
+        expect(result.current.error).toBe("Failed to fetch stacks");
+        expect(result.current.stacks).toEqual([]);
+    });
 });

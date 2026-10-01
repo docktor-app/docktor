@@ -2,9 +2,9 @@
 schema_version: 1
 open_count: 5
 waived_count: 0
-fixed_count: 7
-total_count: 12
-last_updated: 2026-09-17T18:41:50.828Z
+fixed_count: 8
+total_count: 13
+last_updated: 2026-09-30T22:04:55.792Z
 ---
 
 # Broken Windows Ledger
@@ -27,6 +27,7 @@ last_updated: 2026-09-17T18:41:50.828Z
 | 10 | 09 | unrun-verify | server/src/lib/schema-sync.ts |  | Task 3 of 09-03-PLAN.md: live baselining (migrate resolve --applied 0_init, migrate deploy x2, migrate diff drift probe) against the dev DB could not run — TCP connect to localhost:5432 succeeds but the Postgres protocol handshake never completes (same class as 05.1-01/05.1-05/05.1-06/06-01/06-07/08-01/WINDOWS #1/#8, confirmed independently via raw pg.Client and prisma migrate status, both P1001/timeout). migrate deploy's real no-op stdout text is therefore still unverified against the classification regex in schema-sync.ts. A developer on an unrestricted host must run the 4-command sequence recorded in 09-03-SUMMARY.md. | open |  | 2026-09-16T08:06:44.168Z |  |
 | 11 | 09 | unrun-verify | server/prisma/migrations/20260917083545_add_certificate/migration.sql |  | Plan 09-05 Task 3 Branch B: migration generated without a database (from-schema-copy diff technique, matches 09-03's entry #10 precedent) — TCP connect to localhost:5432 succeeds but the Postgres wire-protocol handshake never completes (confirmed via prisma migrate status P1001 and a raw pg.Client 8s timeout, same class as 05.1-01/05.1-05/05.1-06/06-01/06-07/08-01/09-03). No live database has this migration applied; the certSource backfill onto pre-existing ProxyConfig rows is therefore unverified. A developer on an unrestricted host must run: yarn db:migrate (will detect this migration as already written and pending) then verify every existing ProxyConfig row has certSource='acme' and migration history shows 0_init followed by this migration. | open |  | 2026-09-17T08:36:50.295Z |  |
 | 12 | 09 | unrun-verify | client/src/routes/app/stacks/components/proxy-tab.tsx |  | Live end-to-end confirmation that a real proxy stack with a genuinely uploaded certificate serves HTTPS correctly (and acme-companion attempts no issuance for that domain) has not been exercised in any session across plans 09-06/09-07/09-08 — proven only via source-level logic, real compose-YAML parsing, and a real self-signed fixture certificate's expiry, never a live nginx-proxy/acme-companion deployment. A developer on an unrestricted host must upload a real cert through the browser, assign it to a domain, and confirm both HTTPS serving and no ACME issuance attempt. | open |  | 2026-09-17T18:41:50.828Z |  |
+| 13 | 11 | deviation | client/test/integration/stacks.spec.ts |  | Pre-existing (11-06) strict-mode duplicate 'Running' text (header StackStatusBadge + Overview activity pill) breaks 'stack detail page shows stack info and services'; out of 11-09's scope (compose editor only) per deferred-items.md | fixed |  | 2026-09-29T16:28:10.380Z | 2026-09-30T22:04:55.792Z |
 
 ````json
 [
@@ -173,6 +174,19 @@ last_updated: 2026-09-17T18:41:50.828Z
     "reason": "",
     "recorded_at": "2026-09-17T18:41:50.828Z",
     "resolved_at": null
+  },
+  {
+    "id": 13,
+    "kind": "deviation",
+    "phase": "11",
+    "file": "client/test/integration/stacks.spec.ts",
+    "line": null,
+    "description": "Pre-existing (11-06) strict-mode duplicate 'Running' text (header StackStatusBadge + Overview activity pill) breaks 'stack detail page shows stack info and services'; out of 11-09's scope (compose editor only) per deferred-items.md",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-09-29T16:28:10.380Z",
+    "resolved_at": "2026-09-30T22:04:55.792Z",
+    "milestone": "v0.1.0"
   }
 ]
 ````

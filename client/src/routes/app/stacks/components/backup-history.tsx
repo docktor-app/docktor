@@ -1,42 +1,16 @@
 import {Link} from "react-router";
 
-import {type BackupRecord} from "@/lib/backups-api";
 import {useBackupHistory} from "@/hooks/use-backup-history";
 import {BackupStatusBadge} from "@/components/domain/backup/backup-status-badge";
+import {BackupTriggerBadge} from "@/components/domain/backup/backup-trigger-badge";
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from "@/components/ui/table";
 import {ScrollArea} from "@/components/ui/scroll-area";
+import {formatDuration, formatSize} from "@/lib/backup-format";
 
 interface BackupHistoryProps {
     readonly stackId: string;
-    readonly stackStatus: string;
+    readonly stackStatus?: string;
 }
-
-function formatDuration(startedAt: string, completedAt: string | null): string {
-    if (!completedAt) return "In progress...";
-    const ms = new Date(completedAt).getTime() - new Date(startedAt).getTime();
-    if (ms < 1000) return "< 1s";
-    const totalSeconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    if (minutes === 0) return `${seconds}s`;
-    return `${minutes}m ${seconds}s`;
-}
-
-function formatSize(sizeBytes: string | null): string {
-    if (!sizeBytes) return "-";
-    const bytes = Number(sizeBytes);
-    if (isNaN(bytes)) return "-";
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
-
-const TRIGGER_LABELS: Record<BackupRecord["trigger"], string> = {
-    MANUAL: "Manual",
-    SCHEDULED: "Scheduled",
-    RESTORE: "Restore",
-};
 
 export function BackupHistory({stackId, stackStatus}: Readonly<BackupHistoryProps>) {
     const {backups, loading} = useBackupHistory(stackId, stackStatus);
@@ -74,9 +48,7 @@ export function BackupHistory({stackId, stackStatus}: Readonly<BackupHistoryProp
                                         <BackupStatusBadge status={backup.status} />
                                     </TableCell>
                                     <TableCell>
-                                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground">
-                                            {TRIGGER_LABELS[backup.trigger]}
-                                        </span>
+                                        <BackupTriggerBadge trigger={backup.trigger} />
                                     </TableCell>
                                     <TableCell className="text-sm text-muted-foreground">
                                         {new Date(backup.startedAt).toLocaleString()}

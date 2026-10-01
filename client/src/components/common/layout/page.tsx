@@ -3,12 +3,23 @@ import * as React from "react"
 import {cn} from "@/lib/utils"
 import {SidebarTrigger} from "@/components/ui/sidebar"
 import {Separator} from "@/components/ui/separator"
+import {ThemeToggle} from "@/components/common/theme-toggle"
 
 function Page({className, ...props}: React.ComponentProps<"div">) {
     return (
         <div
             data-slot="page"
-            className={cn("flex flex-col flex-1", className)}
+            // min-w-0 (D-17, defense-in-depth): Page is a flex item of
+            // shadcn's SidebarInset (`flex w-full flex-1 flex-col`,
+            // components/ui/, not editable). Flex items default to
+            // `min-width: auto`, which resolves to their content's
+            // min-content size — without this, a wide-enough descendant
+            // could silently grow the whole page past the viewport instead
+            // of scrolling inside its own overflow-x-auto container. The
+            // concrete D-17 finding this phase fixed (EnvEditor's table on
+            // Create Stack/Config) is capped at its own grid-item boundary
+            // in env-editor.tsx; this is the page-level backstop.
+            className={cn("flex flex-col flex-1 min-w-0", className)}
             {...props}
         />
     )
@@ -31,9 +42,12 @@ function PageHeader({
                 <div className={"px-1"}>
                     {breadcrumbs}
                 </div>
+                <div className="ml-auto">
+                    <ThemeToggle/>
+                </div>
             </div>
             <Separator/>
-            <div className="flex items-center justify-between px-6">{children}</div>
+            <div className="flex flex-wrap items-center justify-between gap-2 px-6">{children}</div>
         </header>
     )
 }
@@ -42,7 +56,7 @@ function PageTitle({className, children, ...props}: React.ComponentProps<"h1">) 
     return (
         <h1
             data-slot="page-title"
-            className={cn("text-2xl font-bold", className)}
+            className={cn("text-2xl font-semibold", className)}
             {...props}
         >
             {children}

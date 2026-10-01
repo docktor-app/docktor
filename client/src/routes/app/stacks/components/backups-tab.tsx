@@ -1,4 +1,4 @@
-import {BackupConfigCard} from "./backup-config-card";
+import {BackupConfigSummary} from "./backup-config-summary";
 import {BackupHistory} from "./backup-history";
 import {SnapshotsSection} from "./snapshots-section";
 
@@ -11,7 +11,7 @@ interface BackupsTabProps {
 export function BackupsTab({stackId, stackName, stackStatus}: Readonly<BackupsTabProps>) {
     return (
         <div className="space-y-6">
-            <BackupConfigCard stackId={stackId} stackStatus={stackStatus} />
+            <BackupConfigSummary stackId={stackId} stackStatus={stackStatus} />
             <BackupHistory stackId={stackId} stackStatus={stackStatus} />
             <SnapshotsSection stackId={stackId} stackName={stackName} stackStatus={stackStatus} />
         </div>

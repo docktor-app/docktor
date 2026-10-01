@@ -1,46 +1,61 @@
-import {Badge} from "@/components/ui/badge";
+import {ToneBadge} from "@/components/common/tone-badge";
+import {StatusDot} from "@/components/common/status-dot";
+import type {Tone} from "@/components/common/tone-badge";
 
-const statusConfig: Record<
-    string,
-    {label: string; variant: "default" | "secondary" | "destructive" | "outline"}
-> = {
-    DRAFT: {label: "Draft", variant: "secondary"},
-    DEPLOYING: {label: "Deploying", variant: "default"},
-    RUNNING: {label: "Running", variant: "default"},
-    HEALTHY: {label: "Healthy", variant: "default"},
-    UNHEALTHY: {label: "Unhealthy", variant: "destructive"},
-    STOPPED: {label: "Stopped", variant: "secondary"},
-    ERROR: {label: "Error", variant: "destructive"},
-    UPDATING: {label: "Updating", variant: "default"},
-    BACKING_UP: {label: "Backing Up", variant: "default"},
-    RESTORING: {label: "Restoring", variant: "outline"},
-    MIGRATING: {label: "Migrating", variant: "outline"},
+export interface StackStatusPresentation {
+    label: string;
+    tone: Tone;
+    dotPulse: boolean;
+    badgePulse: boolean;
+}
+
+const STACK_STATUS_PRESENTATION: Record<string, StackStatusPresentation> = {
+    DRAFT: {label: "Draft", tone: "neutral", dotPulse: false, badgePulse: false},
+    DEPLOYING: {label: "Deploying", tone: "blue", dotPulse: false, badgePulse: true},
+    RUNNING: {label: "Running", tone: "green", dotPulse: true, badgePulse: false},
+    HEALTHY: {label: "Healthy", tone: "green", dotPulse: true, badgePulse: false},
+    UNHEALTHY: {label: "Unhealthy", tone: "red", dotPulse: false, badgePulse: false},
+    STOPPED: {label: "Stopped", tone: "neutral", dotPulse: false, badgePulse: false},
+    ERROR: {label: "Error", tone: "red", dotPulse: false, badgePulse: false},
+    UPDATING: {label: "Updating", tone: "blue", dotPulse: false, badgePulse: true},
+    BACKING_UP: {label: "Backing Up", tone: "blue", dotPulse: false, badgePulse: true},
+    RESTORING: {label: "Restoring", tone: "neutral", dotPulse: false, badgePulse: true},
+    MIGRATING: {label: "Migrating", tone: "neutral", dotPulse: false, badgePulse: true},
 };
 
-const statusColors: Record<string, string> = {
-    RUNNING: "bg-green-500/15 text-green-700 border-green-500/25",
-    HEALTHY: "bg-green-500/15 text-green-700 border-green-500/25",
-    ERROR: "bg-red-500/15 text-red-700 border-red-500/25",
-    UNHEALTHY: "bg-red-500/15 text-red-700 border-red-500/25",
-    DEPLOYING: "bg-blue-500/15 text-blue-700 border-blue-500/25 animate-pulse",
-    UPDATING: "bg-blue-500/15 text-blue-700 border-blue-500/25 animate-pulse",
-    STOPPED: "bg-gray-500/15 text-gray-700 border-gray-500/25",
-    DRAFT: "bg-gray-500/15 text-gray-700 border-gray-500/25",
-    BACKING_UP: "bg-blue-500/15 text-blue-700 border-blue-500/25 animate-pulse",
-    RESTORING: "animate-pulse",
-    MIGRATING: "animate-pulse",
-};
+/** Unknown/unmapped statuses degrade to a static neutral indicator showing the raw value, never throwing. */
+export function getStackStatusPresentation(status: string): StackStatusPresentation {
+    return (
+        STACK_STATUS_PRESENTATION[status] ?? {
+            label: status,
+            tone: "neutral",
+            dotPulse: false,
+            badgePulse: false,
+        }
+    );
+}
 
-export function StackStatusBadge({status}: Readonly<{status: string}>) {
-    const config = statusConfig[status] ?? {
-        label: status,
-        variant: "outline" as const,
-    };
-    const colorClass = statusColors[status] ?? "";
+export interface StackStatusBadgeProps {
+    readonly status: string;
+    readonly display?: "badge" | "compact";
+}
+
+export function StackStatusBadge({status, display = "badge"}: Readonly<StackStatusBadgeProps>) {
+    const {label, tone, dotPulse, badgePulse} = getStackStatusPresentation(status);
+
+    if (display === "compact") {
+        return (
+            <span className="inline-flex items-center gap-1.5 text-xs">
+                <StatusDot tone={tone} pulse={dotPulse} />
+                {label}
+            </span>
+        );
+    }
 
     return (
-        <Badge variant={config.variant} className={colorClass}>
-            {config.label}
-        </Badge>
+        <ToneBadge tone={tone} pulse={badgePulse}>
+            <StatusDot tone={tone} pulse={dotPulse} />
+            {label}
+        </ToneBadge>
     );
 }

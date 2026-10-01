@@ -35,25 +35,10 @@ afterEach(() => {
     vi.useRealTimers();
 });
 
-describe("BackupHistory (tracer)", () => {
-    it("renders a fresh-array response and, after 10s, has called getBackups exactly 4 times (G-10-2)", async () => {
+describe("BackupHistory (G-10-2)", () => {
+    it("mounting with only COMPLETED backups calls getBackups exactly once, even after 60s", async () => {
         vi.useFakeTimers();
-
-        let callCount = 0;
-        mockGetBackups.mockImplementation(async () => {
-            callCount += 1;
-            if (callCount > 50) {
-                // Circuit breaker: against the pre-fix component, the polling
-                // effect re-runs and refetches entirely in microtasks inside
-                // act(), which can starve the macrotask queue so vitest's own
-                // timeout never fires and the run hangs. Stalling the mock
-                // here after 50 calls makes the exact-count assertion below
-                // fail fast (>=50) instead of hanging the whole run. Under
-                // the fixed component this branch is never reached.
-                return new Promise<BackupRecord[]>(() => {});
-            }
-            return [makeBackup()];
-        });
+        mockGetBackups.mockResolvedValue([makeBackup({status: "COMPLETED"})]);
 
         render(
             <MemoryRouter>
@@ -62,14 +47,49 @@ describe("BackupHistory (tracer)", () => {
         );
 
         await act(async () => {
-            await vi.advanceTimersByTimeAsync(10000);
+            await vi.advanceTimersByTimeAsync(60000);
         });
 
         expect(screen.getByText("View details")).toBeInTheDocument();
-        expect(mockGetBackups).toHaveBeenCalledTimes(4);
+        expect(mockGetBackups).toHaveBeenCalledTimes(1);
     });
 
-    it("shows a newly started backup after a stackStatus change, driven by the live status signal (Task 2)", async () => {
+    it("polls every 5s while an IN_PROGRESS backup is present and stops once none remain", async () => {
+        vi.useFakeTimers();
+        mockGetBackups.mockImplementation(async () => [
+            makeBackup({status: "IN_PROGRESS", completedAt: null}),
+        ]);
+
+        render(
+            <MemoryRouter>
+                <BackupHistory stackId="s1" />
+            </MemoryRouter>,
+        );
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        expect(mockGetBackups).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(5000);
+        });
+        expect(mockGetBackups).toHaveBeenCalledTimes(2);
+
+        mockGetBackups.mockImplementation(async () => [makeBackup({status: "COMPLETED"})]);
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(5000);
+        });
+        expect(mockGetBackups).toHaveBeenCalledTimes(3);
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(15000);
+        });
+        expect(mockGetBackups).toHaveBeenCalledTimes(3);
+    });
+
+    it("shows a newly started backup after a stackStatus change, driven by the live status signal", async () => {
         vi.useFakeTimers();
         mockGetBackups.mockImplementation(async () => [makeBackup({id: "b1", status: "COMPLETED"})]);
 
@@ -80,7 +100,7 @@ describe("BackupHistory (tracer)", () => {
         );
 
         await act(async () => {
-            await vi.advanceTimersByTimeAsync(40000);
+            await vi.advanceTimersByTimeAsync(0);
         });
 
         mockGetBackups.mockImplementation(async () => [
@@ -99,5 +119,22 @@ describe("BackupHistory (tracer)", () => {
         });
 
         expect(screen.getByText("In progress...")).toBeInTheDocument();
+    });
+
+    it("renders trigger badges via BackupTriggerBadge, not hand-rolled markup", async () => {
+        vi.useFakeTimers();
+        mockGetBackups.mockResolvedValue([makeBackup({status: "COMPLETED", trigger: "SCHEDULED"})]);
+
+        render(
+            <MemoryRouter>
+                <BackupHistory stackId="s1" />
+            </MemoryRouter>,
+        );
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(0);
+        });
+
+        expect(screen.getByText("Scheduled")).toBeInTheDocument();
     });
 });

@@ -1,36 +1,75 @@
+import {ToneBadge} from "@/components/common/tone-badge";
+import {StatusDot} from "@/components/common/status-dot";
+import type {Tone} from "@/components/common/tone-badge";
+
+export interface ServiceStatusPresentation {
+    label: string;
+    tone: Tone;
+    dotPulse: boolean;
+}
+
+/**
+ * A running container with no health info reads the same "running" green as
+ * a running+healthy container — health status only narrows the label/tone
+ * when Docker actually reports it.
+ */
+export function getServiceStatusPresentation(
+    containerState: string | null,
+    healthStatus: string | null,
+): ServiceStatusPresentation {
+    if (!containerState) {
+        return {label: "unknown", tone: "neutral", dotPulse: false};
+    }
+
+    if (containerState === "running" && healthStatus === "healthy") {
+        return {label: "healthy", tone: "green", dotPulse: true};
+    }
+
+    if (containerState === "running" && healthStatus === "unhealthy") {
+        return {label: "unhealthy", tone: "red", dotPulse: false};
+    }
+
+    if (containerState === "running") {
+        return {label: "running", tone: "green", dotPulse: true};
+    }
+
+    if (containerState === "exited") {
+        return {label: "exited", tone: "neutral", dotPulse: false};
+    }
+
+    if (containerState === "restarting") {
+        return {label: "restarting", tone: "yellow", dotPulse: false};
+    }
+
+    return {label: containerState, tone: "neutral", dotPulse: false};
+}
+
 export interface ServiceStatusBadgeProps {
     readonly containerState: string | null;
     readonly healthStatus: string | null;
+    readonly display?: "badge" | "compact";
 }
 
-export function ServiceStatusBadge({containerState, healthStatus}: Readonly<ServiceStatusBadgeProps>) {
-    if (!containerState) {
-        return <span
-            className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground">unknown</span>;
+export function ServiceStatusBadge({
+    containerState,
+    healthStatus,
+    display = "badge",
+}: Readonly<ServiceStatusBadgeProps>) {
+    const {label, tone, dotPulse} = getServiceStatusPresentation(containerState, healthStatus);
+
+    if (display === "compact") {
+        return (
+            <span className="inline-flex items-center gap-1.5 text-xs">
+                <StatusDot tone={tone} pulse={dotPulse} />
+                {label}
+            </span>
+        );
     }
 
-    let className: string;
-    let label: string;
-
-    if (containerState === "running" && healthStatus === "healthy") {
-        className = "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
-        label = "healthy";
-    } else if (containerState === "running" && healthStatus === "unhealthy") {
-        className = "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
-        label = "unhealthy";
-    } else if (containerState === "running") {
-        className = "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
-        label = "running";
-    } else if (containerState === "exited") {
-        className = "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground";
-        label = "exited";
-    } else if (containerState === "restarting") {
-        className = "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200";
-        label = "restarting";
-    } else {
-        className = "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground";
-        label = containerState;
-    }
-
-    return <span className={className}>{label}</span>;
+    return (
+        <ToneBadge tone={tone}>
+            <StatusDot tone={tone} pulse={dotPulse} />
+            {label}
+        </ToneBadge>
+    );
 }

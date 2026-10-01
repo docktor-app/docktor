@@ -1,6 +1,5 @@
-import {Badge} from "@/components/ui/badge";
+import {ToneBadge} from "@/components/common/tone-badge";
 import {ScrollArea} from "@/components/ui/scroll-area";
-import {cn} from "@/lib/utils";
 
 interface CertStatusBadgeProps {
     readonly status?: string | null;
@@ -14,27 +13,18 @@ interface CertStatusBadgeProps {
 // resolved D-04 assumption).
 export function CertStatusBadge({status, message}: Readonly<CertStatusBadgeProps>) {
     if (status === "issued") {
-        return (
-            <Badge variant="outline" className="text-green-600">
-                Secured
-            </Badge>
-        );
+        return <ToneBadge tone="green">Secured</ToneBadge>;
     }
 
     // D-13: an approaching-expiry certificate is still serving traffic —
-    // colouring it as a failure (destructive variant) would flatten the
-    // distinction the poller works to make between "broken" and "working,
-    // but renew soon". Placed before the final fallback so an unrecognised
-    // status still lands on the pending branch below.
+    // colouring it as a failure would flatten the distinction the poller
+    // works to make between "broken" and "working, but renew soon". Placed
+    // before the final fallback so an unrecognised status still lands on the
+    // pending branch below.
     if (status === "expiring") {
         return (
             <div className="space-y-1">
-                <Badge
-                    variant="outline"
-                    className="text-amber-600 border-amber-300 dark:text-amber-400 dark:border-amber-700"
-                >
-                    Expiring soon
-                </Badge>
+                <ToneBadge tone="orange">Expiring soon</ToneBadge>
                 {message && (
                     <ScrollArea className="h-16 w-full max-w-xs rounded border">
                         <pre className="whitespace-pre-wrap p-2 text-xs font-mono">{message}</pre>
@@ -47,7 +37,7 @@ export function CertStatusBadge({status, message}: Readonly<CertStatusBadgeProps
     if (status === "failed") {
         return (
             <div className="space-y-1">
-                <Badge variant="destructive">Cert failed</Badge>
+                <ToneBadge tone="red">Cert failed</ToneBadge>
                 {message && (
                     <ScrollArea className="h-16 w-full max-w-xs rounded border">
                         <pre className="whitespace-pre-wrap p-2 text-xs font-mono">{message}</pre>
@@ -57,14 +47,5 @@ export function CertStatusBadge({status, message}: Readonly<CertStatusBadgeProps
         );
     }
 
-    return (
-        <Badge
-            variant="outline"
-            className={cn(
-                "bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900 dark:text-yellow-200 dark:border-yellow-800",
-            )}
-        >
-            Cert pending
-        </Badge>
-    );
+    return <ToneBadge tone="neutral">Cert pending</ToneBadge>;
 }

@@ -268,21 +268,26 @@ test.describe("Backup UI", () => {
         await expect(page.getByRole("heading", {name: "Snapshots"})).toBeVisible();
     });
 
-    test("shows backup configuration form with schedule and retention", async ({page}) => {
+    test("shows the backup configuration summary and edits schedule/retention/hooks in a dialog", async ({page}) => {
         await page.goto("/stacks/test-stack");
         await page.getByRole("tab", {name: /backups/i}).click();
 
-        // Verify schedule override field shows the cron expression
-        // (useGlobalSchedule: false in the mock, so the override input renders)
-        await expect(page.locator('input[value="0 2 * * *"]')).toBeVisible();
+        // The read-only summary shows the effective schedule and hook commands
+        // as plain text (D-05) — no form fields visible until Edit Schedule.
+        await expect(page.getByText("0 2 * * *")).toBeVisible();
+        await expect(page.getByText("docker compose stop")).toBeVisible();
+        await expect(page.getByText("docker compose start")).toBeVisible();
 
-        // Verify pre/post hook fields
-        await expect(page.locator('input[value="docker compose stop"]')).toBeVisible();
-        await expect(page.locator('input[value="docker compose start"]')).toBeVisible();
-
-        // Verify "Backup Now" button in card header
+        // Verify "Backup Now" button is present inline in the summary.
         const backupNowBtn = page.getByRole("button", {name: /backup now/i}).first();
         await expect(backupNowBtn).toBeVisible();
+
+        // Opening the dialog shows the same values as editable form fields.
+        await page.getByRole("button", {name: "Edit Schedule"}).click();
+        await expect(page.getByRole("heading", {name: "Edit Backup Schedule"})).toBeVisible();
+        await expect(page.locator('input[value="0 2 * * *"]')).toBeVisible();
+        await expect(page.locator('input[value="docker compose stop"]')).toBeVisible();
+        await expect(page.locator('input[value="docker compose start"]')).toBeVisible();
     });
 
     test("displays backup history table with status badges", async ({page}) => {

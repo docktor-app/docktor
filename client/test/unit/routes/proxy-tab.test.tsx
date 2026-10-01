@@ -147,6 +147,11 @@ function renderTab(services: Service[] = [makeService()]) {
     );
 }
 
+async function openAssignDialog(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole("button", {name: "Assign Domain"}));
+    await screen.findByRole("heading", {name: "Assign Domain"});
+}
+
 beforeEach(() => {
     mockGetProxyConfigs.mockReset();
     mockGetProxySettings.mockReset();
@@ -172,6 +177,7 @@ describe("ProxyTab", () => {
             ),
         ).toBeInTheDocument();
         expect(screen.getByRole("link", {name: "Go to Settings"})).toBeInTheDocument();
+        expect(screen.queryByRole("button", {name: "Assign Domain"})).not.toBeInTheDocument();
         expect(screen.queryByLabelText(/domain/i)).not.toBeInTheDocument();
     });
 
@@ -184,9 +190,10 @@ describe("ProxyTab", () => {
         expect(await screen.findByText("No domains configured")).toBeInTheDocument();
         expect(
             screen.getByText(
-                "Assign a domain to a service below to make it available at a custom URL with automatic HTTPS.",
+                "Assign a domain to a service to make it available at a custom URL with automatic HTTPS.",
             ),
         ).toBeInTheDocument();
+        expect(screen.getByRole("button", {name: "Assign Domain"})).toBeEnabled();
     });
 
     it("renders one table row per service, aggregating multiple domains into that row", async () => {
@@ -232,7 +239,7 @@ describe("ProxyTab", () => {
         expect(screen.queryByText("Cert pending")).not.toBeInTheDocument();
     });
 
-    it("opens a confirmation dialog with the D-08 copy and only removes after confirming", async () => {
+    it("opens a confirmation dialog with the UI-SPEC copy and only removes after confirming", async () => {
         mockGetProxyConfigs.mockResolvedValue([makeConfig({id: "cfg-1", domain: "app.example.com", serviceName: "web"})]);
         mockGetProxySettings.mockResolvedValue(makeState());
         mockRemoveDomain.mockResolvedValue(undefined);
@@ -243,14 +250,15 @@ describe("ProxyTab", () => {
 
         await user.click(screen.getByRole("button", {name: /remove app\.example\.com/i}));
 
+        expect(await screen.findByText("Remove domain app.example.com?")).toBeInTheDocument();
         expect(
-            await screen.findByText(
-                "Remove app.example.com from web? The service will be redeployed without this domain's routing and TLS configuration.",
+            screen.getByText(
+                "This deletes the routing and TLS configuration for this domain and redeploys the service.",
             ),
         ).toBeInTheDocument();
         expect(mockRemoveDomain).not.toHaveBeenCalled();
 
-        await user.click(screen.getByRole("button", {name: "Remove"}));
+        await user.click(screen.getByRole("button", {name: "Remove domain"}));
 
         await waitFor(() => expect(mockRemoveDomain).toHaveBeenCalledWith("cfg-1"));
     });
@@ -277,9 +285,10 @@ describe("ProxyTab", () => {
 
         renderTab();
         await screen.findByText("No domains configured");
+        await openAssignDialog(user);
 
         await user.type(screen.getByLabelText(/^domain$/i), "not a domain");
-        await user.click(screen.getByRole("button", {name: "Assign Domain"}));
+        await user.click(screen.getByRole("button", {name: "Save Domain"}));
 
         expect(await screen.findByText(/valid hostname/i)).toBeInTheDocument();
         expect(mockAssignDomain).not.toHaveBeenCalled();
@@ -295,9 +304,10 @@ describe("ProxyTab", () => {
 
         renderTab();
         await screen.findByText("No domains configured");
+        await openAssignDialog(user);
 
         await user.type(screen.getByLabelText(/^domain$/i), "new.example.com");
-        await user.click(screen.getByRole("button", {name: "Assign Domain"}));
+        await user.click(screen.getByRole("button", {name: "Save Domain"}));
 
         await waitFor(() => expect(mockAssignDomain).toHaveBeenCalledWith("my-app", "web", expect.objectContaining({
             domain: "new.example.com",
@@ -305,11 +315,74 @@ describe("ProxyTab", () => {
         expect(await screen.findByText("new.example.com")).toBeInTheDocument();
     });
 
+    it("opens the edit dialog pre-filled and re-assigns the same domain on save", async () => {
+        mockGetProxyConfigs
+            .mockResolvedValueOnce([makeConfig({id: "cfg-1", domain: "app.example.com", internalPort: 80})])
+            .mockResolvedValueOnce([makeConfig({id: "cfg-1", domain: "app.example.com", internalPort: 8081})]);
+        mockGetProxySettings.mockResolvedValue(makeState());
+        mockAssignDomain.mockResolvedValue(makeConfig({id: "cfg-1", domain: "app.example.com", internalPort: 8081}));
+        const user = userEvent.setup();
+
+        renderTab();
+        await screen.findByText("app.example.com");
+
+        await user.click(screen.getByRole("button", {name: /edit app\.example\.com/i}));
+        await screen.findByRole("heading", {name: "Edit app.example.com"});
+
+        const domainInput = screen.getByLabelText(/^domain$/i) as HTMLInputElement;
+        expect(domainInput).toHaveValue("app.example.com");
+        expect(domainInput).toHaveAttribute("readonly");
+        expect(screen.getByRole("combobox", {name: "Service"})).toBeDisabled();
+
+        const portInput = screen.getByLabelText(/internal port/i);
+        await user.clear(portInput);
+        await user.type(portInput, "8081");
+        await user.click(screen.getByRole("button", {name: "Save Domain"}));
+
+        await waitFor(() =>
+            expect(mockAssignDomain).toHaveBeenCalledWith(
+                "my-app",
+                "web",
+                expect.objectContaining({domain: "app.example.com", internalPort: 8081}),
+            ),
+        );
+        // Dialog closes and the list reloads, reflecting the updated port.
+        await waitFor(() => expect(screen.queryByRole("heading", {name: /^edit /i})).not.toBeInTheDocument());
+        expect(await screen.findByText("8081")).toBeInTheDocument();
+    });
+
+    it("keeps the dialog open and maps ApiError.fields onto the domain field on a failed save", async () => {
+        mockGetProxyConfigs.mockResolvedValue([]);
+        mockGetProxySettings.mockResolvedValue(makeState());
+        const {ApiError} = await import("@/lib/api");
+        const apiError = new ApiError("Domain already assigned", 409, {domain: "taken"});
+        mockAssignDomain.mockRejectedValue(apiError);
+        const user = userEvent.setup();
+
+        renderTab();
+        await screen.findByText("No domains configured");
+        await openAssignDialog(user);
+
+        await user.type(screen.getByLabelText(/^domain$/i), "taken.example.com");
+        await user.click(screen.getByRole("button", {name: "Save Domain"}));
+
+        expect(await screen.findByText("taken")).toBeInTheDocument();
+        expect(screen.getByRole("heading", {name: "Assign Domain"})).toBeInTheDocument();
+
+        const {toast} = await import("sonner");
+        const promiseCall = vi.mocked(toast.promise).mock.calls.at(-1)!;
+        const errorMessage = (promiseCall[1] as any).error(apiError);
+        expect(errorMessage).toBe("Couldn't save domain — Domain already assigned. Try again.");
+    });
+
     it("renders the D-13 warning when the selected service already publishes a host port", async () => {
         mockGetProxyConfigs.mockResolvedValue([]);
         mockGetProxySettings.mockResolvedValue(makeState());
+        const user = userEvent.setup();
 
         renderTab([makeService({ports: JSON.stringify([{host: 8080, container: 80}])})]);
+        await screen.findByText("No domains configured");
+        await openAssignDialog(user);
 
         expect(
             await screen.findByText(
@@ -322,9 +395,11 @@ describe("ProxyTab", () => {
         it("defaults the certificate source to automatic and shows no certificate picker", async () => {
             mockGetProxyConfigs.mockResolvedValue([]);
             mockGetProxySettings.mockResolvedValue(makeState());
+            const user = userEvent.setup();
 
             renderTab();
             await screen.findByText("No domains configured");
+            await openAssignDialog(user);
 
             expect(screen.getByRole("combobox", {name: /certificate source/i})).toHaveTextContent(
                 /automatic/i,
@@ -340,6 +415,7 @@ describe("ProxyTab", () => {
 
             renderTab();
             await screen.findByText("No domains configured");
+            await openAssignDialog(user);
 
             const sourceTrigger = screen.getByRole("combobox", {name: /certificate source/i});
             await user.click(sourceTrigger);
@@ -361,6 +437,7 @@ describe("ProxyTab", () => {
 
             renderTab();
             await screen.findByText("No domains configured");
+            await openAssignDialog(user);
 
             const sourceTrigger = screen.getByRole("combobox", {name: /certificate source/i});
             await user.click(sourceTrigger);

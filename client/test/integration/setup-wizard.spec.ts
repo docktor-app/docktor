@@ -58,6 +58,21 @@ async function mockNoSession(page: Page) {
     );
 }
 
+/**
+ * Mock the dashboard's GET /api/settings/backup-defaults call
+ * (useBackupDefaults, D-14) — any test that lands on "/" must stub it, or
+ * the fixtures.ts unstubbed-API guard fails the test.
+ */
+async function mockBackupDefaults(page: Page) {
+    await page.route("**/api/settings/backup-defaults", (route) =>
+        route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({defaultSchedule: null, defaultRetention: null}),
+        }),
+    );
+}
+
 /** POST /api/setup/step1 + the better-auth sign-in call triggered by auto-login. */
 async function mockStep1(page: Page) {
     await page.route("**/api/setup/step1", (route) =>
@@ -235,6 +250,7 @@ test.describe("Setup Wizard", () => {
             await page.route("**/api/stacks", (route) =>
                 route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify([])}),
             );
+            await mockBackupDefaults(page);
 
             await page.getByRole("button", {name: "Skip"}).click();
             await expect(page).toHaveURL("/");
@@ -257,6 +273,7 @@ test.describe("Setup Wizard", () => {
             await page.route("**/api/stacks", (route) =>
                 route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify([])}),
             );
+            await mockBackupDefaults(page);
 
             await page.getByRole("button", {name: "Deploy Proxy Stack"}).click();
             await expect(page).toHaveURL("/");

@@ -10,6 +10,7 @@ export interface Stack {
     configChanged: boolean;
     configError: string | null;
     lastKnownHash: string | null;
+    backupSchedule: string | null;
     isProtected: boolean;
     createdAt: string;
     updatedAt: string;

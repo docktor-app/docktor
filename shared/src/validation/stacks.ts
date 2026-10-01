@@ -49,9 +49,60 @@ export const upgradeServiceSchema = z.object({
     targetTag: dockerTagSchema,
 });
 
+// D-20/D-21: the EnvEditor's table mode. A variable name must be a valid
+// shell/.env identifier — letters, digits and underscores, not starting with
+// a digit. `client/src/lib/env-file.ts` imports this pattern's source
+// (stripped of its anchors) to recognize `KEY=value` lines during parsing,
+// so the "what counts as a variable line" rule is defined exactly once.
+export const ENV_VARIABLE_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+export const envVariableRowSchema = z.object({
+    key: z
+        .string()
+        .min(1, "Variable name is required")
+        .regex(ENV_VARIABLE_KEY_PATTERN, "Use letters, digits and underscores, not starting with a digit"),
+    value: z.string(),
+});
+
+// Cross-row uniqueness: each row's `key` is validated independently above,
+// but two rows sharing the same key both serialize into the same .env file
+// (client/src/lib/env-file.ts's applyTableRows) — most .env/shell consumers
+// take the *last* definition, silently discarding the other value on save.
+// Flag every row that shares its key with another row so EnvEditor can
+// surface a per-row error the same way it already renders `keyError`.
+// Exported so EnvEditor's client-local row schema (which extends
+// envVariableRowSchema with a client-only `lineIndex` field) can reuse the
+// exact same check via `.superRefine`.
+export function checkDuplicateEnvKeys<TRow extends {key: string}>(
+    data: {variables: TRow[]},
+    ctx: z.RefinementCtx,
+): void {
+    const counts = new Map<string, number>();
+    for (const row of data.variables) {
+        if (!row.key) continue;
+        counts.set(row.key, (counts.get(row.key) ?? 0) + 1);
+    }
+    data.variables.forEach((row, index) => {
+        if (row.key && (counts.get(row.key) ?? 0) > 1) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: "Duplicate variable name",
+                path: ["variables", index, "key"],
+            });
+        }
+    });
+}
+
+export const envTableFormSchema = z
+    .object({
+        variables: z.array(envVariableRowSchema),
+    })
+    .superRefine(checkDuplicateEnvKeys);
+
 export type StackParams = z.infer<typeof stackParamsSchema>;
 export type StackServiceParams = z.infer<typeof stackServiceParamsSchema>;
 export type CreateStackInput = z.infer<typeof createStackSchema>;
 export type UpdateStackInput = z.infer<typeof updateStackSchema>;
 export type UpgradeServiceParams = z.infer<typeof upgradeServiceParamsSchema>;
 export type UpgradeServiceInput = z.infer<typeof upgradeServiceSchema>;
+export type EnvTableFormInput = z.infer<typeof envTableFormSchema>;

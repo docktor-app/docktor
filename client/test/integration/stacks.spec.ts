@@ -92,6 +92,21 @@ async function mockStacksList(page: Page, stacks = mockStacks) {
 }
 
 /**
+ * Mock the dashboard's GET /api/settings/backup-defaults call (useBackupDefaults,
+ * D-14) — every dashboard-rendering test must stub it, or the fixtures.ts
+ * unstubbed-API guard fails the test.
+ */
+async function mockBackupDefaults(page: Page, defaultSchedule: string | null = null) {
+    await page.route("**/api/settings/backup-defaults", (route) =>
+        route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({defaultSchedule, defaultRetention: null}),
+        }),
+    );
+}
+
+/**
  * Mock the stack detail page's Overview > Event Log card
  * (GET /api/stacks/:id/events, via useStackEvents). Every test that renders
  * a stack detail page triggers this call.
@@ -100,6 +115,33 @@ async function mockStackEvents(page: Page, stackId: string) {
     await page.route(`**/api/stacks/${stackId}/events`, (route) =>
         route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify([])}),
     );
+}
+
+/**
+ * Replace a CodeMirror-backed editor's full content (11-09, D-18). `.fill()`
+ * doesn't work on CodeMirror's contenteditable root, and `.type()` fires
+ * real keystrokes that trip the YAML language extension's auto-indent on
+ * Enter — `keyboard.insertText()` dispatches a single input event instead,
+ * bypassing that and matching exactly what a paste/autofill would produce.
+ */
+async function replaceCodeEditorContent(page: Page, name: RegExp | string, text: string) {
+    const editor = page.getByRole("textbox", {name});
+    await editor.click();
+    await page.keyboard.press("ControlOrMeta+a");
+    await page.keyboard.press("Backspace");
+    await page.keyboard.insertText(text);
+}
+
+/**
+ * Reads a CodeMirror-backed editor's current content (11-09/11-12). CodeMirror
+ * renders each line as its own `.cm-line` element with no literal `"\n"` in
+ * the DOM, so `toHaveValue` (input/textarea only) doesn't apply — join the
+ * per-line text content instead.
+ */
+async function getCodeEditorContent(page: Page, name: RegExp | string): Promise<string> {
+    const editor = page.getByRole("textbox", {name});
+    const lines = await editor.locator(".cm-line").allTextContents();
+    return lines.join("\n");
 }
 
 test.describe("Stacks", () => {
@@ -182,7 +224,7 @@ test.describe("Stacks", () => {
         await page.goto("/stacks/create");
 
         await page.getByLabel(/name/i).fill("New Stack");
-        await page.getByLabel(/docker compose file/i).fill("services:\n  web:\n    image: nginx");
+        await replaceCodeEditorContent(page, /docker compose file/i, "services:\n  web:\n    image: nginx");
         await page.getByRole("button", {name: /create stack/i}).click();
 
         await expect(page).toHaveURL("/stacks/new-stack", {timeout: 10_000});
@@ -215,16 +257,21 @@ test.describe("Stacks", () => {
 
         await expect(page.getByRole("heading", {name: "My App"})).toBeVisible();
         await expect(page.getByText("A test application")).toBeVisible();
-        await expect(page.getByText("Running", {exact: true})).toBeVisible();
+        // Scoped to the header: the Overview tab's activity timeline (11-06) also renders a
+        // compact "Running" status badge for the seeded DRAFT->RUNNING status-log entry, so an
+        // unscoped page-wide match hits both and trips Playwright's strict-mode violation.
+        await expect(page.locator("header").getByText("Running", {exact: true})).toBeVisible();
 
         // Services table
         await expect(page.getByText("web")).toBeVisible();
         await expect(page.getByText("nginx")).toBeVisible();
 
-        // Tabs
+        // Tabs (D-01/D-02: Overview, Config, Logs, Backups, Proxy)
         await expect(page.getByRole("tab", {name: "Overview"})).toBeVisible();
-        await expect(page.getByRole("tab", {name: "Compose"})).toBeVisible();
-        await expect(page.getByRole("tab", {name: "Environment"})).toBeVisible();
+        await expect(page.getByRole("tab", {name: "Config"})).toBeVisible();
+        await expect(page.getByRole("tab", {name: "Logs"})).toBeVisible();
+        await expect(page.getByRole("tab", {name: "Backups"})).toBeVisible();
+        await expect(page.getByRole("tab", {name: "Proxy"})).toBeVisible();
     });
 
     test("stack detail page shows deploy button and stop/restart in the actions menu for a running stack", async ({page}) => {
@@ -255,11 +302,21 @@ test.describe("Stacks", () => {
         await expect(page.getByRole("menuitem", {name: /restart/i})).toBeVisible();
     });
 
-    test("stack detail compose tab shows editor", async ({page}) => {
+    test("stack detail config tab: edit and save the compose file (D-02/D-03)", async ({page}) => {
         await mockAuthenticated(page);
+        let putBody: unknown = null;
         await page.route("**/api/stacks/my-app", (route) => {
-            if (route.request().url().endsWith("/compose") || route.request().url().endsWith("/env")) {
+            const url = route.request().url();
+            if (url.endsWith("/compose") || url.endsWith("/env")) {
                 return route.continue();
+            }
+            if (route.request().method() === "PUT") {
+                putBody = route.request().postDataJSON();
+                return route.fulfill({
+                    status: 200,
+                    contentType: "application/json",
+                    body: JSON.stringify(mockStackDetail),
+                });
             }
             return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(mockStackDetail)});
         });
@@ -275,18 +332,152 @@ test.describe("Stacks", () => {
         );
         await mockStackEvents(page, "my-app");
 
-        await page.goto("/stacks/my-app");
+        await page.goto("/stacks/my-app/config");
 
-        await page.getByRole("tab", {name: "Compose"}).click();
-        await expect(page.getByText("docker-compose.yml")).toBeVisible();
+        await expect(page.getByRole("heading", {name: "Compose File"})).toBeVisible();
+        await expect(page.getByRole("heading", {name: "Environment Variables"})).toBeVisible();
 
-        await page.getByRole("tab", {name: "Environment"}).click();
-        await expect(page.getByText(".env")).toBeVisible();
+        await replaceCodeEditorContent(page, "Docker Compose File", "services:\n  web:\n    image: nginx:1.27\n");
+
+        await page.getByRole("button", {name: "Save compose file"}).click();
+
+        await expect.poll(() => putBody).toEqual(
+            expect.objectContaining({composeContent: "services:\n  web:\n    image: nginx:1.27\n"}),
+        );
+    });
+
+    test("stack detail config tab: EnvEditor table mode add + save, raw mode reflects the same edit (D-20/D-21)", async ({page}) => {
+        await mockAuthenticated(page);
+        let putBody: unknown = null;
+        await page.route("**/api/stacks/my-app", (route) => {
+            const url = route.request().url();
+            if (url.endsWith("/compose") || url.endsWith("/env")) {
+                return route.continue();
+            }
+            if (route.request().method() === "PUT") {
+                putBody = route.request().postDataJSON();
+                return route.fulfill({
+                    status: 200,
+                    contentType: "application/json",
+                    body: JSON.stringify(mockStackDetail),
+                });
+            }
+            return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(mockStackDetail)});
+        });
+        await page.route("**/api/stacks/my-app/compose", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({content: "services:\n  web:\n    image: nginx:latest"}),
+            }),
+        );
+        await page.route("**/api/stacks/my-app/env", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: "FOO=bar"})}),
+        );
+        await mockStackEvents(page, "my-app");
+
+        await page.goto("/stacks/my-app/config");
+
+        // Table mode shows the FOO row by default (D-21).
+        await expect(page.getByRole("textbox", {name: "Variable name 1"})).toHaveValue("FOO");
+        await expect(page.getByLabel("Value for FOO", {exact: true})).toHaveValue("bar");
+
+        await page.getByRole("button", {name: "Add Variable"}).click();
+        await page.getByRole("textbox", {name: "Variable name 2"}).fill("NEW_KEY");
+        // NEW_KEY matches D-22's intentionally broad secret heuristic (it
+        // contains "KEY"), so its value input is masked — {exact: true}
+        // disambiguates it from the "Show value for NEW_KEY" reveal button,
+        // whose accessible name is a case-insensitive superstring match.
+        await page.getByLabel("Value for NEW_KEY", {exact: true}).fill("42");
+
+        // Lossless mode switch (D-06/D-21 "no dialog"): raw mode reflects the
+        // table edit before it's ever saved.
+        await page.getByRole("switch", {name: "Raw text mode"}).click();
+        await expect
+            .poll(() => getCodeEditorContent(page, "Environment Variables"))
+            .toBe("FOO=bar\nNEW_KEY=42");
+        await page.getByRole("switch", {name: "Raw text mode"}).click();
+
+        await page.getByRole("button", {name: "Save environment variables"}).click();
+
+        await expect.poll(() => putBody).toEqual(expect.objectContaining({envContent: "FOO=bar\nNEW_KEY=42"}));
+    });
+
+    test("stack detail config tab: invalid YAML shows a CodeMirror lint marker, fixing it clears it (D-19)", async ({page}) => {
+        await mockAuthenticated(page);
+        await page.route("**/api/stacks/my-app", (route) => {
+            const url = route.request().url();
+            if (url.endsWith("/compose") || url.endsWith("/env")) {
+                return route.continue();
+            }
+            return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(mockStackDetail)});
+        });
+        await page.route("**/api/stacks/my-app/compose", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({content: "services:\n  web:\n    image: nginx:latest\n"}),
+            }),
+        );
+        await page.route("**/api/stacks/my-app/env", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: ""})}),
+        );
+        await mockStackEvents(page, "my-app");
+
+        await page.goto("/stacks/my-app/config");
+
+        // Duplicate mapping keys (rather than an unclosed quote) so the
+        // parser's error range lands on a real character ("w" of the second
+        // "web:") — CodeMirror renders a zero-width/line-break-only range as
+        // a point marker (`cm-lintPoint`) instead of a `cm-lintRange`.
+        await replaceCodeEditorContent(
+            page,
+            "Docker Compose File",
+            "services:\n  web:\n    image: nginx\n  web:\n    image: redis\n",
+        );
+
+        await expect(page.locator(".cm-lintRange-error")).toBeVisible();
+
+        await replaceCodeEditorContent(page, "Docker Compose File", "services:\n  web:\n    image: nginx:latest\n");
+
+        await expect(page.locator(".cm-lintRange-error")).toHaveCount(0);
+    });
+
+    test("legacy /compose URL redirects to /config (D-02)", async ({page}) => {
+        await mockAuthenticated(page);
+        await page.route("**/api/stacks/my-app", (route) => {
+            if (route.request().url().endsWith("/compose") || route.request().url().endsWith("/env")) {
+                return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: ""})});
+            }
+            return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(mockStackDetail)});
+        });
+        await page.route("**/api/stacks/my-app/compose", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: ""})}),
+        );
+        await page.route("**/api/stacks/my-app/env", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: ""})}),
+        );
+        await mockStackEvents(page, "my-app");
+
+        await page.goto("/stacks/my-app/compose");
+
+        await expect(page).toHaveURL(/\/stacks\/my-app\/config$/);
     });
 
     test("dashboard shows stack stats and recent stacks", async ({page}) => {
         await mockAuthenticated(page);
-        await mockStacksList(page);
+        // D-14: give one stack a service with an update and a backup
+        // schedule, so both new stat cards report a non-zero count.
+        const dashboardStacks = [
+            {
+                ...mockStacks[0],
+                backupSchedule: "0 3 * * *",
+                services: [{...mockStacks[0].services[0], updateAvailable: true}],
+            },
+            mockStacks[1],
+        ];
+        await mockStacksList(page, dashboardStacks);
+        await mockBackupDefaults(page);
 
         await page.goto("/");
 
@@ -294,6 +485,15 @@ test.describe("Stacks", () => {
         await expect(page.getByText("Total Stacks")).toBeVisible();
         await expect(page.getByText("Running").first()).toBeVisible();
         await expect(page.getByText("My App")).toBeVisible();
+
+        // D-14: the two new stat cards, both showing a value of 1.
+        const updatesCard = page.locator('[data-slot="stat-card"]', {hasText: "Updates Available"});
+        await expect(updatesCard).toBeVisible();
+        await expect(updatesCard.getByText("1", {exact: true})).toBeVisible();
+
+        const backupsCard = page.locator('[data-slot="stat-card"]', {hasText: "Backups Configured"});
+        await expect(backupsCard).toBeVisible();
+        await expect(backupsCard.getByText("1", {exact: true})).toBeVisible();
     });
 
     test("breadcrumbs show correct navigation on detail page", async ({page}) => {
@@ -338,18 +538,18 @@ test.describe("Stacks", () => {
         );
         await mockStackEvents(page, "my-app");
 
-        await page.goto("/stacks/my-app/compose");
-        await expect(page.locator("[aria-current='page']", {hasText: "Compose"})).toBeVisible();
+        await page.goto("/stacks/my-app/config");
+        await expect(page.locator("[aria-current='page']", {hasText: "Config"})).toBeVisible();
 
         // The breadcrumb stack-name link must navigate to the path form
         // (/stacks/:id/:tab), not a query string the router doesn't consume —
         // otherwise clicking it silently drops back to Overview.
         const breadcrumbLink = page.getByLabel("breadcrumb").getByRole("link", {name: "My App"});
-        await expect(breadcrumbLink).toHaveAttribute("href", "/stacks/my-app/compose");
+        await expect(breadcrumbLink).toHaveAttribute("href", "/stacks/my-app/config");
 
         await breadcrumbLink.click();
-        await expect(page.locator("[aria-current='page']", {hasText: "Compose"})).toBeVisible();
-        await expect(page).toHaveURL(/\/stacks\/my-app\/compose$/);
+        await expect(page.locator("[aria-current='page']", {hasText: "Config"})).toBeVisible();
+        await expect(page).toHaveURL(/\/stacks\/my-app\/config$/);
     });
 
     test("stack detail shows 404 for non-existent stack", async ({page}) => {

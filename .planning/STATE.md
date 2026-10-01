@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 milestone: v0.1.0
-current_phase: 11
-current_phase_name: UI Rework
+current_phase: 12
+current_phase_name: Compose Safety and Templates
 current_plan: Not started
-status: "Phases 1-9 all complete, tested, and reviewed. Product tracking moved to GitHub Issues (docktor-app/docktor): the vision doc (docs/vision.md scope) and all .planning/todos/pending/ items were triaged into 49 GitHub issues, native Issue Types adopted (Bug/Feature/Chore/Documentation/Task), and CLAUDE.md documents the process (including a project-specific override redirecting gsd-capture's add-todo to GitHub issues instead of .planning/todos/). User curated 23 issues (later 24, adding #15 UI Rework) into GitHub milestone 'v0.1.0 - First Release' (renamed from the working 'v1.0.0' label since this is the first release). ROADMAP.md Phases 10-16 now scope that milestone, sourced 1:1 from those issues (Requirements fields list GitHub issue numbers, not REQ-IDs — REQUIREMENTS.md is frozen at its already-complete v1.0 content and not being extended for new work). Per user request, Phase 10 (Backend Architecture Refactor, #16) and Phase 11 (UI Rework, #15) were resequenced to run BEFORE the feature phases that add new server/client code (12, 14, 15), so that new work lands on the reworked structure instead of needing rework afterward — both are independent of each other (separate server/client tracks) and both are intentionally open-ended, flagged as needing /gsd-discuss-phase before /gsd-plan-phase. Phase 13 (Update Checker Reliability — narrow bug fixes, not new architecture) carries low rework risk and can run anytime."
-stopped_at: Phase 10 complete, ready to plan Phase 11
-last_updated: "2026-09-25T22:30:44.443Z"
-state_head: 850e183b962bd79741e34133afbbd98f4ed46910
+status: "Phases 1-9 all complete, tested, and reviewed. Product tracking moved to GitHub Issues (docktor-app/docktor): the vision doc (docs/vision.md scope) and all .planning/todos/pending/ items were triaged into 49 GitHub issues, native Issue Types adopted (Bug/Feature/Chore/Documentation/Task), and CLAUDE.md documents the process (including a project-specific override redirecting gsd-capture's add-todo to GitHub issues instead of .planning/todos/). User curated 23 issues (later 24, adding #15 UI Rework) into GitHub milestone 'v0.1.0 - First Release' (renamed from the working 'v1.0.0' label since this is the first release). ROADMAP.md Phases 10-16 now scope that milestone, sourced 1:1 from those issues (Requirements fields list GitHub issue numbers, not REQ-IDs — REQUIREMENTS.md is frozen at its already-complete v1.0 content and not being extended for new work). Per user request, Phase 10 (Backend Architecture Refactor, #16) and Phase 11 (UI Rework, #15) were resequenced to run BEFORE the feature phases that add new server/client code (12, 14, 15), so that new work lands on the reworked structure instead of needing rework afterward — both are independent of each other (separate server/client tracks) and both are intentionally open-ended, flagged as needing /gsd-discuss-phase before /gsd-plan-phase. Phase 13 (Update Checker Reliability — narrow bug fixes, not new architecture) carries low rework risk and can run anytime. Phase 10 (Backend Architecture Refactor) has since been merged into main (PR #67). Phase 11 progressed through context capture, UI-SPEC approval, and phase planning (13 plans across 5 waves, plan-checker blockers resolved), and Wave 1's tracer plan 11-01 is now complete: the Config tab merge (D-01/D-02/D-03) and the stack-detail-page decomposition to an 89-line orchestrator (CLAUDE.md Known Refactoring Target closed) both landed, with the StackConfigFiles/ConfigTab/OverviewTab/StackDetailHeader contracts and the PLAYWRIGHT_PORT parameterization ready for the remaining 12 plans to build on. Note: the original executing session for 11-01 was interrupted by a container restart between finishing Task 2 and writing its SUMMARY.md — both tasks' commits were already pushed and no work was lost; a follow-up session independently re-verified everything (unit suite, typecheck, full Playwright E2E including the parallel-port case) before writing the SUMMARY. Wave 2's 11-02 (ToneBadge/StatusDot status-indicator unification, D-08/D-09/D-10/D-11) is now complete: same container-restart pattern hit again (interrupted between finishing Task 3's edits and its first commit, with zero commits made), recovered the same way — full verification (all task `<verify>` commands, all acceptance-criteria greps, full client suite, tsc -b) before splitting into 3 retroactive task commits and writing the SUMMARY. Wave 2 completed with 11-03 (dark mode via next-themes), 11-04 (dashboard StatCard extraction) and 11-05 (server update-info enrichment on GET /api/stacks — same interruption-and-recovery pattern as 11-02). Wave 3 is now underway: 11-06 (unified activity timeline + flat Services section) and 11-07 (proxy/backup dialogs) landed cleanly; 11-08 (shared LogTerminal + backup detail rebuild) fixed Phase 10 UAT gap G-10-2 (backup-history polling loop) and was interrupted twice — once by a Claude usage-limit error before any edits existed (clean restart), once by a container restart after Task 3's RED commit but before its GREEN commit (recovered in place after independent re-verification). Remaining in wave 3: 11-09 (CodeMirror YAML editor, a checkpoint plan), 11-10 (unsaved-changes guard), 11-11 (settings.tsx split). 11-09's Task 1 blocking-human package-legitimacy checkpoint (four new client deps: @uiw/react-codemirror, yaml, @codemirror/lang-yaml, @codemirror/lint — the first two SUS-flagged by the automated gate on recency only) was presented to the developer on 2026-09-27T17:32:19Z and explicitly approved as-is, no replacements. Session paused here (weekly usage limit) before Task 2's install/build work began — client/package.json and yarn.lock are untouched, so the next execute-phase run for 11-09 should proceed straight to Task 2 without re-presenting the checkpoint, and must record this approval (developer, 2026-09-27T17:32:19Z, all four packages approved) in 11-09-SUMMARY.md per the plan's own instruction. Wave 3 completed with 11-09 (CodeMirror YAML editor) and 11-10 (unsaved-changes guard); Wave 4's 11-11 (settings.tsx split) then landed, reducing settings.tsx from 1125 to a 72-line orchestrator and closing that CLAUDE.md Known Refactoring Target. Wave 4's 11-12 (structured env editor, D-20/D-21/D-22/D-06) is now also complete: replaced the raw .env textarea with a lossless table/raw-mode EnvEditor on both the Config tab and Create Stack page. During TDD execution, a real line-duplication bug was found and fixed in the editor's re-serialization ref design (the plan's own suggested single-ref approach corrupts the document one keystroke at a time whenever a newly-added row passes through its empty-key state) — caught by the plan's own E2E acceptance criteria before merge, fixed with a stable-base/self-vs-external ref split, and covered by a new regression unit test. Remaining in wave 4/phase 11: 11-13 (phase closeout)."
+stopped_at: Phase 11 complete, ready to plan Phase 12
+last_updated: "2026-10-01T10:20:48.486Z"
+state_head: 03ae869a23768597f7737816b1fe08fb045c4d93
 progress:
   total_phases: 17
   completed_phases: 9
-  total_plans: 105
-  completed_plans: 105
+  total_plans: 118
+  completed_plans: 118
   percent: 100
 milestone_name: milestone
 ---
@@ -24,19 +24,19 @@ milestone_name: milestone
 See: .planning/PROJECT.md (updated 2026-09-22)
 
 **Core value:** Users can deploy, monitor, and manage Docker Compose stacks through a browser UI without needing SSH or Docker CLI access.
-**Current focus:** Phase 10 — Backend Architecture Refactor
+**Current focus:** Phase 11 — UI Rework
 
 ## Current Position
 
-Phase: 11 — UI Rework
+Phase: 12 — Compose Safety and Templates
 Current Plan: Not started
-Total Plans in Phase: 15
+Total Plans in Phase: 13
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 90
+- Total plans completed: 103
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -52,6 +52,7 @@ Total Plans in Phase: 15
 | 07 | 2 | - | - |
 | 09 | 8 | - | - |
 | 10 | 17 | - | - |
+| 11 | 13 | - | - |
 
 **Recent Trend:**
 
@@ -143,6 +144,16 @@ Total Plans in Phase: 15
 | Phase 08 P03 | 18min | 1 tasks | 4 files |
 | Phase 08 P04 | 15min | 1 tasks | 2 files |
 | Phase 10-backend-architecture-refactor P01 | 22min | 3 tasks | 11 files |
+| Phase 11 P03 | 30min | 2 tasks | 11 files |
+| Phase 11 P04 | 55min | 2 tasks | 16 files |
+| Phase 11 P05 | 20min | 2 tasks | 3 files |
+| Phase 11 P06 | 50min | 2 tasks | 11 files |
+| Phase 11 P07 | 35min | 2 tasks | 14 files |
+| Phase 11 P09 | 55min | 3 tasks | 12 files |
+| Phase 11 P10 | 35min | 2 tasks | 9 files |
+| Phase 11 P11 | 55min | 2 tasks | 11 files |
+| Phase 11 P12 | 70min | 2 tasks | 9 files |
+| Phase 11 P13 | ~4h50m (interrupted) | 3 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -326,6 +337,26 @@ Recent decisions affecting current work:
 - [Phase 10]: [Phase 10-01]: SmtpClientPort.sendMail(config, message) takes the full SmtpConfig on every call so notify() and testSmtp() share one transport operation shape, not two divergent paths
 - [Phase 10]: [Phase 10-01]: settingsRepository singleton added directly to settings-repository.ts (matching the other 6 repos), keeping repositories/index.ts a pure re-export list with no new-instance exceptions
 - [Phase 10]: [Phase 10-01]: application/index.ts keeps its original export names (settingsRepository, repo, certificateRepositoryInstance) now pointing at repositories/index.ts singletons, so out-of-scope route files needed zero edits
+- [Phase null]: [Phase 11-ui-rework 11-03]: Pre-paint flash prevention is a hand-authored static <script> in index.html (not next-themes' own SSR-oriented injected script) — this app is a client-rendered Vite SPA with no hydration step
+- [Phase null]: [Phase 11-ui-rework 11-03]: ThemeToggle is a DropdownMenu (Light/Dark/System), not a two-state button, so users always retain a way back to "follow OS" after overriding
+- [Phase null]: [Phase 11-ui-rework 11-03]: test/setup.ts's global matchMedia stub is guarded by typeof window.matchMedia !== "function" so the pre-existing per-test stubs in stack-detail-page.test.tsx and backup-detail-page.test.tsx become no-ops with zero edits to those files
+- [Phase 11]: [Phase 11-ui-rework 11-04]: dashboard.tsx decomposed into StatCard/computeDashboardStats/useBackupDefaults/DashboardStatCards; useStacks() gained the same fetchStacks(mode) initial/background split use-stack.ts already has, so update_available events refetch in the background without flipping loading back to true. — Matches the existing use-stack.ts precedent exactly and keeps StatCard reusable/generic per CLAUDE.md's components/common checklist.
+- [Phase null]: [Phase 11-ui-rework 11-05]: withServiceUpdateInfo<T> shared by listStacks() and getStackWithUpdateInfo() — one batched findByImageRefs lookup across the de-duplicated union of refs, protected-stack filtering runs before enrichment so hidden stacks' refs are never looked up, and the call is skipped entirely when there are no refs.
+- [Phase null]: [Phase 11-ui-rework 11-06]: TimelineEntry keys are type:id (not bare id) since deployment/statusLog/event ids come from three different tables and can collide
+- [Phase null]: [Phase 11-ui-rework 11-06]: ActivityTimeline owns the type-filter's local useState itself rather than lifting it into useStackTimeline, keeping the merge a pure function over the three source lists
+- [Phase null]: [Phase 11-ui-rework 11-06]: services-section.tsx wraps each row's action buttons in their own TooltipProvider (stack-actions.tsx precedent), with the disabled Upgrade button's Tooltip trigger on a wrapping span since a disabled Radix trigger stops receiving hover/focus
+- [Phase null]: [Phase 11-07]: ProxyAssignDialog keeps service selection as plain useState (not RHF) since assignDomainSchema has no serviceName field; BackupScheduleDialog uses a dedicated BackupScheduleFormValues type (not stackBackupConfigSchema's own z.infer) so retention.keepDaily-style FormField paths stay concrete instead of nullable
+- [Phase 11]: [Phase 11] [11-09]: EditorView.contentAttributes.of wires the accessible aria-label onto CodeMirror's built-in role=textbox content element; create.tsx renders ComposeEditor directly inside FormItem (not FormControl, whose Slot would misdirect the generated id onto CodeMirror's wrapper div)
+- [Phase 11]: [Phase 11] [11-09]: E2E invalid-YAML fixture uses duplicate mapping keys, not an unclosed quote — CodeMirror renders a zero-width/line-break-only lint range as a .cm-lintPoint widget instead of a .cm-lintRange mark, so duplicate keys (pointing at a real character) were needed to exercise the plan's .cm-lintRange-error acceptance criterion
+- [Phase 11]: [Phase 11-10]: App-wide migration to react-router's createBrowserRouter/RouterProvider (from declarative BrowserRouter) so useBlocker is available for the new UnsavedChangesGuard; same route tree, verified via the full 88-test Playwright suite
+- [Phase 11]: [Phase 11-10]: UnsavedChangesGuard is generic (when/description/isSameContext props, no stack vocabulary) and reusable by any future page with dirty-state; the UI-SPEC's env table/raw mode-switch trigger is deliberately not wired since 11-12 makes both modes lossless views over one string
+- [Phase 11]: [Phase 11-11] Verbatim card extraction treated as refactor-with-regression-net, not literal RED-GREEN, since there is no new behaviour to fail first — tdd.md's own principle only applies where behaviour can be described as expect(fn).toBe(output) before writing fn; genuine RED-GREEN was reserved for the new describeNotificationType/NotificationTypeBadge pure function
+- [Phase 11]: [Phase 11-11] settings-page.test.tsx reuses SidebarProvider/matchMedia/ResizeObserver test scaffolding from stack-detail-page.test.tsx and proxy-tab.test.tsx — PageHeader's SidebarTrigger requires SidebarProvider context and ProxySettingsCard's Radix Switch requires ResizeObserver in jsdom; reusing established patterns avoids re-solving the same jsdom gaps
+- [Phase 11]: [Phase 11-12] client/src/lib/env-file.ts: a line is a table "variable" only when it matches `^KEY=value$` exactly (KEY per the shared ENV_VARIABLE_KEY_PATTERN); every other line (comments, blanks, export lines, malformed lines, CRLF remnants) is an opaque passthrough line kept verbatim in its original position — serializeEnvFile(parseEnvFile(s)) === s for every string (RESEARCH Pitfall 4)
+- [Phase 11]: [Phase 11-12] EnvEditor splits its reconciliation ref into `lastEmittedRef` (self-vs-external value-prop change detection) and a separate `baseLinesRef` that only advances on genuine external changes, never on the editor's own emission — the plan's own suggested single-ref design corrupts the document with a duplicate/stray line the first time a newly-added row passes through its empty-key state, since re-parsing an empty-key line can't match the variable pattern; caught via TDD/E2E before merge and covered by a regression unit test
+- [Phase 11]: [Phase 11-12] isSecretKey's D-22 heuristic (`/password|secret|key|token/i`) is left exactly as broad as specified (e.g. it also masks a key merely containing "KEY"); Playwright tests disambiguate a masked value input from its own Show/Hide reveal button with `{exact: true}` rather than narrowing the regex
+- [Phase 11]: [Phase 11-13]: D-17 mobile audit found two real overflow bugs (EnvEditor grid-item min-width, WizardStepper flex fit-content sizing), both fixed with min-w-0/w-full rather than touching the shadcn-managed ancestor; icon-only touch-target findings triaged as issue-not-fix-now (#71) since none break a core flow
+- [Phase 11]: [Phase 11-13]: CLAUDE.md's Known Refactoring Targets table now tracks component-level debt (5 Settings cards' ad-hoc useState form state, flagged by 11-11) instead of the three now-closed page-file monoliths ([id].tsx, settings.tsx, dashboard.tsx)
 
 ### Quick Tasks Completed
 
@@ -396,6 +427,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-09-23T09:08:41.573Z
-Stopped at: Phase 10 complete, ready to plan Phase 11
+Last session: 2026-09-30T11:07:57.646Z
+Stopped at: Phase 11 complete, ready to plan Phase 12
 Resume file: None

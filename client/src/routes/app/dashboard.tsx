@@ -1,25 +1,20 @@
 import {Link} from "react-router";
-import {AlertTriangle, Layers, Play, Plus, Square} from "lucide-react";
+import {Plus} from "lucide-react";
 import {Button} from "@/components/ui/button";
-import {Card, CardContent, CardHeader, CardTitle} from "@/components/ui/card";
-import {Skeleton} from "@/components/ui/skeleton";
 import {Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage} from "@/components/ui/breadcrumb";
 import {Page, PageActions, PageContent, PageHeader, PageTitle} from "@/components/common/layout/page";
+import {Section, SectionActions, SectionHeader, SectionTitle} from "@/components/common/layout/section";
 import {StackList} from "@/components/domain/stack/stack-list";
+import {DashboardStatCards} from "@/routes/app/dashboard/components/dashboard-stat-cards";
 import {useStacks} from "@/hooks/use-stacks";
+import {useBackupDefaults} from "@/hooks/use-backup-defaults";
+import {computeDashboardStats} from "@/lib/dashboard-stats";
 
 export default function Dashboard() {
-    const {stacks, loading} = useStacks();
+    const {stacks, loading, error} = useStacks();
+    const {defaultSchedule, loading: defaultsLoading, error: defaultsError} = useBackupDefaults();
 
-    const total = stacks.length;
-    const running = stacks.filter(
-        (s) => s.status === "RUNNING" || s.status === "HEALTHY",
-    ).length;
-    const stopped = stacks.filter((s) => s.status === "STOPPED").length;
-    const errors = stacks.filter(
-        (s) => s.status === "ERROR" || s.status === "UNHEALTHY",
-    ).length;
-
+    const stats = computeDashboardStats(stacks, defaultSchedule);
     const recentStacks = stacks.slice(0, 5);
 
     return (
@@ -47,86 +42,26 @@ export default function Dashboard() {
             </PageHeader>
 
             <PageContent>
-                <div className="grid gap-4 md:grid-cols-4">
-                    <Card>
-                        <CardHeader className="flex flex-row items-center justify-between pb-2">
-                            <CardTitle className="text-sm font-medium">
-                                Total Stacks
-                            </CardTitle>
-                            <Layers className="h-4 w-4 text-muted-foreground" />
-                        </CardHeader>
-                        <CardContent>
-                            {loading ? (
-                                <Skeleton className="h-8 w-12" />
-                            ) : (
-                                <div className="text-2xl font-bold">{total}</div>
-                            )}
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardHeader className="flex flex-row items-center justify-between pb-2">
-                            <CardTitle className="text-sm font-medium">
-                                Running
-                            </CardTitle>
-                            <Play className="h-4 w-4 text-green-600" />
-                        </CardHeader>
-                        <CardContent>
-                            {loading ? (
-                                <Skeleton className="h-8 w-12" />
-                            ) : (
-                                <div className="text-2xl font-bold text-green-600">{running}</div>
-                            )}
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardHeader className="flex flex-row items-center justify-between pb-2">
-                            <CardTitle className="text-sm font-medium">
-                                Stopped
-                            </CardTitle>
-                            <Square className="h-4 w-4 text-muted-foreground" />
-                        </CardHeader>
-                        <CardContent>
-                            {loading ? (
-                                <Skeleton className="h-8 w-12" />
-                            ) : (
-                                <div className="text-2xl font-bold">{stopped}</div>
-                            )}
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardHeader className="flex flex-row items-center justify-between pb-2">
-                            <CardTitle className="text-sm font-medium">
-                                Errors
-                            </CardTitle>
-                            <AlertTriangle className="h-4 w-4 text-red-600" />
-                        </CardHeader>
-                        <CardContent>
-                            {loading ? (
-                                <Skeleton className="h-8 w-12" />
-                            ) : (
-                                <div className="text-2xl font-bold text-red-600">{errors}</div>
-                            )}
-                        </CardContent>
-                    </Card>
-                </div>
+                <DashboardStatCards
+                    stats={stats}
+                    loading={loading || defaultsLoading}
+                    stacksError={error}
+                    defaultsError={defaultsError}
+                />
 
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Recent Stacks</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <StackList
-                            stacks={recentStacks}
-                            loading={loading}
-                            pagination={false}
-                        />
+                <Section>
+                    <SectionHeader>
+                        <SectionTitle>Recent Stacks</SectionTitle>
                         {stacks.length > 5 && (
-                            <Button asChild variant="link" className="w-full mt-4">
-                                <Link to="/stacks">View all stacks</Link>
-                            </Button>
+                            <SectionActions>
+                                <Button asChild variant="link">
+                                    <Link to="/stacks">View all stacks</Link>
+                                </Button>
+                            </SectionActions>
                         )}
-                    </CardContent>
-                </Card>
+                    </SectionHeader>
+                    <StackList stacks={recentStacks} loading={loading} pagination={false} />
+                </Section>
             </PageContent>
         </Page>
     );

@@ -1,5 +1,5 @@
 import {afterAll, beforeAll, beforeEach, describe, expect, it} from "vitest";
-import {cleanDatabase, createTestUser, getApp, startContainer, stopContainer} from "./setup.js";
+import {cleanDatabase, createTestUser, getApp, getPrisma, startContainer, stopContainer} from "./setup.js";
 import type {FastifyInstance} from "fastify";
 
 describe("Stacks API", () => {
@@ -68,6 +68,59 @@ describe("Stacks API", () => {
         const body = res.json();
         expect(body).toHaveLength(1);
         expect(body[0].id).toBe("stack-one");
+    });
+
+    it("GET /api/stacks carries updateAvailable/latestTag per service from a seeded ImageUpdateCheck row (D-09)", async () => {
+        // web:1.25 has a stored row (hasUpdate: true); db:16 has none — the
+        // ref must match buildImageRefFromService's tag-qualified spelling
+        // (image + ":" + imageTag), not the untagged `image` column, or the
+        // web service would never match its own row.
+        const composeContent = "services:\n  web:\n    image: nginx:1.25\n  db:\n    image: postgres:16\n";
+        const imageRef = "nginx:1.25";
+
+        await getPrisma().imageUpdateCheck.create({
+            data: {
+                imageRef,
+                lastCheckedAt: new Date(),
+                latestTag: "9.9.9",
+                hasUpdate: true,
+            },
+        });
+
+        try {
+            await app.inject({
+                method: "POST",
+                url: "/api/stacks",
+                headers: {cookie},
+                payload: {
+                    displayName: "Update Info Stack",
+                    composeContent,
+                },
+            });
+
+            const res = await app.inject({
+                method: "GET",
+                url: "/api/stacks",
+                headers: {cookie},
+            });
+
+            expect(res.statusCode).toBe(200);
+            const body = res.json();
+            const stack = body.find((s: {id: string}) => s.id === "update-info-stack");
+            expect(stack).toBeDefined();
+
+            const webService = stack.services.find((s: {serviceName: string}) => s.serviceName === "web");
+            const dbService = stack.services.find((s: {serviceName: string}) => s.serviceName === "db");
+
+            expect(webService).toMatchObject({updateAvailable: true, latestTag: "9.9.9"});
+            expect(dbService).toMatchObject({updateAvailable: false, latestTag: null});
+        } finally {
+            // Test-owned cleanup: cleanDatabase() (run in the next test's
+            // beforeEach) does not touch imageUpdateCheck, so this row must
+            // be removed here or it would leak into every later test run
+            // against this same container.
+            await getPrisma().imageUpdateCheck.deleteMany({where: {imageRef}});
+        }
     });
 
     it("GET /api/stacks/:id → 404 for missing", async () => {

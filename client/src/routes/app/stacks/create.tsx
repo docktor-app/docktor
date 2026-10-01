@@ -6,9 +6,10 @@ import {type CreateStackInput, createStackSchema} from "@docktor/shared";
 import {createStack} from "@/lib/stacks-api";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
-import {Textarea} from "@/components/ui/textarea";
 import {Card, CardContent, CardHeader, CardTitle} from "@/components/ui/card";
 import {Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage,} from "@/components/ui/form";
+import {ComposeEditor} from "@/components/domain/stack/compose-editor";
+import {EnvEditor} from "@/components/domain/stack/env-editor";
 import {
     Breadcrumb,
     BreadcrumbItem,
@@ -23,6 +24,9 @@ export default function CreateStackPage() {
     const navigate = useNavigate();
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
+    // EnvEditor validates its own table rows; true by default so an
+    // untouched/raw-mode editor never blocks Create Stack.
+    const [envValid, setEnvValid] = useState(true);
 
     const form = useForm<CreateStackInput>({
         resolver: standardSchemaResolver(createStackSchema),
@@ -40,8 +44,8 @@ export default function CreateStackPage() {
         try {
             const stack = await createStack(values);
             navigate(`/stacks/${stack.id}`);
-        } catch (err: any) {
-            setError(err.message ?? "Failed to create stack");
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : "Failed to create stack");
             setLoading(false);
         }
     }
@@ -130,13 +134,15 @@ export default function CreateStackPage() {
                                             <FormLabel>
                                                 Docker Compose File
                                             </FormLabel>
-                                            <FormControl>
-                                                <Textarea
-                                                    placeholder={`services:\n  web:\n    image: nginx:latest\n    ports:\n      - "8080:80"`}
-                                                    className="font-mono text-sm min-h-[200px]"
-                                                    {...field}
-                                                />
-                                            </FormControl>
+                                            {/* Not wrapped in FormControl: its Slot would forward
+                                                ids to ComposeEditor's wrapper div instead of the
+                                                CodeMirror textbox — the accessible name comes from
+                                                ComposeEditor's own ariaLabel below. */}
+                                            <ComposeEditor
+                                                value={field.value}
+                                                onChange={field.onChange}
+                                                height="300px"
+                                            />
                                             <FormDescription>
                                                 Paste your docker-compose.yml
                                                 content
@@ -154,13 +160,14 @@ export default function CreateStackPage() {
                                             <FormLabel>
                                                 Environment Variables
                                             </FormLabel>
-                                            <FormControl>
-                                                <Textarea
-                                                    placeholder="DB_PASSWORD=secret"
-                                                    className="font-mono text-sm min-h-[100px]"
-                                                    {...field}
-                                                />
-                                            </FormControl>
+                                            {/* Not wrapped in FormControl: same reason as the
+                                                compose editor above — EnvEditor's accessible
+                                                name comes from its own ariaLabel default. */}
+                                            <EnvEditor
+                                                value={field.value ?? ""}
+                                                onChange={field.onChange}
+                                                onValidityChange={setEnvValid}
+                                            />
                                             <FormDescription>
                                                 Optional .env file content
                                             </FormDescription>
@@ -170,7 +177,7 @@ export default function CreateStackPage() {
                                 />
 
                                 <div className="flex gap-2">
-                                    <Button type="submit" disabled={loading}>
+                                    <Button type="submit" disabled={loading || !envValid}>
                                         {loading
                                             ? "Creating..."
                                             : "Create Stack"}

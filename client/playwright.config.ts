@@ -5,6 +5,11 @@ import {fileURLToPath} from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const monorepoRoot = path.resolve(__dirname, "..");
 
+// Parallel executors (later phase-11 waves running in separate worktrees)
+// each pass a distinct PLAYWRIGHT_PORT so reuseExistingServer can never
+// attach to another worktree's dev server.
+const PORT = Number(process.env.PLAYWRIGHT_PORT ?? "5173");
+
 export default defineConfig({
     testDir: "test/integration",
     globalTeardown: "./test/playwright-teardown.ts",
@@ -23,19 +28,30 @@ export default defineConfig({
     outputDir: ".test/integration/tests",
     snapshotDir: ".test/integration/snapshots",
     use: {
-        baseURL: "http://localhost:5173",
+        baseURL: `http://localhost:${PORT}`,
         trace: "on-first-retry",
     },
     projects: [
         {
             name: "chromium",
             use: {...devices["Desktop Chrome"]},
+            testIgnore: /mobile\.spec\.ts/,
+        },
+        {
+            // D-17: phone-width regression coverage. Pixel 7 is a Chromium
+            // device descriptor (only Chromium browsers are installed in
+            // this environment) and this project matches mobile.spec.ts
+            // exclusively, so the existing desktop suite's runtime and
+            // assertions are unchanged.
+            name: "mobile-chromium",
+            use: {...devices["Pixel 7"]},
+            testMatch: /mobile\.spec\.ts/,
         },
     ],
     webServer: {
-        command: "yarn workspace @docktor/client exec vite",
+        command: `yarn workspace @docktor/client exec vite --port ${PORT} --strictPort`,
         cwd: monorepoRoot,
-        url: "http://localhost:5173",
+        url: `http://localhost:${PORT}`,
         reuseExistingServer: !process.env.CI,
         timeout: 15_000,
     },

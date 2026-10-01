@@ -24,6 +24,21 @@ async function mockSetupComplete(page: Page) {
     );
 }
 
+/**
+ * Mock the dashboard's GET /api/settings/backup-defaults call
+ * (useBackupDefaults, D-14) — any test that lands on "/" must stub it, or
+ * the fixtures.ts unstubbed-API guard fails the test.
+ */
+async function mockBackupDefaults(page: Page) {
+    await page.route("**/api/settings/backup-defaults", (route) =>
+        route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({defaultSchedule: null, defaultRetention: null}),
+        }),
+    );
+}
+
 test.describe("Authentication", () => {
     test.beforeEach(async ({page}) => {
         await mockSetupComplete(page);
@@ -58,6 +73,7 @@ test.describe("Authentication", () => {
     });
 
     test("sign up creates account and redirects to dashboard", async ({page}) => {
+        await mockBackupDefaults(page);
         // Mock signup endpoint
         await page.route("**/api/auth/sign-up/email", (route) =>
             route.fulfill({
@@ -83,6 +99,7 @@ test.describe("Authentication", () => {
     });
 
     test("login with valid credentials redirects to dashboard", async ({page}) => {
+        await mockBackupDefaults(page);
         let hasSession = false;
 
         await page.route("**/api/auth/get-session", (route) => {
