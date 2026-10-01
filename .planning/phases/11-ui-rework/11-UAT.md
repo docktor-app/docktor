@@ -1,40 +1,33 @@
 ---
-status: testing
+status: complete
 phase: 11-ui-rework
 source: [11-VERIFICATION.md]
 started: "2026-09-30T15:53:17Z"
-updated: "2026-10-01T10:30:00Z"
+updated: "2026-10-01T10:45:00Z"
 ---
 
 ## Current Test
 
-number: 2
-name: Theme menu shows the current selection (re-test of G-11-1)
-expected: |
-  Click the sun/moon theme toggle in the page header. The dropdown lists
-  Light, Dark and System, and a check mark appears next to the active one
-  (System on a fresh profile). Choosing another option moves the check to it
-  and the theme changes immediately, in both desktop and 390px widths.
-awaiting: user response
+[testing complete]
 
 ## Tests
 
 ### 1. 390px light/dark-mode walkthrough across the reworked UI
 expected: At 390px width, in both light and dark mode, walk dashboard -> stack detail (all five tabs, both dialogs: Assign Domain and Edit Schedule) -> backup detail -> settings. Nothing is cut off or illegible in either theme; the filed follow-up issue (GitHub #71 — four sub-44px touch targets) matches what is actually visible, with no additional un-filed breakage.
-result: issue
-reported: "pass, however, the dropdown for the theme has no check to show the current selected."
-severity: minor
+result: pass
+note: "User passed the walkthrough but reported one caveat (theme dropdown lacked a selected-state check, severity minor). Fixed in theme-toggle.tsx and re-confirmed by the user in test 2; gap G-11-1 resolved."
+originally_reported: "pass, however, the dropdown for the theme has no check to show the current selected."
 
 ### 2. Theme menu shows the current selection (re-test of G-11-1)
 expected: Click the theme toggle; a check mark sits next to the active option (Light/Dark/System). Choosing another option moves the check and changes the theme immediately.
-result: [pending]
+result: pass
 
 ## Summary
 
 total: 2
-passed: 0
-issues: 1
-pending: 1
+passed: 2
+issues: 0
+pending: 0
 skipped: 0
 blocked: 0
 
