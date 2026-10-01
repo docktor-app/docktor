@@ -34,21 +34,21 @@ async function openMenu() {
 }
 
 describe("ThemeToggle", () => {
-    it("renders a 'Toggle theme' button that opens Light/Dark/System menu items", async () => {
+    it("renders a 'Toggle theme' button that opens Light/Dark/System options", async () => {
         renderToggle();
 
         await openMenu();
 
-        expect(screen.getByRole("menuitem", {name: "Light"})).toBeInTheDocument();
-        expect(screen.getByRole("menuitem", {name: "Dark"})).toBeInTheDocument();
-        expect(screen.getByRole("menuitem", {name: "System"})).toBeInTheDocument();
+        expect(screen.getByRole("menuitemcheckbox", {name: "Light"})).toBeInTheDocument();
+        expect(screen.getByRole("menuitemcheckbox", {name: "Dark"})).toBeInTheDocument();
+        expect(screen.getByRole("menuitemcheckbox", {name: "System"})).toBeInTheDocument();
     });
 
     it("choosing Dark adds the dark class and stores 'dark' under the theme storage key", async () => {
         renderToggle();
         const user = await openMenu();
 
-        await user.click(screen.getByRole("menuitem", {name: "Dark"}));
+        await user.click(screen.getByRole("menuitemcheckbox", {name: "Dark"}));
 
         expect(document.documentElement.classList.contains("dark")).toBe(true);
         expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
@@ -57,10 +57,10 @@ describe("ThemeToggle", () => {
     it("choosing Light removes the dark class and stores 'light'", async () => {
         renderToggle();
         let user = await openMenu();
-        await user.click(screen.getByRole("menuitem", {name: "Dark"}));
+        await user.click(screen.getByRole("menuitemcheckbox", {name: "Dark"}));
 
         user = await openMenu();
-        await user.click(screen.getByRole("menuitem", {name: "Light"}));
+        await user.click(screen.getByRole("menuitemcheckbox", {name: "Light"}));
 
         expect(document.documentElement.classList.contains("dark")).toBe(false);
         expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("light");
@@ -70,8 +70,29 @@ describe("ThemeToggle", () => {
         renderToggle();
         const user = await openMenu();
 
-        await user.click(screen.getByRole("menuitem", {name: "System"}));
+        await user.click(screen.getByRole("menuitemcheckbox", {name: "System"}));
 
         expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("system");
+    });
+
+    it("marks System as the selected option by default", async () => {
+        renderToggle();
+
+        await openMenu();
+
+        expect(screen.getByRole("menuitemcheckbox", {name: "System"})).toBeChecked();
+        expect(screen.getByRole("menuitemcheckbox", {name: "Light"})).not.toBeChecked();
+        expect(screen.getByRole("menuitemcheckbox", {name: "Dark"})).not.toBeChecked();
+    });
+
+    it("moves the selected mark to the chosen theme", async () => {
+        renderToggle();
+        const user = await openMenu();
+        await user.click(screen.getByRole("menuitemcheckbox", {name: "Dark"}));
+
+        await openMenu();
+
+        expect(screen.getByRole("menuitemcheckbox", {name: "Dark"})).toBeChecked();
+        expect(screen.getByRole("menuitemcheckbox", {name: "System"})).not.toBeChecked();
     });
 });

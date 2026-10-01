@@ -31,7 +31,9 @@ blocked: 0
 
 - gap_id: G-11-1
   truth: "Theme dropdown shows which option (Light/Dark/System) is currently selected"
-  status: failed
+  status: resolved
+  resolved_by: quick fix (theme-toggle.tsx DropdownMenuCheckboxItem)
+  resolved_at: 2026-10-01
   reason: "User reported: pass, however, the dropdown for the theme has no check to show the current selected."
   severity: minor
   test: 1

@@ -5,7 +5,7 @@ import {Button} from "@/components/ui/button"
 import {
     DropdownMenu,
     DropdownMenuContent,
-    DropdownMenuItem,
+    DropdownMenuCheckboxItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
@@ -15,8 +15,14 @@ import {
  * React state, so it can never render the wrong icon before next-themes
  * resolves (UI-SPEC loading row).
  */
+const THEME_OPTIONS = [
+    {value: "light", label: "Light"},
+    {value: "dark", label: "Dark"},
+    {value: "system", label: "System"},
+] as const
+
 export function ThemeToggle(): React.JSX.Element {
-    const {setTheme} = useTheme()
+    const {theme, setTheme} = useTheme()
 
     return (
         <DropdownMenu>
@@ -32,9 +38,15 @@ export function ThemeToggle(): React.JSX.Element {
                 </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setTheme("light")}>Light</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setTheme("dark")}>Dark</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setTheme("system")}>System</DropdownMenuItem>
+                {THEME_OPTIONS.map(({value, label}) => (
+                    <DropdownMenuCheckboxItem
+                        key={value}
+                        checked={theme === value}
+                        onCheckedChange={() => setTheme(value)}
+                    >
+                        {label}
+                    </DropdownMenuCheckboxItem>
+                ))}
             </DropdownMenuContent>
         </DropdownMenu>
     )
