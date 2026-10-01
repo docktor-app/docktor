@@ -113,7 +113,7 @@ test.describe("Dark mode (D-15/D-16)", () => {
         await page.goto("/stacks");
 
         await page.getByRole("button", {name: "Toggle theme"}).click();
-        await page.getByRole("menuitem", {name: "Dark"}).click();
+        await page.getByRole("menuitemcheckbox", {name: "Dark"}).click();
         await expect(page.locator("html")).toHaveClass(/dark/);
 
         await page.reload();
@@ -127,12 +127,25 @@ test.describe("Dark mode (D-15/D-16)", () => {
         await page.goto("/stacks");
 
         await page.getByRole("button", {name: "Toggle theme"}).click();
-        await page.getByRole("menuitem", {name: "Light"}).click();
+        await page.getByRole("menuitemcheckbox", {name: "Light"}).click();
         await expect(page.locator("html")).not.toHaveClass(/dark/);
 
         await page.reload();
 
         await expect(page.locator("html")).not.toHaveClass(/dark/);
+    });
+
+    test("the theme menu marks the active option and moves the mark when another is chosen", async ({page}) => {
+        await mockApiRoutes(page);
+        await page.goto("/stacks");
+
+        await page.getByRole("button", {name: "Toggle theme"}).click();
+        await expect(page.getByRole("menuitemcheckbox", {name: "System"})).toBeChecked();
+        await page.getByRole("menuitemcheckbox", {name: "Dark"}).click();
+
+        await page.getByRole("button", {name: "Toggle theme"}).click();
+        await expect(page.getByRole("menuitemcheckbox", {name: "Dark"})).toBeChecked();
+        await expect(page.getByRole("menuitemcheckbox", {name: "System"})).not.toBeChecked();
     });
 
     test("the 'Toggle theme' button is visible on the stacks list and a stack detail page", async ({page}) => {
