@@ -2,6 +2,7 @@ import {beforeEach, describe, expect, it, vi} from "vitest";
 import {act, renderHook, waitFor} from "@testing-library/react";
 import {useStackConfigFiles} from "@/hooks/use-stack-config-files";
 import {getComposeContent, getEnvContent, previewStackChange, updateStack} from "@/lib/stacks-api";
+import {ApiError} from "@/lib/api";
 
 vi.mock("@/lib/stacks-api", () => ({
     getComposeContent: vi.fn(),
@@ -10,24 +11,15 @@ vi.mock("@/lib/stacks-api", () => ({
     previewStackChange: vi.fn(),
 }));
 
-// Mirrors the pattern used across this codebase's toast.promise call sites
-// (e.g. use-stack.test.ts, service-upgrade-dialog.test.tsx): resolve/reject
-// the underlying promise and invoke sonner's success/error callbacks
-// directly, without needing a mounted <Toaster/>.
+// Issue #18/D-01: the hook drives toast.loading/success/error/dismiss
+// directly (not toast.promise) so the 428 re-review path can resolve with
+// neither a success nor an error toast — mock each as a plain spy.
 vi.mock("sonner", () => ({
     toast: {
-        promise: vi.fn((promise: Promise<unknown>, opts: any) => {
-            promise.then(
-                (result) => {
-                    if (typeof opts.success === "function") opts.success(result);
-                },
-                (err) => {
-                    if (typeof opts.error === "function") opts.error(err);
-                },
-            );
-            return promise.catch(() => {});
-        }),
+        loading: vi.fn(() => "toast-id"),
+        success: vi.fn(),
         error: vi.fn(),
+        dismiss: vi.fn(),
     },
 }));
 
@@ -58,7 +50,7 @@ function changePreview(file: "compose" | "env") {
     };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
     mockGetComposeContent.mockReset();
     mockGetEnvContent.mockReset();
     mockUpdateStack.mockReset();
@@ -66,6 +58,12 @@ beforeEach(() => {
     mockGetComposeContent.mockResolvedValue({content: "services:\n  web:\n    image: nginx\n"});
     mockGetEnvContent.mockResolvedValue({content: "FOO=bar"});
     mockPreviewStackChange.mockResolvedValue(NO_CHANGE_PREVIEW);
+
+    const {toast} = await import("sonner");
+    vi.mocked(toast.loading).mockReset().mockReturnValue("toast-id" as any);
+    vi.mocked(toast.success).mockReset();
+    vi.mocked(toast.error).mockReset();
+    vi.mocked(toast.dismiss).mockReset();
 });
 
 describe("useStackConfigFiles", () => {
@@ -264,6 +262,68 @@ describe("useStackConfigFiles", () => {
                 "Couldn't review the compose file — network down. Try again.",
             );
             expect(mockUpdateStack).not.toHaveBeenCalled();
+        });
+
+        it("confirmReview() re-runs the preview and reopens the review on a 428, without toasting an error", async () => {
+            const onSaved = vi.fn();
+            mockPreviewStackChange.mockResolvedValue(changePreview("compose"));
+            mockUpdateStack.mockRejectedValue(new ApiError("Changes must be reviewed and confirmed", 428));
+            const {toast} = await import("sonner");
+            const {result} = renderHook(() => useStackConfigFiles("my-app", "hash-1", onSaved));
+            await waitFor(() => expect(result.current.composeContent).not.toBe(""));
+
+            act(() => result.current.setComposeContent("services:\n  web:\n    image: nginx:1.2\n"));
+            await act(async () => {
+                result.current.saveCompose();
+                await Promise.resolve();
+                await Promise.resolve();
+            });
+            await waitFor(() => expect(result.current.review).not.toBeNull());
+
+            // A second preview call (the retry) returns a fresh diff.
+            mockPreviewStackChange.mockResolvedValue(changePreview("compose"));
+
+            await act(async () => {
+                result.current.confirmReview();
+                await Promise.resolve();
+                await Promise.resolve();
+                await Promise.resolve();
+            });
+
+            await waitFor(() => expect(mockPreviewStackChange).toHaveBeenCalledTimes(2));
+            expect(result.current.review).not.toBeNull();
+            expect(toast.error).not.toHaveBeenCalled();
+            expect(onSaved).not.toHaveBeenCalled();
+        });
+
+        it("confirmReview() shows the generic error toast (not a retry) for a non-428 rejection, leaving the file dirty", async () => {
+            const onSaved = vi.fn();
+            mockPreviewStackChange.mockResolvedValue(changePreview("compose"));
+            mockUpdateStack.mockRejectedValue(new Error("server exploded"));
+            const {toast} = await import("sonner");
+            const {result} = renderHook(() => useStackConfigFiles("my-app", "hash-1", onSaved));
+            await waitFor(() => expect(result.current.composeContent).not.toBe(""));
+
+            act(() => result.current.setComposeContent("services:\n  web:\n    image: nginx:1.2\n"));
+            await act(async () => {
+                result.current.saveCompose();
+                await Promise.resolve();
+                await Promise.resolve();
+            });
+            await waitFor(() => expect(result.current.review).not.toBeNull());
+
+            await act(async () => {
+                result.current.confirmReview();
+                await Promise.resolve();
+                await Promise.resolve();
+            });
+
+            expect(toast.error).toHaveBeenCalledWith(
+                "Couldn't save compose file — server exploded. Try again.",
+                {id: "toast-id"},
+            );
+            expect(result.current.composeDirty).toBe(true);
+            expect(onSaved).not.toHaveBeenCalled();
         });
     });
 

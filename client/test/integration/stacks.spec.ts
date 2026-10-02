@@ -451,6 +451,80 @@ test.describe("Stacks", () => {
         await expect(page.getByRole("button", {name: "Save compose file"})).toBeEnabled();
     });
 
+    test("stack detail config tab: editing and saving a secret env var shows the masked review dialog with the env title, reveal works, Confirm & Apply sends envContent + confirmed: true (Issue #18/Task 3)", async ({page}) => {
+        await mockAuthenticated(page);
+        let putBody: unknown = null;
+        await page.route("**/api/stacks/my-app", (route) => {
+            const url = route.request().url();
+            if (url.endsWith("/compose") || url.endsWith("/env") || url.endsWith("/preview")) {
+                return route.continue();
+            }
+            if (route.request().method() === "PUT") {
+                putBody = route.request().postDataJSON();
+                return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(mockStackDetail)});
+            }
+            return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(mockStackDetail)});
+        });
+        await page.route("**/api/stacks/my-app/compose", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({content: "services:\n  web:\n    image: nginx:latest"}),
+            }),
+        );
+        await page.route("**/api/stacks/my-app/env", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: ""})}),
+        );
+        await page.route("**/api/stacks/my-app/preview", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({
+                    hasChanges: true,
+                    confirmationRequired: true,
+                    compose: null,
+                    env: {
+                        hunks: [
+                            {
+                                oldStart: 1,
+                                oldLines: 0,
+                                newStart: 1,
+                                newLines: 1,
+                                lines: [{kind: "added", text: "DB_PASSWORD=hunter2", oldLine: null, newLine: 1}],
+                            },
+                        ],
+                        added: 1,
+                        removed: 0,
+                    },
+                }),
+            }),
+        );
+        await mockStackEvents(page, "my-app");
+
+        await page.goto("/stacks/my-app/config");
+
+        await page.getByRole("button", {name: "Add Variable"}).click();
+        await page.getByRole("textbox", {name: "Variable name 1"}).fill("DB_PASSWORD");
+        await page.getByLabel("Value for DB_PASSWORD", {exact: true}).fill("hunter2");
+
+        await page.getByRole("button", {name: "Save environment variables"}).click();
+
+        const dialog = page.getByRole("alertdialog");
+        await expect(dialog).toBeVisible();
+        await expect(dialog).toContainText("Review changes to My App's environment");
+        await expect(dialog.getByText("DB_PASSWORD=••••••••")).toBeVisible();
+        await expect(dialog.getByText("DB_PASSWORD=hunter2")).not.toBeVisible();
+
+        await dialog.getByRole("button", {name: "Show secret values"}).click();
+        await expect(dialog.getByText("DB_PASSWORD=hunter2")).toBeVisible();
+
+        await dialog.getByRole("button", {name: "Confirm & Apply"}).click();
+
+        await expect.poll(() => putBody).toEqual(
+            expect.objectContaining({envContent: "DB_PASSWORD=hunter2\n", confirmed: true}),
+        );
+    });
+
     test("stack detail config tab: EnvEditor table mode add + save, raw mode reflects the same edit (D-20/D-21)", async ({page}) => {
         await mockAuthenticated(page);
         let putBody: unknown = null;

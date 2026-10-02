@@ -1,5 +1,6 @@
 import {useCallback, useEffect, useRef, useState} from "react";
 import {toast} from "sonner";
+import {ApiError} from "@/lib/api";
 import {getComposeContent, getEnvContent, previewStackChange, updateStack, type StackChangePreview} from "@/lib/stacks-api";
 
 // Issue #18/D-01/D-03: the pending review surfaced between a Save click and
@@ -117,11 +118,22 @@ export function useStackConfigFiles(
         [setEnvDirty],
     );
 
+    // Manual toast.loading/success/error/dismiss control (not toast.promise):
+    // Issue #18/D-01's 428 re-review path needs to resolve this apply with
+    // *neither* a success nor an error toast (the reopened review dialog is
+    // the feedback) — toast.promise's success/error options are fixed at
+    // call time and always render a toast once a `success` option is
+    // present, even if its message is empty, so there is no toast.promise
+    // shape that can express "sometimes no toast at all" for one call.
     const applyChange = useCallback(
-        (file: "compose" | "env", content: string, confirmed: boolean) => {
-            const body = file === "compose" ? {composeContent: content} : {envContent: content};
-            return toast.promise(
-                (async () => {
+        (file: "compose" | "env", content: string, confirmed: boolean): Promise<void> => {
+            const loadingMessage = file === "compose" ? "Saving compose file…" : "Saving environment variables…";
+            const successMessage = file === "compose" ? "Compose file saved" : "Environment variables saved";
+            const toastId = toast.loading(loadingMessage);
+
+            return (async () => {
+                try {
+                    const body = file === "compose" ? {composeContent: content} : {envContent: content};
                     await updateStack(stackId, confirmed ? {...body, confirmed: true} : body);
                     if (file === "compose") {
                         setComposeDirty(false);
@@ -129,18 +141,37 @@ export function useStackConfigFiles(
                         setEnvDirty(false);
                     }
                     onSaved();
-                })(),
-                {
-                    loading: file === "compose" ? "Saving compose file…" : "Saving environment variables…",
-                    success: file === "compose" ? "Compose file saved" : "Environment variables saved",
-                    error: (err: unknown) => {
-                        const message = err instanceof Error ? err.message : "Unknown error";
-                        return file === "compose"
+                    toast.success(successMessage, {id: toastId});
+                } catch (err: unknown) {
+                    if (confirmed && err instanceof ApiError && err.status === 428) {
+                        // The file changed server-side between preview and
+                        // confirm — re-run the preview and reopen the review
+                        // instead of showing an error toast; the user's edit
+                        // is not lost, they just need to look at the diff
+                        // again before it can be applied.
+                        toast.dismiss(toastId);
+                        try {
+                            const preview = await previewStackChange(
+                                stackId,
+                                file === "compose" ? {composeContent: content} : {envContent: content},
+                            );
+                            pendingContentRef.current = content;
+                            setReview({file, preview});
+                        } catch (previewErr: unknown) {
+                            const message = previewErr instanceof Error ? previewErr.message : "Unknown error";
+                            toast.error(`Couldn't refresh the review — ${message}. Try saving again.`);
+                        }
+                        return;
+                    }
+                    const message = err instanceof Error ? err.message : "Unknown error";
+                    toast.error(
+                        file === "compose"
                             ? `Couldn't save compose file — ${message}. Try again.`
-                            : `Couldn't save environment variables — ${message}. Try again.`;
-                    },
-                },
-            );
+                            : `Couldn't save environment variables — ${message}. Try again.`,
+                        {id: toastId},
+                    );
+                }
+            })();
         },
         [stackId, onSaved, setComposeDirty, setEnvDirty],
     );

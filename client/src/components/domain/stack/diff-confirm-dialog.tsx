@@ -1,3 +1,4 @@
+import {useEffect, useState} from "react";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -8,8 +9,10 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {Button} from "@/components/ui/button";
 import {ScrollArea} from "@/components/ui/scroll-area";
-import {UnifiedDiffView} from "@/components/common/unified-diff-view";
+import {UnifiedDiffView, type UnifiedDiffHunk, type UnifiedDiffLine} from "@/components/common/unified-diff-view";
+import {isSecretKey} from "@/lib/env-file";
 import type {UnifiedDiff} from "@/lib/stacks-api";
 
 // Issue #18/D-01/D-03: the review gate between an edit and the PUT that
@@ -31,6 +34,44 @@ export interface DiffConfirmDialogProps {
     readonly onCancel: () => void;
 }
 
+const SECRET_MASK = "••••••••";
+// Mirrors client/src/lib/env-file.ts's variable-line pattern (an optional
+// `export ` prefix, per the env key rule) — this dialog only needs to
+// recognize the key to decide whether to mask the value, not to round-trip
+// the line losslessly the way env-file.ts does.
+const ENV_KEY_VALUE_PATTERN = /^(export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/;
+
+function maskSecretLine(line: UnifiedDiffLine, revealSecrets: boolean): UnifiedDiffLine {
+    if (revealSecrets) {
+        return line;
+    }
+    const match = ENV_KEY_VALUE_PATTERN.exec(line.text);
+    if (!match || !isSecretKey(match[2]!)) {
+        return line;
+    }
+    const prefix = match[1] ?? "";
+    return {...line, text: `${prefix}${match[2]}=${SECRET_MASK}`};
+}
+
+function maskSecretHunks(
+    hunks: ReadonlyArray<UnifiedDiffHunk>,
+    revealSecrets: boolean,
+): ReadonlyArray<UnifiedDiffHunk> {
+    return hunks.map((hunk) => ({
+        ...hunk,
+        lines: hunk.lines.map((line) => maskSecretLine(line, revealSecrets)),
+    }));
+}
+
+function hunksHaveSecret(hunks: ReadonlyArray<UnifiedDiffHunk>): boolean {
+    return hunks.some((hunk) =>
+        hunk.lines.some((line) => {
+            const match = ENV_KEY_VALUE_PATTERN.exec(line.text);
+            return !!match && isSecretKey(match[2]!);
+        }),
+    );
+}
+
 /**
  * Issue #18/D-01/D-03: the review-before-apply dialog — a GitHub-style
  * unified diff of the pending edit, with explicit "Keep Editing"/"Confirm &
@@ -44,17 +85,32 @@ export function DiffConfirmDialog({
     onConfirm,
     onCancel,
 }: Readonly<DiffConfirmDialogProps>): React.JSX.Element {
+    const [revealSecrets, setRevealSecrets] = useState(false);
+
+    // T-12-02: reset the reveal state whenever the dialog closes — a
+    // previously revealed secret must never still be shown the next time a
+    // (possibly different) review opens.
+    useEffect(() => {
+        if (!open) {
+            setRevealSecrets(false);
+        }
+    }, [open]);
+
     function handleOpenChange(nextOpen: boolean) {
         if (!nextOpen) {
             onCancel();
         }
     }
 
-    const title =
-        subject?.file === "env" ? `Review changes to ${stackName}'s environment` : `Review changes to ${stackName}`;
+    const isEnv = subject?.file === "env";
+    const title = isEnv ? `Review changes to ${stackName}'s environment` : `Review changes to ${stackName}`;
     const added = subject?.diff.added ?? 0;
     const removed = subject?.diff.removed ?? 0;
     const hunks = subject?.diff.hunks ?? [];
+    // T-12-02/D-22: compose diffs are never masked — only env diffs can
+    // contain KEY=value lines whose key matches the secret heuristic.
+    const hasSecret = isEnv && hunksHaveSecret(hunks);
+    const displayedHunks = isEnv ? maskSecretHunks(hunks, revealSecrets) : hunks;
 
     return (
         <AlertDialog open={open} onOpenChange={handleOpenChange}>
@@ -66,8 +122,20 @@ export function DiffConfirmDialog({
                     </AlertDialogDescription>
                 </AlertDialogHeader>
 
+                {hasSecret && (
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="w-fit"
+                        onClick={() => setRevealSecrets((prev) => !prev)}
+                    >
+                        {revealSecrets ? "Hide secret values" : "Show secret values"}
+                    </Button>
+                )}
+
                 <ScrollArea className="max-h-[60vh]">
-                    <UnifiedDiffView hunks={hunks} ariaLabel="Review diff" />
+                    <UnifiedDiffView hunks={displayedHunks} ariaLabel="Review diff" />
                 </ScrollArea>
 
                 <AlertDialogFooter>

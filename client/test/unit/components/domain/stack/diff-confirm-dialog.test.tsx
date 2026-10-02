@@ -123,4 +123,145 @@ describe("DiffConfirmDialog", () => {
         );
         expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     });
+
+    describe("T-12-02: env secret masking", () => {
+        const secretDiff: UnifiedDiff = {
+            added: 2,
+            removed: 0,
+            hunks: [
+                {
+                    oldStart: 1,
+                    oldLines: 0,
+                    newStart: 1,
+                    newLines: 2,
+                    lines: [
+                        {kind: "added", text: "DB_PASSWORD=hunter2", oldLine: null, newLine: 1},
+                        {kind: "added", text: "TZ=UTC", oldLine: null, newLine: 2},
+                    ],
+                },
+            ],
+        };
+
+        it("masks a secret-looking env line and shows the reveal toggle", () => {
+            render(
+                <DiffConfirmDialog
+                    open
+                    stackName="My App"
+                    subject={makeSubject("env", secretDiff)}
+                    onConfirm={vi.fn()}
+                    onCancel={vi.fn()}
+                />,
+            );
+            expect(screen.getByText("DB_PASSWORD=••••••••")).toBeVisible();
+            expect(screen.queryByText("DB_PASSWORD=hunter2")).not.toBeInTheDocument();
+            expect(screen.getByText("TZ=UTC")).toBeVisible();
+            expect(screen.getByRole("button", {name: "Show secret values"})).toBeVisible();
+        });
+
+        it("reveals the secret value after clicking 'Show secret values', then hides it again", async () => {
+            render(
+                <DiffConfirmDialog
+                    open
+                    stackName="My App"
+                    subject={makeSubject("env", secretDiff)}
+                    onConfirm={vi.fn()}
+                    onCancel={vi.fn()}
+                />,
+            );
+
+            await userEvent.click(screen.getByRole("button", {name: "Show secret values"}));
+            expect(screen.getByText("DB_PASSWORD=hunter2")).toBeVisible();
+
+            await userEvent.click(screen.getByRole("button", {name: "Hide secret values"}));
+            expect(screen.getByText("DB_PASSWORD=••••••••")).toBeVisible();
+        });
+
+        it("renders no reveal toggle when no line was masked", () => {
+            const noSecretDiff: UnifiedDiff = {
+                added: 1,
+                removed: 0,
+                hunks: [
+                    {
+                        oldStart: 1,
+                        oldLines: 0,
+                        newStart: 1,
+                        newLines: 1,
+                        lines: [{kind: "added", text: "TZ=UTC", oldLine: null, newLine: 1}],
+                    },
+                ],
+            };
+            render(
+                <DiffConfirmDialog
+                    open
+                    stackName="My App"
+                    subject={makeSubject("env", noSecretDiff)}
+                    onConfirm={vi.fn()}
+                    onCancel={vi.fn()}
+                />,
+            );
+            expect(screen.queryByRole("button", {name: /show secret values/i})).not.toBeInTheDocument();
+        });
+
+        it("never masks a compose diff, even if a line happens to match KEY=value shape", () => {
+            const composeLikeSecret: UnifiedDiff = {
+                added: 1,
+                removed: 0,
+                hunks: [
+                    {
+                        oldStart: 1,
+                        oldLines: 0,
+                        newStart: 1,
+                        newLines: 1,
+                        lines: [{kind: "added", text: "DB_PASSWORD=hunter2", oldLine: null, newLine: 1}],
+                    },
+                ],
+            };
+            render(
+                <DiffConfirmDialog
+                    open
+                    stackName="My App"
+                    subject={makeSubject("compose", composeLikeSecret)}
+                    onConfirm={vi.fn()}
+                    onCancel={vi.fn()}
+                />,
+            );
+            expect(screen.getByText("DB_PASSWORD=hunter2")).toBeVisible();
+            expect(screen.queryByRole("button", {name: /show secret values/i})).not.toBeInTheDocument();
+        });
+
+        it("resets revealSecrets to false when the dialog closes and reopens", async () => {
+            const {rerender} = render(
+                <DiffConfirmDialog
+                    open
+                    stackName="My App"
+                    subject={makeSubject("env", secretDiff)}
+                    onConfirm={vi.fn()}
+                    onCancel={vi.fn()}
+                />,
+            );
+            await userEvent.click(screen.getByRole("button", {name: "Show secret values"}));
+            expect(screen.getByText("DB_PASSWORD=hunter2")).toBeVisible();
+
+            rerender(
+                <DiffConfirmDialog
+                    open={false}
+                    stackName="My App"
+                    subject={makeSubject("env", secretDiff)}
+                    onConfirm={vi.fn()}
+                    onCancel={vi.fn()}
+                />,
+            );
+            rerender(
+                <DiffConfirmDialog
+                    open
+                    stackName="My App"
+                    subject={makeSubject("env", secretDiff)}
+                    onConfirm={vi.fn()}
+                    onCancel={vi.fn()}
+                />,
+            );
+
+            expect(screen.getByText("DB_PASSWORD=••••••••")).toBeVisible();
+        });
+    });
 });
