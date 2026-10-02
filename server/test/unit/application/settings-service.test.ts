@@ -482,4 +482,87 @@ describe("SettingsService", () => {
             );
         });
     });
+
+    describe("getComposeCheckSettings / saveComposeCheckSettings (Issue #20/D-04/D-10, plan 12-05)", () => {
+        it("returns defaults when no keys are stored — skipReview false, every configurable check true", async () => {
+            mockRepo.getMany.mockResolvedValue({});
+
+            const result = await service.getComposeCheckSettings();
+
+            expect(result).toEqual({
+                skipReview: false,
+                checks: {namedVolume: true, inlineEnv: true, missingEnvFile: true},
+            });
+        });
+
+        it("reads skipReview: true only when the stored value is exactly 'true'", async () => {
+            mockRepo.getMany.mockResolvedValue({"diffConfirm.skip": "true"});
+
+            const result = await service.getComposeCheckSettings();
+
+            expect(result.skipReview).toBe(true);
+        });
+
+        it("treats a stored 'false' for one configurable check as disabled, leaving the others at their default", async () => {
+            mockRepo.getMany.mockResolvedValue({"composeChecks.inlineEnv.enabled": "false"});
+
+            const result = await service.getComposeCheckSettings();
+
+            expect(result.checks).toEqual({namedVolume: true, inlineEnv: false, missingEnvFile: true});
+        });
+
+        it("requests exactly the skip key plus one key per configurable rule id — never a key for an always-on rule", async () => {
+            mockRepo.getMany.mockResolvedValue({});
+
+            await service.getComposeCheckSettings();
+
+            const requestedKeys = mockRepo.getMany.mock.calls[0][0];
+            expect(requestedKeys).toEqual([
+                "diffConfirm.skip",
+                "composeChecks.namedVolume.enabled",
+                "composeChecks.inlineEnv.enabled",
+                "composeChecks.missingEnvFile.enabled",
+            ]);
+            expect(requestedKeys).not.toContain("composeChecks.privileged.enabled");
+            expect(requestedKeys).not.toContain("composeChecks.dockerSocket.enabled");
+            expect(requestedKeys).not.toContain("composeChecks.bindOutsideStack.enabled");
+        });
+
+        it("saveComposeCheckSettings writes exactly the four keys with 'true'/'false' strings", async () => {
+            mockRepo.upsert.mockResolvedValue(undefined);
+
+            await service.saveComposeCheckSettings({
+                skipReview: true,
+                checks: {namedVolume: false, inlineEnv: true, missingEnvFile: false},
+            });
+
+            expect(mockRepo.upsert).toHaveBeenCalledTimes(4);
+            expect(mockRepo.upsert).toHaveBeenCalledWith("diffConfirm.skip", "true");
+            expect(mockRepo.upsert).toHaveBeenCalledWith("composeChecks.namedVolume.enabled", "false");
+            expect(mockRepo.upsert).toHaveBeenCalledWith("composeChecks.inlineEnv.enabled", "true");
+            expect(mockRepo.upsert).toHaveBeenCalledWith("composeChecks.missingEnvFile.enabled", "false");
+        });
+
+        it("a following get reflects what was just saved", async () => {
+            const stored: Record<string, string> = {};
+            mockRepo.upsert.mockImplementation((key: string, value: string) => {
+                stored[key] = value;
+                return Promise.resolve();
+            });
+            mockRepo.getMany.mockImplementation((keys: string[]) =>
+                Promise.resolve(Object.fromEntries(keys.filter((k) => k in stored).map((k) => [k, stored[k]]))),
+            );
+
+            await service.saveComposeCheckSettings({
+                skipReview: true,
+                checks: {namedVolume: false, inlineEnv: true, missingEnvFile: true},
+            });
+            const result = await service.getComposeCheckSettings();
+
+            expect(result).toEqual({
+                skipReview: true,
+                checks: {namedVolume: false, inlineEnv: true, missingEnvFile: true},
+            });
+        });
+    });
 });

@@ -388,6 +388,99 @@ test.describe("Stacks", () => {
         );
     });
 
+    test("stack detail config tab: a finding on the new privileged: true line renders its badge inside the diff annotation for that line, and Confirm & Apply still writes with confirmed: true (Issue #20/D-03/D-11)", async ({page}) => {
+        await mockAuthenticated(page);
+        let putBody: unknown = null;
+        await page.route("**/api/stacks/my-app", (route) => {
+            const url = route.request().url();
+            if (url.endsWith("/compose") || url.endsWith("/env") || url.endsWith("/preview")) {
+                return route.continue();
+            }
+            if (route.request().method() === "PUT") {
+                putBody = route.request().postDataJSON();
+                return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(mockStackDetail)});
+            }
+            return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(mockStackDetail)});
+        });
+        await page.route("**/api/stacks/my-app/compose", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({content: "services:\n  web:\n    image: nginx:latest"}),
+            }),
+        );
+        await page.route("**/api/stacks/my-app/env", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: "FOO=bar"})}),
+        );
+        await page.route("**/api/stacks/my-app/preview", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({
+                    hasChanges: true,
+                    confirmationRequired: true,
+                    compose: {
+                        hunks: [
+                            {
+                                oldStart: 1,
+                                oldLines: 3,
+                                newStart: 1,
+                                newLines: 4,
+                                lines: [
+                                    {kind: "context", text: "services:", oldLine: 1, newLine: 1},
+                                    {kind: "context", text: "  web:", oldLine: 2, newLine: 2},
+                                    {kind: "context", text: "    image: nginx:latest", oldLine: 3, newLine: 3},
+                                    {kind: "added", text: "    privileged: true", oldLine: null, newLine: 4},
+                                ],
+                            },
+                        ],
+                        added: 1,
+                        removed: 0,
+                    },
+                    env: null,
+                    findings: [
+                        {
+                            ruleId: "privileged",
+                            severity: "danger",
+                            message: 'Service "web" runs with privileged: true, granting it full access to the host.',
+                            serviceName: "web",
+                            path: ["services", "web", "privileged"],
+                            line: 4,
+                            introduced: true,
+                        },
+                    ],
+                    composeParseError: null,
+                }),
+            }),
+        );
+        await mockStackEvents(page, "my-app");
+
+        await page.goto("/stacks/my-app/config");
+
+        await replaceCodeEditorContent(
+            page,
+            "Docker Compose File",
+            "services:\n  web:\n    image: nginx:latest\n    privileged: true\n",
+        );
+        await page.getByRole("button", {name: "Save compose file"}).click();
+
+        const dialog = page.getByRole("alertdialog");
+        await expect(dialog).toBeVisible();
+
+        const annotation = dialog.locator('[data-diff-annotation-for="4"]');
+        await expect(annotation).toBeVisible();
+        await expect(annotation).toContainText("Privileged container");
+
+        await dialog.getByRole("button", {name: "Confirm & Apply"}).click();
+
+        await expect.poll(() => putBody).toEqual(
+            expect.objectContaining({
+                composeContent: "services:\n  web:\n    image: nginx:latest\n    privileged: true\n",
+                confirmed: true,
+            }),
+        );
+    });
+
     test("stack detail config tab: Keep Editing on the review dialog sends no PUT and the Save button stays enabled", async ({page}) => {
         await mockAuthenticated(page);
         let putCount = 0;

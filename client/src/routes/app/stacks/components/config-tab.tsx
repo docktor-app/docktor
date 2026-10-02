@@ -80,6 +80,8 @@ export function ConfigTab({files, stackName}: Readonly<ConfigTabProps>) {
                 open={files.review !== null}
                 stackName={stackName}
                 subject={reviewSubject}
+                findings={files.review?.preview.findings}
+                composeParseError={files.review?.preview.composeParseError}
                 onConfirm={files.confirmReview}
                 onCancel={files.cancelReview}
             />

@@ -1,5 +1,6 @@
 import {StackFilesystem} from "../infrastructure/stack-filesystem.js";
 import {DockerExecutor} from "../infrastructure/docker-executor.js";
+import {composeRuleEngine} from "../infrastructure/compose-rule-engine.js";
 import {
     stackRepository,
     stackEventRepository,
@@ -41,7 +42,10 @@ export const settingsService = new SettingsService(settingsRepository);
 // Issue #18/D-01: constructed before stackService since it's one of
 // stackService's constructor dependencies (the pre-write confirmation
 // check). Never constructed a second time elsewhere in the codebase.
-export const composeReviewService = new ComposeReviewService(repo, fs);
+// composeRuleEngine/settingsService (Issue #20/D-04/D-10, plan 12-05) feed
+// the rule-findings-aware preview — settingsService is already constructed
+// above this line.
+export const composeReviewService = new ComposeReviewService(repo, fs, composeRuleEngine, settingsService);
 
 export const stackService = new StackService(repo, fs, docker, stackEventRepository, domainEventBus, settingsService, imageUpdateCheckRepository, composeReviewService);
 export const notificationService = new NotificationService(

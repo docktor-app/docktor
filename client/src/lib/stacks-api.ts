@@ -1,4 +1,10 @@
-import type {CreateStackInput, StackChangePreviewInput, UpdateStackInput} from "@docktor/shared";
+import type {
+    ComposeRuleId,
+    CreateStackInput,
+    CreateStackPreviewInput,
+    StackChangePreviewInput,
+    UpdateStackInput,
+} from "@docktor/shared";
 import {apiFetch} from "./api";
 
 export interface Stack {
@@ -113,11 +119,35 @@ export interface UnifiedDiff {
     readonly removed: number;
 }
 
+// Issue #20/D-03/D-11: mirrors server/src/application/ports/compose-rule-engine-port.ts's
+// ComposeFinding — kept as a separate client-side declaration for the same
+// reason as the diff shapes above (plain data, not validated input).
+export interface ComposeFinding {
+    readonly ruleId: ComposeRuleId;
+    readonly severity: "danger" | "warning";
+    readonly message: string;
+    readonly serviceName: string | null;
+    readonly path: ReadonlyArray<string | number>;
+    readonly line: number | null;
+}
+
+// Mirrors compose-review-service.ts's ReviewFinding — a finding plus
+// whether this specific edit/create introduced it.
+export interface ReviewFinding extends ComposeFinding {
+    readonly introduced: boolean;
+}
+
 export interface StackChangePreview {
     readonly hasChanges: boolean;
     readonly confirmationRequired: boolean;
     readonly compose: UnifiedDiff | null;
     readonly env: UnifiedDiff | null;
+    // Optional on the client type (unlike the server's always-present
+    // response field) so a test/mock literal written before plan 12-05
+    // still type-checks without needing every new field — DiffConfirmDialog
+    // treats an absent findings/composeParseError the same as an empty one.
+    readonly findings?: ReadonlyArray<ReviewFinding>;
+    readonly composeParseError?: string | null;
 }
 
 // Issue #18/D-01/D-03: read-only preview of a compose/env edit against
@@ -128,6 +158,24 @@ export function previewStackChange(id: string, change: StackChangePreviewInput) 
     return apiFetch<StackChangePreview>(`/api/stacks/${id}/preview`, {
         method: "POST",
         body: JSON.stringify(change),
+    });
+}
+
+// Issue #20/D-02: the create-flow analog of StackChangePreview — no diff
+// (nothing on disk to diff against yet).
+export interface NewStackPreview {
+    readonly confirmationRequired: boolean;
+    readonly findings: ReadonlyArray<ReviewFinding>;
+    readonly composeParseError: string | null;
+}
+
+// Issue #20/D-02: read-only findings-only preview for the create flow —
+// never writes anything. The only write path remains createStack() above,
+// which the server rejects with a 428 unless `confirmed: true` is sent.
+export function previewNewStack(input: CreateStackPreviewInput) {
+    return apiFetch<NewStackPreview>("/api/stacks/preview", {
+        method: "POST",
+        body: JSON.stringify(input),
     });
 }
 
