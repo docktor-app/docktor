@@ -1,6 +1,7 @@
 import type {FastifyPluginAsyncZod} from "fastify-type-provider-zod";
 import {z} from "zod";
 import {
+    createStackPreviewSchema,
     createStackSchema,
     stackChangePreviewSchema,
     stackParamsSchema,
@@ -28,6 +29,15 @@ const stackRoutes: FastifyPluginAsyncZod = async (app) => {
     }, async (request, reply) => {
         const stack = await stackService.createStack(request.body);
         return reply.status(201).send(stack);
+    });
+
+    // Issue #20/D-02: read-only findings-only preview for the create flow —
+    // never writes anything. The only write path remains POST /api/stacks
+    // above, which enforces confirmed: true itself via StackService.createStack.
+    app.post("/api/stacks/preview", {
+        schema: {body: createStackPreviewSchema},
+    }, async (request) => {
+        return composeReviewService.previewNewStack(request.body);
     });
 
     // Get stack detail

@@ -1,6 +1,6 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import {StackService} from "../../../src/application/stack-service.js";
-import {BadRequestError, ConflictError, NotFoundError} from "../../../src/lib/errors.js";
+import {BadRequestError, ConfirmationRequiredError, ConflictError, NotFoundError} from "../../../src/lib/errors.js";
 
 function createMockRepo() {
     return {
@@ -74,6 +74,7 @@ function createMockUpdateChecks() {
 function createMockReviewer() {
     return {
         previewStackChange: vi.fn().mockResolvedValue({confirmationRequired: false}),
+        previewNewStack: vi.fn().mockResolvedValue({confirmationRequired: false}),
     };
 }
 
@@ -151,6 +152,69 @@ describe("StackService", () => {
             });
 
             expect(fs.writeEnv).toHaveBeenCalledWith("my-app", "FOO=bar");
+        });
+
+        describe("Issue #20/D-02/T-12-20: findings-only review confirmation gate", () => {
+            it("calls the reviewer with the submitted content before createDirectory when confirmed is not set", async () => {
+                repo.exists.mockResolvedValue(false);
+                repo.create.mockResolvedValue({id: "my-app"});
+                reviewer.previewNewStack.mockResolvedValue({confirmationRequired: false});
+
+                await service.createStack({
+                    displayName: "My App",
+                    composeContent: "services:\n  web:\n    image: nginx\n",
+                    envContent: "FOO=bar",
+                });
+
+                expect(reviewer.previewNewStack).toHaveBeenCalledWith({
+                    displayName: "My App",
+                    composeContent: "services:\n  web:\n    image: nginx\n",
+                    envContent: "FOO=bar",
+                });
+                expect(fs.createDirectory).toHaveBeenCalled();
+            });
+
+            it("throws ConfirmationRequiredError and never calls createDirectory when the reviewer reports confirmationRequired: true and confirmed is not set", async () => {
+                repo.exists.mockResolvedValue(false);
+                reviewer.previewNewStack.mockResolvedValue({confirmationRequired: true});
+
+                await expect(
+                    service.createStack({
+                        displayName: "My App",
+                        composeContent: "services:\n  web:\n    image: nginx\n    privileged: true\n",
+                    }),
+                ).rejects.toThrow(ConfirmationRequiredError);
+
+                expect(fs.createDirectory).not.toHaveBeenCalled();
+            });
+
+            it("creates the stack when confirmed: true is sent, even though confirmationRequired would be true, without calling the reviewer", async () => {
+                repo.exists.mockResolvedValue(false);
+                repo.create.mockResolvedValue({id: "my-app"});
+
+                await service.createStack({
+                    displayName: "My App",
+                    composeContent: "services:\n  web:\n    image: nginx\n    privileged: true\n",
+                    confirmed: true,
+                });
+
+                expect(reviewer.previewNewStack).not.toHaveBeenCalled();
+                expect(fs.createDirectory).toHaveBeenCalled();
+            });
+
+            it("creates the stack normally when the reviewer reports confirmationRequired: false (no findings)", async () => {
+                repo.exists.mockResolvedValue(false);
+                repo.create.mockResolvedValue({id: "my-app"});
+                reviewer.previewNewStack.mockResolvedValue({confirmationRequired: false});
+
+                const result = await service.createStack({
+                    displayName: "My App",
+                    composeContent: "services:\n  web:\n    image: nginx\n",
+                });
+
+                expect(result).toEqual({id: "my-app"});
+                expect(fs.createDirectory).toHaveBeenCalledWith("my-app");
+            });
         });
     });
 

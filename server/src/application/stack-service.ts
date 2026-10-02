@@ -62,6 +62,16 @@ export interface StackChangeReviewer {
         stackId: string,
         change: {composeContent?: string; envContent?: string},
     ): Promise<{confirmationRequired: boolean}>;
+
+    // Issue #20/D-02/T-12-20: the create-flow analog, called from
+    // createStack below before any filesystem write — the single create
+    // path (12-07's template-based createStackFromVariant reuses this same
+    // method), so template content is checked exactly like a pasted one.
+    previewNewStack(input: {
+        displayName: string;
+        composeContent: string;
+        envContent?: string;
+    }): Promise<{confirmationRequired: boolean}>;
 }
 
 export class StackService {
@@ -84,6 +94,25 @@ export class StackService {
 
         if (await this.repo.exists(id)) {
             throw new ConflictError(`Stack "${id}" already exists`);
+        }
+
+        // Issue #20/D-02/D-03/T-12-20: the same enforcement updateStack
+        // applies to edits, applied here to creation — findings-only review
+        // (no diff exists yet), required only when there's something to
+        // confirm, and checked strictly before the first filesystem write
+        // below so a direct API call (or a template's compose content,
+        // 12-07) can never bypass it.
+        if (input.confirmed !== true) {
+            const preview = await this.review.previewNewStack({
+                displayName: input.displayName,
+                composeContent: input.composeContent,
+                envContent: input.envContent,
+            });
+            if (preview.confirmationRequired) {
+                throw new ConfirmationRequiredError(
+                    "This compose file triggers compose checks — review the warnings and confirm before creating the stack.",
+                );
+            }
         }
 
         const hostPath = await this.fs.createDirectory(id);
