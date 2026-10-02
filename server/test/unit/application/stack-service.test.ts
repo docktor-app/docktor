@@ -71,6 +71,12 @@ function createMockUpdateChecks() {
     };
 }
 
+function createMockReviewer() {
+    return {
+        previewStackChange: vi.fn().mockResolvedValue({confirmationRequired: false}),
+    };
+}
+
 describe("StackService", () => {
     let service: StackService;
     let repo: ReturnType<typeof createMockRepo>;
@@ -80,6 +86,7 @@ describe("StackService", () => {
     let bus: ReturnType<typeof createMockBus>;
     let settings: ReturnType<typeof createMockSettings>;
     let updateChecks: ReturnType<typeof createMockUpdateChecks>;
+    let reviewer: ReturnType<typeof createMockReviewer>;
 
     beforeEach(() => {
         repo = createMockRepo();
@@ -89,7 +96,8 @@ describe("StackService", () => {
         bus = createMockBus();
         settings = createMockSettings();
         updateChecks = createMockUpdateChecks();
-        service = new StackService(repo as any, fs as any, docker as any, events as any, bus as any, settings as any, updateChecks as any);
+        reviewer = createMockReviewer();
+        service = new StackService(repo as any, fs as any, docker as any, events as any, bus as any, settings as any, updateChecks as any, reviewer as any);
     });
 
     describe("createStack", () => {
@@ -1114,6 +1122,73 @@ describe("StackService", () => {
             expect(repo.updateEnvHash).toHaveBeenCalledWith({
                 stackId: "my-app",
                 hash: hashComposeContent(""),
+            });
+        });
+
+        describe("Issue #18/D-01/D-03: review-before-apply confirmation gate", () => {
+            it("rejects an unconfirmed changed compose edit with ConfirmationRequiredError and never writes", async () => {
+                const {ConfirmationRequiredError} = await import("../../../src/lib/errors.js");
+                reviewer.previewStackChange.mockResolvedValue({confirmationRequired: true});
+
+                await expect(
+                    service.updateStack("my-app", {composeContent: "services:\n  web:\n    image: nginx:1.27\n"}),
+                ).rejects.toThrow(ConfirmationRequiredError);
+
+                expect(fs.writeCompose).not.toHaveBeenCalled();
+            });
+
+            it("calls the reviewer with the submitted content before any write when neither confirmed is set", async () => {
+                reviewer.previewStackChange.mockResolvedValue({confirmationRequired: true});
+
+                await expect(
+                    service.updateStack("my-app", {composeContent: "changed"}),
+                ).rejects.toThrow();
+
+                expect(reviewer.previewStackChange).toHaveBeenCalledWith("my-app", {
+                    composeContent: "changed",
+                    envContent: undefined,
+                });
+            });
+
+            it("proceeds with the existing write/parse/hash path when confirmed: true is sent, even though confirmationRequired would be true", async () => {
+                reviewer.previewStackChange.mockResolvedValue({confirmationRequired: true});
+
+                await service.updateStack("my-app", {
+                    composeContent: "services:\n  web:\n    image: nginx:1.27\n",
+                    confirmed: true,
+                });
+
+                expect(reviewer.previewStackChange).not.toHaveBeenCalled();
+                expect(fs.writeCompose).toHaveBeenCalledWith(
+                    "my-app",
+                    "services:\n  web:\n    image: nginx:1.27\n",
+                );
+            });
+
+            it("writes normally when the reviewer reports confirmationRequired: false (no actual changes)", async () => {
+                reviewer.previewStackChange.mockResolvedValue({confirmationRequired: false});
+                const content = "services:\n  web:\n    image: nginx\n";
+
+                await service.updateStack("my-app", {composeContent: content});
+
+                expect(fs.writeCompose).toHaveBeenCalledWith("my-app", content);
+            });
+
+            it("never calls the reviewer for a metadata-only update", async () => {
+                await service.updateStack("my-app", {displayName: "New Name"});
+
+                expect(reviewer.previewStackChange).not.toHaveBeenCalled();
+            });
+
+            it("rejects an unconfirmed changed env edit with ConfirmationRequiredError and never writes", async () => {
+                const {ConfirmationRequiredError} = await import("../../../src/lib/errors.js");
+                reviewer.previewStackChange.mockResolvedValue({confirmationRequired: true});
+
+                await expect(
+                    service.updateStack("my-app", {envContent: "FOO=changed"}),
+                ).rejects.toThrow(ConfirmationRequiredError);
+
+                expect(fs.writeEnv).not.toHaveBeenCalled();
             });
         });
     });

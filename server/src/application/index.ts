@@ -12,6 +12,7 @@ import {
     imageUpdateCheckRepository,
 } from "../repositories/index.js";
 import {StackService} from "./stack-service.js";
+import {ComposeReviewService} from "./compose-review-service.js";
 import {SettingsService} from "./settings-service.js";
 import {NotificationService} from "./notification-service.js";
 import {ResticExecutor} from "../infrastructure/restic-executor.js";
@@ -37,7 +38,12 @@ const docker = new DockerExecutor();
 export {settingsRepository};
 export const settingsService = new SettingsService(settingsRepository);
 
-export const stackService = new StackService(repo, fs, docker, stackEventRepository, domainEventBus, settingsService, imageUpdateCheckRepository);
+// Issue #18/D-01: constructed before stackService since it's one of
+// stackService's constructor dependencies (the pre-write confirmation
+// check). Never constructed a second time elsewhere in the codebase.
+export const composeReviewService = new ComposeReviewService(repo, fs);
+
+export const stackService = new StackService(repo, fs, docker, stackEventRepository, domainEventBus, settingsService, imageUpdateCheckRepository, composeReviewService);
 export const notificationService = new NotificationService(
     notificationRepository,
     settingsService,

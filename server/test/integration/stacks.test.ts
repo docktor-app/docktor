@@ -160,6 +160,102 @@ describe("Stacks API", () => {
         expect(body.description).toBe("New description");
     });
 
+    it("PUT /api/stacks/:id with changed compose and no confirmed flag → 428, file on disk untouched (Issue #18/D-01/D-03)", async () => {
+        await app.inject({
+            method: "POST",
+            url: "/api/stacks",
+            headers: {cookie},
+            payload: {
+                displayName: "Review Me",
+                composeContent: COMPOSE_CONTENT,
+            },
+        });
+
+        const res = await app.inject({
+            method: "PUT",
+            url: "/api/stacks/review-me",
+            headers: {cookie},
+            payload: {
+                composeContent: "services:\n  web:\n    image: nginx:1.27\n",
+            },
+        });
+
+        expect(res.statusCode).toBe(428);
+
+        const composeRes = await app.inject({
+            method: "GET",
+            url: "/api/stacks/review-me/compose",
+            headers: {cookie},
+        });
+        expect(composeRes.json().content).toBe(COMPOSE_CONTENT);
+    });
+
+    it("PUT /api/stacks/:id with changed compose and confirmed: true → 200, writes the new content", async () => {
+        await app.inject({
+            method: "POST",
+            url: "/api/stacks",
+            headers: {cookie},
+            payload: {
+                displayName: "Confirm Me",
+                composeContent: COMPOSE_CONTENT,
+            },
+        });
+
+        const newContent = "services:\n  web:\n    image: nginx:1.27\n";
+        const res = await app.inject({
+            method: "PUT",
+            url: "/api/stacks/confirm-me",
+            headers: {cookie},
+            payload: {
+                composeContent: newContent,
+                confirmed: true,
+            },
+        });
+
+        expect(res.statusCode).toBe(200);
+
+        const composeRes = await app.inject({
+            method: "GET",
+            url: "/api/stacks/confirm-me/compose",
+            headers: {cookie},
+        });
+        expect(composeRes.json().content).toBe(newContent);
+    });
+
+    it("POST /api/stacks/:id/preview → 200 with hasChanges: true and a non-empty compose.hunks, writes nothing", async () => {
+        await app.inject({
+            method: "POST",
+            url: "/api/stacks",
+            headers: {cookie},
+            payload: {
+                displayName: "Preview Me",
+                composeContent: COMPOSE_CONTENT,
+            },
+        });
+
+        const res = await app.inject({
+            method: "POST",
+            url: "/api/stacks/preview-me/preview",
+            headers: {cookie},
+            payload: {
+                composeContent: "services:\n  web:\n    image: nginx:1.27\n",
+            },
+        });
+
+        expect(res.statusCode).toBe(200);
+        const body = res.json();
+        expect(body.hasChanges).toBe(true);
+        expect(body.confirmationRequired).toBe(true);
+        expect(body.compose.hunks.length).toBeGreaterThan(0);
+
+        const composeRes = await app.inject({
+            method: "GET",
+            url: "/api/stacks/preview-me/compose",
+            headers: {cookie},
+        });
+        expect(composeRes.json().content).toBe(COMPOSE_CONTENT);
+    });
+
     it("DELETE /api/stacks/:id → 204", async () => {
         await app.inject({
             method: "POST",

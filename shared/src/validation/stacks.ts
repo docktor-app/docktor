@@ -14,6 +14,10 @@ export const createStackSchema = z.object({
     description: z.string().max(500).optional(),
     composeContent: z.string().min(1),
     envContent: z.string().optional(),
+    // D-02: creating a stack never shows a diff (nothing on disk to diff
+    // against) — present for schema symmetry with updateStackSchema and for
+    // 12-05's create-flow findings review, unused by this plan's createStack.
+    confirmed: z.literal(true).optional(),
 });
 
 export const updateStackSchema = z.object({
@@ -21,6 +25,32 @@ export const updateStackSchema = z.object({
     description: z.string().max(500).optional(),
     composeContent: z.string().min(1).optional(),
     envContent: z.string().optional(),
+    // Issue #18/D-01/D-03: an edit to composeContent/envContent that differs
+    // from what's on disk is rejected with ConfirmationRequiredError (428)
+    // unless the client re-submits with confirmed: true after reviewing the
+    // diff. Never set by createStack's callers.
+    confirmed: z.literal(true).optional(),
+});
+
+// Issue #18/D-01: body for POST /api/stacks/:id/preview — a read-only
+// request to diff submitted content against what's on disk. At least one of
+// composeContent/envContent must be present.
+export const stackChangePreviewSchema = z
+    .object({
+        composeContent: z.string().min(1).optional(),
+        envContent: z.string().optional(),
+    })
+    .refine((v) => v.composeContent !== undefined || v.envContent !== undefined, {
+        message: "Provide composeContent or envContent to preview",
+    });
+
+// Consumed by 12-05's create-flow preview — a create-time analog of
+// stackChangePreviewSchema, scoped to exactly the fields createStackSchema
+// accepts for compose/env content.
+export const createStackPreviewSchema = createStackSchema.pick({
+    displayName: true,
+    composeContent: true,
+    envContent: true,
 });
 
 export const stackParamsSchema = z.object({
@@ -103,6 +133,8 @@ export type StackParams = z.infer<typeof stackParamsSchema>;
 export type StackServiceParams = z.infer<typeof stackServiceParamsSchema>;
 export type CreateStackInput = z.infer<typeof createStackSchema>;
 export type UpdateStackInput = z.infer<typeof updateStackSchema>;
+export type StackChangePreviewInput = z.infer<typeof stackChangePreviewSchema>;
+export type CreateStackPreviewInput = z.infer<typeof createStackPreviewSchema>;
 export type UpgradeServiceParams = z.infer<typeof upgradeServiceParamsSchema>;
 export type UpgradeServiceInput = z.infer<typeof upgradeServiceSchema>;
 export type EnvTableFormInput = z.infer<typeof envTableFormSchema>;

@@ -2,6 +2,7 @@ import type {FastifyPluginAsyncZod} from "fastify-type-provider-zod";
 import {z} from "zod";
 import {
     createStackSchema,
+    stackChangePreviewSchema,
     stackParamsSchema,
     stackServiceParamsSchema,
     updateStackSchema,
@@ -9,7 +10,7 @@ import {
     upgradeServiceSchema,
 } from "@docktor/shared";
 import {requireAuth} from "../lib/auth-middleware.js";
-import {logService, stackService} from "../application/index.js";
+import {composeReviewService, logService, stackService} from "../application/index.js";
 import {processDockerLogChunk} from "../lib/docker-log-parser.js";
 import {NotFoundError} from "../lib/errors.js";
 
@@ -45,6 +46,15 @@ const stackRoutes: FastifyPluginAsyncZod = async (app) => {
         schema: {params: stackParamsSchema, body: updateStackSchema},
     }, async (request) => {
         return stackService.updateStack(request.params.id, request.body);
+    });
+
+    // Issue #18/D-01/D-03: read-only diff preview of submitted compose/env
+    // content against what's on disk — never writes anything. The only
+    // write path remains PUT above, which enforces confirmed: true itself.
+    app.post("/api/stacks/:id/preview", {
+        schema: {params: stackParamsSchema, body: stackChangePreviewSchema},
+    }, async (request) => {
+        return composeReviewService.previewStackChange(request.params.id, request.body);
     });
 
     // Delete stack

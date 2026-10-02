@@ -68,7 +68,7 @@ export default function StackDetailPage() {
                         />
                     </TabsContent>
                     <TabsContent value="config" className="mt-4">
-                        <ConfigTab files={files} />
+                        <ConfigTab files={files} stackName={stack.displayName} />
                     </TabsContent>
                     <TabsContent value="logs" className="mt-4 w-full max-w-full overflow-hidden">
                         <LogViewer

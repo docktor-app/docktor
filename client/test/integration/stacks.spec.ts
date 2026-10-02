@@ -302,12 +302,13 @@ test.describe("Stacks", () => {
         await expect(page.getByRole("menuitem", {name: /restart/i})).toBeVisible();
     });
 
-    test("stack detail config tab: edit and save the compose file (D-02/D-03)", async ({page}) => {
+    test("stack detail config tab: edit and save the compose file shows a review dialog, Confirm & Apply writes (Issue #18/D-01/D-02/D-03)", async ({page}) => {
         await mockAuthenticated(page);
         let putBody: unknown = null;
+        let previewCalled = false;
         await page.route("**/api/stacks/my-app", (route) => {
             const url = route.request().url();
-            if (url.endsWith("/compose") || url.endsWith("/env")) {
+            if (url.endsWith("/compose") || url.endsWith("/env") || url.endsWith("/preview")) {
                 return route.continue();
             }
             if (route.request().method() === "PUT") {
@@ -330,6 +331,35 @@ test.describe("Stacks", () => {
         await page.route("**/api/stacks/my-app/env", (route) =>
             route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: "FOO=bar"})}),
         );
+        await page.route("**/api/stacks/my-app/preview", (route) => {
+            previewCalled = true;
+            return route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({
+                    hasChanges: true,
+                    confirmationRequired: true,
+                    compose: {
+                        hunks: [
+                            {
+                                oldStart: 1,
+                                oldLines: 2,
+                                newStart: 1,
+                                newLines: 2,
+                                lines: [
+                                    {kind: "context", text: "services:", oldLine: 1, newLine: 1},
+                                    {kind: "removed", text: "  web:", oldLine: 2, newLine: null},
+                                    {kind: "added", text: "  web2:", oldLine: null, newLine: 2},
+                                ],
+                            },
+                        ],
+                        added: 1,
+                        removed: 1,
+                    },
+                    env: null,
+                }),
+            });
+        });
         await mockStackEvents(page, "my-app");
 
         await page.goto("/stacks/my-app/config");
@@ -337,13 +367,88 @@ test.describe("Stacks", () => {
         await expect(page.getByRole("heading", {name: "Compose File"})).toBeVisible();
         await expect(page.getByRole("heading", {name: "Environment Variables"})).toBeVisible();
 
-        await replaceCodeEditorContent(page, "Docker Compose File", "services:\n  web:\n    image: nginx:1.27\n");
+        await replaceCodeEditorContent(page, "Docker Compose File", "services:\n  web2:\n    image: nginx:1.27\n");
 
         await page.getByRole("button", {name: "Save compose file"}).click();
 
+        const dialog = page.getByRole("alertdialog");
+        await expect(dialog).toBeVisible();
+        await expect(dialog).toContainText("Review changes to My App");
+        await expect(dialog.locator('[data-diff-kind="added"]')).toBeVisible();
+        expect(previewCalled).toBe(true);
+        expect(putBody).toBeNull();
+
+        await page.getByRole("button", {name: "Confirm & Apply"}).click();
+
         await expect.poll(() => putBody).toEqual(
-            expect.objectContaining({composeContent: "services:\n  web:\n    image: nginx:1.27\n"}),
+            expect.objectContaining({
+                composeContent: "services:\n  web2:\n    image: nginx:1.27\n",
+                confirmed: true,
+            }),
         );
+    });
+
+    test("stack detail config tab: Keep Editing on the review dialog sends no PUT and the Save button stays enabled", async ({page}) => {
+        await mockAuthenticated(page);
+        let putCount = 0;
+        await page.route("**/api/stacks/my-app", (route) => {
+            const url = route.request().url();
+            if (url.endsWith("/compose") || url.endsWith("/env") || url.endsWith("/preview")) {
+                return route.continue();
+            }
+            if (route.request().method() === "PUT") {
+                putCount += 1;
+                return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(mockStackDetail)});
+            }
+            return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(mockStackDetail)});
+        });
+        await page.route("**/api/stacks/my-app/compose", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({content: "services:\n  web:\n    image: nginx:latest"}),
+            }),
+        );
+        await page.route("**/api/stacks/my-app/env", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: "FOO=bar"})}),
+        );
+        await page.route("**/api/stacks/my-app/preview", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({
+                    hasChanges: true,
+                    confirmationRequired: true,
+                    compose: {
+                        hunks: [
+                            {
+                                oldStart: 1,
+                                oldLines: 1,
+                                newStart: 1,
+                                newLines: 1,
+                                lines: [{kind: "added", text: "  web2:", oldLine: null, newLine: 1}],
+                            },
+                        ],
+                        added: 1,
+                        removed: 0,
+                    },
+                    env: null,
+                }),
+            }),
+        );
+        await mockStackEvents(page, "my-app");
+
+        await page.goto("/stacks/my-app/config");
+
+        await replaceCodeEditorContent(page, "Docker Compose File", "services:\n  web2:\n    image: nginx:1.27\n");
+        await page.getByRole("button", {name: "Save compose file"}).click();
+
+        await expect(page.getByRole("alertdialog")).toBeVisible();
+        await page.getByRole("button", {name: "Keep Editing"}).click();
+
+        await expect(page.getByRole("alertdialog")).toHaveCount(0);
+        expect(putCount).toBe(0);
+        await expect(page.getByRole("button", {name: "Save compose file"})).toBeEnabled();
     });
 
     test("stack detail config tab: EnvEditor table mode add + save, raw mode reflects the same edit (D-20/D-21)", async ({page}) => {
@@ -373,6 +478,18 @@ test.describe("Stacks", () => {
         );
         await page.route("**/api/stacks/my-app/env", (route) =>
             route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: "FOO=bar"})}),
+        );
+        // This test adds a non-secret variable and expects the save to apply
+        // directly — stub the preview endpoint reporting no review needed,
+        // so the D-20/D-21 table-edit behaviour under test isn't coupled to
+        // Issue #18/D-01's review-before-apply gate (covered separately by
+        // the env-save review test).
+        await page.route("**/api/stacks/my-app/preview", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({hasChanges: true, confirmationRequired: false, compose: null, env: null}),
+            }),
         );
         await mockStackEvents(page, "my-app");
 

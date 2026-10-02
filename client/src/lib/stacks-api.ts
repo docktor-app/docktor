@@ -1,4 +1,4 @@
-import type {CreateStackInput, UpdateStackInput} from "@docktor/shared";
+import type {CreateStackInput, StackChangePreviewInput, UpdateStackInput} from "@docktor/shared";
 import {apiFetch} from "./api";
 
 export interface Stack {
@@ -83,6 +83,51 @@ export function updateStack(id: string, input: UpdateStackInput) {
     return apiFetch<StackDetail>(`/api/stacks/${id}`, {
         method: "PUT",
         body: JSON.stringify(input),
+    });
+}
+
+// Issue #18/D-01: mirrors server/src/lib/unified-diff.ts's exported shapes —
+// kept as a separate client-side declaration (not an @docktor/shared import)
+// since these are plain data shapes, not validated input, and the server
+// module isn't part of the shared package.
+export type DiffLineKind = "context" | "added" | "removed";
+
+export interface DiffLine {
+    readonly kind: DiffLineKind;
+    readonly text: string;
+    readonly oldLine: number | null;
+    readonly newLine: number | null;
+}
+
+export interface DiffHunk {
+    readonly oldStart: number;
+    readonly oldLines: number;
+    readonly newStart: number;
+    readonly newLines: number;
+    readonly lines: readonly DiffLine[];
+}
+
+export interface UnifiedDiff {
+    readonly hunks: readonly DiffHunk[];
+    readonly added: number;
+    readonly removed: number;
+}
+
+export interface StackChangePreview {
+    readonly hasChanges: boolean;
+    readonly confirmationRequired: boolean;
+    readonly compose: UnifiedDiff | null;
+    readonly env: UnifiedDiff | null;
+}
+
+// Issue #18/D-01/D-03: read-only preview of a compose/env edit against
+// what's currently on disk — never writes anything. The only write path
+// remains updateStack() above, which the server rejects with a 428
+// (ConfirmationRequiredError) unless `confirmed: true` is sent after review.
+export function previewStackChange(id: string, change: StackChangePreviewInput) {
+    return apiFetch<StackChangePreview>(`/api/stacks/${id}/preview`, {
+        method: "POST",
+        body: JSON.stringify(change),
     });
 }
 

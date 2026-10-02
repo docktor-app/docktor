@@ -1,6 +1,6 @@
 import type {CreateStackInput, UpdateStackInput} from "@docktor/shared";
 import {slugify} from "../lib/slugify.js";
-import {BadRequestError, ConflictError, NotFoundError} from "../lib/errors.js";
+import {BadRequestError, ConfirmationRequiredError, ConflictError, NotFoundError} from "../lib/errors.js";
 import {createComposeConfig, type ComposeConfig} from "../domain/compose-config.js";
 import {hashComposeContent} from "../lib/compose-parser.js";
 import {assertTransition, TransitionError,} from "../domain/stack-status-machine.js";
@@ -50,6 +50,20 @@ export interface ImageUpdateCheckReadRepo {
     } | null>;
 }
 
+/**
+ * Narrow port onto ComposeReviewService (Issue #18/D-01/D-03). Declared here
+ * rather than importing the concrete class, for the same reason as
+ * StackEventReadRepo/ImageUpdateCheckReadRepo above: this service stays
+ * unit-testable with a plain object and the dependency arrow keeps pointing
+ * inward.
+ */
+export interface StackChangeReviewer {
+    previewStackChange(
+        stackId: string,
+        change: {composeContent?: string; envContent?: string},
+    ): Promise<{confirmationRequired: boolean}>;
+}
+
 export class StackService {
     constructor(
         private readonly repo: StackRepository,
@@ -59,6 +73,7 @@ export class StackService {
         private readonly bus: Pick<EventBusPort, "emit">,
         private readonly settings: Pick<SettingsService, "getProxySettings">,
         private readonly updateChecks: ImageUpdateCheckReadRepo,
+        private readonly review: StackChangeReviewer,
     ) {}
 
     async createStack(input: CreateStackInput) {
@@ -256,6 +271,26 @@ export class StackService {
 
     async updateStack(id: string, input: UpdateStackInput) {
         const stack = await this.repo.findByIdOrThrow(id);
+
+        // Issue #18/D-01/D-03/Pitfall 2 (T-12-01): the confirmation check
+        // MUST run before any fs.write* call below — it diffs the submitted
+        // content against what's currently on disk, which is only a
+        // meaningful comparison before this method has written anything.
+        // A direct API call carrying unconfirmed changed content is
+        // rejected here, server-side, before a single byte is written —
+        // the review step cannot be bypassed by skipping the client UI.
+        if (
+            (input.composeContent !== undefined || input.envContent !== undefined) &&
+            input.confirmed !== true
+        ) {
+            const preview = await this.review.previewStackChange(id, {
+                composeContent: input.composeContent,
+                envContent: input.envContent,
+            });
+            if (preview.confirmationRequired) {
+                throw new ConfirmationRequiredError();
+            }
+        }
 
         if (input.composeContent !== undefined) {
             // YAML-first: the file on disk must reflect exactly what the user
