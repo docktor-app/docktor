@@ -401,17 +401,17 @@ export class RuleRegistry {
 | A4 | `Service.ports` JSON is populated reliably enough (for every deployed service) to be the primary data source for Docktor-stack-vs-Docktor-stack port conflict detection | Architecture Pattern 3 | Medium — confirmed the *schema* stores this shape (service.prisma:11-14), but this session did not trace every write path (`replaceServices`, `syncServicesFromCompose`) to confirm `ports` is never left null for a running service; worth a quick repo check during planning |
 | A5 | The diff-confirm/warning flow should be a two-phase (preview-then-confirm) extension of the existing `PUT /api/stacks/:id` route rather than a wholly separate preview endpoint | Pitfall 2 | Low-medium — this is an implementation-shape judgment call, not verified against any existing precedent in the codebase (no other route in this project currently does a two-phase preview/confirm); the planner should pick one and the plan-checker should sanity-check it against D-02/D-03's exact requirements |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Does `ss`/`lsof` need to run via a throwaway `docker run --rm --network host --pid host <image>` to get real host visibility, or is "best-effort, usually reports unknown" an acceptable reading of D-13?**
+1. **(RESOLVED)** Does `ss`/`lsof` need to run via a throwaway `docker run --rm --network host --pid host <image>` to get real host visibility, or is "best-effort, usually reports unknown" an acceptable reading of D-13?**
    - What we know: D-13's text literally says "shelling out to `ss`/`lsof`," with an explicit "falls back to unknown process" clause that already anticipates imperfect results.
    - What's unclear: Whether the user intended that fallback to cover "tool not installed" only, or also "tool can't see what it needs to see from inside this container." A `docker run --net=host --pid=host` helper-container approach would need a new minimal image reference (pinned + checksummed per this project's WR-03 convention for curl-downloaded binaries) and is a materially bigger implementation than a direct in-container shell-out.
-   - Recommendation: Surface this explicitly as a planning-time or discuss-phase checkpoint before committing to an implementation approach — don't let the plan silently choose the weaker (in-container) interpretation without the user knowing the tradeoff.
+   - **Resolution:** Plan 12-03 accepts this research's layered three-tier design (DB query → dockerode → `ss`/`lsof` best-effort last resort) without a host-net helper container — this matches D-13's literal text and its own stated fallback ("falls back to unknown process"), and does not expand the Dockerfile's trust boundary beyond what CONTEXT.md decided. Plan 12-08's UI copy treats Docker's own bind error as the final authority, never claiming exhaustive host-level visibility.
 
-2. **What exact shape does the "preview" response for the diff-confirm dialog take — a new field on the existing `PUT /api/stacks/:id` 200 response, a distinct `428 Precondition Required`-style status, or a separate `POST /api/stacks/:id/preview-update` endpoint?**
+2. **(RESOLVED)** What exact shape does the "preview" response for the diff-confirm dialog take — a new field on the existing `PUT /api/stacks/:id` 200 response, a distinct `428 Precondition Required`-style status, or a separate `POST /api/stacks/:id/preview-update` endpoint?**
    - What we know: The existing route (`server/src/routes/stacks.ts:44-49`) is a single `PUT` with `updateStackSchema` body; `updateStack()` currently always applies immediately.
    - What's unclear: No existing precedent in the codebase for a two-phase preview/confirm HTTP flow (checked `routes/stacks.ts` and `routes/backups.ts` patterns — nothing matches this shape).
-   - Recommendation: The planner should pick one shape and the plan-checker should verify it threads a `confirmed: true`/skip-diff-setting check correctly through both the compose and env branches of `updateStack()`.
+   - **Resolution:** Plan 12-01 picks a separate `POST /api/stacks/:id/preview` endpoint (distinct from the existing `PUT /api/stacks/:id`), threading a `confirmed: true` flag through both the compose and env branches of `updateStack()`, with the evaluate-then-write ordering (Pitfall 2) explicitly enforced and acceptance-criteria-checked.
 
 ## Environment Availability
 
