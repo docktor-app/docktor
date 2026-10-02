@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 milestone: v0.1.0
 current_phase: 12
 current_phase_name: Compose Safety and Templates
-current_plan: Not started
+current_plan: 2
 status: "Phases 1-9 all complete, tested, and reviewed. Product tracking moved to GitHub Issues (docktor-app/docktor): the vision doc (docs/vision.md scope) and all .planning/todos/pending/ items were triaged into 49 GitHub issues, native Issue Types adopted (Bug/Feature/Chore/Documentation/Task), and CLAUDE.md documents the process (including a project-specific override redirecting gsd-capture's add-todo to GitHub issues instead of .planning/todos/). User curated 23 issues (later 24, adding #15 UI Rework) into GitHub milestone 'v0.1.0 - First Release' (renamed from the working 'v1.0.0' label since this is the first release). ROADMAP.md Phases 10-16 now scope that milestone, sourced 1:1 from those issues (Requirements fields list GitHub issue numbers, not REQ-IDs — REQUIREMENTS.md is frozen at its already-complete v1.0 content and not being extended for new work). Per user request, Phase 10 (Backend Architecture Refactor, #16) and Phase 11 (UI Rework, #15) were resequenced to run BEFORE the feature phases that add new server/client code (12, 14, 15), so that new work lands on the reworked structure instead of needing rework afterward — both are independent of each other (separate server/client tracks) and both are intentionally open-ended, flagged as needing /gsd-discuss-phase before /gsd-plan-phase. Phase 13 (Update Checker Reliability — narrow bug fixes, not new architecture) carries low rework risk and can run anytime. Phase 10 (Backend Architecture Refactor) has since been merged into main (PR #67). Phase 11 progressed through context capture, UI-SPEC approval, and phase planning (13 plans across 5 waves, plan-checker blockers resolved), and Wave 1's tracer plan 11-01 is now complete: the Config tab merge (D-01/D-02/D-03) and the stack-detail-page decomposition to an 89-line orchestrator (CLAUDE.md Known Refactoring Target closed) both landed, with the StackConfigFiles/ConfigTab/OverviewTab/StackDetailHeader contracts and the PLAYWRIGHT_PORT parameterization ready for the remaining 12 plans to build on. Note: the original executing session for 11-01 was interrupted by a container restart between finishing Task 2 and writing its SUMMARY.md — both tasks' commits were already pushed and no work was lost; a follow-up session independently re-verified everything (unit suite, typecheck, full Playwright E2E including the parallel-port case) before writing the SUMMARY. Wave 2's 11-02 (ToneBadge/StatusDot status-indicator unification, D-08/D-09/D-10/D-11) is now complete: same container-restart pattern hit again (interrupted between finishing Task 3's edits and its first commit, with zero commits made), recovered the same way — full verification (all task `<verify>` commands, all acceptance-criteria greps, full client suite, tsc -b) before splitting into 3 retroactive task commits and writing the SUMMARY. Wave 2 completed with 11-03 (dark mode via next-themes), 11-04 (dashboard StatCard extraction) and 11-05 (server update-info enrichment on GET /api/stacks — same interruption-and-recovery pattern as 11-02). Wave 3 is now underway: 11-06 (unified activity timeline + flat Services section) and 11-07 (proxy/backup dialogs) landed cleanly; 11-08 (shared LogTerminal + backup detail rebuild) fixed Phase 10 UAT gap G-10-2 (backup-history polling loop) and was interrupted twice — once by a Claude usage-limit error before any edits existed (clean restart), once by a container restart after Task 3's RED commit but before its GREEN commit (recovered in place after independent re-verification). Remaining in wave 3: 11-09 (CodeMirror YAML editor, a checkpoint plan), 11-10 (unsaved-changes guard), 11-11 (settings.tsx split). 11-09's Task 1 blocking-human package-legitimacy checkpoint (four new client deps: @uiw/react-codemirror, yaml, @codemirror/lang-yaml, @codemirror/lint — the first two SUS-flagged by the automated gate on recency only) was presented to the developer on 2026-09-27T17:32:19Z and explicitly approved as-is, no replacements. Session paused here (weekly usage limit) before Task 2's install/build work began — client/package.json and yarn.lock are untouched, so the next execute-phase run for 11-09 should proceed straight to Task 2 without re-presenting the checkpoint, and must record this approval (developer, 2026-09-27T17:32:19Z, all four packages approved) in 11-09-SUMMARY.md per the plan's own instruction. Wave 3 completed with 11-09 (CodeMirror YAML editor) and 11-10 (unsaved-changes guard); Wave 4's 11-11 (settings.tsx split) then landed, reducing settings.tsx from 1125 to a 72-line orchestrator and closing that CLAUDE.md Known Refactoring Target. Wave 4's 11-12 (structured env editor, D-20/D-21/D-22/D-06) is now also complete: replaced the raw .env textarea with a lossless table/raw-mode EnvEditor on both the Config tab and Create Stack page. During TDD execution, a real line-duplication bug was found and fixed in the editor's re-serialization ref design (the plan's own suggested single-ref approach corrupts the document one keystroke at a time whenever a newly-added row passes through its empty-key state) — caught by the plan's own E2E acceptance criteria before merge, fixed with a stable-base/self-vs-external ref split, and covered by a new regression unit test. Remaining in wave 4/phase 11: 11-13 (phase closeout)."
-stopped_at: Phase 12 UI-SPEC approved
-last_updated: "2026-10-02T06:41:06.214Z"
-state_head: b9627117a6315adec0b6546633d389ac6791c2f9
+stopped_at: "Completed 12-01-PLAN.md (Issue #18 compose/env review-before-apply)"
+last_updated: "2026-10-02T08:33:45.120Z"
+state_head: ddfda08b0c4379520404417a2af173918ed3fbb1
 progress:
   total_phases: 17
   completed_phases: 9
   total_plans: 129
-  completed_plans: 118
+  completed_plans: 119
 milestone_name: milestone
 ---
 
@@ -23,12 +23,12 @@ milestone_name: milestone
 See: .planning/PROJECT.md (updated 2026-09-22)
 
 **Core value:** Users can deploy, monitor, and manage Docker Compose stacks through a browser UI without needing SSH or Docker CLI access.
-**Current focus:** Phase 11 — UI Rework
+**Current focus:** Phase 12 — Compose Safety and Templates
 
 ## Current Position
 
-Phase: 12 (Compose Safety and Templates) — READY TO EXECUTE
-Current Plan: Not started
+Phase: 12 (Compose Safety and Templates) — EXECUTING
+Current Plan: 2
 Total Plans in Phase: 11
 
 ## Performance Metrics
@@ -153,6 +153,7 @@ Total Plans in Phase: 11
 | Phase 11 P11 | 55min | 2 tasks | 11 files |
 | Phase 11 P12 | 70min | 2 tasks | 9 files |
 | Phase 11 P13 | ~4h50m (interrupted) | 3 tasks | 16 files |
+| Phase 12 P01 | 54min | 3 tasks | 24 files |
 
 ## Accumulated Context
 
@@ -356,6 +357,9 @@ Recent decisions affecting current work:
 - [Phase 11]: [Phase 11-12] isSecretKey's D-22 heuristic (`/password|secret|key|token/i`) is left exactly as broad as specified (e.g. it also masks a key merely containing "KEY"); Playwright tests disambiguate a masked value input from its own Show/Hide reveal button with `{exact: true}` rather than narrowing the regex
 - [Phase 11]: [Phase 11-13]: D-17 mobile audit found two real overflow bugs (EnvEditor grid-item min-width, WizardStepper flex fit-content sizing), both fixed with min-w-0/w-full rather than touching the shadcn-managed ancestor; icon-only touch-target findings triaged as issue-not-fix-now (#71) since none break a core flow
 - [Phase 11]: [Phase 11-13]: CLAUDE.md's Known Refactoring Targets table now tracks component-level debt (5 Settings cards' ad-hoc useState form state, flagged by 11-11) instead of the three now-closed page-file monoliths ([id].tsx, settings.tsx, dashboard.tsx)
+- [Phase 12]: [Phase 12-01]: diff@^9.0.0 (jsdiff) approved by raphael@muesseler.de via blocking-human package-legitimacy checkpoint — installed with no @types/diff
+- [Phase 12]: [Phase 12-01]: StackService.updateStack's review-before-apply confirmation check runs immediately after findByIdOrThrow and strictly before fs.writeCompose/writeEnv (Pitfall 2) — enforced via a new 8th constructor param (StackChangeReviewer), never bypassable by a direct API call
+- [Phase 12]: [Phase 12-01]: useStackConfigFiles' applyChange uses toast.loading/success/error/dismiss directly instead of toast.promise, because the 428-retry branch must resolve with neither a success nor an error toast — toast.promise always renders once its success option is structurally present
 
 ### Quick Tasks Completed
 
@@ -426,6 +430,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-10-01T13:04:24.003Z
-Stopped at: Phase 12 UI-SPEC approved
-Resume file: .planning/phases/12-compose-safety-and-templates/12-UI-SPEC.md
+Last session: 2026-10-02T08:33:44.209Z
+Stopped at: Completed 12-01-PLAN.md (Issue #18 compose/env review-before-apply)
+Resume file: None

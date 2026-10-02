@@ -511,9 +511,20 @@ Needs Phase 10's backend structure and Phase 11's UI patterns for the new diff/w
   3. A compose file with `privileged: true`, a Docker-socket mount, or a host bind mount outside the stack directory triggers a confirmation dialog before it's applied; configurable checks flag named-volume usage, inlined env vars, and a `.env` file with no `env_file` reference — all warn, none block (#20)
   4. Deploying a stack whose compose file requests a host port already in use surfaces which stack or process holds it, without blocking deploy (#21)
 
-**Plans:** 0 plans
+**Plans:** 1/11 plans executed
 
 Plans:
+- [x] 12-01-PLAN.md
+- [ ] 12-02-PLAN.md
+- [ ] 12-03-PLAN.md
+- [ ] 12-04-PLAN.md
+- [ ] 12-05-PLAN.md
+- [ ] 12-06-PLAN.md
+- [ ] 12-07-PLAN.md
+- [ ] 12-08-PLAN.md
+- [ ] 12-09-PLAN.md
+- [ ] 12-10-PLAN.md
+- [ ] 12-11-PLAN.md
 - [ ] TBD (run /gsd-plan-phase 12 to break down)
 
 ### Phase 13: Update Checker Reliability
