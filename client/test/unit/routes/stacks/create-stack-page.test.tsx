@@ -1,15 +1,28 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import {useEffect} from "react";
-import {render, screen} from "@testing-library/react";
+import {render, screen, waitFor} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {MemoryRouter} from "react-router";
 import CreateStackPage from "@/routes/app/stacks/create";
 import {SidebarProvider} from "@/components/ui/sidebar";
-import {createStack} from "@/lib/stacks-api";
+import {createStack, previewNewStack} from "@/lib/stacks-api";
 
 vi.mock("@/lib/stacks-api", () => ({
     createStack: vi.fn(),
+    previewNewStack: vi.fn(),
 }));
+
+// jsdom has no ResizeObserver — the AlertDialog content renders a Tooltip
+// (via ComposeWarningBadge) that doesn't need it, but Radix's own primitives
+// elsewhere in this tree do; mirrors settings-page.test.tsx/
+// proxy-settings-card.test.tsx's identical stub.
+if (typeof globalThis.ResizeObserver === "undefined") {
+    globalThis.ResizeObserver = class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+    } as unknown as typeof ResizeObserver;
+}
 
 // CodeMirror internals aren't under test here — swap ComposeEditor/EnvEditor
 // for plain controlled textareas, mirroring env-editor.test.tsx's own mock
@@ -38,6 +51,27 @@ vi.mock("@/components/domain/stack/env-editor", () => ({
 vi.setConfig({testTimeout: 15000});
 
 const mockCreateStack = vi.mocked(createStack);
+const mockPreviewNewStack = vi.mocked(previewNewStack);
+
+const CLEAN_PREVIEW = {confirmationRequired: false, findings: [], composeParseError: null};
+
+function dangerPreview() {
+    return {
+        confirmationRequired: true,
+        findings: [
+            {
+                ruleId: "privileged" as const,
+                severity: "danger" as const,
+                message: "Service web has privileged: true",
+                serviceName: "web",
+                path: [],
+                line: 4,
+                introduced: true,
+            },
+        ],
+        composeParseError: null,
+    };
+}
 
 function renderPage() {
     return render(
@@ -52,6 +86,8 @@ function renderPage() {
 describe("CreateStackPage", () => {
     beforeEach(() => {
         mockCreateStack.mockReset();
+        mockPreviewNewStack.mockReset();
+        mockPreviewNewStack.mockResolvedValue(CLEAN_PREVIEW);
         // jsdom does not implement matchMedia; SidebarProvider's mobile-detection
         // hook requires it (mirrors settings-page.test.tsx).
         if (typeof window.matchMedia !== "function") {
@@ -95,5 +131,50 @@ describe("CreateStackPage", () => {
         await user.click(screen.getByRole("button", {name: "Create Stack"}));
 
         expect(await screen.findByText("Stack name already in use")).toBeInTheDocument();
+    });
+
+    // Issue #20 AC1: a compose that triggers a finding opens the findings-only
+    // review dialog instead of creating the stack immediately.
+    it("opens the findings-only review dialog and does not create the stack for a privileged compose", async () => {
+        mockPreviewNewStack.mockResolvedValue(dangerPreview());
+        const user = userEvent.setup();
+
+        renderPage();
+        await user.type(screen.getByLabelText("Name"), "My Stack");
+        await user.type(
+            screen.getByLabelText("Docker Compose File"),
+            "services:\n  web:\n    image: nginx\n    privileged: true\n",
+        );
+        await user.click(screen.getByRole("button", {name: "Create Stack"}));
+
+        expect(await screen.findByText("Review My Stack before creating")).toBeInTheDocument();
+        expect(screen.getByText("Privileged container")).toBeInTheDocument();
+        expect(mockCreateStack).not.toHaveBeenCalled();
+    });
+
+    // Issue #20 AC1: "Confirm & Apply" sends confirmed: true and the
+    // resulting stack still navigates away (verified via createStack's call
+    // args here; the Playwright test covers the actual navigation).
+    it("sends confirmed: true when the review is confirmed", async () => {
+        mockPreviewNewStack.mockResolvedValue(dangerPreview());
+        mockCreateStack.mockResolvedValue({id: "new-stack"} as never);
+        const user = userEvent.setup();
+
+        renderPage();
+        await user.type(screen.getByLabelText("Name"), "My Stack");
+        await user.type(
+            screen.getByLabelText("Docker Compose File"),
+            "services:\n  web:\n    image: nginx\n    privileged: true\n",
+        );
+        await user.click(screen.getByRole("button", {name: "Create Stack"}));
+        await screen.findByText("Review My Stack before creating");
+
+        await user.click(screen.getByRole("button", {name: "Confirm & Apply"}));
+
+        await waitFor(() =>
+            expect(mockCreateStack).toHaveBeenCalledWith(
+                expect.objectContaining({displayName: "My Stack", confirmed: true}),
+            ),
+        );
     });
 });

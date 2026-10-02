@@ -193,6 +193,17 @@ test.describe("Stacks", () => {
     test("create stack submits and redirects to detail page", async ({page}) => {
         await mockAuthenticated(page);
 
+        // Issue #20/D-02: the create page always previews before creating —
+        // a clean compose (no findings) means confirmationRequired is false
+        // and the review dialog never opens.
+        await page.route("**/api/stacks/preview", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({confirmationRequired: false, findings: [], composeParseError: null}),
+            }),
+        );
+
         // Mock POST /api/stacks
         await page.route("**/api/stacks", (route) => {
             if (route.request().method() === "POST") {
@@ -227,6 +238,85 @@ test.describe("Stacks", () => {
         await replaceCodeEditorContent(page, /docker compose file/i, "services:\n  web:\n    image: nginx");
         await page.getByRole("button", {name: /create stack/i}).click();
 
+        await expect(page).toHaveURL("/stacks/new-stack", {timeout: 10_000});
+    });
+
+    // Issue #20 AC1/D-02: a compose with a dangerous finding opens the
+    // findings-only review dialog (no diff — D-02); confirming sends
+    // confirmed: true and the page still navigates to the new stack.
+    test("create stack with a privileged compose opens the findings-only review dialog, Confirm & Apply sends confirmed: true", async ({page}) => {
+        await mockAuthenticated(page);
+
+        await page.route("**/api/stacks/preview", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({
+                    confirmationRequired: true,
+                    findings: [
+                        {
+                            ruleId: "privileged",
+                            severity: "danger",
+                            message: 'Service "web" runs with privileged: true, granting it full access to the host.',
+                            serviceName: "web",
+                            path: ["services", "web", "privileged"],
+                            line: 3,
+                            introduced: true,
+                        },
+                    ],
+                    composeParseError: null,
+                }),
+            }),
+        );
+
+        let postBody: unknown = null;
+        await page.route("**/api/stacks", (route) => {
+            if (route.request().method() === "POST") {
+                postBody = route.request().postDataJSON();
+                return route.fulfill({
+                    status: 201,
+                    contentType: "application/json",
+                    body: JSON.stringify({id: "new-stack", displayName: "New Stack", services: []}),
+                });
+            }
+            return route.continue();
+        });
+
+        await page.route("**/api/stacks/new-stack", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({...mockStackDetail, id: "new-stack", displayName: "New Stack", status: "DRAFT"}),
+            }),
+        );
+        await page.route("**/api/stacks/new-stack/compose", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: "services:"})}),
+        );
+        await page.route("**/api/stacks/new-stack/env", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: ""})}),
+        );
+        await mockStackEvents(page, "new-stack");
+
+        await page.goto("/stacks/create");
+
+        await page.getByLabel(/name/i).fill("New Stack");
+        await replaceCodeEditorContent(
+            page,
+            /docker compose file/i,
+            "services:\n  web:\n    image: nginx\n    privileged: true",
+        );
+        await page.getByRole("button", {name: /create stack/i}).click();
+
+        const dialog = page.getByRole("alertdialog");
+        await expect(dialog).toBeVisible();
+        await expect(dialog).toContainText("Review New Stack before creating");
+        await expect(dialog).toContainText("Privileged container");
+
+        await dialog.getByRole("button", {name: "Confirm & Apply"}).click();
+
+        await expect.poll(() => postBody).toEqual(
+            expect.objectContaining({displayName: "New Stack", confirmed: true}),
+        );
         await expect(page).toHaveURL("/stacks/new-stack", {timeout: 10_000});
     });
 
