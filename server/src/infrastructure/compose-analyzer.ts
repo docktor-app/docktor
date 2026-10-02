@@ -17,6 +17,10 @@ export interface BindMountInfo {
     type: "relative" | "absolute";
     serviceName: string;
     containerPath: string;
+    // Position of this entry within the service's own volumes[] list (Issue
+    // #20/D-12) — lets a compose-rule finding point the review dialog at the
+    // exact list item, not just the service.
+    index: number;
 }
 
 export interface AnalysisResult {
@@ -76,10 +80,10 @@ export class ComposeAnalyzer implements ComposeAnalyzerPort {
             const svc = service as any;
             if (!Array.isArray(svc?.volumes)) continue;
 
-            for (const vol of svc.volumes) {
-                const mount = this.parseVolumeEntry(vol, serviceName);
+            svc.volumes.forEach((vol: unknown, index: number) => {
+                const mount = this.parseVolumeEntry(vol, serviceName, index);
                 if (mount) results.push(mount);
-            }
+            });
         }
 
         return results;
@@ -89,18 +93,24 @@ export class ComposeAnalyzer implements ComposeAnalyzerPort {
      * Parses a single volumes[] entry, in either short form ("host:container")
      * or long form ({type, source, target}). Returns null for entries that
      * aren't host bind mounts (named-volume references in either form).
+     * `index` is this entry's position in the service's own volumes[] list
+     * (Issue #20/D-12), preserved on the result even though some entries in
+     * that same list are skipped (named-volume references).
      */
-    private parseVolumeEntry(vol: unknown, serviceName: string): BindMountInfo | null {
+    private parseVolumeEntry(vol: unknown, serviceName: string, index: number): BindMountInfo | null {
         if (typeof vol === "string") {
             if (!vol.includes(":")) return null;
             const [hostPath, containerPath] = vol.split(":");
-            // Skip named volume references (no / or . prefix)
-            if (!hostPath.startsWith(".") && !hostPath.startsWith("/")) return null;
+            // Skip named volume references (no /, . or ~ prefix)
+            if (!hostPath.startsWith(".") && !hostPath.startsWith("/") && !hostPath.startsWith("~")) return null;
             return {
                 path: hostPath,
-                type: hostPath.startsWith("/") ? "absolute" : "relative",
+                // "~"-prefixed (home-relative) paths are outside any stack
+                // directory by definition, same bucket as an absolute path.
+                type: hostPath.startsWith("/") || hostPath.startsWith("~") ? "absolute" : "relative",
                 serviceName,
                 containerPath,
+                index,
             };
         }
 
@@ -109,9 +119,10 @@ export class ComposeAnalyzer implements ComposeAnalyzerPort {
             if (v.type !== "bind" || typeof v.source !== "string") return null;
             return {
                 path: v.source,
-                type: v.source.startsWith("/") ? "absolute" : "relative",
+                type: v.source.startsWith("/") || v.source.startsWith("~") ? "absolute" : "relative",
                 serviceName,
                 containerPath: typeof v.target === "string" ? v.target : "",
+                index,
             };
         }
 
@@ -126,8 +137,29 @@ export class ComposeAnalyzer implements ComposeAnalyzerPort {
             const svc = service as any;
             const env = svc?.environment;
 
-            // Array form (${VAR} references) is NOT inline
-            if (Array.isArray(env)) continue;
+            // List form: "KEY=value" entries. A bare "KEY" (no "=") is a
+            // pass-through of the host's own env var, not inline; "KEY=${VAR}"
+            // is likewise a pass-through. Only "KEY=literal" counts as inline
+            // — this is new in Issue #20/D-12 (the compose-rule engine's
+            // inlineEnv check); the brownfield-adopt flow (BF-02) now also
+            // classifies these cases as yellow, matching its own "inline env"
+            // rule rather than silently skipping list-form env entirely.
+            if (Array.isArray(env)) {
+                const vars: Record<string, string> = {};
+                for (const entry of env) {
+                    if (typeof entry !== "string") continue;
+                    const eqIndex = entry.indexOf("=");
+                    if (eqIndex === -1) continue;
+                    const key = entry.slice(0, eqIndex);
+                    const value = entry.slice(eqIndex + 1);
+                    if (isVariableReference(value)) continue;
+                    vars[key] = value;
+                }
+                if (Object.keys(vars).length > 0) {
+                    results.push({serviceName, vars});
+                }
+                continue;
+            }
 
             // Object form is inline, except when a value is itself a variable
             // reference (${VAR} or $VAR) rather than a literal — that's a

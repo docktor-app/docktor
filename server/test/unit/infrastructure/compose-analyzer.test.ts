@@ -329,5 +329,46 @@ services:
             expect(appVars).toHaveProperty("PORT", "8080");
             expect(appVars).not.toHaveProperty("HOST");
         });
+
+        // Issue #20/D-12: list-form "KEY=literal" entries now count as inline
+        // (previously array-form environment was skipped entirely).
+        it("should flag a list-form 'KEY=literal' entry as inline", () => {
+            const doc = {services: {app: {environment: ["DB_PASS=secret"]}}};
+            const result = analyzer.extractInlineEnvVars(doc);
+            expect(result).toEqual([{serviceName: "app", vars: {DB_PASS: "secret"}}]);
+        });
+
+        it("should not flag a list-form variable-reference entry ('KEY=${VAR}')", () => {
+            const doc = {services: {app: {environment: ["TZ=${TZ}"]}}};
+            expect(analyzer.extractInlineEnvVars(doc)).toEqual([]);
+        });
+
+        it("should not flag a bare list-form entry with no '=' ('KEY')", () => {
+            const doc = {services: {app: {environment: ["TZ"]}}};
+            expect(analyzer.extractInlineEnvVars(doc)).toEqual([]);
+        });
+    });
+
+    describe("extractBindMounts — index (Issue #20/D-12)", () => {
+        it("records each mount's position within the service's own volumes list", () => {
+            const doc = {
+                services: {
+                    app: {
+                        volumes: ["named_volume:/skip", "./data:/app/data", "/mnt/nas:/app/nas"],
+                    },
+                },
+            };
+            const mounts = analyzer.extractBindMounts(doc);
+            expect(mounts.find((m) => m.path === "./data")?.index).toBe(1);
+            expect(mounts.find((m) => m.path === "/mnt/nas")?.index).toBe(2);
+        });
+
+        it("classifies a ~-prefixed host path as absolute", () => {
+            const doc = {services: {app: {volumes: ["~/data:/data"]}}};
+            const mounts = analyzer.extractBindMounts(doc);
+            expect(mounts).toEqual([
+                {path: "~/data", type: "absolute", serviceName: "app", containerPath: "/data", index: 0},
+            ]);
+        });
     });
 });

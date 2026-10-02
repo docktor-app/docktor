@@ -1,4 +1,7 @@
 import {describe, expect, it} from "vitest";
+import fs from "node:fs";
+import path from "node:path";
+import {fileURLToPath} from "node:url";
 import {ComposeRuleEngine} from "../../../src/infrastructure/compose-rule-engine.js";
 import {BUILT_IN_COMPOSE_RULES} from "../../../src/infrastructure/compose-rules/registry.js";
 import type {Rule, RuleFinding} from "../../../src/infrastructure/compose-rules/rule.js";
@@ -141,5 +144,77 @@ describe("ComposeRuleEngine", () => {
             "missingEnvFile",
         ]);
         expect(CONFIGURABLE_COMPOSE_RULE_IDS).toEqual(["namedVolume", "inlineEnv", "missingEnvFile"]);
+    });
+
+    describe("Task 2: all six built-in rules wired, registry/settings consistency", () => {
+        const engine = new ComposeRuleEngine();
+
+        it("the default engine's ruleDescriptors ids exactly match COMPOSE_RULE_IDS, in order", () => {
+            expect(engine.ruleDescriptors.map((d) => d.id)).toEqual([...COMPOSE_RULE_IDS]);
+        });
+
+        it("the default engine's configurable ids exactly match CONFIGURABLE_COMPOSE_RULE_IDS", () => {
+            const configurableIds = engine.ruleDescriptors.filter((d) => d.configurable).map((d) => d.id);
+            expect(configurableIds).toEqual([...CONFIGURABLE_COMPOSE_RULE_IDS]);
+        });
+
+        it("always-on rules still run with an empty enabled set", () => {
+            const content = "services:\n  web:\n    privileged: true\n";
+            const {findings} = engine.evaluate(content, context, new Set());
+            expect(findings.map((f) => f.ruleId)).toContain("privileged");
+        });
+
+        it("configurable rules produce nothing with an empty enabled set, even when their condition holds", () => {
+            const content = "services:\n  db:\n    image: postgres\nvolumes:\n  db:\n";
+            const {findings} = engine.evaluate(content, context, new Set());
+            expect(findings.map((f) => f.ruleId)).not.toContain("namedVolume");
+        });
+
+        it("returns findings in rule-registration order, then service-declaration order", () => {
+            // web: privileged (always-on, rule #1) AND a Docker-socket mount
+            // (always-on, rule #2); db: privileged too. Registration order
+            // (privileged, dockerSocket, ...) must win over service order.
+            const content = [
+                "services:",
+                "  web:",
+                "    privileged: true",
+                "    volumes:",
+                "      - /var/run/docker.sock:/var/run/docker.sock",
+                "  db:",
+                "    privileged: true",
+                "",
+            ].join("\n");
+            const {findings} = engine.evaluate(
+                content,
+                context,
+                new Set(["namedVolume", "inlineEnv", "missingEnvFile"]),
+            );
+            expect(findings.map((f) => `${f.ruleId}:${f.serviceName}`)).toEqual([
+                "privileged:web",
+                "privileged:db",
+                "dockerSocket:web",
+            ]);
+        });
+
+        it("no file under compose-rules/ or compose-rule-engine.ts loads code dynamically (D-12 no-plugin-loading prohibition)", () => {
+            const __dirname = path.dirname(fileURLToPath(import.meta.url));
+            const SRC_ROOT = path.resolve(__dirname, "../../../src");
+            const RULES_DIR = path.join(SRC_ROOT, "infrastructure", "compose-rules");
+            const ENGINE_FILE = path.join(SRC_ROOT, "infrastructure", "compose-rule-engine.ts");
+
+            const files = [
+                ...fs.readdirSync(RULES_DIR).map((f) => path.join(RULES_DIR, f)),
+                ENGINE_FILE,
+            ].filter((f) => f.endsWith(".ts"));
+
+            const offenders: string[] = [];
+            for (const file of files) {
+                const content = fs.readFileSync(file, "utf-8");
+                if (/\bimport\s*\(/.test(content) || /\brequire\s*\(/.test(content)) {
+                    offenders.push(path.relative(SRC_ROOT, file));
+                }
+            }
+            expect(offenders).toEqual([]);
+        });
     });
 });
