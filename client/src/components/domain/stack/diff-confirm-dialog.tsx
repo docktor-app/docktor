@@ -74,9 +74,10 @@ function hunksHaveSecret(hunks: ReadonlyArray<UnifiedDiffHunk>): boolean {
 
 /**
  * Issue #18/D-01/D-03: the review-before-apply dialog — a GitHub-style
- * unified diff of the pending edit, with explicit "Keep Editing"/"Confirm &
- * Apply" actions. This is a review gate, not a destructive action, so no
- * destructive styling (AlertDialogAction keeps its default primary variant).
+ * unified diff of the pending edit, with explicit cancel/apply actions per
+ * the UI-SPEC copy contract. This is a review gate, not a destructive
+ * action, so no destructive styling (AlertDialogAction keeps its default
+ * primary variant).
  */
 export function DiffConfirmDialog({
     open,
