@@ -59,8 +59,14 @@ WORKDIR /app
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       ca-certificates \
-      curl && \
+      curl \
+      git \
+      iproute2 \
+      lsof && \
     rm -rf /var/lib/apt/lists/*
+# git (#19): GitExecutor shells out to it to clone/pull template repositories.
+# iproute2 (provides ss) and lsof (#21, D-13): SocketInspector's best-effort
+# tier-3 port-conflict lookup shells out to one of these two tools.
 
 COPY --from=restic-install /usr/local/bin/restic /usr/local/bin/restic
 

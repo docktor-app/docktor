@@ -1,17 +1,16 @@
 /**
  * Pure parsing of which host ports a compose file's `ports:` entries
  * request, plus .env-content parsing for resolving ${VAR} references in a
- * published-port entry (wired in Task 2). No I/O; every function here is a
- * string -> data transform so it can be unit tested without a real stack
- * directory or Docker.
+ * published-port entry. No I/O; every function here is a string -> data
+ * transform so it can be unit tested without a real stack directory or
+ * Docker.
  *
- * Task 1 (this commit) implements the short form "HOST:CONTAINER[/proto]"
- * only, matching compose-parser.ts's existing PORT_PATTERN — the tracer
- * slice through the domain layers. Task 2 extends extractRequestedHostPorts
- * to cover every common `ports:` syntax compose authors actually write:
- * host-IP prefix (IPv4/bracketed IPv6), port ranges, long form
- * ({target, published, protocol, host_ip}), and ${VAR}/$VAR interpolation
- * against the stack's .env content.
+ * extractRequestedHostPorts() covers every common `ports:` syntax compose
+ * authors actually write: short form with an optional host-IP prefix
+ * (IPv4/bracketed IPv6) and `/tcp`|`/udp` suffix, `A-B:C-D` port ranges,
+ * long form ({target, published, protocol, host_ip}), and
+ * ${VAR}/${VAR:-default}/${VAR-default}/$VAR interpolation against the
+ * stack's .env content.
  */
 import {parse as parseYaml} from "yaml";
 
@@ -23,18 +22,18 @@ export interface RequestedHostPort {
 }
 
 /**
- * Caps so a hostile port range (wired in Task 2) can never make
- * conflict-checking expensive: at most MAX_PORTS_PER_RANGE ports are
- * expanded from a single `A-B:C-D` range entry, and the whole per-stack
- * result never exceeds MAX_REQUESTED_PORTS.
+ * Caps so a hostile port range can never make conflict-checking expensive:
+ * at most MAX_PORTS_PER_RANGE ports are expanded from a single `A-B:C-D`
+ * range entry, and the whole per-stack result never exceeds
+ * MAX_REQUESTED_PORTS.
  */
 export const MAX_PORTS_PER_RANGE = 1024;
 export const MAX_REQUESTED_PORTS = 4096;
 
 /**
- * Parses .env-file-style content into a flat key -> value map, used (from
- * Task 2 onward) to resolve ${VAR}/$VAR references in a published-port
- * entry. Ignores blank lines and full-line `#` comments, accepts an
+ * Parses .env-file-style content into a flat key -> value map, used to
+ * resolve ${VAR}/$VAR references in a published-port entry. Ignores blank
+ * lines and full-line `#` comments, accepts an
  * optional `export ` prefix, splits on the first `=` only (so a value
  * containing `=` stays intact), trims surrounding whitespace, and strips
  * one pair of matching surrounding quotes from the value.
@@ -62,18 +61,150 @@ export function parseEnvAssignments(envContent: string): Record<string, string> 
     return result;
 }
 
-const SHORT_FORM_PATTERN = /^(\d+):(\d+)(?:\/(tcp|udp))?$/;
+/**
+ * Matches the compose short-form port string, after any ${VAR} env
+ * interpolation has already been resolved:
+ *   [ "[" IPv6 "]:" | IPv4 ":" ]  HOSTPORT[-HOSTPORT]  ":"  CONTAINERPORT[-CONTAINERPORT]  [ "/" PROTO ]
+ * A bare container-only entry (no ":") never matches — compose requests no
+ * host port for it, which is the correct "nothing to report" outcome.
+ */
+const SHORT_FORM_PATTERN =
+    /^(?:\[([0-9a-fA-F:]+)\]:|((?:\d{1,3}\.){3}\d{1,3}):)?(\d+)(?:-(\d+))?:(\d+)(?:-(\d+))?(?:\/(tcp|udp))?$/;
 
-function parsePortEntry(entry: unknown): Array<{port: number; protocol: "tcp" | "udp"; hostIp: string | null}> {
-    // Task 1: short form only ("HOST:CONTAINER[/proto]"); Task 2 adds
-    // host-IP prefixes, ranges, long form, and env interpolation.
-    if (typeof entry !== "string") return [];
-    const match = SHORT_FORM_PATTERN.exec(entry);
-    if (!match) return [];
-    const port = Number.parseInt(match[1], 10);
-    if (!Number.isInteger(port) || port < 1 || port > 65535) return [];
-    const protocol: "tcp" | "udp" = match[3] === "udp" ? "udp" : "tcp";
-    return [{port, protocol, hostIp: null}];
+interface ShortFormSpec {
+    readonly hostIp: string | null;
+    readonly hostStart: string;
+    readonly hostEnd: string | undefined;
+    readonly protocol: "tcp" | "udp";
+}
+
+function parseShortFormSpec(spec: string): ShortFormSpec | null {
+    const match = SHORT_FORM_PATTERN.exec(spec);
+    if (!match) return null;
+    const [, ipv6, ipv4, hostStart, hostEnd, , , protocol] = match;
+    return {
+        hostIp: ipv6 ?? ipv4 ?? null,
+        hostStart,
+        hostEnd,
+        protocol: protocol === "udp" ? "udp" : "tcp",
+    };
+}
+
+/**
+ * Expands a (possibly ranged) host-port spec into individual port numbers,
+ * capped at MAX_PORTS_PER_RANGE. Returns null for an out-of-range port, a
+ * non-integer, or a range whose end precedes its start.
+ */
+function expandHostPortRange(startStr: string, endStr: string | undefined): number[] | null {
+    const start = Number.parseInt(startStr, 10);
+    if (!Number.isInteger(start) || start < 1 || start > 65535) return null;
+    if (endStr === undefined) return [start];
+    const end = Number.parseInt(endStr, 10);
+    if (!Number.isInteger(end) || end < 1 || end > 65535 || end < start) return null;
+    const count = Math.min(end - start + 1, MAX_PORTS_PER_RANGE);
+    const ports: number[] = [];
+    for (let i = 0; i < count; i++) ports.push(start + i);
+    return ports;
+}
+
+/**
+ * Resolves ${VAR}, ${VAR:-default}, ${VAR-default}, and $VAR references in
+ * a raw port-spec string against `env`, falling back to the inline default
+ * when present. Returns null (the whole entry must be skipped, never
+ * guessed) when any reference cannot be resolved — i.e. it is absent from
+ * `env` and carries no default.
+ *
+ * `${VAR:-default}` (colon-dash, shell "unset-or-empty" semantics) uses the
+ * default when VAR is unset OR set to an empty string; `${VAR-default}`
+ * (dash-only, "unset" semantics) uses VAR's value even if it is empty, and
+ * only falls back to the default when VAR is entirely absent from `env`.
+ */
+function interpolateEnv(raw: string, env: Record<string, string>): string | null {
+    let unresolved = false;
+    const result = raw.replace(
+        /\$\{([A-Za-z_][A-Za-z0-9_]*)(?:(:-|-)([^}]*))?\}|\$([A-Za-z_][A-Za-z0-9_]*)/g,
+        (_match, bracedName: string | undefined, operator: string | undefined, defaultText: string | undefined, bareName: string | undefined) => {
+            const name = bracedName ?? bareName;
+            if (name === undefined) {
+                unresolved = true;
+                return "";
+            }
+            const isSet = Object.prototype.hasOwnProperty.call(env, name);
+            const value = env[name];
+
+            if (operator === ":-") {
+                if (isSet && value !== "") return value;
+                if (defaultText !== undefined) return defaultText;
+                unresolved = true;
+                return "";
+            }
+            if (operator === "-") {
+                if (isSet) return value;
+                if (defaultText !== undefined) return defaultText;
+                unresolved = true;
+                return "";
+            }
+            if (isSet) return value;
+            unresolved = true;
+            return "";
+        },
+    );
+    return unresolved ? null : result;
+}
+
+function parseShortFormEntry(
+    entry: string,
+    env: Record<string, string>,
+): Array<{port: number; protocol: "tcp" | "udp"; hostIp: string | null}> {
+    const interpolated = interpolateEnv(entry, env);
+    if (interpolated === null) return [];
+    const spec = parseShortFormSpec(interpolated);
+    if (!spec) return [];
+    const ports = expandHostPortRange(spec.hostStart, spec.hostEnd);
+    if (!ports) return [];
+    return ports.map((port) => ({port, protocol: spec.protocol, hostIp: spec.hostIp}));
+}
+
+function parseLongFormEntry(
+    def: Record<string, unknown>,
+    env: Record<string, string>,
+): Array<{port: number; protocol: "tcp" | "udp"; hostIp: string | null}> {
+    const rawPublished = def.published;
+    if (rawPublished === undefined || rawPublished === null) return [];
+
+    const publishedStr =
+        typeof rawPublished === "number"
+            ? String(rawPublished)
+            : typeof rawPublished === "string"
+                ? rawPublished
+                : null;
+    if (publishedStr === null) return [];
+
+    const interpolated = interpolateEnv(publishedStr, env);
+    if (interpolated === null) return [];
+
+    const rangeMatch = /^(\d+)(?:-(\d+))?$/.exec(interpolated);
+    if (!rangeMatch) return [];
+    const ports = expandHostPortRange(rangeMatch[1], rangeMatch[2]);
+    if (!ports) return [];
+
+    const protocol: "tcp" | "udp" = def.protocol === "udp" ? "udp" : "tcp";
+    const hostIp = typeof def.host_ip === "string" && def.host_ip.length > 0 ? def.host_ip : null;
+
+    return ports.map((port) => ({port, protocol, hostIp}));
+}
+
+function parsePortEntry(
+    entry: unknown,
+    env: Record<string, string>,
+): Array<{port: number; protocol: "tcp" | "udp"; hostIp: string | null}> {
+    if (typeof entry === "string") return parseShortFormEntry(entry, env);
+    if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+        // Narrowing cast purely for property access on the long-form
+        // mapping; parseLongFormEntry re-checks each field's runtime type.
+        return parseLongFormEntry(entry as Record<string, unknown>, env);
+    }
+    return [];
 }
 
 /**
@@ -85,7 +216,7 @@ function parsePortEntry(entry: unknown): Array<{port: number; protocol: "tcp" | 
  */
 export function extractRequestedHostPorts(
     composeContent: string,
-    _env: Record<string, string>,
+    env: Record<string, string>,
 ): RequestedHostPort[] {
     let doc: unknown;
     try {
@@ -109,7 +240,7 @@ export function extractRequestedHostPorts(
         if (!Array.isArray(portsRaw)) continue;
 
         for (const entry of portsRaw) {
-            for (const parsed of parsePortEntry(entry)) {
+            for (const parsed of parsePortEntry(entry, env)) {
                 const key = `${parsed.port}/${parsed.protocol}`;
                 if (seen.has(key)) continue;
                 seen.add(key);

@@ -5,10 +5,11 @@
  * dockerode, and SocketInspector, and hand them here.
  *
  * D-15 precedence: a Docktor-managed stack holder outranks a non-Docktor
- * container holder, which outranks a listening-process holder. Task 1
- * (this commit) implements tier 1 (Docktor stacks) only, structured as an
- * ordered list of tier resolvers so Task 2's container/process tiers are
- * additive, not a rewrite.
+ * container holder, which outranks a listening-process holder. Implemented
+ * as an ordered list of tier resolvers — tier 1 (Docktor stacks via the
+ * database), tier 2 (any running container via dockerode), tier 3
+ * (listening sockets via SocketInspector, best-effort) — so a future tier
+ * is additive, never a rewrite.
  */
 import type {RequestedHostPort} from "./host-ports.js";
 
@@ -101,11 +102,63 @@ function resolveStackHolder(requested: RequestedHostPort, input: ResolvePortConf
     return null;
 }
 
+function stripLeadingSlash(name: string): string {
+    return name.startsWith("/") ? name.slice(1) : name;
+}
+
+/**
+ * Tier 2: any running container (Docktor-managed or not) that publishes
+ * the requested port. A container whose compose project label matches an
+ * existing Docktor stack id is attributed to that stack regardless of the
+ * stack's DB-recorded status — the container actually running proves it
+ * holds the port, which is stronger evidence than the stack's own status
+ * column. A container whose compose project equals the stack being
+ * deployed is excluded (self-conflict).
+ */
+function resolveContainerHolder(requested: RequestedHostPort, input: ResolvePortConflictsInput): PortHolder | null {
+    for (const container of input.containers) {
+        if (container.composeProject === input.stackId) continue;
+        const holds = container.publishedPorts.some(
+            (p) => p.port === requested.port && p.protocol === requested.protocol,
+        );
+        if (!holds) continue;
+
+        if (container.composeProject) {
+            const ownerStack = input.stacks.find((s) => s.id === container.composeProject);
+            if (ownerStack) {
+                return {kind: "stack", stackId: ownerStack.id, stackDisplayName: ownerStack.displayName};
+            }
+        }
+        return {kind: "container", containerName: stripLeadingSlash(container.containerName)};
+    }
+    return null;
+}
+
+/**
+ * Tier 3 (D-13, best-effort last resort): a listening socket reported by
+ * SocketInspector. A listener whose owning process could not be identified
+ * (processName/pid null — e.g. the tool lacks permission, or ran inside a
+ * namespace that can't see the owning process) is reported as "unknown"
+ * rather than fabricating a name.
+ */
+function resolveListenerHolder(requested: RequestedHostPort, input: ResolvePortConflictsInput): PortHolder | null {
+    for (const listener of input.listeners) {
+        if (listener.port !== requested.port || listener.protocol !== requested.protocol) continue;
+        if (listener.processName !== null && listener.pid !== null) {
+            return {kind: "process", processName: listener.processName, pid: listener.pid};
+        }
+        return {kind: "unknown"};
+    }
+    return null;
+}
+
 // Ordered list of tier resolvers (D-15 precedence): the first tier to name
-// a holder for a requested port wins. Task 2 appends the container and
-// listener tiers here, additively.
+// a holder for a requested port wins — DB (Docktor stacks) before Docker
+// API (any container) before socket best-effort (listening processes).
 const TIER_RESOLVERS: ReadonlyArray<(requested: RequestedHostPort, input: ResolvePortConflictsInput) => PortHolder | null> = [
     resolveStackHolder,
+    resolveContainerHolder,
+    resolveListenerHolder,
 ];
 
 /**

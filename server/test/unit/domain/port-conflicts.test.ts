@@ -63,4 +63,96 @@ describe("resolvePortConflicts", () => {
         const input = baseInput({stacks: []});
         expect(resolvePortConflicts(input)).toEqual([]);
     });
+
+    describe("tier 2: containers", () => {
+        it("attributes a conflict to a non-Docktor container by name, stripping the leading slash", () => {
+            const input = baseInput({
+                stacks: [],
+                containers: [
+                    {
+                        containerName: "/legacy-nginx",
+                        composeProject: null,
+                        publishedPorts: [{port: 8080, protocol: "tcp"}],
+                    },
+                ],
+            });
+            expect(resolvePortConflicts(input)).toEqual([
+                {port: 8080, protocol: "tcp", serviceName: "web", holder: {kind: "container", containerName: "legacy-nginx"}},
+            ]);
+        });
+
+        it("attributes a conflict to the owning Docktor stack when the container's compose project matches a known stack id, regardless of that stack's status", () => {
+            const input = baseInput({
+                stacks: [blogStack({status: "STOPPED"})],
+                containers: [
+                    {
+                        containerName: "/blog-web-1",
+                        composeProject: "blog",
+                        publishedPorts: [{port: 8080, protocol: "tcp"}],
+                    },
+                ],
+            });
+            expect(resolvePortConflicts(input)).toEqual([
+                {
+                    port: 8080,
+                    protocol: "tcp",
+                    serviceName: "web",
+                    holder: {kind: "stack", stackId: "blog", stackDisplayName: "Blog"},
+                },
+            ]);
+        });
+
+        it("ignores a container whose compose project equals the deploying stack (self-exclusion)", () => {
+            const input = baseInput({
+                stackId: "new-app",
+                stacks: [],
+                containers: [
+                    {
+                        containerName: "/new-app-web-1",
+                        composeProject: "new-app",
+                        publishedPorts: [{port: 8080, protocol: "tcp"}],
+                    },
+                ],
+            });
+            expect(resolvePortConflicts(input)).toEqual([]);
+        });
+    });
+
+    describe("tier 3: listeners", () => {
+        it("attributes a conflict to a named process", () => {
+            const input = baseInput({
+                stacks: [],
+                listeners: [{port: 8080, protocol: "tcp", processName: "nginx", pid: 4242}],
+            });
+            expect(resolvePortConflicts(input)).toEqual([
+                {port: 8080, protocol: "tcp", serviceName: "web", holder: {kind: "process", processName: "nginx", pid: 4242}},
+            ]);
+        });
+
+        it("reports an unknown holder when the listener's owning process could not be identified", () => {
+            const input = baseInput({
+                stacks: [],
+                listeners: [{port: 8080, protocol: "tcp", processName: null, pid: null}],
+            });
+            expect(resolvePortConflicts(input)).toEqual([
+                {port: 8080, protocol: "tcp", serviceName: "web", holder: {kind: "unknown"}},
+            ]);
+        });
+    });
+
+    it("precedence: a DB-tier stack holder wins over a matching container holder for the same port", () => {
+        const input = baseInput({
+            stacks: [blogStack()],
+            containers: [
+                {
+                    containerName: "/legacy-nginx",
+                    composeProject: null,
+                    publishedPorts: [{port: 8080, protocol: "tcp"}],
+                },
+            ],
+        });
+        const conflicts = resolvePortConflicts(input);
+        expect(conflicts).toHaveLength(1);
+        expect(conflicts[0].holder).toEqual({kind: "stack", stackId: "blog", stackDisplayName: "Blog"});
+    });
 });
