@@ -55,6 +55,56 @@ async function createEmptyBareRepo(): Promise<string> {
     return bareDir;
 }
 
+/** Clones `bareDir` into a scratch work tree, writes/commits `files`, and pushes to its current branch. */
+async function commitMoreFiles(bareDir: string, files: Record<string, string>): Promise<void> {
+    const scratchRoot = await fs.mkdtemp(path.join(os.tmpdir(), "docktor-git-scratch-"));
+    const workDir = path.join(scratchRoot, "work");
+    await execFileAsync("git", ["clone", bareDir, workDir]);
+    for (const [relPath, content] of Object.entries(files)) {
+        const fullPath = path.join(workDir, relPath);
+        await fs.mkdir(path.dirname(fullPath), {recursive: true});
+        await fs.writeFile(fullPath, content, "utf-8");
+    }
+    await execFileAsync("git", ["add", "-A"], {cwd: workDir});
+    await execFileAsync(
+        "git",
+        ["-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "more"],
+        {cwd: workDir},
+    );
+    const {stdout: branchOut} = await execFileAsync("git", ["branch", "--show-current"], {cwd: workDir});
+    await execFileAsync("git", ["push", "origin", `HEAD:${branchOut.trim()}`], {cwd: workDir});
+    await fs.rm(scratchRoot, {recursive: true, force: true});
+}
+
+/** Rewrites `bareDir`'s history (amend + force-push) so a prior fast-forward-only clone can no longer pull it. */
+async function rewriteBareRepoHistory(bareDir: string, files: Record<string, string>): Promise<void> {
+    const scratchRoot = await fs.mkdtemp(path.join(os.tmpdir(), "docktor-git-rewrite-"));
+    const workDir = path.join(scratchRoot, "work");
+    await execFileAsync("git", ["clone", bareDir, workDir]);
+    for (const [relPath, content] of Object.entries(files)) {
+        const fullPath = path.join(workDir, relPath);
+        await fs.mkdir(path.dirname(fullPath), {recursive: true});
+        await fs.writeFile(fullPath, content, "utf-8");
+    }
+    await execFileAsync("git", ["add", "-A"], {cwd: workDir});
+    await execFileAsync(
+        "git",
+        ["-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "--amend", "-m", "rewritten"],
+        {cwd: workDir},
+    );
+    const {stdout: branchOut} = await execFileAsync("git", ["branch", "--show-current"], {cwd: workDir});
+    await execFileAsync("git", ["push", "--force", "origin", `HEAD:${branchOut.trim()}`], {cwd: workDir});
+    await fs.rm(scratchRoot, {recursive: true, force: true});
+}
+
+/** Lists any `*.tmp-*` sibling directories left next to `checkoutDir` — must always be empty after syncCheckout settles. */
+async function listTmpSiblings(checkoutDir: string): Promise<string[]> {
+    const parent = path.dirname(checkoutDir);
+    const base = path.basename(checkoutDir);
+    const entries = await fs.readdir(parent).catch(() => [] as string[]);
+    return entries.filter((name) => name.startsWith(`${base}.tmp-`));
+}
+
 describe("GitExecutor", () => {
     const tempDirs: string[] = [];
 
@@ -115,5 +165,59 @@ describe("GitExecutor", () => {
             // process (not even `mkdir -p`) ran for a rejected URL.
             await expect(fs.access(checkoutDir)).rejects.toThrow();
         });
+    });
+
+    it("pull on second sync: a second syncCheckout after a new commit was pushed fast-forward pulls (no re-clone)", async () => {
+        const bare = await createBareRepoWithFiles({
+            "templates/whoami/template.yml": "schemaVersion: 1\nname: Whoami\ndescription: d\ncategory: Utilities\n",
+        });
+        const checkoutDir = await mkCheckoutDir();
+        const executor = new GitExecutor({allowedProtocols: ["file"]});
+
+        const first = await executor.syncCheckout(pathToFileURL(bare).href, checkoutDir);
+        expect(first.mode).toBe("cloned");
+
+        await commitMoreFiles(bare, {"templates/whoami/NEW_FILE.txt": "new content\n"});
+
+        const second = await executor.syncCheckout(pathToFileURL(bare).href, checkoutDir);
+        expect(second.mode).toBe("pulled");
+        expect(second.headCommitSha).not.toBe(first.headCommitSha);
+        await expect(fs.access(path.join(checkoutDir, "templates", "whoami", "NEW_FILE.txt"))).resolves.toBeUndefined();
+        expect(await listTmpSiblings(checkoutDir)).toEqual([]);
+    });
+
+    it("re-clone fallback: a rewritten remote history (non-fast-forward) re-clones instead of failing", async () => {
+        const bare = await createBareRepoWithFiles({
+            "templates/whoami/template.yml": "schemaVersion: 1\nname: Whoami\ndescription: d\ncategory: Utilities\n",
+        });
+        const checkoutDir = await mkCheckoutDir();
+        const executor = new GitExecutor({allowedProtocols: ["file"]});
+
+        await executor.syncCheckout(pathToFileURL(bare).href, checkoutDir);
+        await rewriteBareRepoHistory(bare, {"templates/whoami/template.yml": "schemaVersion: 1\nname: Whoami2\ndescription: d\ncategory: Utilities\n"});
+
+        const result = await executor.syncCheckout(pathToFileURL(bare).href, checkoutDir);
+        expect(result.mode).toBe("recloned");
+        const content = await fs.readFile(path.join(checkoutDir, "templates", "whoami", "template.yml"), "utf-8");
+        expect(content).toContain("Whoami2");
+        expect(await listTmpSiblings(checkoutDir)).toEqual([]);
+    });
+
+    it("concurrent syncs: two overlapping syncCheckout calls for the same dir both resolve and leave no tmp dir", async () => {
+        const bare = await createBareRepoWithFiles({
+            "templates/whoami/template.yml": "schemaVersion: 1\nname: Whoami\ndescription: d\ncategory: Utilities\n",
+        });
+        const checkoutDir = await mkCheckoutDir();
+        const executor = new GitExecutor({allowedProtocols: ["file"]});
+
+        const [a, b] = await Promise.all([
+            executor.syncCheckout(pathToFileURL(bare).href, checkoutDir),
+            executor.syncCheckout(pathToFileURL(bare).href, checkoutDir),
+        ]);
+
+        expect(a.headCommitSha).toMatch(/^[0-9a-f]{40}$/);
+        expect(b.headCommitSha).toBe(a.headCommitSha);
+        await expect(fs.access(path.join(checkoutDir, "templates", "whoami", "template.yml"))).resolves.toBeUndefined();
+        expect(await listTmpSiblings(checkoutDir)).toEqual([]);
     });
 });
