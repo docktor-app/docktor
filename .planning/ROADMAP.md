@@ -514,7 +514,6 @@ Needs Phase 10's backend structure and Phase 11's UI patterns for the new diff/w
 **Plans:** 0 plans
 
 Plans:
-
 - [ ] TBD (run /gsd-plan-phase 12 to break down)
 
 ### Phase 13: Update Checker Reliability
