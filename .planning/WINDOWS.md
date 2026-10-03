@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 10
+open_count: 11
 waived_count: 0
 fixed_count: 8
-total_count: 18
-last_updated: 2026-10-03T07:53:17.965Z
+total_count: 19
+last_updated: 2026-10-03T08:30:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -33,6 +33,7 @@ last_updated: 2026-10-03T07:53:17.965Z
 | 16 | 12 | unrun-verify | server/prisma/migrations/20261003072056_add_template_repos_and_deploy_warnings/migration.sql |  | Branch B: testcontainers/dev-db P1001 (can't reach localhost:5432) blocked applying this migration to a live database in this sandbox; generated via prisma migrate diff (from-schema-copy technique) against the pre-change schema, not hand-written. A developer on an unrestricted host must run yarn db:migrate (or prisma migrate deploy) to apply it and verify the TemplateRepo/Template/TemplateVariant tables and the six new Stack columns exist. | open |  | 2026-10-03T07:22:02.435Z |  |
 | 17 | 12 | unrun-verify | server/test/integration/templates.test.ts |  | New Templates API integration tests (GET /api/templates, GET /api/templates/variants/:id, POST /api/templates/variants/:id/stacks incl. 428 on a privileged compose, POST /api/template-repos/:id/sync incl. 404, and 401-without-cookie on every route) were written per plan 12-07's <behavior> but deliberately NOT executed in this session — the orchestrator's resource_constraint for this run forbids starting the testcontainers-based integration suite on this host to avoid resource contention with other running services. Unit-level behavior (TemplateService, StackService) is independently proven (100% passing). A developer/CI must run yarn workspace @docktor/server test:integration test/integration/templates.test.ts to confirm these live. | open |  | 2026-10-03T07:34:04.198Z |  |
 | 18 | 12 | unrun-verify | client/test/integration/stacks.spec.ts |  | Two new Playwright tests (pre-deploy warnings banner with Blog-stack link, and no-banner for a stack with no deployWarnings field) were written per plan 12-08's <behavior>/<action> but deliberately NOT executed in this session per the orchestrator's resource_constraint (no Playwright/integration suites on this host to avoid resource contention). Unit-level coverage of the same rendering logic (deploy-warnings-alert.test.tsx, deploy-warnings.test.ts) passed. A developer/CI must run PLAYWRIGHT_PORT=5214 yarn workspace @docktor/client test:integration stacks.spec.ts to confirm these live. | open |  | 2026-10-03T07:53:17.965Z |  |
+| 19 | 12 | unrun-verify | client/test/integration/templates.spec.ts |  | New Playwright templates.spec.ts (tracer: browse -> single-variant Use Template -> prefilled create form -> checked create -> land on the stack; plus the multi-variant picker dialog, search-with-no-match empty state, and repo-sync-error Retry flows) was written per plan 12-09's <behavior>/<action> but deliberately NOT executed in this session per the orchestrator's resource_constraint (no Playwright/integration suites on this host to avoid resource contention). Unit-level coverage of the same logic (templates-api.test.ts, use-templates.test.ts, use-create-stack-source.test.ts, template-grid.test.tsx, template-variant-dialog.test.tsx, templates-page.test.tsx, create-stack-page.test.tsx — 31 tests) all pass, and tsc -b is clean. A developer/CI must run PLAYWRIGHT_PORT=5215 yarn workspace @docktor/client test:integration templates.spec.ts to confirm these live. | open |  | 2026-10-03T08:30:00.000Z |  |
 
 ````json
 [
@@ -255,6 +256,19 @@ last_updated: 2026-10-03T07:53:17.965Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-03T07:53:17.965Z",
+    "resolved_at": null,
+    "milestone": "v0.1.0"
+  },
+  {
+    "id": 19,
+    "kind": "unrun-verify",
+    "phase": "12",
+    "file": "client/test/integration/templates.spec.ts",
+    "line": null,
+    "description": "New Playwright templates.spec.ts (tracer: browse -> single-variant Use Template -> prefilled create form -> checked create -> land on the stack; plus the multi-variant picker dialog, search-with-no-match empty state, and repo-sync-error Retry flows) was written per plan 12-09's <behavior>/<action> but deliberately NOT executed in this session per the orchestrator's resource_constraint (no Playwright/integration suites on this host to avoid resource contention). Unit-level coverage of the same logic (templates-api.test.ts, use-templates.test.ts, use-create-stack-source.test.ts, template-grid.test.tsx, template-variant-dialog.test.tsx, templates-page.test.tsx, create-stack-page.test.tsx — 31 tests) all pass, and tsc -b is clean. A developer/CI must run PLAYWRIGHT_PORT=5215 yarn workspace @docktor/client test:integration templates.spec.ts to confirm these live.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-03T08:30:00.000Z",
     "resolved_at": null,
     "milestone": "v0.1.0"
   }

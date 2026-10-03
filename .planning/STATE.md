@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 milestone: v0.1.0
 current_phase: 12
 current_phase_name: Compose Safety and Templates
-current_plan: 9
+current_plan: 10
 status: "Phases 1-9 all complete, tested, and reviewed. Product tracking moved to GitHub Issues (docktor-app/docktor): the vision doc (docs/vision.md scope) and all .planning/todos/pending/ items were triaged into 49 GitHub issues, native Issue Types adopted (Bug/Feature/Chore/Documentation/Task), and CLAUDE.md documents the process (including a project-specific override redirecting gsd-capture's add-todo to GitHub issues instead of .planning/todos/). User curated 23 issues (later 24, adding #15 UI Rework) into GitHub milestone 'v0.1.0 - First Release' (renamed from the working 'v1.0.0' label since this is the first release). ROADMAP.md Phases 10-16 now scope that milestone, sourced 1:1 from those issues (Requirements fields list GitHub issue numbers, not REQ-IDs — REQUIREMENTS.md is frozen at its already-complete v1.0 content and not being extended for new work). Per user request, Phase 10 (Backend Architecture Refactor, #16) and Phase 11 (UI Rework, #15) were resequenced to run BEFORE the feature phases that add new server/client code (12, 14, 15), so that new work lands on the reworked structure instead of needing rework afterward — both are independent of each other (separate server/client tracks) and both are intentionally open-ended, flagged as needing /gsd-discuss-phase before /gsd-plan-phase. Phase 13 (Update Checker Reliability — narrow bug fixes, not new architecture) carries low rework risk and can run anytime. Phase 10 (Backend Architecture Refactor) has since been merged into main (PR #67). Phase 11 progressed through context capture, UI-SPEC approval, and phase planning (13 plans across 5 waves, plan-checker blockers resolved), and Wave 1's tracer plan 11-01 is now complete: the Config tab merge (D-01/D-02/D-03) and the stack-detail-page decomposition to an 89-line orchestrator (CLAUDE.md Known Refactoring Target closed) both landed, with the StackConfigFiles/ConfigTab/OverviewTab/StackDetailHeader contracts and the PLAYWRIGHT_PORT parameterization ready for the remaining 12 plans to build on. Note: the original executing session for 11-01 was interrupted by a container restart between finishing Task 2 and writing its SUMMARY.md — both tasks' commits were already pushed and no work was lost; a follow-up session independently re-verified everything (unit suite, typecheck, full Playwright E2E including the parallel-port case) before writing the SUMMARY. Wave 2's 11-02 (ToneBadge/StatusDot status-indicator unification, D-08/D-09/D-10/D-11) is now complete: same container-restart pattern hit again (interrupted between finishing Task 3's edits and its first commit, with zero commits made), recovered the same way — full verification (all task `<verify>` commands, all acceptance-criteria greps, full client suite, tsc -b) before splitting into 3 retroactive task commits and writing the SUMMARY. Wave 2 completed with 11-03 (dark mode via next-themes), 11-04 (dashboard StatCard extraction) and 11-05 (server update-info enrichment on GET /api/stacks — same interruption-and-recovery pattern as 11-02). Wave 3 is now underway: 11-06 (unified activity timeline + flat Services section) and 11-07 (proxy/backup dialogs) landed cleanly; 11-08 (shared LogTerminal + backup detail rebuild) fixed Phase 10 UAT gap G-10-2 (backup-history polling loop) and was interrupted twice — once by a Claude usage-limit error before any edits existed (clean restart), once by a container restart after Task 3's RED commit but before its GREEN commit (recovered in place after independent re-verification). Remaining in wave 3: 11-09 (CodeMirror YAML editor, a checkpoint plan), 11-10 (unsaved-changes guard), 11-11 (settings.tsx split). 11-09's Task 1 blocking-human package-legitimacy checkpoint (four new client deps: @uiw/react-codemirror, yaml, @codemirror/lang-yaml, @codemirror/lint — the first two SUS-flagged by the automated gate on recency only) was presented to the developer on 2026-09-27T17:32:19Z and explicitly approved as-is, no replacements. Session paused here (weekly usage limit) before Task 2's install/build work began — client/package.json and yarn.lock are untouched, so the next execute-phase run for 11-09 should proceed straight to Task 2 without re-presenting the checkpoint, and must record this approval (developer, 2026-09-27T17:32:19Z, all four packages approved) in 11-09-SUMMARY.md per the plan's own instruction. Wave 3 completed with 11-09 (CodeMirror YAML editor) and 11-10 (unsaved-changes guard); Wave 4's 11-11 (settings.tsx split) then landed, reducing settings.tsx from 1125 to a 72-line orchestrator and closing that CLAUDE.md Known Refactoring Target. Wave 4's 11-12 (structured env editor, D-20/D-21/D-22/D-06) is now also complete: replaced the raw .env textarea with a lossless table/raw-mode EnvEditor on both the Config tab and Create Stack page. During TDD execution, a real line-duplication bug was found and fixed in the editor's re-serialization ref design (the plan's own suggested single-ref approach corrupts the document one keystroke at a time whenever a newly-added row passes through its empty-key state) — caught by the plan's own E2E acceptance criteria before merge, fixed with a stable-base/self-vs-external ref split, and covered by a new regression unit test. Remaining in wave 4/phase 11: 11-13 (phase closeout)."
-stopped_at: Completed 12-08-PLAN.md (pre-deploy port-conflict + compose-check warnings wired into every deploy path)
-last_updated: "2026-10-03T08:07:59.622Z"
-state_head: 0edf88618af428d6c1330c8764cdd64bffbd1707
+stopped_at: Completed 12-09-PLAN.md (template browse, variant selection, and create-from-template UI client-side)
+last_updated: "2026-10-03T08:30:00.000Z"
+state_head: 9a07598ea98ac48315b4b77f257d80e89c947491
 progress:
   total_phases: 17
   completed_phases: 9
   total_plans: 129
-  completed_plans: 126
+  completed_plans: 127
 milestone_name: milestone
 ---
 
@@ -28,14 +28,14 @@ See: .planning/PROJECT.md (updated 2026-09-22)
 ## Current Position
 
 Phase: 12 (Compose Safety and Templates) — EXECUTING
-Current Plan: 9
+Current Plan: 10
 Total Plans in Phase: 11
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 103
+- Total plans completed: 104
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -161,6 +161,7 @@ Total Plans in Phase: 11
 | Phase 12 P06 | ~5min (continuation verification session; implementation already committed) | 2 tasks | 11 files |
 | Phase 12 P07 | 50min | 3 tasks | 19 files |
 | Phase 12 P08 | ~50min | 2 tasks | 20 files |
+| Phase 12 P09 | ~55min | 2 tasks | 19 files |
 
 ## Accumulated Context
 
@@ -390,6 +391,9 @@ Recent decisions affecting current work:
 - [Phase 12]: 12-08: runPreflight() never-throws contract: a preflight-computation failure returns EMPTY_DEPLOY_WARNINGS; a setDeployWarnings persistence failure still returns the already-computed warnings — resolves a plan wording ambiguity in favor of the more detailed <action> text
 - [Phase 12]: 12-08: upgradeServiceImage's idempotent no-op path skips the preflight entirely and returns EMPTY_DEPLOY_WARNINGS, keeping the return shape uniform across both branches
 - [Phase 12]: 12-08: client PortHolder.process.pid is typed number | null (looser than the server's non-null domain type) since the value crosses Stack.deployWarnings' JSON round-trip
+- [Phase 12]: [Phase 12-09] useCreateStackSource() returns a create-source-agnostic `create` function (createStackFromTemplate when a variant is active, otherwise plain createStack) injected straight into 12-06's useCreateStack — the Create Stack page never branches on template-vs-blank itself
+- [Phase 12]: [Phase 12-09] The template browse route is /stacks/create/templates (static, registered ahead of the dynamic /stacks/:id/:tab? route) rather than /stacks/templates, since a stack id can never contain "/" and this keeps the two path shapes structurally distinct
+- [Phase 12]: [Phase 12-09] TemplateVariantDialog uses the dismissible shadcn Dialog (not AlertDialog) per UI-SPEC — a forward-navigation choice, not a destructive gate, so Escape/outside-click closing without choosing is correct
 
 ### Quick Tasks Completed
 
@@ -447,6 +451,7 @@ Recent decisions affecting current work:
 - [Phase 09-08] Custom-certificate feature live end-to-end (real nginx-proxy/acme-companion, real HTTPS, no ACME issuance attempt): RESOLVED 2026-09-19 — developer confirmed live via 09-UAT.md tests 39/46 against the same real instance. WINDOWS.md entry #12 can be closed; #10/#11 (the db-push upgrade path specifically) remain the only open Phase 09 live-verification gap.
 - [Phase 09, live UAT 2026-09-19] Also found and fixed: `server/src/lib/auth.ts`'s `trustedOrigins` never read the Settings/wizard "Base URL" field, so setting it through the setup wizard silently did nothing — users following the documented setup flow hit an unexplained "Invalid origin" login failure on a real deployment. Fixed in commit a5bfeaf to merge BETTER_AUTH_URL (env) and the Settings baseUrl (DB) dynamically, per-request, no restart required. Unit tested (server/test/unit/lib/auth.test.ts).
 - [Phase 09, live UAT 2026-09-19] Also found: `.env.example` never documents `POSTGRES_PASSWORD` even though `docker-compose.yml`'s own comment says to set it there and the `db` container refuses to boot without it — not yet filed as a todo or fixed; worth a follow-up.
+- [Phase 12-09] New Playwright templates.spec.ts (tracer + multi-variant dialog + no-match search + repo-sync-error/Retry) was written per plan but not executed in this session per the orchestrator's resource_constraint (no Playwright/integration suites on this host). All unit `<verify>` commands and tsc -b ran clean (31/31 tests). Tracked as WINDOWS.md entry #19 — a developer/CI must run PLAYWRIGHT_PORT=5215 yarn workspace @docktor/client test:integration templates.spec.ts to confirm these live.
 - [Phase 08-03] yarn workspace @docktor/client test:unit showed 5 unrelated test files (proxy-tab.test.tsx, certificates-card.test.tsx, service-upgrade-dialog.test.tsx, stack-actions.test.tsx, stack-detail-page.test.tsx) timing out at 15000ms under severe host contention (uptime load avg 86, swap exhausted) — same pre-existing flake class as Phase 06-05/08-01; none touch this plans scope; this plans own two test files pass 28/28 in isolation. A human should re-confirm the full suite on an unloaded host.
 
 ### Roadmap Evolution
@@ -460,6 +465,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-10-03T08:07:58.763Z
-Stopped at: Completed 12-08-PLAN.md (pre-deploy port-conflict + compose-check warnings wired into every deploy path)
+Last session: 2026-10-03T08:30:00.000Z
+Stopped at: Completed 12-09-PLAN.md (template browse, variant selection, and create-from-template UI client-side)
 Resume file: None
