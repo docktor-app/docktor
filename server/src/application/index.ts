@@ -25,6 +25,7 @@ import {ProxyService} from "./proxy-service.js";
 import {CertificateService} from "./certificate-service.js";
 import {LogService, type LogServiceStackReadPort} from "./log-service.js";
 import {TemplateService} from "./template-service.js";
+import {TemplateUpdateService} from "./template-update-service.js";
 import {certificateFilesystem} from "../infrastructure/certificate-filesystem.js";
 import {stateEventBroadcaster} from "../lib/state-broadcaster.js";
 import {dockerodeClient} from "../infrastructure/dockerode-client.js";
@@ -80,6 +81,11 @@ export const templateService = new TemplateService(
     stackService,
     {defaultRepoUrl: getDefaultTemplateRepoUrl, cacheDir: getTemplateCacheDir},
 );
+
+// Issue #19/D-08: the background refresh TemplateRepoSync (12-11) calls on
+// its own cadence — repo/templateRepository are both already constructed
+// above this line.
+export const templateUpdateService = new TemplateUpdateService(repo, templateRepository);
 
 export const notificationService = new NotificationService(
     notificationRepository,

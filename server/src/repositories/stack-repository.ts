@@ -445,6 +445,36 @@ export class StackRepository {
         });
     }
 
+    // Issue #19/D-08: every stack whose pin is complete (all three of
+    // repoUrl/path/contentHash non-null) — a stack never created from a
+    // template is never returned, so TemplateUpdateService never reads it.
+    async findTemplatePinnedStacks() {
+        return prisma.stack.findMany({
+            where: {
+                templateRepoUrl: {not: null},
+                templatePath: {not: null},
+                templateContentHash: {not: null},
+            },
+            select: {
+                id: true,
+                templateRepoUrl: true,
+                templatePath: true,
+                templateContentHash: true,
+                templateUpdateAvailable: true,
+            },
+        });
+    }
+
+    // Issue #19/D-08: the single write TemplateUpdateService is capable of —
+    // flips the passive badge flag only, never touches any other column
+    // (T-12-40).
+    async setTemplateUpdateAvailable(id: string, value: boolean): Promise<void> {
+        await prisma.stack.update({
+            where: {id},
+            data: {templateUpdateAvailable: value},
+        });
+    }
+
 }
 
 export const stackRepository = new StackRepository();

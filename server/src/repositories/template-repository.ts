@@ -168,6 +168,26 @@ export class TemplateRepository {
         });
     }
 
+    // Issue #19/D-08: every currently-synced variant's content hash, keyed by
+    // (repoUrl, "<template-slug>/<variant-slug>") — the shape
+    // TemplateUpdateService compares against each pinned stack's
+    // templateContentHash. A variant pruned by a later recordSyncSuccess()
+    // simply stops appearing here (no tombstone needed).
+    async findVariantContentHashes(): Promise<Array<{repoUrl: string; path: string; contentHash: string}>> {
+        const variants = await prisma.templateVariant.findMany({
+            select: {
+                slug: true,
+                contentHash: true,
+                template: {select: {slug: true, repo: {select: {url: true}}}},
+            },
+        });
+        return variants.map((v) => ({
+            repoUrl: v.template.repo.url,
+            path: `${v.template.slug}/${v.slug}`,
+            contentHash: v.contentHash,
+        }));
+    }
+
     async findVariantByIdOrThrow(variantId: string) {
         const variant = await prisma.templateVariant.findUnique({
             where: {id: variantId},

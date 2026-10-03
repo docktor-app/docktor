@@ -11,3 +11,13 @@ export interface TemplatePin {
     commitSha: string | null;
     contentHash: string;
 }
+
+/**
+ * Issue #19/D-08: true only when the synced index has a content hash for the
+ * stack's pinned variant AND that hash differs from the one pinned at
+ * creation time. A removed variant (currentHash undefined) is deliberately
+ * never "updated" — re-pinning is never automatic.
+ */
+export function isTemplateUpdated(pinnedHash: string, currentHash: string | undefined): boolean {
+    return currentHash !== undefined && currentHash !== pinnedHash;
+}

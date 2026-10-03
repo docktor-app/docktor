@@ -12,6 +12,7 @@ import {
 import {PageActions, PageDescription, PageHeader, PageTitle} from "@/components/common/layout/page";
 import {StackStatusBadge} from "@/components/domain/stack/stack-status-badge";
 import {StackUpdateBadge} from "@/components/domain/stack/stack-update-badge";
+import {TemplateUpdatedBadge} from "@/components/domain/stack/template-updated-badge";
 import {STACK_TAB_LABELS, type StackTab} from "@/lib/stack-tabs";
 import type {StackDetail} from "@/lib/stacks-api";
 import {StackActions} from "./stack-actions";
@@ -72,6 +73,7 @@ export function StackDetailHeader({stack, activeTab, isRefreshing, onAction}: Re
                 <div className="flex flex-wrap items-center gap-1">
                     <StackStatusBadge status={stack.status}/>
                     <StackUpdateBadge services={stack.services}/>
+                    <TemplateUpdatedBadge stack={stack}/>
                 </div>
                 <StackActions
                     stackId={stack.id}

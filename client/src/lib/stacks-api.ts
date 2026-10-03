@@ -23,6 +23,13 @@ export interface Stack {
     // before every deploy/restart/update/upgrade — parse with
     // parseDeployWarnings() from lib/deploy-warnings.ts before rendering.
     deployWarnings?: string | null;
+    // Issue #19/D-08: set only when this stack was created from a template
+    // variant — the pin is written once at creation and never rewritten.
+    // templateUpdateAvailable is the one flag a background job is allowed to
+    // flip; the stack's files are never touched by a template update.
+    templateRepoUrl?: string | null;
+    templatePath?: string | null;
+    templateUpdateAvailable?: boolean;
     createdAt: string;
     updatedAt: string;
 }
