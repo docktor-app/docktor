@@ -85,4 +85,116 @@ describe("Templates API", () => {
 
         expect(res.statusCode).toBe(401);
     });
+
+    async function seedVariant(composeContent: string) {
+        const prisma = getPrisma();
+        const repo = await prisma.templateRepo.create({
+            data: {
+                url: "https://example.invalid/templates.git",
+                isDefault: true,
+                headCommitSha: "sha-seed",
+                lastSyncAttemptAt: new Date(),
+                lastSyncedAt: new Date(),
+            },
+        });
+        const template = await prisma.template.create({
+            data: {repoId: repo.id, slug: "nextcloud", name: "Nextcloud", description: "d", category: "c"},
+        });
+        const variant = await prisma.templateVariant.create({
+            data: {
+                templateId: template.id,
+                slug: "default",
+                name: "Default",
+                description: "d",
+                composeContent,
+                contentHash: "hash-seed",
+            },
+        });
+        return {repo, template, variant};
+    }
+
+    it("GET /api/templates/variants/:id → 200 with composeContent", async () => {
+        const {variant} = await seedVariant("services:\n  app:\n    image: nextcloud:latest\n");
+
+        const res = await app.inject({
+            method: "GET",
+            url: `/api/templates/variants/${variant.id}`,
+            headers: {cookie},
+        });
+
+        expect(res.statusCode).toBe(200);
+        expect(res.json().composeContent).toBe("services:\n  app:\n    image: nextcloud:latest\n");
+    });
+
+    it("GET /api/templates/variants/:id without a session cookie → 401", async () => {
+        const {variant} = await seedVariant("services:\n  app:\n    image: nextcloud:latest\n");
+
+        const res = await app.inject({method: "GET", url: `/api/templates/variants/${variant.id}`});
+
+        expect(res.statusCode).toBe(401);
+    });
+
+    it("POST /api/templates/variants/:id/stacks with a clean compose → 201, stack row carries templatePath/templateContentHash", async () => {
+        const {variant} = await seedVariant("services:\n  app:\n    image: nextcloud:latest\n");
+
+        const res = await app.inject({
+            method: "POST",
+            url: `/api/templates/variants/${variant.id}/stacks`,
+            headers: {cookie},
+            payload: {displayName: "My Nextcloud", composeContent: "services:\n  app:\n    image: nextcloud:latest\n"},
+        });
+
+        expect(res.statusCode).toBe(201);
+        const stackId = res.json().id;
+        const stack = await getPrisma().stack.findUniqueOrThrow({where: {id: stackId}});
+        expect(stack.templatePath).toBe("nextcloud/default");
+        expect(stack.templateContentHash).toBe("hash-seed");
+        expect(stack.templateCommitSha).toBe("sha-seed");
+        expect(stack.templateRepoUrl).toBe("https://example.invalid/templates.git");
+    });
+
+    it("POST /api/templates/variants/:id/stacks with a privileged compose and no confirmed flag → 428", async () => {
+        const privilegedCompose = "services:\n  app:\n    image: nextcloud:latest\n    privileged: true\n";
+        const {variant} = await seedVariant(privilegedCompose);
+
+        const res = await app.inject({
+            method: "POST",
+            url: `/api/templates/variants/${variant.id}/stacks`,
+            headers: {cookie},
+            payload: {displayName: "My Nextcloud", composeContent: privilegedCompose},
+        });
+
+        expect(res.statusCode).toBe(428);
+    });
+
+    it("POST /api/templates/variants/:id/stacks without a session cookie → 401", async () => {
+        const {variant} = await seedVariant("services:\n  app:\n    image: nextcloud:latest\n");
+
+        const res = await app.inject({
+            method: "POST",
+            url: `/api/templates/variants/${variant.id}/stacks`,
+            payload: {displayName: "x", composeContent: "services:\n  app:\n    image: nextcloud:latest\n"},
+        });
+
+        expect(res.statusCode).toBe(401);
+    });
+
+    it("POST /api/template-repos/unknown/sync → 404", async () => {
+        const res = await app.inject({
+            method: "POST",
+            url: "/api/template-repos/unknown-id/sync",
+            headers: {cookie},
+        });
+
+        expect(res.statusCode).toBe(404);
+    });
+
+    it("POST /api/template-repos/:repoId/sync without a session cookie → 401", async () => {
+        const res = await app.inject({
+            method: "POST",
+            url: "/api/template-repos/unknown-id/sync",
+        });
+
+        expect(res.statusCode).toBe(401);
+    });
 });

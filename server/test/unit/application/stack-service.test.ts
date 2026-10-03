@@ -215,6 +215,46 @@ describe("StackService", () => {
                 expect(result).toEqual({id: "my-app"});
                 expect(fs.createDirectory).toHaveBeenCalledWith("my-app");
             });
+
+            // Issue #19/D-08: 12-07's template-based creation passes a
+            // templatePin through options — this is the single place it
+            // reaches the repository.
+            it("passes options.templatePin through to repo.create", async () => {
+                repo.exists.mockResolvedValue(false);
+                repo.create.mockResolvedValue({id: "my-app"});
+                reviewer.previewNewStack.mockResolvedValue({confirmationRequired: false});
+
+                const templatePin = {
+                    repoUrl: "https://github.com/docktor-app/templates",
+                    path: "nextcloud/default",
+                    commitSha: "abc123",
+                    contentHash: "hash1",
+                };
+
+                await service.createStack(
+                    {displayName: "My App", composeContent: "services:\n  web:\n    image: nginx\n"},
+                    {templatePin},
+                );
+
+                expect(repo.create).toHaveBeenCalledWith(
+                    expect.objectContaining({templatePin}),
+                );
+            });
+
+            it("passes templatePin: undefined to repo.create when no options are given", async () => {
+                repo.exists.mockResolvedValue(false);
+                repo.create.mockResolvedValue({id: "my-app"});
+                reviewer.previewNewStack.mockResolvedValue({confirmationRequired: false});
+
+                await service.createStack({
+                    displayName: "My App",
+                    composeContent: "services:\n  web:\n    image: nginx\n",
+                });
+
+                expect(repo.create).toHaveBeenCalledWith(
+                    expect.objectContaining({templatePin: undefined}),
+                );
+            });
         });
     });
 

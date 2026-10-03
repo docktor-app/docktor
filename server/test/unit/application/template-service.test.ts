@@ -1,7 +1,7 @@
 import path from "node:path";
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import {TemplateService} from "../../../src/application/template-service.js";
-import {ConflictError, NotFoundError} from "../../../src/lib/errors.js";
+import {ConfirmationRequiredError, ConflictError, NotFoundError} from "../../../src/lib/errors.js";
 
 const OFFICIAL_URL = "https://github.com/docktor-app/templates";
 
@@ -402,6 +402,135 @@ describe("TemplateService", () => {
     describe("syncRepo", () => {
         it("throws NotFoundError for an unknown repo id", async () => {
             await expect(service.syncRepo("does-not-exist")).rejects.toThrow(NotFoundError);
+        });
+    });
+
+    /** Seeds a repo/template/variant directly into the fake, bypassing a real sync. */
+    function seedVariant(): {repoId: string; variantId: string} {
+        repo.repos.push({
+            id: "repo-seed",
+            url: OFFICIAL_URL,
+            isDefault: true,
+            headCommitSha: "sha-seed",
+            lastSyncAttemptAt: new Date(),
+            lastSyncedAt: new Date(),
+            lastSyncError: null,
+            syncIssues: "[]",
+        });
+        repo.templates.push({
+            id: "template-seed",
+            repoId: "repo-seed",
+            slug: "nextcloud",
+            name: "Nextcloud",
+            description: "d",
+            category: "c",
+            iconDataUri: null,
+        });
+        repo.variants.push({
+            id: "variant-seed",
+            templateId: "template-seed",
+            slug: "default",
+            name: "Default",
+            description: "d",
+            usage: "run it",
+            composeContent: "services: {}",
+            envContent: null,
+            contentHash: "hash-seed",
+        });
+        return {repoId: "repo-seed", variantId: "variant-seed"};
+    }
+
+    describe("getVariant", () => {
+        it("returns the full variant detail including compose/env content, usage, template and repo info", async () => {
+            const {variantId} = seedVariant();
+
+            const view = await service.getVariant(variantId);
+
+            expect(view.composeContent).toBe("services: {}");
+            expect(view.usage).toBe("run it");
+            expect(view.template.slug).toBe("nextcloud");
+            expect(view.repo.url).toBe(OFFICIAL_URL);
+        });
+
+        it("throws NotFoundError for an unknown variant id", async () => {
+            await expect(service.getVariant("does-not-exist")).rejects.toThrow(NotFoundError);
+        });
+    });
+
+    describe("createStackFromVariant", () => {
+        it("calls stacks.createStack with the user's input unchanged plus the template pin", async () => {
+            const {variantId} = seedVariant();
+            stacks.createStack.mockResolvedValue({id: "my-nextcloud"});
+
+            const input = {displayName: "My Nextcloud", composeContent: "services: {}"};
+            const result = await service.createStackFromVariant(variantId, input);
+
+            expect(result).toEqual({id: "my-nextcloud"});
+            expect(stacks.createStack).toHaveBeenCalledWith(input, {
+                templatePin: {
+                    repoUrl: OFFICIAL_URL,
+                    path: "nextcloud/default",
+                    commitSha: "sha-seed",
+                    contentHash: "hash-seed",
+                },
+            });
+        });
+
+        it("propagates a ConfirmationRequiredError from createStack unchanged", async () => {
+            const {variantId} = seedVariant();
+            stacks.createStack.mockRejectedValue(new ConfirmationRequiredError());
+
+            await expect(
+                service.createStackFromVariant(variantId, {displayName: "x", composeContent: "services: {}"}),
+            ).rejects.toThrow(ConfirmationRequiredError);
+        });
+
+        it("throws NotFoundError for an unknown variant id", async () => {
+            await expect(
+                service.createStackFromVariant("does-not-exist", {displayName: "x", composeContent: "services: {}"}),
+            ).rejects.toThrow(NotFoundError);
+        });
+    });
+
+    describe("syncStaleRepos", () => {
+        it("ensures the default repo and syncs only repos never attempted or older than maxAgeMs", async () => {
+            git.syncCheckout.mockResolvedValue({headCommitSha: "sha", mode: "cloned"});
+            reader.readCheckout.mockResolvedValue({templates: [], issues: []});
+
+            const now = new Date("2026-01-01T00:00:00Z");
+            const fresh = await repo.ensureRepo("https://example.invalid/fresh.git");
+            fresh.lastSyncAttemptAt = new Date(now.getTime() - 1_000); // 1s ago: not stale
+            const stale = await repo.ensureRepo("https://example.invalid/stale.git");
+            stale.lastSyncAttemptAt = new Date(now.getTime() - 100_000); // 100s ago: stale
+
+            await service.syncStaleRepos(60_000, now);
+
+            // Official default repo (never attempted) + the stale repo both sync;
+            // the fresh repo does not.
+            expect(git.syncCheckout).toHaveBeenCalledTimes(2);
+            const syncedUrls = git.syncCheckout.mock.calls.map((call) => call[0]);
+            expect(syncedUrls).toContain(stale.url);
+            expect(syncedUrls).not.toContain(fresh.url);
+        });
+
+        it("one repo's sync failure never prevents the next repo from being synced", async () => {
+            const now = new Date("2026-01-01T00:00:00Z");
+            config.defaultRepoUrl.mockReturnValue(null); // isolate to the two manually-seeded repos
+            const repoA = await repo.ensureRepo("https://example.invalid/a.git");
+            const repoB = await repo.ensureRepo("https://example.invalid/b.git");
+
+            git.syncCheckout.mockImplementation(async (url: string) => {
+                if (url === repoA.url) throw new Error("boom");
+                return {headCommitSha: "sha", mode: "cloned" as const};
+            });
+            reader.readCheckout.mockResolvedValue({templates: [], issues: []});
+
+            await service.syncStaleRepos(60_000, now);
+
+            const refreshedA = await repo.findRepoByIdOrThrow(repoA.id);
+            const refreshedB = await repo.findRepoByIdOrThrow(repoB.id);
+            expect(refreshedA.lastSyncError).toBe("boom");
+            expect(refreshedB.lastSyncedAt).not.toBeNull();
         });
     });
 });

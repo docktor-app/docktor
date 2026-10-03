@@ -2,8 +2,10 @@ import path from "node:path";
 import type {CreateStackInput} from "@docktor/shared";
 import {withKeyedLock} from "../lib/keyed-mutex.js";
 import type {TemplateRepository} from "../repositories/template-repository.js";
+import type {TemplatePin} from "../domain/template-pin.js";
 import type {GitExecutorPort} from "./ports/git-executor-port.js";
 import type {TemplateSourceReaderPort} from "./ports/template-source-reader-port.js";
+import type {CreateStackOptions} from "./stack-service.js";
 
 export interface TemplateServiceConfig {
     defaultRepoUrl(): string | null;
@@ -14,11 +16,13 @@ export interface TemplateServiceConfig {
  * Narrow port onto StackService (Issue #19/#20): declared here rather than
  * importing the concrete class, same reasoning as StackService's own ports —
  * this service stays unit-testable with a plain object and the dependency
- * arrow keeps pointing inward. Typed against the current createStack
- * signature until plan 12-07 Task 3 adds CreateStackOptions and widens this.
+ * arrow keeps pointing inward. createStackFromVariant is the only caller
+ * that ever passes `options`, so template-created stacks go through the
+ * exact same compose-check/428-confirmation enforcement as any other new
+ * stack (threat #2).
  */
 export interface TemplateStackCreator {
-    createStack(input: CreateStackInput): Promise<{id: string}>;
+    createStack(input: CreateStackInput, options?: CreateStackOptions): Promise<{id: string}>;
 }
 
 export interface TemplateIssueView {
@@ -60,8 +64,22 @@ export interface TemplateCatalog {
     templates: TemplateSummaryView[];
 }
 
+export interface TemplateVariantView {
+    id: string;
+    slug: string;
+    name: string;
+    description: string;
+    usage: string | null;
+    composeContent: string;
+    envContent: string | null;
+    contentHash: string;
+    template: {id: string; slug: string; name: string};
+    repo: {id: string; url: string; headCommitSha: string | null};
+}
+
 type TemplateRepoRow = Awaited<ReturnType<TemplateRepository["findRepoByIdOrThrow"]>>;
 type TemplateIndexRow = Awaited<ReturnType<TemplateRepository["listTemplateIndex"]>>[number];
+type TemplateVariantRow = Awaited<ReturnType<TemplateRepository["findVariantByIdOrThrow"]>>;
 
 /**
  * Seeds and syncs template repositories through the 12-04 git/read adapters,
@@ -142,6 +160,71 @@ export class TemplateService {
         return {
             repos: repos.map((row) => this.toRepoView(row)),
             templates,
+        };
+    }
+
+    /** Full variant detail (compose/env content, usage) for the variant detail page. Unknown id -> NotFoundError. */
+    async getVariant(variantId: string): Promise<TemplateVariantView> {
+        const row = await this.repo.findVariantByIdOrThrow(variantId);
+        return this.toVariantView(row);
+    }
+
+    /**
+     * Creates a stack from a template variant through the single create
+     * path (StackService.createStack) — threat #2: template content is
+     * checked with the exact same compose checks and 428 confirmation as a
+     * pasted one, never a shortcut. The user's input (including an edited
+     * compose) is forwarded unchanged; only the pin is added.
+     */
+    async createStackFromVariant(variantId: string, input: CreateStackInput): Promise<{id: string}> {
+        const row = await this.repo.findVariantByIdOrThrow(variantId);
+        const pin: TemplatePin = {
+            repoUrl: row.template.repo.url,
+            path: `${row.template.slug}/${row.slug}`,
+            commitSha: row.template.repo.headCommitSha,
+            contentHash: row.contentHash,
+        };
+        return this.stacks.createStack(input, {templatePin: pin});
+    }
+
+    /**
+     * Ensures the default repo, then syncs only the repos due for a refresh
+     * (never attempted, or last attempted more than maxAgeMs ago) — one at a
+     * time, so a single bad repo's sync failure (already caught inside
+     * syncRepo) never prevents the next repo from being checked. The 12-11
+     * job calls this on its own cadence.
+     */
+    async syncStaleRepos(maxAgeMs: number, now: Date = new Date()): Promise<void> {
+        await this.ensureDefaultRepo();
+        const cutoff = now.getTime() - maxAgeMs;
+        const repos = await this.repo.findAllRepos();
+        const due = repos.filter(
+            (r) => r.lastSyncAttemptAt === null || r.lastSyncAttemptAt.getTime() < cutoff,
+        );
+        for (const r of due) {
+            try {
+                await this.syncRepo(r.id);
+            } catch (err) {
+                console.error(
+                    `[TemplateService] syncStaleRepos: failed to sync repo "${r.url}":`,
+                    err instanceof Error ? err.message : err,
+                );
+            }
+        }
+    }
+
+    private toVariantView(row: TemplateVariantRow): TemplateVariantView {
+        return {
+            id: row.id,
+            slug: row.slug,
+            name: row.name,
+            description: row.description,
+            usage: row.usage,
+            composeContent: row.composeContent,
+            envContent: row.envContent,
+            contentHash: row.contentHash,
+            template: {id: row.template.id, slug: row.template.slug, name: row.template.name},
+            repo: {id: row.template.repo.id, url: row.template.repo.url, headCommitSha: row.template.repo.headCommitSha},
         };
     }
 

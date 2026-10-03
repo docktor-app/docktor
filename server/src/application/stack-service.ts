@@ -12,6 +12,14 @@ import type {DockerExecutorPort} from "./ports/docker-executor-port.js";
 import type {EventBusPort} from "./ports/event-bus-port.js";
 import type {SettingsService} from "./settings-service.js";
 import type {StackStatus, StackEventType} from "../generated/prisma/enums.js";
+import type {TemplatePin} from "../domain/template-pin.js";
+
+// Issue #19: optional per-call options for createStack — currently only the
+// template version pin (D-08), set by TemplateService.createStackFromVariant
+// and otherwise absent for every other caller (pasted-compose creation).
+export interface CreateStackOptions {
+    templatePin?: TemplatePin;
+}
 
 /**
  * Read port for the StackEvent audit trail. Declared here rather than
@@ -86,7 +94,7 @@ export class StackService {
         private readonly review: StackChangeReviewer,
     ) {}
 
-    async createStack(input: CreateStackInput) {
+    async createStack(input: CreateStackInput, options: CreateStackOptions = {}) {
         const id = slugify(input.displayName);
         if (!id) {
             throw new BadRequestError("Display name produces an empty slug");
@@ -129,6 +137,7 @@ export class StackService {
             description: input.description,
             hostPath,
             composeConfig,
+            templatePin: options.templatePin,
         });
     }
 

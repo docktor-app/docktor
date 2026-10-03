@@ -2,6 +2,7 @@ import {prisma} from "../lib/db.js";
 import {NotFoundError} from "../lib/errors.js";
 import type {StackStatus} from "../generated/prisma/enums.js";
 import type {ComposeConfig} from "../domain/compose-config.js";
+import type {TemplatePin} from "../domain/template-pin.js";
 import path from "node:path";
 
 export class StackRepository {
@@ -51,6 +52,10 @@ export class StackRepository {
         hostPath: string;
         composeConfig: ComposeConfig;
         isProtected?: boolean;
+        // Issue #19/D-08: set only when the stack was created from a
+        // template variant — maps onto the four templateX columns in the
+        // same write, never touched again after creation.
+        templatePin?: TemplatePin;
     }) {
         return prisma.stack.create({
             data: {
@@ -61,6 +66,10 @@ export class StackRepository {
                 isProtected: data.isProtected ?? false,
                 lastKnownHash: data.composeConfig.hash,
                 lastParsedAt: new Date(),
+                templateRepoUrl: data.templatePin?.repoUrl ?? null,
+                templatePath: data.templatePin?.path ?? null,
+                templateCommitSha: data.templatePin?.commitSha ?? null,
+                templateContentHash: data.templatePin?.contentHash ?? null,
                 services: {
                     create: data.composeConfig.services.map((s) => ({
                         serviceName: s.serviceName,
