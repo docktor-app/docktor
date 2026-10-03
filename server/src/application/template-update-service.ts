@@ -72,8 +72,18 @@ export class TemplateUpdateService {
             const updated = isTemplateUpdated(stack.templateContentHash!, currentHash);
             if (updated === stack.templateUpdateAvailable) continue;
 
-            await this.stacks.setTemplateUpdateAvailable(stack.id, updated);
-            changed++;
+            // One stack's write failing must never stop the refresh for the
+            // rest — logged with the stack id so a persistent failure is
+            // diagnosable, never silently dropped.
+            try {
+                await this.stacks.setTemplateUpdateAvailable(stack.id, updated);
+                changed++;
+            } catch (err) {
+                console.error(
+                    `[TemplateUpdateService] failed to update templateUpdateAvailable for stack "${stack.id}":`,
+                    err instanceof Error ? err.message : err,
+                );
+            }
         }
 
         return {changed};

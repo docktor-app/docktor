@@ -43,6 +43,21 @@ describe("TemplateRepoSync (Issue #19/D-08)", () => {
         expect(consoleErrorSpy).toHaveBeenCalled()
     })
 
+    it("never rejects even when both dependencies reject (errors logged)", async () => {
+        const syncStaleRepos = vi.fn().mockRejectedValue(new Error("git sync boom"))
+        const refreshPinnedStacks = vi.fn().mockRejectedValue(new Error("db boom"))
+        const job = new TemplateRepoSync({
+            templates: {syncStaleRepos},
+            updates: {refreshPinnedStacks},
+        })
+
+        await expect((job as unknown as {run(): Promise<void>}).run()).resolves.toBeUndefined()
+
+        expect(syncStaleRepos).toHaveBeenCalledOnce()
+        expect(refreshPinnedStacks).toHaveBeenCalledOnce()
+        expect(consoleErrorSpy).toHaveBeenCalledTimes(2)
+    })
+
     it("extends IntervalJob with the expected name/cron/runImmediatelyOnStart", () => {
         const job = new TemplateRepoSync({
             templates: {syncStaleRepos: vi.fn()},

@@ -57,7 +57,15 @@ export class TemplateRepoSync extends IntervalJob {
             console.error("[TemplateRepoSync] syncStaleRepos failed:", err instanceof Error ? err.message : err)
         }
 
-        await updates.refreshPinnedStacks()
+        // Wrapped in its own try/catch (not chained onto the step above) so
+        // run() always resolves even when both dependencies reject —
+        // IntervalJob.runGuarded must see a normal "run" outcome, not an
+        // unhandled crash loop.
+        try {
+            await updates.refreshPinnedStacks()
+        } catch (err) {
+            console.error("[TemplateRepoSync] refreshPinnedStacks failed:", err instanceof Error ? err.message : err)
+        }
     }
 }
 
