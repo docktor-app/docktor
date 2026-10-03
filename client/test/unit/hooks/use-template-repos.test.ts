@@ -96,6 +96,32 @@ describe("useTemplateRepos", () => {
         expect(result.current.repos).toEqual([synced]);
     });
 
+    it("syncingIds contains the repo id only while its sync is in flight", async () => {
+        mockListTemplateRepos.mockResolvedValueOnce([REPO_A]);
+        mockListTemplateRepos.mockResolvedValueOnce([REPO_A]);
+        let resolveSync!: (value: typeof REPO_A) => void;
+        mockSyncTemplateRepo.mockReturnValue(
+            new Promise((resolve) => {
+                resolveSync = resolve;
+            }),
+        );
+
+        const {result} = renderHook(() => useTemplateRepos());
+        await waitFor(() => expect(result.current.loading).toBe(false));
+        expect(result.current.syncingIds.has("r1")).toBe(false);
+
+        let syncPromise!: Promise<void>;
+        act(() => {
+            syncPromise = result.current.syncRepo("r1");
+        });
+        await waitFor(() => expect(result.current.syncingIds.has("r1")).toBe(true));
+
+        resolveSync(REPO_A);
+        await act(() => syncPromise);
+
+        expect(result.current.syncingIds.has("r1")).toBe(false);
+    });
+
     it("refetch re-runs listTemplateRepos without flipping loading back to true", async () => {
         mockListTemplateRepos.mockResolvedValueOnce([REPO_A]);
         const refreshed = [{...REPO_A, lastSyncError: "boom"}];

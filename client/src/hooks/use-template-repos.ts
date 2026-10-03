@@ -7,6 +7,7 @@ export interface UseTemplateReposResult {
     readonly repos: ReadonlyArray<TemplateRepoStatus>;
     readonly loading: boolean;
     readonly error: string | null;
+    readonly syncingIds: ReadonlySet<string>;
     readonly addRepo: (url: string) => Promise<TemplateRepoStatus>;
     readonly syncRepo: (id: string) => Promise<void>;
     readonly refetch: () => Promise<void>;
@@ -23,6 +24,7 @@ export function useTemplateRepos(): UseTemplateReposResult {
     const [repos, setRepos] = useState<ReadonlyArray<TemplateRepoStatus>>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [syncingIds, setSyncingIds] = useState<ReadonlySet<string>>(new Set());
 
     const fetchRepos = useCallback(async (mode: FetchMode) => {
         if (mode === "initial") {
@@ -60,13 +62,25 @@ export function useTemplateRepos(): UseTemplateReposResult {
         [fetchRepos],
     );
 
+    // Issue #19: per-row pending state — "Sync now" disables only the row
+    // being synced, not the whole card, and never flips the card back into
+    // its loading skeleton.
     const syncRepo = useCallback(
         async (id: string) => {
-            await syncTemplateRepo(id);
-            await fetchRepos("background");
+            setSyncingIds((prev) => new Set(prev).add(id));
+            try {
+                await syncTemplateRepo(id);
+                await fetchRepos("background");
+            } finally {
+                setSyncingIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(id);
+                    return next;
+                });
+            }
         },
         [fetchRepos],
     );
 
-    return {repos, loading, error, addRepo, syncRepo, refetch};
+    return {repos, loading, error, syncingIds, addRepo, syncRepo, refetch};
 }
