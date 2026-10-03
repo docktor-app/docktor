@@ -405,6 +405,64 @@ describe("TemplateService", () => {
         });
     });
 
+    describe("listRepos", () => {
+        it("ensures the default repo row and returns views without syncing anything", async () => {
+            const views = await service.listRepos();
+
+            expect(repo.repos).toHaveLength(1);
+            expect(repo.repos[0]!.isDefault).toBe(true);
+            expect(git.syncCheckout).not.toHaveBeenCalled();
+
+            expect(views).toHaveLength(1);
+            expect(views[0]!.url).toBe(OFFICIAL_URL);
+            expect(views[0]!.isDefault).toBe(true);
+            expect(views[0]!.lastSyncedAt).toBeNull();
+        });
+
+        it("lists every manually-added repo alongside the default one", async () => {
+            await repo.createRepo("https://example.invalid/extra.git");
+
+            const views = await service.listRepos();
+
+            expect(views.map((v) => v.url).sort()).toEqual(
+                [OFFICIAL_URL, "https://example.invalid/extra.git"].sort(),
+            );
+        });
+    });
+
+    describe("addRepo", () => {
+        it("creates the repo then syncs it, returning the synced view", async () => {
+            git.syncCheckout.mockResolvedValue({headCommitSha: "abc123", mode: "cloned"});
+            reader.readCheckout.mockResolvedValue({templates: [], issues: []});
+
+            const view = await service.addRepo("https://example.invalid/extra.git");
+
+            expect(view.url).toBe("https://example.invalid/extra.git");
+            expect(view.lastSyncedAt).not.toBeNull();
+            expect(view.lastSyncError).toBeNull();
+            expect(git.syncCheckout).toHaveBeenCalledWith(
+                "https://example.invalid/extra.git",
+                path.join("/cache", view.id),
+            );
+        });
+
+        it("returns the view with lastSyncError set when the sync fails, without throwing", async () => {
+            git.syncCheckout.mockRejectedValue(new Error("clone failed: network unreachable"));
+
+            const view = await service.addRepo("https://example.invalid/extra.git");
+
+            expect(view.lastSyncError).toBe("clone failed: network unreachable");
+            expect(view.lastSyncedAt).toBeNull();
+        });
+
+        it("throws ConflictError for a duplicate url and creates no row", async () => {
+            await repo.createRepo("https://example.invalid/dup.git");
+
+            await expect(service.addRepo("https://example.invalid/dup.git")).rejects.toThrow(ConflictError);
+            expect(repo.repos.filter((r) => r.url === "https://example.invalid/dup.git")).toHaveLength(1);
+        });
+    });
+
     /** Seeds a repo/template/variant directly into the fake, bypassing a real sync. */
     function seedVariant(): {repoId: string; variantId: string} {
         repo.repos.push({

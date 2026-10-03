@@ -84,3 +84,16 @@ export function syncTemplateRepo(repoId: string) {
         method: "POST",
     });
 }
+
+// Issue #19 "users can add additional template repositories": the Settings →
+// Stacks Template Repositories card's list/add surface.
+export function listTemplateRepos() {
+    return apiFetch<ReadonlyArray<TemplateRepoStatus>>("/api/template-repos");
+}
+
+export function addTemplateRepo(url: string) {
+    return apiFetch<TemplateRepoStatus>("/api/template-repos", {
+        method: "POST",
+        body: JSON.stringify({url}),
+    });
+}

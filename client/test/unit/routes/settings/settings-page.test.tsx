@@ -30,12 +30,19 @@ import {
 import {getProxySettings} from "@/lib/proxy-api";
 import {getCertificates} from "@/lib/certificates-api";
 import {getComposeCheckSettings, saveComposeCheckSettings} from "@/lib/settings-api";
+import {listTemplateRepos} from "@/lib/templates-api";
 
 vi.mock("@/lib/settings-api", () => ({
     getGeneralSettings: vi.fn(),
     updateGeneralSettings: vi.fn(),
     getComposeCheckSettings: vi.fn(),
     saveComposeCheckSettings: vi.fn(),
+}));
+
+vi.mock("@/lib/templates-api", () => ({
+    listTemplateRepos: vi.fn(),
+    addTemplateRepo: vi.fn(),
+    syncTemplateRepo: vi.fn(),
 }));
 
 vi.mock("@/lib/notifications-api", () => ({
@@ -83,6 +90,7 @@ const mockGetProxySettings = vi.mocked(getProxySettings);
 const mockGetCertificates = vi.mocked(getCertificates);
 const mockGetComposeCheckSettings = vi.mocked(getComposeCheckSettings);
 const mockSaveComposeCheckSettings = vi.mocked(saveComposeCheckSettings);
+const mockListTemplateRepos = vi.mocked(listTemplateRepos);
 
 function renderSettingsAt(path: string) {
     return render(
@@ -141,6 +149,7 @@ describe("SettingsPage", () => {
             checks: {namedVolume: true, inlineEnv: true, missingEnvFile: true},
         });
         mockSaveComposeCheckSettings.mockReset();
+        mockListTemplateRepos.mockResolvedValue([]);
 
         // jsdom does not implement matchMedia; SidebarProvider's mobile-detection
         // hook (used by the Page shell this route renders into) requires it.
@@ -208,11 +217,13 @@ describe("SettingsPage", () => {
         expect(await screen.findByText(/no certificates uploaded yet/i)).toBeInTheDocument();
     });
 
-    it("renders the Compose Checks card on the Stacks tab", async () => {
+    it("renders the Compose Checks and Template Repositories cards on the Stacks tab", async () => {
         renderSettingsAt("/settings/stacks");
 
         expect(await screen.findByText("Compose Checks")).toBeInTheDocument();
         expect(screen.getByRole("button", {name: "Save Compose Checks"})).toBeInTheDocument();
+        expect(await screen.findByText("Template Repositories")).toBeInTheDocument();
+        expect(screen.getByRole("button", {name: "Add Repository"})).toBeInTheDocument();
     });
 
     it("falls back to the General tab for an unknown tab value", async () => {

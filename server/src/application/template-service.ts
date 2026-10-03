@@ -163,6 +163,29 @@ export class TemplateService {
         };
     }
 
+    /**
+     * Lists every repo's current status without syncing anything (Issue
+     * #19/D-19) — ensures the default repo row exists first, same as
+     * listTemplates(), but never triggers a git sync for any repo.
+     */
+    async listRepos(): Promise<TemplateRepoView[]> {
+        await this.ensureDefaultRepo();
+        const repos = await this.repo.findAllRepos();
+        return repos.map((row) => this.toRepoView(row));
+    }
+
+    /**
+     * Issue #19 "users can add additional template repositories": creates
+     * the repo row then immediately syncs it, returning the synced view. A
+     * git/read failure during that sync is never thrown here (syncRepo
+     * already records it on the row) — only a duplicate url throws, via
+     * TemplateRepository.createRepo's own ConflictError.
+     */
+    async addRepo(url: string): Promise<TemplateRepoView> {
+        const created = await this.repo.createRepo(url);
+        return this.syncRepo(created.id);
+    }
+
     /** Full variant detail (compose/env content, usage) for the variant detail page. Unknown id -> NotFoundError. */
     async getVariant(variantId: string): Promise<TemplateVariantView> {
         const row = await this.repo.findVariantByIdOrThrow(variantId);

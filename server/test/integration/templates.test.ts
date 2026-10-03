@@ -179,6 +179,84 @@ describe("Templates API", () => {
         expect(res.statusCode).toBe(401);
     });
 
+    it("GET /api/template-repos → 200 with the seeded repo, no sync attempted", async () => {
+        const prisma = getPrisma();
+        await prisma.templateRepo.create({
+            data: {url: "https://example.invalid/templates.git", isDefault: true},
+        });
+
+        const res = await app.inject({method: "GET", url: "/api/template-repos", headers: {cookie}});
+
+        expect(res.statusCode).toBe(200);
+        const body = res.json();
+        expect(body).toHaveLength(1);
+        expect(body[0].url).toBe("https://example.invalid/templates.git");
+        expect(body[0].lastSyncedAt).toBeNull();
+    });
+
+    it("GET /api/template-repos without a session cookie → 401", async () => {
+        const res = await app.inject({method: "GET", url: "/api/template-repos"});
+
+        expect(res.statusCode).toBe(401);
+    });
+
+    it("POST /api/template-repos with a well-formed https url → 201 (sync attempted and fails since no real git remote exists — row still created)", async () => {
+        const res = await app.inject({
+            method: "POST",
+            url: "/api/template-repos",
+            headers: {cookie},
+            payload: {url: "https://example.invalid/x.git"},
+        });
+
+        expect(res.statusCode).toBe(201);
+        const body = res.json();
+        expect(body.url).toBe("https://example.invalid/x.git");
+        const row = await getPrisma().templateRepo.findUniqueOrThrow({where: {id: body.id}});
+        expect(row.url).toBe("https://example.invalid/x.git");
+    });
+
+    it.each([["file:///etc"], ["ext::sh -c id"], ["-u"]])(
+        "POST /api/template-repos with %s → 400 and no row created (T-12-37)",
+        async (url) => {
+            const res = await app.inject({
+                method: "POST",
+                url: "/api/template-repos",
+                headers: {cookie},
+                payload: {url},
+            });
+
+            expect(res.statusCode).toBe(400);
+            const rows = await getPrisma().templateRepo.findMany();
+            expect(rows).toHaveLength(0);
+        },
+    );
+
+    it("POST /api/template-repos with an already-configured url → 409", async () => {
+        const prisma = getPrisma();
+        await prisma.templateRepo.create({data: {url: "https://example.invalid/dup.git"}});
+
+        const res = await app.inject({
+            method: "POST",
+            url: "/api/template-repos",
+            headers: {cookie},
+            payload: {url: "https://example.invalid/dup.git"},
+        });
+
+        expect(res.statusCode).toBe(409);
+        const rows = await getPrisma().templateRepo.findMany({where: {url: "https://example.invalid/dup.git"}});
+        expect(rows).toHaveLength(1);
+    });
+
+    it("POST /api/template-repos without a session cookie → 401", async () => {
+        const res = await app.inject({
+            method: "POST",
+            url: "/api/template-repos",
+            payload: {url: "https://example.invalid/x.git"},
+        });
+
+        expect(res.statusCode).toBe(401);
+    });
+
     it("POST /api/template-repos/unknown/sync → 404", async () => {
         const res = await app.inject({
             method: "POST",

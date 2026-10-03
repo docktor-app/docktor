@@ -1,5 +1,6 @@
 import type {FastifyPluginAsyncZod} from "fastify-type-provider-zod";
 import {
+    addTemplateRepoSchema,
     createStackSchema,
     templateRepoParamsSchema,
     templateVariantParamsSchema,
@@ -30,6 +31,20 @@ const templateRoutes: FastifyPluginAsyncZod = async (app) => {
     }, async (request, reply) => {
         const stack = await templateService.createStackFromVariant(request.params.variantId, request.body);
         return reply.status(201).send(stack);
+    });
+
+    // Issue #19 "users can add additional template repositories": listing
+    // never syncs; adding validates the url against addTemplateRepoSchema
+    // (T-12-37's allowlist) before it ever reaches GitExecutor.
+    app.get("/api/template-repos", async () => {
+        return templateService.listRepos();
+    });
+
+    app.post("/api/template-repos", {
+        schema: {body: addTemplateRepoSchema},
+    }, async (request, reply) => {
+        const repo = await templateService.addRepo(request.body.url);
+        return reply.status(201).send(repo);
     });
 
     app.post("/api/template-repos/:repoId/sync", {
