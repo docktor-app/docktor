@@ -1,6 +1,7 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import {StackService} from "../../../src/application/stack-service.js";
 import {BadRequestError, ConfirmationRequiredError, ConflictError, NotFoundError} from "../../../src/lib/errors.js";
+import {EMPTY_DEPLOY_WARNINGS, type DeployWarnings} from "../../../src/application/deploy-preflight-service.js";
 
 function createMockRepo() {
     return {
@@ -19,6 +20,7 @@ function createMockRepo() {
         updateEnvHash: vi.fn(),
         clearConfigError: vi.fn(),
         delete: vi.fn(),
+        setDeployWarnings: vi.fn(),
     };
 }
 
@@ -78,6 +80,12 @@ function createMockReviewer() {
     };
 }
 
+function createMockPreflight() {
+    return {
+        run: vi.fn().mockResolvedValue(EMPTY_DEPLOY_WARNINGS),
+    };
+}
+
 describe("StackService", () => {
     let service: StackService;
     let repo: ReturnType<typeof createMockRepo>;
@@ -88,6 +96,7 @@ describe("StackService", () => {
     let settings: ReturnType<typeof createMockSettings>;
     let updateChecks: ReturnType<typeof createMockUpdateChecks>;
     let reviewer: ReturnType<typeof createMockReviewer>;
+    let preflight: ReturnType<typeof createMockPreflight>;
 
     beforeEach(() => {
         repo = createMockRepo();
@@ -98,7 +107,8 @@ describe("StackService", () => {
         settings = createMockSettings();
         updateChecks = createMockUpdateChecks();
         reviewer = createMockReviewer();
-        service = new StackService(repo as any, fs as any, docker as any, events as any, bus as any, settings as any, updateChecks as any, reviewer as any);
+        preflight = createMockPreflight();
+        service = new StackService(repo as any, fs as any, docker as any, events as any, bus as any, settings as any, updateChecks as any, reviewer as any, preflight as any);
     });
 
     describe("createStack", () => {
@@ -670,6 +680,66 @@ describe("StackService", () => {
 
             expect(result.success).toBe(true);
             expect(docker.up).toHaveBeenCalledWith("docktor-proxy");
+        });
+
+        it("runs the pre-deploy check and persists its result before the DEPLOYING transition and before docker.up", async () => {
+            repo.findByIdOrThrow.mockResolvedValue({id: "my-app", status: "DRAFT"});
+            docker.up.mockResolvedValue(undefined);
+            fs.readCompose.mockResolvedValue("services:\n  web:\n    image: nginx\n");
+            const warnings: DeployWarnings = {
+                checkedAt: "2026-01-01T00:00:00.000Z",
+                composeFindings: [],
+                portConflicts: [{port: 8080, protocol: "tcp", serviceName: "web", holder: {kind: "unknown"}}],
+            };
+            preflight.run.mockResolvedValue(warnings);
+
+            const result = await service.deployStack("my-app");
+
+            expect(result.success).toBe(true);
+            expect(result.warnings).toEqual(warnings);
+            expect(repo.setDeployWarnings).toHaveBeenCalledWith("my-app", warnings);
+            expect(docker.up).toHaveBeenCalledWith("my-app");
+            // Call-order proof: runPreflight (via preflight.run) must precede
+            // both the DEPLOYING transition and the docker.up call.
+            expect(preflight.run.mock.invocationCallOrder[0]).toBeLessThan(
+                repo.transitionStatus.mock.invocationCallOrder[0],
+            );
+            expect(preflight.run.mock.invocationCallOrder[0]).toBeLessThan(
+                docker.up.mock.invocationCallOrder[0],
+            );
+        });
+
+        it("still deploys and returns EMPTY_DEPLOY_WARNINGS when the preflight check itself rejects", async () => {
+            repo.findByIdOrThrow.mockResolvedValue({id: "my-app", status: "DRAFT"});
+            docker.up.mockResolvedValue(undefined);
+            fs.readCompose.mockResolvedValue("services:\n  web:\n    image: nginx\n");
+            preflight.run.mockRejectedValue(new Error("preflight exploded"));
+            const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+            const result = await service.deployStack("my-app");
+
+            expect(result.success).toBe(true);
+            expect(docker.up).toHaveBeenCalledWith("my-app");
+            expect(result.warnings).toEqual(EMPTY_DEPLOY_WARNINGS);
+            expect(repo.setDeployWarnings).not.toHaveBeenCalled();
+            consoleErrorSpy.mockRestore();
+        });
+
+        it("still deploys when persisting the computed warnings fails, returning the computed (not empty) warnings", async () => {
+            repo.findByIdOrThrow.mockResolvedValue({id: "my-app", status: "DRAFT"});
+            docker.up.mockResolvedValue(undefined);
+            fs.readCompose.mockResolvedValue("services:\n  web:\n    image: nginx\n");
+            const warnings: DeployWarnings = {checkedAt: "2026-01-01T00:00:00.000Z", composeFindings: [], portConflicts: []};
+            preflight.run.mockResolvedValue(warnings);
+            repo.setDeployWarnings.mockRejectedValue(new Error("DB unavailable"));
+            const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+            const result = await service.deployStack("my-app");
+
+            expect(result.success).toBe(true);
+            expect(docker.up).toHaveBeenCalledWith("my-app");
+            expect(result.warnings).toEqual(warnings);
+            consoleErrorSpy.mockRestore();
         });
     });
 

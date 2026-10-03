@@ -18,6 +18,11 @@ export interface Stack {
     lastKnownHash: string | null;
     backupSchedule: string | null;
     isProtected: boolean;
+    // Issue #21/D-14: the JSON-encoded result of the last pre-deploy check
+    // (see DeployWarnings below), persisted by StackService.runPreflight
+    // before every deploy/restart/update/upgrade — parse with
+    // parseDeployWarnings() from lib/deploy-warnings.ts before rendering.
+    deployWarnings?: string | null;
     createdAt: string;
     updatedAt: string;
 }
@@ -137,6 +142,37 @@ export interface ReviewFinding extends ComposeFinding {
     readonly introduced: boolean;
 }
 
+// Issue #21/D-15: mirrors server/src/domain/port-conflicts.ts's PortHolder —
+// which of a Docktor stack, a non-Docktor container, a listening process, or
+// an unidentifiable holder is occupying a requested host port. `pid` is kept
+// nullable (unlike the server's non-null `process` variant) since this value
+// crosses a JSON-persisted-then-reparsed boundary (Stack.deployWarnings) and
+// a degraded/older persisted record should render gracefully rather than
+// crash the banner.
+export type PortHolder =
+    | {readonly kind: "stack"; readonly stackId: string; readonly stackDisplayName: string}
+    | {readonly kind: "container"; readonly containerName: string}
+    | {readonly kind: "process"; readonly processName: string; readonly pid: number | null}
+    | {readonly kind: "unknown"};
+
+// Mirrors server/src/domain/port-conflicts.ts's PortConflict.
+export interface PortConflict {
+    readonly port: number;
+    readonly protocol: "tcp" | "udp";
+    readonly serviceName: string;
+    readonly holder: PortHolder;
+}
+
+// Mirrors server/src/application/deploy-preflight-service.ts's DeployWarnings
+// — the persisted result of the last pre-deploy check (D-09 compose-check
+// re-evaluation + D-14/D-15 port-conflict check), parsed off
+// Stack.deployWarnings via parseDeployWarnings().
+export interface DeployWarnings {
+    readonly checkedAt: string;
+    readonly composeFindings: ReadonlyArray<ComposeFinding>;
+    readonly portConflicts: ReadonlyArray<PortConflict>;
+}
+
 export interface StackChangePreview {
     readonly hasChanges: boolean;
     readonly confirmationRequired: boolean;
@@ -184,7 +220,7 @@ export function deleteStack(id: string) {
 }
 
 export function deployStack(id: string) {
-    return apiFetch<{success: boolean; errorMessage?: string}>(
+    return apiFetch<{success: boolean; errorMessage?: string; warnings?: DeployWarnings}>(
         `/api/stacks/${id}/deploy`,
         {method: "POST"},
     );

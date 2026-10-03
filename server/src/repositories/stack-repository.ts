@@ -434,6 +434,17 @@ export class StackRepository {
         await prisma.stack.update({where: {id}, data});
     }
 
+    // Issue #21/D-14: persists the result of the pre-deploy check (compose-check
+    // findings + port conflicts), computed just before Docker runs, so GET
+    // /api/stacks/:id can read it back as Stack.deployWarnings — the banner
+    // survives a reload until the next deploy/restart/update replaces it.
+    async setDeployWarnings(id: string, warnings: unknown): Promise<void> {
+        await prisma.stack.update({
+            where: {id},
+            data: {deployWarnings: JSON.stringify(warnings)},
+        });
+    }
+
 }
 
 export const stackRepository = new StackRepository();

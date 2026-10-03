@@ -15,6 +15,8 @@ import {
 } from "../repositories/index.js";
 import {StackService} from "./stack-service.js";
 import {ComposeReviewService} from "./compose-review-service.js";
+import {PortConflictService} from "./port-conflict-service.js";
+import {DeployPreflightService} from "./deploy-preflight-service.js";
 import {SettingsService} from "./settings-service.js";
 import {NotificationService} from "./notification-service.js";
 import {ResticExecutor} from "../infrastructure/restic-executor.js";
@@ -26,6 +28,7 @@ import {TemplateService} from "./template-service.js";
 import {certificateFilesystem} from "../infrastructure/certificate-filesystem.js";
 import {stateEventBroadcaster} from "../lib/state-broadcaster.js";
 import {dockerodeClient} from "../infrastructure/dockerode-client.js";
+import {socketInspector} from "../infrastructure/socket-inspector.js";
 import {smtpClient} from "../infrastructure/smtp-client.js";
 import {gitExecutor} from "../infrastructure/git-executor.js";
 import {templateSourceReader} from "../infrastructure/template-source-reader.js";
@@ -52,7 +55,19 @@ export const settingsService = new SettingsService(settingsRepository);
 // above this line.
 export const composeReviewService = new ComposeReviewService(repo, fs, composeRuleEngine, settingsService);
 
-export const stackService = new StackService(repo, fs, docker, stackEventRepository, domainEventBus, settingsService, imageUpdateCheckRepository, composeReviewService);
+// Issue #21/D-13/D-14/D-15: constructed before stackService since it's one
+// of deployPreflightService's constructor dependencies below. dockerodeClient
+// (the Docker Engine API client), not `docker` (the `docker compose` CLI
+// wrapper) — the container-listing tier of the port-conflict check needs
+// the former.
+export const portConflictService = new PortConflictService(repo, fs, dockerodeClient, socketInspector);
+
+// Issue #21/D-09/D-14: the single pre-deploy check StackService runs before
+// every deploy/restart/update/upgrade — composeReviewService/portConflictService
+// are both already constructed above this line.
+export const deployPreflightService = new DeployPreflightService(composeReviewService, portConflictService);
+
+export const stackService = new StackService(repo, fs, docker, stackEventRepository, domainEventBus, settingsService, imageUpdateCheckRepository, composeReviewService, deployPreflightService);
 
 // Issue #19: stackService (above) is TemplateService's TemplateStackCreator
 // dependency — the single create path (StackService.createStack) that

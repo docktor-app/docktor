@@ -13,6 +13,7 @@ import type {EventBusPort} from "./ports/event-bus-port.js";
 import type {SettingsService} from "./settings-service.js";
 import type {StackStatus, StackEventType} from "../generated/prisma/enums.js";
 import type {TemplatePin} from "../domain/template-pin.js";
+import {EMPTY_DEPLOY_WARNINGS, type DeployWarnings} from "./deploy-preflight-service.js";
 
 // Issue #19: optional per-call options for createStack — currently only the
 // template version pin (D-08), set by TemplateService.createStackFromVariant
@@ -82,6 +83,16 @@ export interface StackChangeReviewer {
     }): Promise<{confirmationRequired: boolean}>;
 }
 
+/**
+ * Narrow port onto DeployPreflightService (Issue #21/D-09/D-13/D-14).
+ * Declared here rather than importing the concrete class, for the same
+ * reason as StackChangeReviewer above: this service stays unit-testable
+ * with a plain object and the dependency arrow keeps pointing inward.
+ */
+export interface DeployPreflight {
+    run(stackId: string): Promise<DeployWarnings>;
+}
+
 export class StackService {
     constructor(
         private readonly repo: StackRepository,
@@ -92,6 +103,7 @@ export class StackService {
         private readonly settings: Pick<SettingsService, "getProxySettings">,
         private readonly updateChecks: ImageUpdateCheckReadRepo,
         private readonly review: StackChangeReviewer,
+        private readonly preflight: DeployPreflight,
     ) {}
 
     async createStack(input: CreateStackInput, options: CreateStackOptions = {}) {
@@ -433,6 +445,13 @@ export class StackService {
         const stack = await this.repo.findByIdOrThrow(id);
         this.guardTransition(stack.status as StackStatus, "DEPLOY");
 
+        // Issue #21/D-14: the advisory pre-deploy check runs — and its
+        // result is persisted — before the DEPLOYING transition below, so
+        // GET /api/stacks/:id already carries the warnings by the time the
+        // DEPLOYING broadcast reaches the client (use-stack.ts's background
+        // refetch on that event). Never blocks: runPreflight() never throws.
+        const warnings = await this.runPreflight(id);
+
         await this.transitionStatus(
             id,
             stack.status as StackStatus,
@@ -495,7 +514,7 @@ export class StackService {
             );
         }
 
-        return {success, errorMessage};
+        return {success, errorMessage, warnings};
     }
 
     async stopStack(id: string) {
@@ -828,6 +847,36 @@ export class StackService {
         } catch (err) {
             console.error(`[StackService] failed to emit stack.config_changed for "${id}":`, err);
         }
+    }
+
+    /**
+     * Issue #21/D-09/D-13/D-14: runs the advisory pre-deploy check and
+     * persists its result, before the caller's status transition and before
+     * Docker is invoked — called from deployStack/restartStack/updateImages/
+     * upgradeServiceImage. Never throws: the check itself failing (Docker
+     * API down, ss/lsof missing, a DB error writing the result) must never
+     * block or delay a deploy, only ever advise on it (#21/#20 "warn, never
+     * block"). A preflight-computation failure returns EMPTY_DEPLOY_WARNINGS
+     * (there is nothing to persist); a persistence failure still returns the
+     * warnings that were successfully computed, since the caller's return
+     * value is independent of whether the DB write landed.
+     */
+    private async runPreflight(id: string): Promise<DeployWarnings> {
+        let warnings: DeployWarnings;
+        try {
+            warnings = await this.preflight.run(id);
+        } catch (err) {
+            console.error(`[StackService] pre-deploy preflight check failed for stack "${id}", proceeding without warnings:`, err);
+            return EMPTY_DEPLOY_WARNINGS;
+        }
+
+        try {
+            await this.repo.setDeployWarnings(id, warnings);
+        } catch (err) {
+            console.error(`[StackService] failed to persist deploy warnings for stack "${id}":`, err);
+        }
+
+        return warnings;
     }
 
     /**

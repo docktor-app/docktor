@@ -392,6 +392,63 @@ test.describe("Stacks", () => {
         await expect(page.getByRole("menuitem", {name: /restart/i})).toBeVisible();
     });
 
+    test("stack detail page shows the pre-deploy warnings banner with a link to the conflicting stack (Issue #21/D-14/D-15)", async ({page}) => {
+        await mockAuthenticated(page);
+        const deployWarnings = JSON.stringify({
+            checkedAt: "2026-01-01T00:00:00.000Z",
+            composeFindings: [],
+            portConflicts: [
+                {port: 8080, protocol: "tcp", serviceName: "web", holder: {kind: "stack", stackId: "blog", stackDisplayName: "Blog"}},
+            ],
+        });
+        await page.route("**/api/stacks/my-app", (route) => {
+            if (route.request().url().endsWith("/compose") || route.request().url().endsWith("/env")) {
+                return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: ""})});
+            }
+            return route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({...mockStackDetail, deployWarnings}),
+            });
+        });
+        await page.route("**/api/stacks/my-app/compose", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: ""})}),
+        );
+        await page.route("**/api/stacks/my-app/env", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: ""})}),
+        );
+        await mockStackEvents(page, "my-app");
+
+        await page.goto("/stacks/my-app");
+
+        await expect(page.getByText(/Port 8080 is already in use by/)).toBeVisible();
+        const blogLink = page.getByRole("link", {name: "Blog"});
+        await expect(blogLink).toBeVisible();
+        await expect(blogLink).toHaveAttribute("href", "/stacks/blog");
+    });
+
+    test("stack detail page shows no pre-deploy warnings banner for a stack with no deployWarnings field", async ({page}) => {
+        await mockAuthenticated(page);
+        await page.route("**/api/stacks/my-app", (route) => {
+            if (route.request().url().endsWith("/compose") || route.request().url().endsWith("/env")) {
+                return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: ""})});
+            }
+            return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(mockStackDetail)});
+        });
+        await page.route("**/api/stacks/my-app/compose", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: ""})}),
+        );
+        await page.route("**/api/stacks/my-app/env", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: ""})}),
+        );
+        await mockStackEvents(page, "my-app");
+
+        await page.goto("/stacks/my-app");
+
+        await expect(page.getByRole("heading", {name: "My App"})).toBeVisible();
+        await expect(page.getByText("Pre-deploy warnings")).toHaveCount(0);
+    });
+
     test("stack detail config tab: edit and save the compose file shows a review dialog, Confirm & Apply writes (Issue #18/D-01/D-02/D-03)", async ({page}) => {
         await mockAuthenticated(page);
         let putBody: unknown = null;
