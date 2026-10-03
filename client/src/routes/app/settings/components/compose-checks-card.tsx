@@ -119,7 +119,7 @@ export function ComposeChecksCard() {
                             <p className="text-sm font-semibold">Always on</p>
                             <div className="flex flex-col gap-2">
                                 {ALWAYS_ON_RULE_IDS.map((ruleId) => (
-                                    <div key={ruleId} className="flex items-center gap-3">
+                                    <div key={ruleId} className="flex items-center gap-2">
                                         <ToneBadge tone="red">{COMPOSE_RULE_LABELS[ruleId]}</ToneBadge>
                                         <span className="text-sm text-muted-foreground">
                                             Always checked — warns but never blocks
@@ -136,7 +136,7 @@ export function ComposeChecksCard() {
                                     control={form.control}
                                     name={`checks.${ruleId}`}
                                     render={({field}) => (
-                                        <FormItem className="flex items-center gap-3 space-y-0">
+                                        <FormItem className="flex items-center gap-2 space-y-0">
                                             <FormControl>
                                                 <Switch
                                                     checked={field.value ?? false}
@@ -157,7 +157,7 @@ export function ComposeChecksCard() {
                             control={form.control}
                             name="skipReview"
                             render={({field}) => (
-                                <FormItem className="flex items-center gap-3 space-y-0">
+                                <FormItem className="flex items-center gap-2 space-y-0">
                                     <FormControl>
                                         <Switch checked={field.value ?? false} onCheckedChange={field.onChange} />
                                     </FormControl>

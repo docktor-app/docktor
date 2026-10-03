@@ -19,7 +19,7 @@ export function TemplateCard({template, onUse}: Readonly<TemplateCardProps>) {
     return (
         <Card>
             <CardHeader>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                     {template.iconDataUri ? (
                         <img src={template.iconDataUri} alt="" className="h-10 w-10 shrink-0 rounded" />
                     ) : (

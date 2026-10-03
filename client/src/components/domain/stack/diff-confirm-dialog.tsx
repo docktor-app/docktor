@@ -208,7 +208,7 @@ export function DiffConfirmDialog({
 
                 {listedFindings.length > 0 && (
                     <div className="space-y-2">
-                        <p className="text-sm font-medium">Compose check warnings</p>
+                        <p className="text-sm font-semibold">Compose check warnings</p>
                         {listedFindings.map((finding, index) => (
                             <div key={findingKey(finding, index)} className="flex items-center gap-2 text-sm">
                                 <ComposeWarningBadge finding={finding} />

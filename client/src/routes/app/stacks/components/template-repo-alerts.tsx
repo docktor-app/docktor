@@ -25,7 +25,7 @@ export function TemplateRepoAlerts({
             {failed.map((repo) => (
                 <Alert key={repo.id} variant="destructive">
                     <AlertTriangle className="h-4 w-4" />
-                    <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+                    <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
                         <span>
                             Couldn't load templates from {repo.url} — check the repository URL and try again.
                         </span>

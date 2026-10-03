@@ -102,7 +102,7 @@ export function TemplateReposCard() {
                         />
                     </CardContent>
                     <CardFooter>
-                        <Button type="submit">Add Repository</Button>
+                        <Button type="submit" variant="outline">Add Repository</Button>
                     </CardFooter>
                 </form>
             </Form>

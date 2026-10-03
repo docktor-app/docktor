@@ -47,7 +47,7 @@ export function TemplateVariantDialog({
                     {variants.map((variant) => (
                         <label
                             key={variant.id}
-                            className="flex items-start gap-3 rounded-md border p-3 has-[:checked]:border-primary"
+                            className="flex items-start gap-2 rounded-md border p-3 has-[:checked]:border-primary"
                         >
                             <input
                                 type="radio"

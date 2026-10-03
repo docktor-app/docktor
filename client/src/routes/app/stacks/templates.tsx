@@ -5,6 +5,8 @@ import {TemplateGrid} from "@/components/domain/template/template-grid";
 import {TemplateVariantDialog} from "@/components/domain/template/template-variant-dialog";
 import {TemplateRepoAlerts} from "@/routes/app/stacks/components/template-repo-alerts";
 import type {TemplateSummary} from "@/lib/templates-api";
+import {AlertTriangle} from "lucide-react";
+import {Alert, AlertDescription} from "@/components/ui/alert";
 import {Button} from "@/components/ui/button";
 import {Skeleton} from "@/components/ui/skeleton";
 import {Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator} from "@/components/ui/breadcrumb";
@@ -52,10 +54,13 @@ export default function TemplateBrowsePage() {
 
             <PageContent>
                 {error && (
-                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                        <span>{error}</span>
-                        <Button size="sm" variant="outline" onClick={() => refetch()}>Retry</Button>
-                    </div>
+                    <Alert variant="destructive">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+                            <span>{error}</span>
+                            <Button size="sm" variant="outline" onClick={() => refetch()}>Retry</Button>
+                        </AlertDescription>
+                    </Alert>
                 )}
 
                 {loading ? (
