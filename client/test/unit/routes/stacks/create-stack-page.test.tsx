@@ -6,10 +6,15 @@ import {MemoryRouter} from "react-router";
 import CreateStackPage from "@/routes/app/stacks/create";
 import {SidebarProvider} from "@/components/ui/sidebar";
 import {createStack, previewNewStack} from "@/lib/stacks-api";
+import {createStackFromTemplate, getTemplateVariant} from "@/lib/templates-api";
 
 vi.mock("@/lib/stacks-api", () => ({
     createStack: vi.fn(),
     previewNewStack: vi.fn(),
+}));
+vi.mock("@/lib/templates-api", () => ({
+    createStackFromTemplate: vi.fn(),
+    getTemplateVariant: vi.fn(),
 }));
 
 // jsdom has no ResizeObserver — the AlertDialog content renders a Tooltip
@@ -52,8 +57,23 @@ vi.setConfig({testTimeout: 15000});
 
 const mockCreateStack = vi.mocked(createStack);
 const mockPreviewNewStack = vi.mocked(previewNewStack);
+const mockCreateStackFromTemplate = vi.mocked(createStackFromTemplate);
+const mockGetTemplateVariant = vi.mocked(getTemplateVariant);
 
 const CLEAN_PREVIEW = {confirmationRequired: false, findings: [], composeParseError: null};
+
+const VARIANT = {
+    id: "v1",
+    slug: "default",
+    name: "Default",
+    description: "The default variant",
+    usage: "Run it.",
+    composeContent: "services:\n  web:\n    image: nginx",
+    envContent: "FOO=bar",
+    contentHash: "hash1",
+    template: {id: "t1", slug: "whoami", name: "Whoami"},
+    repo: {id: "r1", url: "https://example.com/repo.git", headCommitSha: "abc"},
+};
 
 function dangerPreview() {
     return {
@@ -73,10 +93,10 @@ function dangerPreview() {
     };
 }
 
-function renderPage() {
+function renderPage(initialPath = "/stacks/create") {
     return render(
         <SidebarProvider>
-            <MemoryRouter>
+            <MemoryRouter initialEntries={[initialPath]}>
                 <CreateStackPage />
             </MemoryRouter>
         </SidebarProvider>,
@@ -87,6 +107,8 @@ describe("CreateStackPage", () => {
     beforeEach(() => {
         mockCreateStack.mockReset();
         mockPreviewNewStack.mockReset();
+        mockCreateStackFromTemplate.mockReset();
+        mockGetTemplateVariant.mockReset();
         mockPreviewNewStack.mockResolvedValue(CLEAN_PREVIEW);
         // jsdom does not implement matchMedia; SidebarProvider's mobile-detection
         // hook requires it (mirrors settings-page.test.tsx).
@@ -176,5 +198,39 @@ describe("CreateStackPage", () => {
                 expect.objectContaining({displayName: "My Stack", confirmed: true}),
             ),
         );
+    });
+
+    // Issue #19/D-07: the blank-slate path stays the default, with a
+    // secondary entry point into the template browser.
+    it("without a variant, shows a Start from Template link to the template browser", () => {
+        renderPage();
+
+        const link = screen.getByRole("link", {name: "Start from Template"});
+        expect(link).toHaveAttribute("href", "/stacks/create/templates");
+    });
+
+    // Issue #19/D-06: ?variant=v1 loads the variant and renders the form only
+    // once it has loaded, prefilled from it; submitting posts through the
+    // template create path.
+    it("with ?variant=v1, renders the form prefilled only after the variant loads and submits via createStackFromTemplate", async () => {
+        mockGetTemplateVariant.mockResolvedValue(VARIANT);
+        mockCreateStackFromTemplate.mockResolvedValue({id: "whoami"});
+        const user = userEvent.setup();
+
+        renderPage("/stacks/create?variant=v1");
+
+        await waitFor(() => expect(screen.getByLabelText("Name")).toHaveValue("Whoami"));
+        expect(screen.getByLabelText("Docker Compose File")).toHaveValue(VARIANT.composeContent);
+        expect(screen.queryByRole("link", {name: "Start from Template"})).not.toBeInTheDocument();
+
+        await user.click(screen.getByRole("button", {name: "Create Stack"}));
+
+        await waitFor(() =>
+            expect(mockCreateStackFromTemplate).toHaveBeenCalledWith(
+                "v1",
+                expect.objectContaining({displayName: "Whoami"}),
+            ),
+        );
+        expect(mockCreateStack).not.toHaveBeenCalled();
     });
 });
