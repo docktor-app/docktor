@@ -233,7 +233,7 @@ export function stopStack(id: string) {
 }
 
 export function restartStack(id: string) {
-    return apiFetch<{success: boolean}>(`/api/stacks/${id}/restart`, {
+    return apiFetch<{success: boolean; warnings?: DeployWarnings}>(`/api/stacks/${id}/restart`, {
         method: "POST",
     });
 }
@@ -247,7 +247,7 @@ export function getEnvContent(id: string) {
 }
 
 export function updateImages(id: string) {
-    return apiFetch<{success: boolean; noUpdates: boolean}>(`/api/stacks/${id}/update`, {
+    return apiFetch<{success: boolean; noUpdates: boolean; warnings?: DeployWarnings}>(`/api/stacks/${id}/update`, {
         method: "POST",
     });
 }
@@ -263,6 +263,7 @@ export interface UpgradeServiceResponse {
     changed: boolean;
     previousTag: string | null;
     newTag: string;
+    warnings?: DeployWarnings;
 }
 
 export function getServiceTags(stackId: string, serviceName: string) {

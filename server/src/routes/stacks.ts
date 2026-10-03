@@ -94,8 +94,8 @@ const stackRoutes: FastifyPluginAsyncZod = async (app) => {
     app.post("/api/stacks/:id/restart", {
         schema: {params: stackParamsSchema},
     }, async (request) => {
-        await stackService.restartStack(request.params.id);
-        return {success: true};
+        const result = await stackService.restartStack(request.params.id);
+        return {success: true, warnings: result.warnings};
     });
 
     // Trigger image pull + container recreate (user-initiated, never automatic)
@@ -103,7 +103,7 @@ const stackRoutes: FastifyPluginAsyncZod = async (app) => {
         schema: {params: stackParamsSchema},
     }, async (request) => {
         const result = await stackService.updateImages(request.params.id);
-        return {success: true, noUpdates: result.noUpdates};
+        return {success: true, noUpdates: result.noUpdates, warnings: result.warnings};
     });
 
     // Get compose file content

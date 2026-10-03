@@ -814,6 +814,34 @@ describe("StackService", () => {
             expect(repo.clearConfigChanged).toHaveBeenCalledWith("my-app");
         });
 
+        it("runs the pre-deploy check before docker.restart and returns its result", async () => {
+            repo.findByIdOrThrow.mockResolvedValue({id: "my-app", status: "RUNNING"});
+            docker.restart.mockResolvedValue(undefined);
+            const warnings: DeployWarnings = {checkedAt: "x", composeFindings: [], portConflicts: []};
+            preflight.run.mockResolvedValue(warnings);
+
+            const result = await service.restartStack("my-app");
+
+            expect(result).toEqual({warnings});
+            expect(docker.restart).toHaveBeenCalledWith("my-app");
+            expect(preflight.run.mock.invocationCallOrder[0]).toBeLessThan(
+                docker.restart.mock.invocationCallOrder[0],
+            );
+        });
+
+        it("still restarts and returns EMPTY_DEPLOY_WARNINGS when the preflight check rejects", async () => {
+            repo.findByIdOrThrow.mockResolvedValue({id: "my-app", status: "RUNNING"});
+            docker.restart.mockResolvedValue(undefined);
+            preflight.run.mockRejectedValue(new Error("boom"));
+            const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+            const result = await service.restartStack("my-app");
+
+            expect(docker.restart).toHaveBeenCalledWith("my-app");
+            expect(result.warnings).toEqual(EMPTY_DEPLOY_WARNINGS);
+            consoleErrorSpy.mockRestore();
+        });
+
         it("rejects a protected stack with BadRequestError before any docker call", async () => {
             repo.findByIdOrThrow.mockResolvedValue({
                 id: "docktor-proxy",
@@ -826,6 +854,7 @@ describe("StackService", () => {
             );
 
             expect(docker.restart).not.toHaveBeenCalled();
+            expect(preflight.run).not.toHaveBeenCalled();
             expect(repo.transitionStatus).not.toHaveBeenCalled();
         });
     });
@@ -983,6 +1012,31 @@ describe("StackService", () => {
                 status: "ERROR",
             });
         });
+
+        it("runs the pre-deploy check before the UPDATING transition and returns its result alongside noUpdates", async () => {
+            mockDockerAndFsForSuccess();
+            const warnings: DeployWarnings = {checkedAt: "x", composeFindings: [], portConflicts: []};
+            preflight.run.mockResolvedValue(warnings);
+
+            const result = await service.updateImages("my-app");
+
+            expect(result.warnings).toEqual(warnings);
+            expect(preflight.run.mock.invocationCallOrder[0]).toBeLessThan(
+                repo.transitionStatus.mock.invocationCallOrder[0],
+            );
+        });
+
+        it("still updates and returns EMPTY_DEPLOY_WARNINGS when the preflight check rejects", async () => {
+            mockDockerAndFsForSuccess();
+            preflight.run.mockRejectedValue(new Error("boom"));
+            const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+            const result = await service.updateImages("my-app");
+
+            expect(result.noUpdates).toBe(false);
+            expect(result.warnings).toEqual(EMPTY_DEPLOY_WARNINGS);
+            consoleErrorSpy.mockRestore();
+        });
     });
 
     describe("upgradeServiceImage", () => {
@@ -998,7 +1052,7 @@ describe("StackService", () => {
         it("rewrites the compose file, deploys, and returns the new tag", async () => {
             const result = await service.upgradeServiceImage("my-app", "web", "1.26");
 
-            expect(result).toEqual({changed: true, previousTag: "1.25", newTag: "1.26"});
+            expect(result).toEqual({changed: true, previousTag: "1.25", newTag: "1.26", warnings: EMPTY_DEPLOY_WARNINGS});
             expect(fs.writeCompose).toHaveBeenCalledWith(
                 "my-app",
                 "services:\n  web:\n    image: nginx:1.26\n",
@@ -1023,10 +1077,34 @@ describe("StackService", () => {
         it("is a no-op when the target tag equals the tag already in the compose file", async () => {
             const result = await service.upgradeServiceImage("my-app", "web", "1.25");
 
-            expect(result).toEqual({changed: false, previousTag: "1.25", newTag: "1.25"});
+            expect(result).toEqual({changed: false, previousTag: "1.25", newTag: "1.25", warnings: EMPTY_DEPLOY_WARNINGS});
             expect(fs.writeCompose).not.toHaveBeenCalled();
             expect(repo.transitionStatus).not.toHaveBeenCalled();
             expect(docker.composePull).not.toHaveBeenCalled();
+            expect(preflight.run).not.toHaveBeenCalled();
+        });
+
+        it("runs the pre-deploy check before the UPDATING transition when a change will be deployed, returning the combined result", async () => {
+            const warnings: DeployWarnings = {checkedAt: "x", composeFindings: [], portConflicts: []};
+            preflight.run.mockResolvedValue(warnings);
+
+            const result = await service.upgradeServiceImage("my-app", "web", "1.26");
+
+            expect(result).toEqual({changed: true, previousTag: "1.25", newTag: "1.26", warnings});
+            expect(preflight.run.mock.invocationCallOrder[0]).toBeLessThan(
+                repo.transitionStatus.mock.invocationCallOrder[0],
+            );
+        });
+
+        it("still upgrades and returns EMPTY_DEPLOY_WARNINGS when the preflight check rejects", async () => {
+            preflight.run.mockRejectedValue(new Error("boom"));
+            const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+            const result = await service.upgradeServiceImage("my-app", "web", "1.26");
+
+            expect(result.changed).toBe(true);
+            expect(result.warnings).toEqual(EMPTY_DEPLOY_WARNINGS);
+            consoleErrorSpy.mockRestore();
         });
 
         it("throws NotFoundError for a service absent from the compose file, without writing", async () => {

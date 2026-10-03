@@ -74,6 +74,14 @@ export function useStack(id: string) {
                 if (!prev) return prev;
                 return {...prev, status: event.stackStatus};
             });
+            // Issue #21/D-14: StackService.runPreflight persists the
+            // pre-deploy warnings BEFORE this broadcast fires, so a
+            // background refetch here lets DeployWarningsAlert appear while
+            // the deploy/update is still running rather than only after it
+            // finishes.
+            if (event.stackStatus === "DEPLOYING" || event.stackStatus === "UPDATING") {
+                void fetchStack("background");
+            }
         } else if (event.type === "config_changed") {
             if (event.source === "external") {
                 toast.warning('Configuration file changed externally', {

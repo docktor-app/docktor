@@ -542,10 +542,14 @@ export class StackService {
         }
     }
 
-    async restartStack(id: string) {
+    async restartStack(id: string): Promise<{warnings: DeployWarnings}> {
         const stack = await this.repo.findByIdOrThrow(id);
         this.assertNotProtected(stack, "restarted");
         this.guardTransition(stack.status as StackStatus, "RESTART");
+
+        // Issue #21/D-14: same never-blocking pre-flight as deployStack,
+        // run after the protect/transition guards and before Docker.
+        const warnings = await this.runPreflight(id);
 
         await this.docker.restart(id);
 
@@ -556,9 +560,11 @@ export class StackService {
             "Stack restarted",
         );
         await this.repo.clearConfigChanged(id);
+
+        return {warnings};
     }
 
-    async updateImages(id: string): Promise<{noUpdates: boolean}> {
+    async updateImages(id: string): Promise<{noUpdates: boolean; warnings: DeployWarnings}> {
         const stack = await this.repo.findByIdOrThrow(id);
         this.guardTransition(stack.status as StackStatus, "UPDATE");
 
@@ -567,6 +573,10 @@ export class StackService {
         // never strand the stack in UPDATING through this digest-comparison
         // code path — it just degrades the answer to the generic message.
         const refs = await this.collectImageRefs(id);
+
+        // Issue #21/D-14: same never-blocking pre-flight as deployStack, run
+        // before the UPDATING transition below.
+        const warnings = await this.runPreflight(id);
 
         await this.transitionStatus(
             id,
@@ -633,7 +643,7 @@ export class StackService {
             before: beforeDigests.get(ref) ?? null,
             after: afterDigests.get(ref) ?? null,
         }));
-        return {noUpdates: detectNoUpdates(comparisons)};
+        return {noUpdates: detectNoUpdates(comparisons), warnings};
     }
 
     /**
@@ -695,7 +705,7 @@ export class StackService {
         id: string,
         serviceName: string,
         targetTag: string,
-    ): Promise<{changed: boolean; previousTag: string | null; newTag: string}> {
+    ): Promise<{changed: boolean; previousTag: string | null; newTag: string; warnings: DeployWarnings}> {
         const stack = await this.repo.findByIdOrThrow(id);
         const originalContent = await this.fs.readCompose(id);
 
@@ -715,9 +725,14 @@ export class StackService {
         this.guardTransition(stack.status as StackStatus, "UPDATE");
 
         if ((previousTag ?? "latest") === targetTag) {
-            // Idempotency guarantee: no write, no status transition.
-            return {changed: false, previousTag, newTag: targetTag};
+            // Idempotency guarantee: no write, no status transition — and no
+            // pre-deploy check either, since nothing is about to be deployed.
+            return {changed: false, previousTag, newTag: targetTag, warnings: EMPTY_DEPLOY_WARNINGS};
         }
+
+        // Issue #21/D-14: same never-blocking pre-flight as deployStack, run
+        // only on the path that will actually deploy something.
+        const warnings = await this.runPreflight(id);
 
         await this.transitionStatus(
             id,
@@ -786,7 +801,7 @@ export class StackService {
             throw err;
         }
 
-        return {changed: true, previousTag, newTag: targetTag};
+        return {changed: true, previousTag, newTag: targetTag, warnings};
     }
 
     async getContainerStatuses(id: string) {
