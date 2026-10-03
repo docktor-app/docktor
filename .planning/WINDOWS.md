@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 8
+open_count: 9
 waived_count: 0
 fixed_count: 8
-total_count: 16
-last_updated: 2026-10-03T07:22:02.435Z
+total_count: 17
+last_updated: 2026-10-03T07:34:04.198Z
 ---
 
 # Broken Windows Ledger
@@ -31,6 +31,7 @@ last_updated: 2026-10-03T07:22:02.435Z
 | 14 | 12 | unrun-verify | server/test/integration/compose-checks.test.ts |  | Branch B: testcontainers P1001 (can't reach published port) blocked a live run of the new Compose Checks settings API integration test in this sandbox; written and ready for CI/human re-run | open |  | 2026-10-02T18:47:23.790Z |  |
 | 15 | 12 | unrun-verify | server/test/integration/stacks.test.ts |  | Branch B: testcontainers P1001 blocked a live run of the new create-path (POST /api/stacks/preview, privileged-create 428/201) integration tests in this sandbox; written and ready for CI/human re-run | open |  | 2026-10-02T18:47:24.128Z |  |
 | 16 | 12 | unrun-verify | server/prisma/migrations/20261003072056_add_template_repos_and_deploy_warnings/migration.sql |  | Branch B: testcontainers/dev-db P1001 (can't reach localhost:5432) blocked applying this migration to a live database in this sandbox; generated via prisma migrate diff (from-schema-copy technique) against the pre-change schema, not hand-written. A developer on an unrestricted host must run yarn db:migrate (or prisma migrate deploy) to apply it and verify the TemplateRepo/Template/TemplateVariant tables and the six new Stack columns exist. | open |  | 2026-10-03T07:22:02.435Z |  |
+| 17 | 12 | unrun-verify | server/test/integration/templates.test.ts |  | New Templates API integration tests (GET /api/templates, GET /api/templates/variants/:id, POST /api/templates/variants/:id/stacks incl. 428 on a privileged compose, POST /api/template-repos/:id/sync incl. 404, and 401-without-cookie on every route) were written per plan 12-07's <behavior> but deliberately NOT executed in this session — the orchestrator's resource_constraint for this run forbids starting the testcontainers-based integration suite on this host to avoid resource contention with other running services. Unit-level behavior (TemplateService, StackService) is independently proven (100% passing). A developer/CI must run yarn workspace @docktor/server test:integration test/integration/templates.test.ts to confirm these live. | open |  | 2026-10-03T07:34:04.198Z |  |
 
 ````json
 [
@@ -227,6 +228,19 @@ last_updated: 2026-10-03T07:22:02.435Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-03T07:22:02.435Z",
+    "resolved_at": null,
+    "milestone": "v0.1.0"
+  },
+  {
+    "id": 17,
+    "kind": "unrun-verify",
+    "phase": "12",
+    "file": "server/test/integration/templates.test.ts",
+    "line": null,
+    "description": "New Templates API integration tests (GET /api/templates, GET /api/templates/variants/:id, POST /api/templates/variants/:id/stacks incl. 428 on a privileged compose, POST /api/template-repos/:id/sync incl. 404, and 401-without-cookie on every route) were written per plan 12-07's <behavior> but deliberately NOT executed in this session — the orchestrator's resource_constraint for this run forbids starting the testcontainers-based integration suite on this host to avoid resource contention with other running services. Unit-level behavior (TemplateService, StackService) is independently proven (100% passing). A developer/CI must run yarn workspace @docktor/server test:integration test/integration/templates.test.ts to confirm these live.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-03T07:34:04.198Z",
     "resolved_at": null,
     "milestone": "v0.1.0"
   }
