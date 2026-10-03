@@ -14,7 +14,8 @@ import {Page, PageActions, PageContent, PageHeader, PageTitle} from "@/component
 // secondary entry point.
 export default function CreateStackPage() {
     const navigate = useNavigate();
-    const {variantId, loading: sourceLoading, error: sourceError, defaultValues, create} = useCreateStackSource();
+    const {variantId, variant, loading: sourceLoading, error: sourceError, defaultValues, create} =
+        useCreateStackSource();
     const {submitting, error, review, submit, confirmReview, cancelReview} = useCreateStack({
         create,
         onCreated: (stackId) => navigate(`/stacks/${stackId}`),
@@ -26,9 +27,7 @@ export default function CreateStackPage() {
                 breadcrumbs={
                     <Breadcrumb>
                         <BreadcrumbList>
-                            <BreadcrumbItem>
-                                <BreadcrumbLink asChild><Link to="/stacks">Stacks</Link></BreadcrumbLink>
-                            </BreadcrumbItem>
+                            <BreadcrumbItem><BreadcrumbLink asChild><Link to="/stacks">Stacks</Link></BreadcrumbLink></BreadcrumbItem>
                             <BreadcrumbSeparator />
                             <BreadcrumbItem><BreadcrumbPage>Create</BreadcrumbPage></BreadcrumbItem>
                         </BreadcrumbList>
@@ -51,6 +50,11 @@ export default function CreateStackPage() {
                         {error || sourceError}
                     </div>
                 )}
+
+                {variant && (
+                    <p className="text-sm text-muted-foreground">Starting from {variant.template.name} — {variant.name}</p>
+                )}
+                {variant?.usage && <p className="whitespace-pre-wrap text-sm text-muted-foreground">{variant.usage}</p>}
 
                 {sourceLoading ? (
                     <div className="space-y-4">

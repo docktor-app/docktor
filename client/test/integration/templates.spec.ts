@@ -163,4 +163,110 @@ test.describe("Templates", () => {
         );
         await expect(page).toHaveURL("/stacks/whoami", {timeout: 10_000});
     });
+
+    // Issue #19/D-06: a multi-variant template opens the picker dialog;
+    // choosing a variant prefills the create form from it.
+    test("a multi-variant template opens the picker dialog, and the chosen variant prefills the create form", async ({page}) => {
+        await mockAuthenticated(page);
+
+        const multiVariantCatalog = {
+            repos: [],
+            templates: [
+                {
+                    id: "t2",
+                    repoId: "r1",
+                    slug: "nextcloud",
+                    name: "Nextcloud",
+                    description: "A file sync platform",
+                    category: "productivity",
+                    iconDataUri: null,
+                    variants: [
+                        {id: "v1", slug: "sqlite", name: "SQLite", description: "Single container"},
+                        {id: "v2", slug: "postgres", name: "PostgreSQL", description: "With Postgres"},
+                    ],
+                },
+            ],
+        };
+        const postgresVariant = {
+            ...WHOAMI_VARIANT,
+            id: "v2",
+            name: "PostgreSQL",
+            template: {id: "t2", slug: "nextcloud", name: "Nextcloud"},
+        };
+
+        await page.route("**/api/templates", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(multiVariantCatalog)}),
+        );
+        await page.route("**/api/templates/variants/v2", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(postgresVariant)}),
+        );
+
+        await page.goto("/stacks/create/templates");
+        await page.getByRole("button", {name: "Use Template"}).click();
+
+        await expect(page.getByText("Choose a configuration for Nextcloud")).toBeVisible();
+        await page.getByRole("radio", {name: "PostgreSQL"}).click();
+        await page.getByRole("button", {name: "Use this variant"}).click();
+
+        await expect(page).toHaveURL("/stacks/create?variant=v2");
+        await expect(page.getByLabel(/name/i)).toHaveValue("Nextcloud");
+    });
+
+    // Issue #19/D-07: searching with no match shows the empty state.
+    test("searching with no match shows the No templates found empty state", async ({page}) => {
+        await mockAuthenticated(page);
+        await page.route("**/api/templates", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(CATALOG_ONE_VARIANT)}),
+        );
+
+        await page.goto("/stacks/create/templates");
+        await page.getByLabel("Search templates").fill("nonexistent-xyz");
+
+        await expect(page.getByText("No templates found")).toBeVisible();
+        await expect(page.getByRole("link", {name: /start from a blank compose file/i})).toHaveAttribute(
+            "href",
+            "/stacks/create",
+        );
+    });
+
+    // Issue #19/D-07: a repo sync failure shows the error alert; Retry
+    // re-syncs just that repo.
+    test("a repo sync failure shows the error alert; Retry posts to the repo sync endpoint", async ({page}) => {
+        await mockAuthenticated(page);
+        const failedCatalog = {
+            repos: [
+                {
+                    id: "r1",
+                    url: "https://example.com/bad-repo.git",
+                    isDefault: true,
+                    headCommitSha: null,
+                    lastSyncAttemptAt: "2026-01-01T00:00:00Z",
+                    lastSyncedAt: null,
+                    lastSyncError: "repository not found",
+                    issues: [],
+                },
+            ],
+            templates: [],
+        };
+
+        await page.route("**/api/templates", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(failedCatalog)}),
+        );
+        let syncCalled = false;
+        await page.route("**/api/template-repos/r1/sync", (route) => {
+            syncCalled = true;
+            return route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({...failedCatalog.repos[0], lastSyncError: null}),
+            });
+        });
+
+        await page.goto("/stacks/create/templates");
+
+        await expect(page.getByText(/Couldn't load templates from https:\/\/example.com\/bad-repo.git/)).toBeVisible();
+        await page.getByRole("button", {name: "Retry"}).click();
+
+        await expect.poll(() => syncCalled).toBe(true);
+    });
 });

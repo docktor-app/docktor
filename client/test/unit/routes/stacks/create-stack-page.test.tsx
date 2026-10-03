@@ -233,4 +233,18 @@ describe("CreateStackPage", () => {
         );
         expect(mockCreateStack).not.toHaveBeenCalled();
     });
+
+    // Issue #19/D-06: the page states which template/variant it starts from
+    // and shows the variant's usage notes as plain text with line breaks
+    // preserved.
+    it("with ?variant=v1, shows the Starting from note and the variant's usage text", async () => {
+        mockGetTemplateVariant.mockResolvedValue({...VARIANT, usage: "Step one.\nStep two."});
+
+        renderPage("/stacks/create?variant=v1");
+
+        expect(await screen.findByText("Starting from Whoami — Default")).toBeInTheDocument();
+        const usage = document.querySelector(".whitespace-pre-wrap");
+        expect(usage).not.toBeNull();
+        expect(usage?.textContent).toBe("Step one.\nStep two.");
+    });
 });

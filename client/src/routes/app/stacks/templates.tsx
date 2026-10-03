@@ -1,74 +1,87 @@
+import {useState} from "react";
 import {Link, useNavigate} from "react-router";
 import {useTemplates} from "@/hooks/use-templates";
 import {TemplateGrid} from "@/components/domain/template/template-grid";
+import {TemplateVariantDialog} from "@/components/domain/template/template-variant-dialog";
+import {TemplateRepoAlerts} from "@/routes/app/stacks/components/template-repo-alerts";
 import type {TemplateSummary} from "@/lib/templates-api";
-import {
-    Breadcrumb,
-    BreadcrumbItem,
-    BreadcrumbLink,
-    BreadcrumbList,
-    BreadcrumbPage,
-    BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
+import {Button} from "@/components/ui/button";
+import {Skeleton} from "@/components/ui/skeleton";
+import {Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator} from "@/components/ui/breadcrumb";
 import {Page, PageContent, PageHeader, PageTitle} from "@/components/common/layout/page";
+
+const BREADCRUMB = (
+    <Breadcrumb>
+        <BreadcrumbList>
+            <BreadcrumbItem><BreadcrumbLink asChild><Link to="/stacks">Stacks</Link></BreadcrumbLink></BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem><BreadcrumbLink asChild><Link to="/stacks/create">Create</Link></BreadcrumbLink></BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem><BreadcrumbPage>Templates</BreadcrumbPage></BreadcrumbItem>
+        </BreadcrumbList>
+    </Breadcrumb>
+);
 
 // Issue #19/D-07: the template browse page at /stacks/create/templates (not
 // /stacks/templates — a stack id can never contain "/", so this path can
 // never collide with a stack whose slug is "templates").
 export default function TemplateBrowsePage() {
     const navigate = useNavigate();
-    const {catalog, loading, error} = useTemplates();
+    const {catalog, loading, error, refetch, retryRepo} = useTemplates();
+    const [dialogTemplate, setDialogTemplate] = useState<TemplateSummary | null>(null);
+    const [retryingRepoId, setRetryingRepoId] = useState<string | null>(null);
 
     // D-06 zero-one-many: a single-variant template navigates straight to
-    // that variant. Multi-variant handling (the variant-selection dialog)
-    // is added in plan 12-09's Task 2 — until then the first variant wins.
+    // that variant; a multi-variant template opens the picker dialog.
     function handleUse(template: TemplateSummary) {
+        if (template.variants.length > 1) return setDialogTemplate(template);
         const variant = template.variants[0];
-        if (!variant) return;
-        navigate(`/stacks/create?variant=${encodeURIComponent(variant.id)}`);
+        if (variant) navigate(`/stacks/create?variant=${encodeURIComponent(variant.id)}`);
+    }
+
+    function handleRetry(repoId: string) {
+        setRetryingRepoId(repoId);
+        void retryRepo(repoId).finally(() => setRetryingRepoId(null));
     }
 
     return (
         <Page>
-            <PageHeader
-                breadcrumbs={
-                    <Breadcrumb>
-                        <BreadcrumbList>
-                            <BreadcrumbItem>
-                                <BreadcrumbLink asChild>
-                                    <Link to="/stacks">Stacks</Link>
-                                </BreadcrumbLink>
-                            </BreadcrumbItem>
-                            <BreadcrumbSeparator />
-                            <BreadcrumbItem>
-                                <BreadcrumbLink asChild>
-                                    <Link to="/stacks/create">Create</Link>
-                                </BreadcrumbLink>
-                            </BreadcrumbItem>
-                            <BreadcrumbSeparator />
-                            <BreadcrumbItem>
-                                <BreadcrumbPage>Templates</BreadcrumbPage>
-                            </BreadcrumbItem>
-                        </BreadcrumbList>
-                    </Breadcrumb>
-                }
-            >
+            <PageHeader breadcrumbs={BREADCRUMB}>
                 <PageTitle>Start from a Template</PageTitle>
             </PageHeader>
 
             <PageContent>
                 {error && (
-                    <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                        <span>{error}</span>
+                        <Button size="sm" variant="outline" onClick={() => refetch()}>Retry</Button>
+                    </div>
                 )}
 
                 {loading ? (
-                    <p className="text-sm text-muted-foreground">
-                        Templates are loading for the first time — this can take a moment.
-                    </p>
+                    <div className="space-y-4">
+                        <p className="text-sm text-muted-foreground">Templates are loading for the first time — this can take a moment.</p>
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                            {[0, 1, 2].map((i) => <Skeleton key={i} className="h-48 w-full" />)}
+                        </div>
+                    </div>
                 ) : (
-                    catalog && <TemplateGrid templates={catalog.templates} onUse={handleUse} />
+                    catalog && <>
+                        <TemplateRepoAlerts repos={catalog.repos} onRetry={handleRetry} retryingRepoId={retryingRepoId} />
+                        <TemplateGrid templates={catalog.templates} onUse={handleUse} />
+                    </>
                 )}
             </PageContent>
+
+            <TemplateVariantDialog
+                open={dialogTemplate !== null}
+                template={dialogTemplate}
+                onOpenChange={(open) => !open && setDialogTemplate(null)}
+                onChoose={(variant) => {
+                    setDialogTemplate(null);
+                    navigate(`/stacks/create?variant=${encodeURIComponent(variant.id)}`);
+                }}
+            />
         </Page>
     );
 }
