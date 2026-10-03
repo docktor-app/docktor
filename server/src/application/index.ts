@@ -11,6 +11,7 @@ import {
     certificateRepository,
     userRepository,
     imageUpdateCheckRepository,
+    templateRepository,
 } from "../repositories/index.js";
 import {StackService} from "./stack-service.js";
 import {ComposeReviewService} from "./compose-review-service.js";
@@ -21,10 +22,14 @@ import {BackupService} from "./backup-service.js";
 import {ProxyService} from "./proxy-service.js";
 import {CertificateService} from "./certificate-service.js";
 import {LogService, type LogServiceStackReadPort} from "./log-service.js";
+import {TemplateService} from "./template-service.js";
 import {certificateFilesystem} from "../infrastructure/certificate-filesystem.js";
 import {stateEventBroadcaster} from "../lib/state-broadcaster.js";
 import {dockerodeClient} from "../infrastructure/dockerode-client.js";
 import {smtpClient} from "../infrastructure/smtp-client.js";
+import {gitExecutor} from "../infrastructure/git-executor.js";
+import {templateSourceReader} from "../infrastructure/template-source-reader.js";
+import {getDefaultTemplateRepoUrl, getTemplateCacheDir} from "../lib/template-config.js";
 import {backupScheduler} from "../jobs/backup-scheduler.js";
 import {NotFoundError} from "../lib/errors.js";
 import type {BackupStackRepo} from "./backup-service.js";
@@ -48,6 +53,19 @@ export const settingsService = new SettingsService(settingsRepository);
 export const composeReviewService = new ComposeReviewService(repo, fs, composeRuleEngine, settingsService);
 
 export const stackService = new StackService(repo, fs, docker, stackEventRepository, domainEventBus, settingsService, imageUpdateCheckRepository, composeReviewService);
+
+// Issue #19: stackService (above) is TemplateService's TemplateStackCreator
+// dependency — the single create path (StackService.createStack) that
+// createStackFromVariant reuses, so template-created stacks get the same
+// compose checks and 428 confirmation as any other new stack for free.
+export const templateService = new TemplateService(
+    templateRepository,
+    gitExecutor,
+    templateSourceReader,
+    stackService,
+    {defaultRepoUrl: getDefaultTemplateRepoUrl, cacheDir: getTemplateCacheDir},
+);
+
 export const notificationService = new NotificationService(
     notificationRepository,
     settingsService,
