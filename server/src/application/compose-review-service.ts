@@ -99,10 +99,15 @@ export class ComposeReviewService {
 
         const settings = await this.settings.getComposeCheckSettings();
         const enabled = this.enabledRuleIds(settings);
-        const context = {stackDirectory: stack.hostPath, hasEnvFile: afterEnv.trim() !== ""};
+        // Context must be evaluated separately for before/after: hasEnvFile can flip (e.g. a
+        // stack's first .env file is added), and reusing one context for both evaluations made
+        // MissingEnvFileRule fire identically on both sides, masking a newly-introduced finding
+        // as pre-existing (introduced: false) — defeating the skip-review guarantee below.
+        const beforeContext = {stackDirectory: stack.hostPath, hasEnvFile: beforeEnv.trim() !== ""};
+        const afterContext = {stackDirectory: stack.hostPath, hasEnvFile: afterEnv.trim() !== ""};
 
-        const beforeEvaluation = this.engine.evaluate(beforeCompose, context, enabled);
-        const afterEvaluation = this.engine.evaluate(afterCompose, context, enabled);
+        const beforeEvaluation = this.engine.evaluate(beforeCompose, beforeContext, enabled);
+        const afterEvaluation = this.engine.evaluate(afterCompose, afterContext, enabled);
         const findings = this.markIntroduced(afterEvaluation.findings, beforeEvaluation.findings);
 
         // Issue #20/D-04 x #18's "skip diff confirmation" reconciliation

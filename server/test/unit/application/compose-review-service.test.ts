@@ -313,6 +313,23 @@ describe("ComposeReviewService", () => {
 
                 expect(result.confirmationRequired).toBe(false);
             });
+
+            it("skip on + adding a stack's first .env file newly introduces missingEnvFile and still requires confirmation (CR-01 regression)", async () => {
+                // Before this edit the stack has no .env file at all, so MissingEnvFileRule
+                // must not fire on the "before" evaluation even though it fires "after" —
+                // a shared before/after context previously made this finding look pre-existing.
+                const composeContent = "services:\n  web:\n    image: nginx\n";
+                fs.readCompose.mockResolvedValue(composeContent);
+                fs.readEnv.mockResolvedValue("");
+                const settings = createMockSettings({skipReview: true, checks: {missingEnvFile: true}});
+                const service = new ComposeReviewService(stacks, fs, new ComposeRuleEngine(), settings);
+
+                const result = await service.previewStackChange("my-app", {envContent: "FOO=bar"});
+
+                const missingEnvFinding = result.findings.find((f) => f.ruleId === "missingEnvFile");
+                expect(missingEnvFinding?.introduced).toBe(true);
+                expect(result.confirmationRequired).toBe(true);
+            });
         });
     });
 

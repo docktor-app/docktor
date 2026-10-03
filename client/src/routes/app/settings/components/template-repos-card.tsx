@@ -79,7 +79,11 @@ export function TemplateReposCard() {
                             key={repoRow.id}
                             repo={repoRow}
                             syncing={syncingIds.has(repoRow.id)}
-                            onSyncNow={() => void syncRepo(repoRow.id)}
+                            onSyncNow={() => {
+                                syncRepo(repoRow.id).catch((err: unknown) => {
+                                    toast.error(`Sync failed — ${err instanceof Error ? err.message : "unknown error"}`);
+                                });
+                            }}
                         />
                     ))
                 )}

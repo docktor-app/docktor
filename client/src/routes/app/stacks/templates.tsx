@@ -1,5 +1,6 @@
 import {useState} from "react";
 import {Link, useNavigate} from "react-router";
+import {toast} from "sonner";
 import {useTemplates} from "@/hooks/use-templates";
 import {TemplateGrid} from "@/components/domain/template/template-grid";
 import {TemplateVariantDialog} from "@/components/domain/template/template-variant-dialog";
@@ -43,7 +44,11 @@ export default function TemplateBrowsePage() {
 
     function handleRetry(repoId: string) {
         setRetryingRepoId(repoId);
-        void retryRepo(repoId).finally(() => setRetryingRepoId(null));
+        retryRepo(repoId)
+            .catch((err: unknown) => {
+                toast.error(`Couldn't retry sync — ${err instanceof Error ? err.message : "unknown error"}.`);
+            })
+            .finally(() => setRetryingRepoId(null));
     }
 
     return (

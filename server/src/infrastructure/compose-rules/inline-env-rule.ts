@@ -3,6 +3,15 @@ import type {ComposeRuleContext} from "../../application/ports/compose-rule-engi
 import {composeAnalyzer} from "../compose-analyzer.js";
 import {serviceEntries} from "./compose-document.js";
 
+// Array.prototype.findLastIndex is ES2023; this project targets ES2022, so a
+// manual reverse scan keeps the same "last match" semantics without widening lib.
+function lastIndexMatching<T>(items: T[], predicate: (item: T) => boolean): number {
+    for (let i = items.length - 1; i >= 0; i--) {
+        if (predicate(items[i] as T)) return i;
+    }
+    return -1;
+}
+
 /**
  * #20/D-10 configurable check: a hardcoded literal environment value (object
  * form `KEY: literal` or list form `KEY=literal`) belongs in the stack's
@@ -24,12 +33,17 @@ export class InlineEnvRule implements Rule {
             const isListForm = Array.isArray(environment);
 
             for (const key of Object.keys(vars)) {
+                // extractInlineEnvVars records the LAST occurrence of a duplicate key (object
+                // assignment semantics), so the line lookup must match the last entry too —
+                // not the first, which findIndex would return for a malformed compose file
+                // with the same key listed twice.
                 const path: Array<string | number> = isListForm
                     ? [
                           "services",
                           serviceName,
                           "environment",
-                          (environment as unknown[]).findIndex(
+                          lastIndexMatching(
+                              environment as unknown[],
                               (entry) => typeof entry === "string" && entry.startsWith(`${key}=`),
                           ),
                       ]

@@ -28,6 +28,11 @@ export function ConfigTab({files, stackName}: Readonly<ConfigTabProps>) {
         ? {
               kind: "edit",
               file: files.review.file,
+              // Safe: ComposeReviewService.previewStackChange only returns a non-null
+              // compose/env diff for the field that was actually submitted, and
+              // saveCompose()/saveEnv() each submit only their own field — so the diff
+              // for files.review.file is always populated. Breaks only if a future
+              // caller previews both files in one call.
               diff: files.review.file === "compose" ? files.review.preview.compose! : files.review.preview.env!,
           }
         : null;
