@@ -42,6 +42,21 @@ model Stack {
   backupSchedule   String? // cron expression, null = use global default
   backupRetention  String? // JSON retention policy, null = use global default
 
+  // Issue #19 template pin (D-08): set once at creation from the variant the
+  // stack was created from, never rewritten by a later template update. The
+  // pin stores the repo URL, not a foreign key, so removing a TemplateRepo
+  // row never touches stacks created from it.
+  templateRepoUrl         String? // the repo's url at creation time
+  templatePath            String? // "<template-slug>/<variant-slug>"
+  templateCommitSha       String? // repo's headCommitSha at creation time
+  templateContentHash     String? // the variant's contentHash at creation time, pinned forever
+  // Passive "template updated" badge flag (D-08, written by plan 12-11's
+  // job) — never auto-applied, purely informational.
+  templateUpdateAvailable Boolean @default(false)
+  // Plan 12-08's pre-deploy compose-check/port-conflict re-check result:
+  // JSON {checkedAt, composeFindings, portConflicts}.
+  deployWarnings          String?
+
   // Relations
   services      Service[]
   proxyConfigs  ProxyConfig[]

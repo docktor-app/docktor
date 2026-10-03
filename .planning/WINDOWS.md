@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 7
+open_count: 8
 waived_count: 0
 fixed_count: 8
-total_count: 15
-last_updated: 2026-10-02T18:47:24.128Z
+total_count: 16
+last_updated: 2026-10-03T07:22:02.435Z
 ---
 
 # Broken Windows Ledger
@@ -30,6 +30,7 @@ last_updated: 2026-10-02T18:47:24.128Z
 | 13 | 11 | deviation | client/test/integration/stacks.spec.ts |  | Pre-existing (11-06) strict-mode duplicate 'Running' text (header StackStatusBadge + Overview activity pill) breaks 'stack detail page shows stack info and services'; out of 11-09's scope (compose editor only) per deferred-items.md | fixed |  | 2026-09-29T16:28:10.380Z | 2026-09-30T22:04:55.792Z |
 | 14 | 12 | unrun-verify | server/test/integration/compose-checks.test.ts |  | Branch B: testcontainers P1001 (can't reach published port) blocked a live run of the new Compose Checks settings API integration test in this sandbox; written and ready for CI/human re-run | open |  | 2026-10-02T18:47:23.790Z |  |
 | 15 | 12 | unrun-verify | server/test/integration/stacks.test.ts |  | Branch B: testcontainers P1001 blocked a live run of the new create-path (POST /api/stacks/preview, privileged-create 428/201) integration tests in this sandbox; written and ready for CI/human re-run | open |  | 2026-10-02T18:47:24.128Z |  |
+| 16 | 12 | unrun-verify | server/prisma/migrations/20261003072056_add_template_repos_and_deploy_warnings/migration.sql |  | Branch B: testcontainers/dev-db P1001 (can't reach localhost:5432) blocked applying this migration to a live database in this sandbox; generated via prisma migrate diff (from-schema-copy technique) against the pre-change schema, not hand-written. A developer on an unrestricted host must run yarn db:migrate (or prisma migrate deploy) to apply it and verify the TemplateRepo/Template/TemplateVariant tables and the six new Stack columns exist. | open |  | 2026-10-03T07:22:02.435Z |  |
 
 ````json
 [
@@ -213,6 +214,19 @@ last_updated: 2026-10-02T18:47:24.128Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-02T18:47:24.128Z",
+    "resolved_at": null,
+    "milestone": "v0.1.0"
+  },
+  {
+    "id": 16,
+    "kind": "unrun-verify",
+    "phase": "12",
+    "file": "server/prisma/migrations/20261003072056_add_template_repos_and_deploy_warnings/migration.sql",
+    "line": null,
+    "description": "Branch B: testcontainers/dev-db P1001 (can't reach localhost:5432) blocked applying this migration to a live database in this sandbox; generated via prisma migrate diff (from-schema-copy technique) against the pre-change schema, not hand-written. A developer on an unrestricted host must run yarn db:migrate (or prisma migrate deploy) to apply it and verify the TemplateRepo/Template/TemplateVariant tables and the six new Stack columns exist.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-03T07:22:02.435Z",
     "resolved_at": null,
     "milestone": "v0.1.0"
   }
