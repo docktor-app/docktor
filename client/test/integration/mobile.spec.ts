@@ -362,6 +362,14 @@ test.describe("Mobile (D-17, 390-412px viewport)", () => {
             return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(mockStack)});
         });
 
+        // Issue #18: saves preview first; no confirmation required, so the save applies directly.
+        await page.route("**/api/stacks/my-app/preview", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({hasChanges: true, confirmationRequired: false, compose: null, env: null}),
+            }),
+        );
         await page.goto("/stacks/my-app/config");
 
         await expect(page.getByRole("heading", {name: "Compose File"})).toBeVisible();

@@ -20,10 +20,13 @@ function flavourFor(directory: string): PathFlavour {
  * segment, which would otherwise lexically join underneath the stack
  * directory and be misclassified as contained).
  */
-function expandTilde(hostPath: string, flavour: PathFlavour): string {
-    if (hostPath === "~") return os.homedir();
+function expandTilde(hostPath: string): string {
+    const home = os.homedir();
+    if (hostPath === "~") return home;
     if (hostPath.startsWith("~/") || hostPath.startsWith("~\\")) {
-        return flavour.join(os.homedir(), hostPath.slice(2));
+        // Joined in the home directory's own flavour (not the stack
+        // directory's) so a Windows home stays a valid drive-rooted path.
+        return flavourFor(home).join(home, hostPath.slice(2));
     }
     return hostPath;
 }
@@ -43,7 +46,7 @@ function resolveAndNormalize(directory: string, target: string, flavour: PathFla
  */
 export function resolveHostPath(stackDirectory: string, hostPath: string): string {
     const flavour = flavourFor(stackDirectory);
-    const expanded = expandTilde(hostPath, flavour);
+    const expanded = expandTilde(hostPath);
     return resolveAndNormalize(stackDirectory, expanded, flavour);
 }
 
@@ -56,6 +59,10 @@ export function resolveHostPath(stackDirectory: string, hostPath: string): strin
  */
 export function isWithinDirectory(directory: string, target: string): boolean {
     const flavour = flavourFor(directory);
+    // A drive-rooted Windows target can never live inside a POSIX directory
+    // (and vice versa for the root of a different volume) — without this
+    // guard posix path math would treat "C:\\x" as a relative segment.
+    if (WINDOWS_DRIVE_PREFIX.test(target) && flavour !== path.win32) return false;
     const resolved = resolveAndNormalize(directory, target, flavour);
     const rel = flavour.relative(directory, resolved);
 
