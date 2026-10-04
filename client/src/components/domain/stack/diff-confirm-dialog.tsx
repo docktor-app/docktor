@@ -13,9 +13,8 @@ import {
 import {Alert, AlertDescription} from "@/components/ui/alert";
 import {Button} from "@/components/ui/button";
 import {ScrollArea} from "@/components/ui/scroll-area";
-import {ToneBadge} from "@/components/common/tone-badge";
 import {UnifiedDiffView, type UnifiedDiffHunk, type UnifiedDiffLine} from "@/components/common/unified-diff-view";
-import {ComposeWarningBadge} from "@/components/domain/stack/compose-warning-badge";
+import {ComposeFindingRow} from "@/components/domain/stack/compose-finding-row";
 import {isSecretKey} from "@/lib/env-file";
 import type {ReviewFinding, UnifiedDiff} from "@/lib/stacks-api";
 
@@ -170,12 +169,9 @@ export function DiffConfirmDialog({
         for (const [line, lineFindings] of byLine) {
             annotations.set(
                 line,
-                <div className="space-y-1 py-1">
+                <div className="space-y-2 px-2 py-2 font-sans">
                     {lineFindings.map((finding, index) => (
-                        <div key={findingKey(finding, index)} className="flex items-center gap-2">
-                            <ComposeWarningBadge finding={finding} />
-                            <span className="text-xs">{finding.message}</span>
-                        </div>
+                        <ComposeFindingRow key={findingKey(finding, index)} finding={finding} />
                     ))}
                 </div>,
             );
@@ -207,17 +203,10 @@ export function DiffConfirmDialog({
                 )}
 
                 {listedFindings.length > 0 && (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                         <p className="text-sm font-semibold">Compose check warnings</p>
                         {listedFindings.map((finding, index) => (
-                            <div key={findingKey(finding, index)} className="flex items-center gap-2 text-sm">
-                                <ComposeWarningBadge finding={finding} />
-                                <span>{finding.message}</span>
-                                {finding.line !== null && (
-                                    <span className="text-muted-foreground">line {finding.line}</span>
-                                )}
-                                {finding.introduced && <ToneBadge tone="neutral">new</ToneBadge>}
-                            </div>
+                            <ComposeFindingRow key={findingKey(finding, index)} finding={finding} showLine />
                         ))}
                     </div>
                 )}

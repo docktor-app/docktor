@@ -6,15 +6,9 @@ import type {SocketListener} from "../../domain/port-conflicts.js";
  * concrete SocketInspector class, so it stays unit-testable with a plain
  * fake).
  *
- * IMPORTANT network-namespace limitation (RESEARCH.md Critical
- * Finding/Pitfall 1): Docktor's own container runs on the default bridge
- * network, not `network_mode: host` — `ss`/`lsof` run inside it only see
- * Docktor's own loopback sockets, never another container's bound ports or
- * a genuinely host-level process's. This is therefore most useful when
- * Docktor runs directly on a host (e.g. `yarn dev`) rather than inside its
- * own container; the database (Docktor stacks) and dockerode (any
- * container) tiers in port-conflicts.ts are the reliable layers; this port
- * is the documented last-resort supplement, not the primary mechanism.
+ * The concrete adapter probes the host's network/PID namespace through a
+ * short-lived helper container (see socket-inspector.ts), falling back to a
+ * local `ss`/`lsof` when that is unavailable.
  */
 export interface SocketInspectorPort {
     listListeners(): Promise<SocketListener[]>;

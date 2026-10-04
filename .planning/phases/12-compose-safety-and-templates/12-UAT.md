@@ -52,7 +52,8 @@ blocked: 0
 
 - gap_id: G-12-1
   truth: "Dialog shows the unified diff with the `privileged` finding anchored as a red badge directly under the diff line that introduced it, legible in both light and dark mode; \"Keep Editing\" preserves the edit, \"Confirm & Apply\" writes it."
-  status: failed
+  status: resolved
+  resolved_in: "ComposeFindingRow card layout (client/src/components/domain/stack/compose-finding-row.tsx)"
   reason: "User reported: pass. However, leave some space between the findings or seperate them. Currently, this looks squashy. Also the text directly next to the check name is not that good. maybe wrap them in a card or structure them as a table."
   severity: cosmetic
   test: 1
@@ -74,7 +75,8 @@ blocked: 0
 
 - gap_id: G-12-2
   truth: "The pre-deploy warnings banner reports the port as already in use by the host-level process (name + PID, or \"unknown process\" fallback) and the deploy proceeds either way (never blocked)."
-  status: failed
+  status: resolved
+  resolved_in: "SocketInspector host-namespace helper-container probe (server/src/infrastructure/socket-inspector.ts)"
   reason: "User reported: No banner appeared, when deploying I'll only get an error since the port is already in use."
   severity: blocker
   test: 3
