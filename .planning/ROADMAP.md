@@ -608,3 +608,13 @@ Plans:
 Plans:
 
 - [ ] TBD (run /gsd-plan-phase 16 to break down)
+
+## Backlog
+
+### Phase 999.1: Follow-up — Phase 12 deferred UAT follow-up: Test 2 (BACKLOG)
+
+**Goal:** Resolve the UAT checkpoint deferred during Phase 12 verification
+**Source phase:** 12
+**Deferred at:** 2026-10-04 during /gsd-verify-work 12 session completion
+**Follow-ups:**
+- [ ] Test 2: pass. However, I'd like to have some variables introduced like for container_name property. So user set the variable e.g. container-base-name to nextcloud and you will have nextcloud-server, nextcloud-db etc. (deferred 2026-10-04)
