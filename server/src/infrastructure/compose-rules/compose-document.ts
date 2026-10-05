@@ -32,7 +32,10 @@ function expandTilde(hostPath: string): string {
 }
 
 function resolveAndNormalize(directory: string, target: string, flavour: PathFlavour): string {
-    if (flavour.isAbsolute(target)) {
+    // A drive-rooted Windows path is absolute even to a POSIX directory (e.g.
+    // a Windows home expanded from "~"); resolving it lexically would graft
+    // it underneath the directory and misreport it as contained.
+    if (flavour.isAbsolute(target) || WINDOWS_DRIVE_PREFIX.test(target)) {
         return flavour.normalize(target);
     }
     return flavour.normalize(flavour.resolve(directory, target));
@@ -59,9 +62,7 @@ export function resolveHostPath(stackDirectory: string, hostPath: string): strin
  */
 export function isWithinDirectory(directory: string, target: string): boolean {
     const flavour = flavourFor(directory);
-    // A drive-rooted Windows target can never live inside a POSIX directory
-    // (and vice versa for the root of a different volume) — without this
-    // guard posix path math would treat "C:\\x" as a relative segment.
+    // A drive-rooted Windows target can never live inside a POSIX directory.
     if (WINDOWS_DRIVE_PREFIX.test(target) && flavour !== path.win32) return false;
     const resolved = resolveAndNormalize(directory, target, flavour);
     const rel = flavour.relative(directory, resolved);
