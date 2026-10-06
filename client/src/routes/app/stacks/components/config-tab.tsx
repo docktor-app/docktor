@@ -5,21 +5,37 @@ import {Separator} from "@/components/ui/separator";
 import {Section, SectionActions, SectionHeader, SectionTitle} from "@/components/common/layout/section";
 import {ComposeEditor} from "@/components/domain/stack/compose-editor";
 import {EnvEditor} from "@/components/domain/stack/env-editor";
+import {DiffConfirmDialog, type ReviewSubject} from "@/components/domain/stack/diff-confirm-dialog";
 import type {StackConfigFiles} from "@/hooks/use-stack-config-files";
 
 export interface ConfigTabProps {
     readonly files: StackConfigFiles;
+    readonly stackName: string;
 }
 
 // D-02/D-03: the merged Compose+Environment tab — a single stacked column of
 // two flat Sections (UI-SPEC Discretion Decision 4), no Card, no nested Tabs.
 // 11-09 gave Compose File a CodeMirror editor; 11-12 gives Environment
 // Variables a table/raw EnvEditor (D-20/D-21/D-22) — both behind this same
-// `files` prop.
-export function ConfigTab({files}: Readonly<ConfigTabProps>) {
+// `files` prop. Issue #18/D-01/D-03: Save now routes through a diff review
+// gate (DiffConfirmDialog) before either editor's PUT actually applies.
+export function ConfigTab({files, stackName}: Readonly<ConfigTabProps>) {
     // EnvEditor validates its own table rows (invalid key -> can't save);
     // true by default so an untouched/raw-mode editor never blocks Save.
     const [envValid, setEnvValid] = useState(true);
+
+    const reviewSubject: ReviewSubject | null = files.review
+        ? {
+              kind: "edit",
+              file: files.review.file,
+              // Safe: ComposeReviewService.previewStackChange only returns a non-null
+              // compose/env diff for the field that was actually submitted, and
+              // saveCompose()/saveEnv() each submit only their own field — so the diff
+              // for files.review.file is always populated. Breaks only if a future
+              // caller previews both files in one call.
+              diff: files.review.file === "compose" ? files.review.preview.compose! : files.review.preview.env!,
+          }
+        : null;
 
     return (
         <div className="space-y-6">
@@ -29,7 +45,7 @@ export function ConfigTab({files}: Readonly<ConfigTabProps>) {
                     <SectionActions>
                         <Button
                             size="sm"
-                            disabled={!files.composeDirty}
+                            disabled={!files.composeDirty || files.reviewPending}
                             aria-label="Save compose file"
                             onClick={files.saveCompose}
                         >
@@ -49,7 +65,7 @@ export function ConfigTab({files}: Readonly<ConfigTabProps>) {
                     <SectionActions>
                         <Button
                             size="sm"
-                            disabled={!files.envDirty || !envValid}
+                            disabled={!files.envDirty || !envValid || files.reviewPending}
                             aria-label="Save environment variables"
                             onClick={files.saveEnv}
                         >
@@ -64,6 +80,16 @@ export function ConfigTab({files}: Readonly<ConfigTabProps>) {
                     onValidityChange={setEnvValid}
                 />
             </Section>
+
+            <DiffConfirmDialog
+                open={files.review !== null}
+                stackName={stackName}
+                subject={reviewSubject}
+                findings={files.review?.preview.findings}
+                composeParseError={files.review?.preview.composeParseError}
+                onConfirm={files.confirmReview}
+                onCancel={files.cancelReview}
+            />
         </div>
     );
 }

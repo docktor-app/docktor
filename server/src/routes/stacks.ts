@@ -1,7 +1,9 @@
 import type {FastifyPluginAsyncZod} from "fastify-type-provider-zod";
 import {z} from "zod";
 import {
+    createStackPreviewSchema,
     createStackSchema,
+    stackChangePreviewSchema,
     stackParamsSchema,
     stackServiceParamsSchema,
     updateStackSchema,
@@ -9,7 +11,7 @@ import {
     upgradeServiceSchema,
 } from "@docktor/shared";
 import {requireAuth} from "../lib/auth-middleware.js";
-import {logService, stackService} from "../application/index.js";
+import {composeReviewService, logService, stackService} from "../application/index.js";
 import {processDockerLogChunk} from "../lib/docker-log-parser.js";
 import {NotFoundError} from "../lib/errors.js";
 
@@ -29,6 +31,15 @@ const stackRoutes: FastifyPluginAsyncZod = async (app) => {
         return reply.status(201).send(stack);
     });
 
+    // Issue #20/D-02: read-only findings-only preview for the create flow —
+    // never writes anything. The only write path remains POST /api/stacks
+    // above, which enforces confirmed: true itself via StackService.createStack.
+    app.post("/api/stacks/preview", {
+        schema: {body: createStackPreviewSchema},
+    }, async (request) => {
+        return composeReviewService.previewNewStack(request.body);
+    });
+
     // Get stack detail
     app.get("/api/stacks/:id", {
         schema: {params: stackParamsSchema},
@@ -45,6 +56,15 @@ const stackRoutes: FastifyPluginAsyncZod = async (app) => {
         schema: {params: stackParamsSchema, body: updateStackSchema},
     }, async (request) => {
         return stackService.updateStack(request.params.id, request.body);
+    });
+
+    // Issue #18/D-01/D-03: read-only diff preview of submitted compose/env
+    // content against what's on disk — never writes anything. The only
+    // write path remains PUT above, which enforces confirmed: true itself.
+    app.post("/api/stacks/:id/preview", {
+        schema: {params: stackParamsSchema, body: stackChangePreviewSchema},
+    }, async (request) => {
+        return composeReviewService.previewStackChange(request.params.id, request.body);
     });
 
     // Delete stack
@@ -74,8 +94,8 @@ const stackRoutes: FastifyPluginAsyncZod = async (app) => {
     app.post("/api/stacks/:id/restart", {
         schema: {params: stackParamsSchema},
     }, async (request) => {
-        await stackService.restartStack(request.params.id);
-        return {success: true};
+        const result = await stackService.restartStack(request.params.id);
+        return {success: true, warnings: result.warnings};
     });
 
     // Trigger image pull + container recreate (user-initiated, never automatic)
@@ -83,7 +103,7 @@ const stackRoutes: FastifyPluginAsyncZod = async (app) => {
         schema: {params: stackParamsSchema},
     }, async (request) => {
         const result = await stackService.updateImages(request.params.id);
-        return {success: true, noUpdates: result.noUpdates};
+        return {success: true, noUpdates: result.noUpdates, warnings: result.warnings};
     });
 
     // Get compose file content

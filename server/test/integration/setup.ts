@@ -124,6 +124,9 @@ export async function cleanDatabase(): Promise<void> {
     await p.proxyConfig.deleteMany();
     await p.backup.deleteMany();
     await p.service.deleteMany();
+    await p.templateVariant.deleteMany();
+    await p.template.deleteMany();
+    await p.templateRepo.deleteMany();
     await p.stack.deleteMany();
     await p.session.deleteMany();
     await p.account.deleteMany();

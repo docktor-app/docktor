@@ -1,0 +1,68 @@
+// Issue #19: TemplateRepo rows are template sources — the official repo
+// (D-05, https://github.com/docktor-app/templates) is just the first row,
+// seeded with isDefault true (assumption-delta Signal 1: pluralization is
+// promoted from the start, no separate "default repo URL" setting bolted on
+// beside a list). Template/TemplateVariant rows are the persisted, synced
+// index of one repo's checkout — replaced wholesale on every sync via
+// TemplateRepository.recordSyncSuccess's single transaction.
+
+model TemplateRepo {
+  id                 String   @id @default(cuid())
+  url                String   @unique
+  isDefault          Boolean  @default(false)
+  headCommitSha      String?
+  lastSyncAttemptAt  DateTime?
+  lastSyncedAt       DateTime?
+  lastSyncError      String?
+  // JSON array of {path, message} — TemplateSourceReader's per-file/per-folder
+  // rejection issues from the most recent sync attempt.
+  syncIssues         String?
+
+  templates Template[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Template {
+  id          String       @id @default(cuid())
+  repoId      String
+  repo        TemplateRepo @relation(fields: [repoId], references: [id], onDelete: Cascade)
+
+  slug        String
+  name        String
+  description String
+  category    String
+  // Inline data URI (svg/png), never a remote URL — embedded by
+  // TemplateSourceReader so browsing templates never makes a third-party
+  // request.
+  iconDataUri String?
+
+  variants TemplateVariant[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([repoId, slug])
+}
+
+model TemplateVariant {
+  id          String   @id @default(cuid())
+  templateId  String
+  template    Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  slug          String
+  name          String
+  description   String
+  usage         String?
+  composeContent String
+  envContent    String?
+  // sha256 hex of the variant's manifest + compose + env content — D-08's
+  // version pin, copied verbatim into Stack.templateContentHash at creation.
+  contentHash   String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([templateId, slug])
+}

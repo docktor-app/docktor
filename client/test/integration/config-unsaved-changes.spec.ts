@@ -52,6 +52,16 @@ async function mockStackDetailPage(page: Page) {
     await page.route("**/api/stacks/my-app/env", (route) =>
         route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: ""})}),
     );
+    // Issue #18/D-01: this suite drives the unsaved-changes guard, not the
+    // review dialog — a save here must apply directly, so stub the preview
+    // endpoint reporting no review needed wherever a save is triggered.
+    await page.route("**/api/stacks/my-app/preview", (route) =>
+        route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({hasChanges: true, confirmationRequired: false, compose: null, env: null}),
+        }),
+    );
     await page.route("**/api/stacks/my-app/events", (route) =>
         route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify([])}),
     );

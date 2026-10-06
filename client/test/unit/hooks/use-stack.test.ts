@@ -344,6 +344,59 @@ describe("useStack", () => {
         expect(result.current.loading).toBe(false);
         expect(result.current.error).toBeNull();
     });
+
+    // Issue #21/D-14: pre-deploy warnings are persisted before the
+    // DEPLOYING/UPDATING broadcast fires, so a background refetch on that
+    // event lets DeployWarningsAlert show up while the deploy/update is
+    // still running rather than only after it finishes.
+    it.each(["DEPLOYING", "UPDATING"] as const)(
+        "a stack_status event with stackStatus %s triggers a background refetch without touching loading",
+        async (stackStatus) => {
+            const initialStack = {id: "my-app", displayName: "My App", status: "RUNNING"};
+            const refreshedStack = {id: "my-app", displayName: "My App", status: stackStatus};
+            mockGetStack.mockResolvedValueOnce(initialStack as any);
+            const refresh = deferred<any>();
+            mockGetStack.mockReturnValueOnce(refresh.promise);
+
+            const {result} = renderHook(() => useStack("my-app"));
+            await waitFor(() => expect(result.current.loading).toBe(false));
+
+            act(() => {
+                capturedHandler!({type: "stack_status", stackId: "my-app", stackStatus});
+            });
+
+            // The local status patch is synchronous...
+            expect(result.current.stack?.status).toBe(stackStatus);
+            // ...and the background refetch is in flight, never touching loading.
+            await waitFor(() => expect(result.current.isRefreshing).toBe(true));
+            expect(result.current.loading).toBe(false);
+
+            await act(async () => {
+                refresh.resolve(refreshedStack);
+                await refresh.promise;
+            });
+
+            await waitFor(() => expect(result.current.isRefreshing).toBe(false));
+            expect(result.current.stack).toEqual(refreshedStack);
+        },
+    );
+
+    it("a stack_status event with stackStatus RUNNING does not trigger a background refetch", async () => {
+        const initialStack = {id: "my-app", displayName: "My App", status: "DEPLOYING"};
+        mockGetStack.mockResolvedValueOnce(initialStack as any);
+
+        const {result} = renderHook(() => useStack("my-app"));
+        await waitFor(() => expect(result.current.loading).toBe(false));
+        mockGetStack.mockClear();
+
+        act(() => {
+            capturedHandler!({type: "stack_status", stackId: "my-app", stackStatus: "RUNNING"});
+        });
+
+        expect(result.current.stack?.status).toBe("RUNNING");
+        expect(mockGetStack).not.toHaveBeenCalled();
+        expect(result.current.isRefreshing).toBe(false);
+    });
 });
 
 // Task 2: pin the actual regression (a full-tree remount) with a node-identity

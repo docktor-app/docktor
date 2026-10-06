@@ -6,6 +6,7 @@ import {ProtectedRoute} from "@/components/domain/auth/protected-route";
 import Dashboard from "@/routes/app/dashboard";
 import StacksPage from "@/routes/app/stacks/index";
 import CreateStackPage from "@/routes/app/stacks/create";
+import TemplateBrowsePage from "@/routes/app/stacks/templates";
 import ImportStackPage from "@/routes/app/stacks/import";
 import StackDetailPage from "@/routes/app/stacks/[id]";
 import SettingsPage from "@/routes/app/settings";
@@ -53,6 +54,7 @@ export const router = ReactRouterCore.createBrowserRouter(
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/stacks" element={<StacksPage />} />
                 <Route path="/stacks/create" element={<CreateStackPage />} />
+                <Route path="/stacks/create/templates" element={<TemplateBrowsePage />} />
                 <Route path="/stacks/import" element={<ImportStackPage />} />
                 <Route path="/stacks/:id/backups/:backupId" element={<BackupDetailPage />} />
                 <Route path="/stacks/:id/:tab?" element={<StackDetailPage />} />

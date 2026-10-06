@@ -193,6 +193,17 @@ test.describe("Stacks", () => {
     test("create stack submits and redirects to detail page", async ({page}) => {
         await mockAuthenticated(page);
 
+        // Issue #20/D-02: the create page always previews before creating —
+        // a clean compose (no findings) means confirmationRequired is false
+        // and the review dialog never opens.
+        await page.route("**/api/stacks/preview", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({confirmationRequired: false, findings: [], composeParseError: null}),
+            }),
+        );
+
         // Mock POST /api/stacks
         await page.route("**/api/stacks", (route) => {
             if (route.request().method() === "POST") {
@@ -227,6 +238,85 @@ test.describe("Stacks", () => {
         await replaceCodeEditorContent(page, /docker compose file/i, "services:\n  web:\n    image: nginx");
         await page.getByRole("button", {name: /create stack/i}).click();
 
+        await expect(page).toHaveURL("/stacks/new-stack", {timeout: 10_000});
+    });
+
+    // Issue #20 AC1/D-02: a compose with a dangerous finding opens the
+    // findings-only review dialog (no diff — D-02); confirming sends
+    // confirmed: true and the page still navigates to the new stack.
+    test("create stack with a privileged compose opens the findings-only review dialog, Confirm & Apply sends confirmed: true", async ({page}) => {
+        await mockAuthenticated(page);
+
+        await page.route("**/api/stacks/preview", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({
+                    confirmationRequired: true,
+                    findings: [
+                        {
+                            ruleId: "privileged",
+                            severity: "danger",
+                            message: 'Service "web" runs with privileged: true, granting it full access to the host.',
+                            serviceName: "web",
+                            path: ["services", "web", "privileged"],
+                            line: 3,
+                            introduced: true,
+                        },
+                    ],
+                    composeParseError: null,
+                }),
+            }),
+        );
+
+        let postBody: unknown = null;
+        await page.route("**/api/stacks", (route) => {
+            if (route.request().method() === "POST") {
+                postBody = route.request().postDataJSON();
+                return route.fulfill({
+                    status: 201,
+                    contentType: "application/json",
+                    body: JSON.stringify({id: "new-stack", displayName: "New Stack", services: []}),
+                });
+            }
+            return route.continue();
+        });
+
+        await page.route("**/api/stacks/new-stack", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({...mockStackDetail, id: "new-stack", displayName: "New Stack", status: "DRAFT"}),
+            }),
+        );
+        await page.route("**/api/stacks/new-stack/compose", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: "services:"})}),
+        );
+        await page.route("**/api/stacks/new-stack/env", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: ""})}),
+        );
+        await mockStackEvents(page, "new-stack");
+
+        await page.goto("/stacks/create");
+
+        await page.getByLabel(/name/i).fill("New Stack");
+        await replaceCodeEditorContent(
+            page,
+            /docker compose file/i,
+            "services:\n  web:\n    image: nginx\n    privileged: true",
+        );
+        await page.getByRole("button", {name: /create stack/i}).click();
+
+        const dialog = page.getByRole("alertdialog");
+        await expect(dialog).toBeVisible();
+        await expect(dialog).toContainText("Review New Stack before creating");
+        await expect(dialog).toContainText("Privileged container");
+
+        await dialog.getByRole("button", {name: "Confirm & Apply"}).click();
+
+        await expect.poll(() => postBody).toEqual(
+            expect.objectContaining({displayName: "New Stack", confirmed: true}),
+        );
         await expect(page).toHaveURL("/stacks/new-stack", {timeout: 10_000});
     });
 
@@ -302,12 +392,70 @@ test.describe("Stacks", () => {
         await expect(page.getByRole("menuitem", {name: /restart/i})).toBeVisible();
     });
 
-    test("stack detail config tab: edit and save the compose file (D-02/D-03)", async ({page}) => {
+    test("stack detail page shows the pre-deploy warnings banner with a link to the conflicting stack (Issue #21/D-14/D-15)", async ({page}) => {
+        await mockAuthenticated(page);
+        const deployWarnings = JSON.stringify({
+            checkedAt: "2026-01-01T00:00:00.000Z",
+            composeFindings: [],
+            portConflicts: [
+                {port: 8080, protocol: "tcp", serviceName: "web", holder: {kind: "stack", stackId: "blog", stackDisplayName: "Blog"}},
+            ],
+        });
+        await page.route("**/api/stacks/my-app", (route) => {
+            if (route.request().url().endsWith("/compose") || route.request().url().endsWith("/env")) {
+                return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: ""})});
+            }
+            return route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({...mockStackDetail, deployWarnings}),
+            });
+        });
+        await page.route("**/api/stacks/my-app/compose", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: ""})}),
+        );
+        await page.route("**/api/stacks/my-app/env", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: ""})}),
+        );
+        await mockStackEvents(page, "my-app");
+
+        await page.goto("/stacks/my-app");
+
+        await expect(page.getByText(/Port 8080 is already in use by/)).toBeVisible();
+        const blogLink = page.getByRole("link", {name: "Blog"});
+        await expect(blogLink).toBeVisible();
+        await expect(blogLink).toHaveAttribute("href", "/stacks/blog");
+    });
+
+    test("stack detail page shows no pre-deploy warnings banner for a stack with no deployWarnings field", async ({page}) => {
+        await mockAuthenticated(page);
+        await page.route("**/api/stacks/my-app", (route) => {
+            if (route.request().url().endsWith("/compose") || route.request().url().endsWith("/env")) {
+                return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: ""})});
+            }
+            return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(mockStackDetail)});
+        });
+        await page.route("**/api/stacks/my-app/compose", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: ""})}),
+        );
+        await page.route("**/api/stacks/my-app/env", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: ""})}),
+        );
+        await mockStackEvents(page, "my-app");
+
+        await page.goto("/stacks/my-app");
+
+        await expect(page.getByRole("heading", {name: "My App"})).toBeVisible();
+        await expect(page.getByText("Pre-deploy warnings")).toHaveCount(0);
+    });
+
+    test("stack detail config tab: edit and save the compose file shows a review dialog, Confirm & Apply writes (Issue #18/D-01/D-02/D-03)", async ({page}) => {
         await mockAuthenticated(page);
         let putBody: unknown = null;
+        let previewCalled = false;
         await page.route("**/api/stacks/my-app", (route) => {
             const url = route.request().url();
-            if (url.endsWith("/compose") || url.endsWith("/env")) {
+            if (url.endsWith("/compose") || url.endsWith("/env") || url.endsWith("/preview")) {
                 return route.continue();
             }
             if (route.request().method() === "PUT") {
@@ -330,6 +478,35 @@ test.describe("Stacks", () => {
         await page.route("**/api/stacks/my-app/env", (route) =>
             route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: "FOO=bar"})}),
         );
+        await page.route("**/api/stacks/my-app/preview", (route) => {
+            previewCalled = true;
+            return route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({
+                    hasChanges: true,
+                    confirmationRequired: true,
+                    compose: {
+                        hunks: [
+                            {
+                                oldStart: 1,
+                                oldLines: 2,
+                                newStart: 1,
+                                newLines: 2,
+                                lines: [
+                                    {kind: "context", text: "services:", oldLine: 1, newLine: 1},
+                                    {kind: "removed", text: "  web:", oldLine: 2, newLine: null},
+                                    {kind: "added", text: "  web2:", oldLine: null, newLine: 2},
+                                ],
+                            },
+                        ],
+                        added: 1,
+                        removed: 1,
+                    },
+                    env: null,
+                }),
+            });
+        });
         await mockStackEvents(page, "my-app");
 
         await page.goto("/stacks/my-app/config");
@@ -337,12 +514,254 @@ test.describe("Stacks", () => {
         await expect(page.getByRole("heading", {name: "Compose File"})).toBeVisible();
         await expect(page.getByRole("heading", {name: "Environment Variables"})).toBeVisible();
 
-        await replaceCodeEditorContent(page, "Docker Compose File", "services:\n  web:\n    image: nginx:1.27\n");
+        await replaceCodeEditorContent(page, "Docker Compose File", "services:\n  web2:\n    image: nginx:1.27\n");
 
         await page.getByRole("button", {name: "Save compose file"}).click();
 
+        const dialog = page.getByRole("alertdialog");
+        await expect(dialog).toBeVisible();
+        await expect(dialog).toContainText("Review changes to My App");
+        await expect(dialog.locator('[data-diff-kind="added"]')).toBeVisible();
+        expect(previewCalled).toBe(true);
+        expect(putBody).toBeNull();
+
+        await page.getByRole("button", {name: "Confirm & Apply"}).click();
+
         await expect.poll(() => putBody).toEqual(
-            expect.objectContaining({composeContent: "services:\n  web:\n    image: nginx:1.27\n"}),
+            expect.objectContaining({
+                composeContent: "services:\n  web2:\n    image: nginx:1.27\n",
+                confirmed: true,
+            }),
+        );
+    });
+
+    test("stack detail config tab: a finding on the new privileged: true line renders its badge inside the diff annotation for that line, and Confirm & Apply still writes with confirmed: true (Issue #20/D-03/D-11)", async ({page}) => {
+        await mockAuthenticated(page);
+        let putBody: unknown = null;
+        await page.route("**/api/stacks/my-app", (route) => {
+            const url = route.request().url();
+            if (url.endsWith("/compose") || url.endsWith("/env") || url.endsWith("/preview")) {
+                return route.continue();
+            }
+            if (route.request().method() === "PUT") {
+                putBody = route.request().postDataJSON();
+                return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(mockStackDetail)});
+            }
+            return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(mockStackDetail)});
+        });
+        await page.route("**/api/stacks/my-app/compose", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({content: "services:\n  web:\n    image: nginx:latest"}),
+            }),
+        );
+        await page.route("**/api/stacks/my-app/env", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: "FOO=bar"})}),
+        );
+        await page.route("**/api/stacks/my-app/preview", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({
+                    hasChanges: true,
+                    confirmationRequired: true,
+                    compose: {
+                        hunks: [
+                            {
+                                oldStart: 1,
+                                oldLines: 3,
+                                newStart: 1,
+                                newLines: 4,
+                                lines: [
+                                    {kind: "context", text: "services:", oldLine: 1, newLine: 1},
+                                    {kind: "context", text: "  web:", oldLine: 2, newLine: 2},
+                                    {kind: "context", text: "    image: nginx:latest", oldLine: 3, newLine: 3},
+                                    {kind: "added", text: "    privileged: true", oldLine: null, newLine: 4},
+                                ],
+                            },
+                        ],
+                        added: 1,
+                        removed: 0,
+                    },
+                    env: null,
+                    findings: [
+                        {
+                            ruleId: "privileged",
+                            severity: "danger",
+                            message: 'Service "web" runs with privileged: true, granting it full access to the host.',
+                            serviceName: "web",
+                            path: ["services", "web", "privileged"],
+                            line: 4,
+                            introduced: true,
+                        },
+                    ],
+                    composeParseError: null,
+                }),
+            }),
+        );
+        await mockStackEvents(page, "my-app");
+
+        await page.goto("/stacks/my-app/config");
+
+        await replaceCodeEditorContent(
+            page,
+            "Docker Compose File",
+            "services:\n  web:\n    image: nginx:latest\n    privileged: true\n",
+        );
+        await page.getByRole("button", {name: "Save compose file"}).click();
+
+        const dialog = page.getByRole("alertdialog");
+        await expect(dialog).toBeVisible();
+
+        const annotation = dialog.locator('[data-diff-annotation-for="4"]');
+        await expect(annotation).toBeVisible();
+        await expect(annotation).toContainText("Privileged container");
+
+        await dialog.getByRole("button", {name: "Confirm & Apply"}).click();
+
+        await expect.poll(() => putBody).toEqual(
+            expect.objectContaining({
+                composeContent: "services:\n  web:\n    image: nginx:latest\n    privileged: true\n",
+                confirmed: true,
+            }),
+        );
+    });
+
+    test("stack detail config tab: Keep Editing on the review dialog sends no PUT and the Save button stays enabled", async ({page}) => {
+        await mockAuthenticated(page);
+        let putCount = 0;
+        await page.route("**/api/stacks/my-app", (route) => {
+            const url = route.request().url();
+            if (url.endsWith("/compose") || url.endsWith("/env") || url.endsWith("/preview")) {
+                return route.continue();
+            }
+            if (route.request().method() === "PUT") {
+                putCount += 1;
+                return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(mockStackDetail)});
+            }
+            return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(mockStackDetail)});
+        });
+        await page.route("**/api/stacks/my-app/compose", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({content: "services:\n  web:\n    image: nginx:latest"}),
+            }),
+        );
+        await page.route("**/api/stacks/my-app/env", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: "FOO=bar"})}),
+        );
+        await page.route("**/api/stacks/my-app/preview", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({
+                    hasChanges: true,
+                    confirmationRequired: true,
+                    compose: {
+                        hunks: [
+                            {
+                                oldStart: 1,
+                                oldLines: 1,
+                                newStart: 1,
+                                newLines: 1,
+                                lines: [{kind: "added", text: "  web2:", oldLine: null, newLine: 1}],
+                            },
+                        ],
+                        added: 1,
+                        removed: 0,
+                    },
+                    env: null,
+                }),
+            }),
+        );
+        await mockStackEvents(page, "my-app");
+
+        await page.goto("/stacks/my-app/config");
+
+        await replaceCodeEditorContent(page, "Docker Compose File", "services:\n  web2:\n    image: nginx:1.27\n");
+        await page.getByRole("button", {name: "Save compose file"}).click();
+
+        await expect(page.getByRole("alertdialog")).toBeVisible();
+        await page.getByRole("button", {name: "Keep Editing"}).click();
+
+        await expect(page.getByRole("alertdialog")).toHaveCount(0);
+        expect(putCount).toBe(0);
+        await expect(page.getByRole("button", {name: "Save compose file"})).toBeEnabled();
+    });
+
+    test("stack detail config tab: editing and saving a secret env var shows the masked review dialog with the env title, reveal works, Confirm & Apply sends envContent + confirmed: true (Issue #18/Task 3)", async ({page}) => {
+        await mockAuthenticated(page);
+        let putBody: unknown = null;
+        await page.route("**/api/stacks/my-app", (route) => {
+            const url = route.request().url();
+            if (url.endsWith("/compose") || url.endsWith("/env") || url.endsWith("/preview")) {
+                return route.continue();
+            }
+            if (route.request().method() === "PUT") {
+                putBody = route.request().postDataJSON();
+                return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(mockStackDetail)});
+            }
+            return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(mockStackDetail)});
+        });
+        await page.route("**/api/stacks/my-app/compose", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({content: "services:\n  web:\n    image: nginx:latest"}),
+            }),
+        );
+        await page.route("**/api/stacks/my-app/env", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: ""})}),
+        );
+        await page.route("**/api/stacks/my-app/preview", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({
+                    hasChanges: true,
+                    confirmationRequired: true,
+                    compose: null,
+                    env: {
+                        hunks: [
+                            {
+                                oldStart: 1,
+                                oldLines: 0,
+                                newStart: 1,
+                                newLines: 1,
+                                lines: [{kind: "added", text: "DB_PASSWORD=hunter2", oldLine: null, newLine: 1}],
+                            },
+                        ],
+                        added: 1,
+                        removed: 0,
+                    },
+                }),
+            }),
+        );
+        await mockStackEvents(page, "my-app");
+
+        await page.goto("/stacks/my-app/config");
+
+        await page.getByRole("button", {name: "Add Variable"}).click();
+        await page.getByRole("textbox", {name: "Variable name 1"}).fill("DB_PASSWORD");
+        await page.getByLabel("Value for DB_PASSWORD", {exact: true}).fill("hunter2");
+
+        await page.getByRole("button", {name: "Save environment variables"}).click();
+
+        const dialog = page.getByRole("alertdialog");
+        await expect(dialog).toBeVisible();
+        await expect(dialog).toContainText("Review changes to My App's environment");
+        await expect(dialog.getByText("DB_PASSWORD=••••••••")).toBeVisible();
+        await expect(dialog.getByText("DB_PASSWORD=hunter2")).not.toBeVisible();
+
+        await dialog.getByRole("button", {name: "Show secret values"}).click();
+        await expect(dialog.getByText("DB_PASSWORD=hunter2")).toBeVisible();
+
+        await dialog.getByRole("button", {name: "Confirm & Apply"}).click();
+
+        await expect.poll(() => putBody).toEqual(
+            expect.objectContaining({envContent: "DB_PASSWORD=hunter2\n", confirmed: true}),
         );
     });
 
@@ -373,6 +792,18 @@ test.describe("Stacks", () => {
         );
         await page.route("**/api/stacks/my-app/env", (route) =>
             route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({content: "FOO=bar"})}),
+        );
+        // This test adds a non-secret variable and expects the save to apply
+        // directly — stub the preview endpoint reporting no review needed,
+        // so the D-20/D-21 table-edit behaviour under test isn't coupled to
+        // Issue #18/D-01's review-before-apply gate (covered separately by
+        // the env-save review test).
+        await page.route("**/api/stacks/my-app/preview", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({hasChanges: true, confirmationRequired: false, compose: null, env: null}),
+            }),
         );
         await mockStackEvents(page, "my-app");
 

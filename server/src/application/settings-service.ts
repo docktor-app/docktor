@@ -3,7 +3,8 @@ import {BadRequestError} from "../lib/errors.js"
 import {decrypt, encrypt} from "../lib/crypto.js"
 import type {SettingsRepository} from "../repositories/settings-repository.js"
 import type {SmtpConfig} from "./notification-service.js"
-import type {BackupSettingsInput, RetentionPolicy} from "@docktor/shared"
+import type {BackupSettingsInput, ComposeCheckSettings, ConfigurableComposeRuleId, RetentionPolicy} from "@docktor/shared"
+import {CONFIGURABLE_COMPOSE_RULE_IDS} from "@docktor/shared"
 
 // Mirrors SETTING_KEYS from settings-repository — inlined to avoid loading db.ts at module level
 const SETTING_KEYS = {
@@ -15,6 +16,16 @@ const SETTING_KEYS = {
 const PROXY_SETTING_KEYS = {
     ACME_EMAIL: "proxy.acmeEmail",
     SHOW_IN_DASHBOARD: "proxy.showInDashboard",
+} as const
+
+// D-04/D-10: the "skip diff confirmation" toggle and the per-configurable-rule
+// enable/disable keys. No key exists for an always-on rule (privileged,
+// dockerSocket, bindOutsideStack) — they cannot be disabled (#20/D-11), and
+// iterating CONFIGURABLE_COMPOSE_RULE_IDS (rather than a hardcoded list) means
+// a future configurable rule gets its settings key for free.
+export const COMPOSE_CHECK_SETTING_KEYS = {
+    SKIP_REVIEW: "diffConfirm.skip",
+    checkEnabled: (id: ConfigurableComposeRuleId) => `composeChecks.${id}.enabled`,
 } as const
 
 export interface GeneralSettings {
@@ -376,5 +387,47 @@ export class SettingsService {
         if (data.defaultRetention !== undefined) {
             await this.repo.upsert("backup.defaultRetention", JSON.stringify(data.defaultRetention))
         }
+    }
+
+    /**
+     * D-04/D-10: reads the skip-review toggle and every configurable
+     * compose-check's enable flag in one grouped getMany. Absent keys
+     * default to skipReview: false and every configurable check: true —
+     * matching ComposeRuleEngine's own "nothing configured yet" behaviour.
+     */
+    async getComposeCheckSettings(): Promise<ComposeCheckSettings> {
+        const keys = [
+            COMPOSE_CHECK_SETTING_KEYS.SKIP_REVIEW,
+            ...CONFIGURABLE_COMPOSE_RULE_IDS.map((id) => COMPOSE_CHECK_SETTING_KEYS.checkEnabled(id)),
+        ]
+        const values = await this.repo.getMany(keys)
+
+        const checks = Object.fromEntries(
+            CONFIGURABLE_COMPOSE_RULE_IDS.map((id) => [
+                id,
+                values[COMPOSE_CHECK_SETTING_KEYS.checkEnabled(id)] !== "false",
+            ]),
+        ) as ComposeCheckSettings["checks"]
+
+        return {
+            skipReview: values[COMPOSE_CHECK_SETTING_KEYS.SKIP_REVIEW] === "true",
+            checks,
+        }
+    }
+
+    /**
+     * Writes exactly the four Compose Checks keys — the skip toggle plus
+     * one enable flag per configurable rule — as "true"/"false" strings.
+     * Always a full overwrite (unlike the Partial<> grouped-write methods
+     * above): the Compose Checks settings card submits the whole form at
+     * once, so there is no "only the keys present" ambiguity to preserve.
+     */
+    async saveComposeCheckSettings(data: ComposeCheckSettings): Promise<void> {
+        await this.repo.upsert(COMPOSE_CHECK_SETTING_KEYS.SKIP_REVIEW, String(data.skipReview))
+        await Promise.all(
+            CONFIGURABLE_COMPOSE_RULE_IDS.map((id) =>
+                this.repo.upsert(COMPOSE_CHECK_SETTING_KEYS.checkEnabled(id), String(data.checks[id])),
+            ),
+        )
     }
 }

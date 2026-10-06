@@ -1,6 +1,7 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import {StackService} from "../../../src/application/stack-service.js";
-import {BadRequestError, ConflictError, NotFoundError} from "../../../src/lib/errors.js";
+import {BadRequestError, ConfirmationRequiredError, ConflictError, NotFoundError} from "../../../src/lib/errors.js";
+import {EMPTY_DEPLOY_WARNINGS, type DeployWarnings} from "../../../src/application/deploy-preflight-service.js";
 
 function createMockRepo() {
     return {
@@ -19,6 +20,7 @@ function createMockRepo() {
         updateEnvHash: vi.fn(),
         clearConfigError: vi.fn(),
         delete: vi.fn(),
+        setDeployWarnings: vi.fn(),
     };
 }
 
@@ -71,6 +73,19 @@ function createMockUpdateChecks() {
     };
 }
 
+function createMockReviewer() {
+    return {
+        previewStackChange: vi.fn().mockResolvedValue({confirmationRequired: false}),
+        previewNewStack: vi.fn().mockResolvedValue({confirmationRequired: false}),
+    };
+}
+
+function createMockPreflight() {
+    return {
+        run: vi.fn().mockResolvedValue(EMPTY_DEPLOY_WARNINGS),
+    };
+}
+
 describe("StackService", () => {
     let service: StackService;
     let repo: ReturnType<typeof createMockRepo>;
@@ -80,6 +95,8 @@ describe("StackService", () => {
     let bus: ReturnType<typeof createMockBus>;
     let settings: ReturnType<typeof createMockSettings>;
     let updateChecks: ReturnType<typeof createMockUpdateChecks>;
+    let reviewer: ReturnType<typeof createMockReviewer>;
+    let preflight: ReturnType<typeof createMockPreflight>;
 
     beforeEach(() => {
         repo = createMockRepo();
@@ -89,7 +106,9 @@ describe("StackService", () => {
         bus = createMockBus();
         settings = createMockSettings();
         updateChecks = createMockUpdateChecks();
-        service = new StackService(repo as any, fs as any, docker as any, events as any, bus as any, settings as any, updateChecks as any);
+        reviewer = createMockReviewer();
+        preflight = createMockPreflight();
+        service = new StackService(repo as any, fs as any, docker as any, events as any, bus as any, settings as any, updateChecks as any, reviewer as any, preflight as any);
     });
 
     describe("createStack", () => {
@@ -143,6 +162,109 @@ describe("StackService", () => {
             });
 
             expect(fs.writeEnv).toHaveBeenCalledWith("my-app", "FOO=bar");
+        });
+
+        describe("Issue #20/D-02/T-12-20: findings-only review confirmation gate", () => {
+            it("calls the reviewer with the submitted content before createDirectory when confirmed is not set", async () => {
+                repo.exists.mockResolvedValue(false);
+                repo.create.mockResolvedValue({id: "my-app"});
+                reviewer.previewNewStack.mockResolvedValue({confirmationRequired: false});
+
+                await service.createStack({
+                    displayName: "My App",
+                    composeContent: "services:\n  web:\n    image: nginx\n",
+                    envContent: "FOO=bar",
+                });
+
+                expect(reviewer.previewNewStack).toHaveBeenCalledWith({
+                    displayName: "My App",
+                    composeContent: "services:\n  web:\n    image: nginx\n",
+                    envContent: "FOO=bar",
+                });
+                expect(fs.createDirectory).toHaveBeenCalled();
+            });
+
+            it("throws ConfirmationRequiredError and never calls createDirectory when the reviewer reports confirmationRequired: true and confirmed is not set", async () => {
+                repo.exists.mockResolvedValue(false);
+                reviewer.previewNewStack.mockResolvedValue({confirmationRequired: true});
+
+                await expect(
+                    service.createStack({
+                        displayName: "My App",
+                        composeContent: "services:\n  web:\n    image: nginx\n    privileged: true\n",
+                    }),
+                ).rejects.toThrow(ConfirmationRequiredError);
+
+                expect(fs.createDirectory).not.toHaveBeenCalled();
+            });
+
+            it("creates the stack when confirmed: true is sent, even though confirmationRequired would be true, without calling the reviewer", async () => {
+                repo.exists.mockResolvedValue(false);
+                repo.create.mockResolvedValue({id: "my-app"});
+
+                await service.createStack({
+                    displayName: "My App",
+                    composeContent: "services:\n  web:\n    image: nginx\n    privileged: true\n",
+                    confirmed: true,
+                });
+
+                expect(reviewer.previewNewStack).not.toHaveBeenCalled();
+                expect(fs.createDirectory).toHaveBeenCalled();
+            });
+
+            it("creates the stack normally when the reviewer reports confirmationRequired: false (no findings)", async () => {
+                repo.exists.mockResolvedValue(false);
+                repo.create.mockResolvedValue({id: "my-app"});
+                reviewer.previewNewStack.mockResolvedValue({confirmationRequired: false});
+
+                const result = await service.createStack({
+                    displayName: "My App",
+                    composeContent: "services:\n  web:\n    image: nginx\n",
+                });
+
+                expect(result).toEqual({id: "my-app"});
+                expect(fs.createDirectory).toHaveBeenCalledWith("my-app");
+            });
+
+            // Issue #19/D-08: 12-07's template-based creation passes a
+            // templatePin through options — this is the single place it
+            // reaches the repository.
+            it("passes options.templatePin through to repo.create", async () => {
+                repo.exists.mockResolvedValue(false);
+                repo.create.mockResolvedValue({id: "my-app"});
+                reviewer.previewNewStack.mockResolvedValue({confirmationRequired: false});
+
+                const templatePin = {
+                    repoUrl: "https://github.com/docktor-app/templates",
+                    path: "nextcloud/default",
+                    commitSha: "abc123",
+                    contentHash: "hash1",
+                };
+
+                await service.createStack(
+                    {displayName: "My App", composeContent: "services:\n  web:\n    image: nginx\n"},
+                    {templatePin},
+                );
+
+                expect(repo.create).toHaveBeenCalledWith(
+                    expect.objectContaining({templatePin}),
+                );
+            });
+
+            it("passes templatePin: undefined to repo.create when no options are given", async () => {
+                repo.exists.mockResolvedValue(false);
+                repo.create.mockResolvedValue({id: "my-app"});
+                reviewer.previewNewStack.mockResolvedValue({confirmationRequired: false});
+
+                await service.createStack({
+                    displayName: "My App",
+                    composeContent: "services:\n  web:\n    image: nginx\n",
+                });
+
+                expect(repo.create).toHaveBeenCalledWith(
+                    expect.objectContaining({templatePin: undefined}),
+                );
+            });
         });
     });
 
@@ -559,6 +681,66 @@ describe("StackService", () => {
             expect(result.success).toBe(true);
             expect(docker.up).toHaveBeenCalledWith("docktor-proxy");
         });
+
+        it("runs the pre-deploy check and persists its result before the DEPLOYING transition and before docker.up", async () => {
+            repo.findByIdOrThrow.mockResolvedValue({id: "my-app", status: "DRAFT"});
+            docker.up.mockResolvedValue(undefined);
+            fs.readCompose.mockResolvedValue("services:\n  web:\n    image: nginx\n");
+            const warnings: DeployWarnings = {
+                checkedAt: "2026-01-01T00:00:00.000Z",
+                composeFindings: [],
+                portConflicts: [{port: 8080, protocol: "tcp", serviceName: "web", holder: {kind: "unknown"}}],
+            };
+            preflight.run.mockResolvedValue(warnings);
+
+            const result = await service.deployStack("my-app");
+
+            expect(result.success).toBe(true);
+            expect(result.warnings).toEqual(warnings);
+            expect(repo.setDeployWarnings).toHaveBeenCalledWith("my-app", warnings);
+            expect(docker.up).toHaveBeenCalledWith("my-app");
+            // Call-order proof: runPreflight (via preflight.run) must precede
+            // both the DEPLOYING transition and the docker.up call.
+            expect(preflight.run.mock.invocationCallOrder[0]).toBeLessThan(
+                repo.transitionStatus.mock.invocationCallOrder[0],
+            );
+            expect(preflight.run.mock.invocationCallOrder[0]).toBeLessThan(
+                docker.up.mock.invocationCallOrder[0],
+            );
+        });
+
+        it("still deploys and returns EMPTY_DEPLOY_WARNINGS when the preflight check itself rejects", async () => {
+            repo.findByIdOrThrow.mockResolvedValue({id: "my-app", status: "DRAFT"});
+            docker.up.mockResolvedValue(undefined);
+            fs.readCompose.mockResolvedValue("services:\n  web:\n    image: nginx\n");
+            preflight.run.mockRejectedValue(new Error("preflight exploded"));
+            const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+            const result = await service.deployStack("my-app");
+
+            expect(result.success).toBe(true);
+            expect(docker.up).toHaveBeenCalledWith("my-app");
+            expect(result.warnings).toEqual(EMPTY_DEPLOY_WARNINGS);
+            expect(repo.setDeployWarnings).not.toHaveBeenCalled();
+            consoleErrorSpy.mockRestore();
+        });
+
+        it("still deploys when persisting the computed warnings fails, returning the computed (not empty) warnings", async () => {
+            repo.findByIdOrThrow.mockResolvedValue({id: "my-app", status: "DRAFT"});
+            docker.up.mockResolvedValue(undefined);
+            fs.readCompose.mockResolvedValue("services:\n  web:\n    image: nginx\n");
+            const warnings: DeployWarnings = {checkedAt: "2026-01-01T00:00:00.000Z", composeFindings: [], portConflicts: []};
+            preflight.run.mockResolvedValue(warnings);
+            repo.setDeployWarnings.mockRejectedValue(new Error("DB unavailable"));
+            const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+            const result = await service.deployStack("my-app");
+
+            expect(result.success).toBe(true);
+            expect(docker.up).toHaveBeenCalledWith("my-app");
+            expect(result.warnings).toEqual(warnings);
+            consoleErrorSpy.mockRestore();
+        });
     });
 
     describe("stopStack", () => {
@@ -632,6 +814,34 @@ describe("StackService", () => {
             expect(repo.clearConfigChanged).toHaveBeenCalledWith("my-app");
         });
 
+        it("runs the pre-deploy check before docker.restart and returns its result", async () => {
+            repo.findByIdOrThrow.mockResolvedValue({id: "my-app", status: "RUNNING"});
+            docker.restart.mockResolvedValue(undefined);
+            const warnings: DeployWarnings = {checkedAt: "x", composeFindings: [], portConflicts: []};
+            preflight.run.mockResolvedValue(warnings);
+
+            const result = await service.restartStack("my-app");
+
+            expect(result).toEqual({warnings});
+            expect(docker.restart).toHaveBeenCalledWith("my-app");
+            expect(preflight.run.mock.invocationCallOrder[0]).toBeLessThan(
+                docker.restart.mock.invocationCallOrder[0],
+            );
+        });
+
+        it("still restarts and returns EMPTY_DEPLOY_WARNINGS when the preflight check rejects", async () => {
+            repo.findByIdOrThrow.mockResolvedValue({id: "my-app", status: "RUNNING"});
+            docker.restart.mockResolvedValue(undefined);
+            preflight.run.mockRejectedValue(new Error("boom"));
+            const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+            const result = await service.restartStack("my-app");
+
+            expect(docker.restart).toHaveBeenCalledWith("my-app");
+            expect(result.warnings).toEqual(EMPTY_DEPLOY_WARNINGS);
+            consoleErrorSpy.mockRestore();
+        });
+
         it("rejects a protected stack with BadRequestError before any docker call", async () => {
             repo.findByIdOrThrow.mockResolvedValue({
                 id: "docktor-proxy",
@@ -644,6 +854,7 @@ describe("StackService", () => {
             );
 
             expect(docker.restart).not.toHaveBeenCalled();
+            expect(preflight.run).not.toHaveBeenCalled();
             expect(repo.transitionStatus).not.toHaveBeenCalled();
         });
     });
@@ -801,6 +1012,31 @@ describe("StackService", () => {
                 status: "ERROR",
             });
         });
+
+        it("runs the pre-deploy check before the UPDATING transition and returns its result alongside noUpdates", async () => {
+            mockDockerAndFsForSuccess();
+            const warnings: DeployWarnings = {checkedAt: "x", composeFindings: [], portConflicts: []};
+            preflight.run.mockResolvedValue(warnings);
+
+            const result = await service.updateImages("my-app");
+
+            expect(result.warnings).toEqual(warnings);
+            expect(preflight.run.mock.invocationCallOrder[0]).toBeLessThan(
+                repo.transitionStatus.mock.invocationCallOrder[0],
+            );
+        });
+
+        it("still updates and returns EMPTY_DEPLOY_WARNINGS when the preflight check rejects", async () => {
+            mockDockerAndFsForSuccess();
+            preflight.run.mockRejectedValue(new Error("boom"));
+            const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+            const result = await service.updateImages("my-app");
+
+            expect(result.noUpdates).toBe(false);
+            expect(result.warnings).toEqual(EMPTY_DEPLOY_WARNINGS);
+            consoleErrorSpy.mockRestore();
+        });
     });
 
     describe("upgradeServiceImage", () => {
@@ -816,7 +1052,7 @@ describe("StackService", () => {
         it("rewrites the compose file, deploys, and returns the new tag", async () => {
             const result = await service.upgradeServiceImage("my-app", "web", "1.26");
 
-            expect(result).toEqual({changed: true, previousTag: "1.25", newTag: "1.26"});
+            expect(result).toEqual({changed: true, previousTag: "1.25", newTag: "1.26", warnings: EMPTY_DEPLOY_WARNINGS});
             expect(fs.writeCompose).toHaveBeenCalledWith(
                 "my-app",
                 "services:\n  web:\n    image: nginx:1.26\n",
@@ -841,10 +1077,34 @@ describe("StackService", () => {
         it("is a no-op when the target tag equals the tag already in the compose file", async () => {
             const result = await service.upgradeServiceImage("my-app", "web", "1.25");
 
-            expect(result).toEqual({changed: false, previousTag: "1.25", newTag: "1.25"});
+            expect(result).toEqual({changed: false, previousTag: "1.25", newTag: "1.25", warnings: EMPTY_DEPLOY_WARNINGS});
             expect(fs.writeCompose).not.toHaveBeenCalled();
             expect(repo.transitionStatus).not.toHaveBeenCalled();
             expect(docker.composePull).not.toHaveBeenCalled();
+            expect(preflight.run).not.toHaveBeenCalled();
+        });
+
+        it("runs the pre-deploy check before the UPDATING transition when a change will be deployed, returning the combined result", async () => {
+            const warnings: DeployWarnings = {checkedAt: "x", composeFindings: [], portConflicts: []};
+            preflight.run.mockResolvedValue(warnings);
+
+            const result = await service.upgradeServiceImage("my-app", "web", "1.26");
+
+            expect(result).toEqual({changed: true, previousTag: "1.25", newTag: "1.26", warnings});
+            expect(preflight.run.mock.invocationCallOrder[0]).toBeLessThan(
+                repo.transitionStatus.mock.invocationCallOrder[0],
+            );
+        });
+
+        it("still upgrades and returns EMPTY_DEPLOY_WARNINGS when the preflight check rejects", async () => {
+            preflight.run.mockRejectedValue(new Error("boom"));
+            const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+            const result = await service.upgradeServiceImage("my-app", "web", "1.26");
+
+            expect(result.changed).toBe(true);
+            expect(result.warnings).toEqual(EMPTY_DEPLOY_WARNINGS);
+            consoleErrorSpy.mockRestore();
         });
 
         it("throws NotFoundError for a service absent from the compose file, without writing", async () => {
@@ -1114,6 +1374,73 @@ describe("StackService", () => {
             expect(repo.updateEnvHash).toHaveBeenCalledWith({
                 stackId: "my-app",
                 hash: hashComposeContent(""),
+            });
+        });
+
+        describe("Issue #18/D-01/D-03: review-before-apply confirmation gate", () => {
+            it("rejects an unconfirmed changed compose edit with ConfirmationRequiredError and never writes", async () => {
+                const {ConfirmationRequiredError} = await import("../../../src/lib/errors.js");
+                reviewer.previewStackChange.mockResolvedValue({confirmationRequired: true});
+
+                await expect(
+                    service.updateStack("my-app", {composeContent: "services:\n  web:\n    image: nginx:1.27\n"}),
+                ).rejects.toThrow(ConfirmationRequiredError);
+
+                expect(fs.writeCompose).not.toHaveBeenCalled();
+            });
+
+            it("calls the reviewer with the submitted content before any write when neither confirmed is set", async () => {
+                reviewer.previewStackChange.mockResolvedValue({confirmationRequired: true});
+
+                await expect(
+                    service.updateStack("my-app", {composeContent: "changed"}),
+                ).rejects.toThrow();
+
+                expect(reviewer.previewStackChange).toHaveBeenCalledWith("my-app", {
+                    composeContent: "changed",
+                    envContent: undefined,
+                });
+            });
+
+            it("proceeds with the existing write/parse/hash path when confirmed: true is sent, even though confirmationRequired would be true", async () => {
+                reviewer.previewStackChange.mockResolvedValue({confirmationRequired: true});
+
+                await service.updateStack("my-app", {
+                    composeContent: "services:\n  web:\n    image: nginx:1.27\n",
+                    confirmed: true,
+                });
+
+                expect(reviewer.previewStackChange).not.toHaveBeenCalled();
+                expect(fs.writeCompose).toHaveBeenCalledWith(
+                    "my-app",
+                    "services:\n  web:\n    image: nginx:1.27\n",
+                );
+            });
+
+            it("writes normally when the reviewer reports confirmationRequired: false (no actual changes)", async () => {
+                reviewer.previewStackChange.mockResolvedValue({confirmationRequired: false});
+                const content = "services:\n  web:\n    image: nginx\n";
+
+                await service.updateStack("my-app", {composeContent: content});
+
+                expect(fs.writeCompose).toHaveBeenCalledWith("my-app", content);
+            });
+
+            it("never calls the reviewer for a metadata-only update", async () => {
+                await service.updateStack("my-app", {displayName: "New Name"});
+
+                expect(reviewer.previewStackChange).not.toHaveBeenCalled();
+            });
+
+            it("rejects an unconfirmed changed env edit with ConfirmationRequiredError and never writes", async () => {
+                const {ConfirmationRequiredError} = await import("../../../src/lib/errors.js");
+                reviewer.previewStackChange.mockResolvedValue({confirmationRequired: true});
+
+                await expect(
+                    service.updateStack("my-app", {envContent: "FOO=changed"}),
+                ).rejects.toThrow(ConfirmationRequiredError);
+
+                expect(fs.writeEnv).not.toHaveBeenCalled();
             });
         });
     });

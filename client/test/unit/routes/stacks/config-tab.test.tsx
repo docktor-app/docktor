@@ -38,23 +38,27 @@ function makeFiles(overrides: Partial<StackConfigFiles> = {}): StackConfigFiles 
         envDirty: false,
         isDirty: false,
         unsavedSummary: null,
+        review: null,
+        reviewPending: false,
         setComposeContent: vi.fn(),
         setEnvContent: vi.fn(),
         saveCompose: vi.fn(),
         saveEnv: vi.fn(),
+        confirmReview: vi.fn(),
+        cancelReview: vi.fn(),
         ...overrides,
     };
 }
 
 describe("ConfigTab", () => {
     it("renders both section headings", () => {
-        render(<ConfigTab files={makeFiles()} />);
+        render(<ConfigTab files={makeFiles()} stackName="My App" />);
         expect(screen.getByRole("heading", {name: "Compose File"})).toBeVisible();
         expect(screen.getByRole("heading", {name: "Environment Variables"})).toBeVisible();
     });
 
     it("renders the two named textboxes with their content", () => {
-        render(<ConfigTab files={makeFiles()} />);
+        render(<ConfigTab files={makeFiles()} stackName="My App" />);
         expect(screen.getByRole("textbox", {name: "Docker Compose File"})).toHaveValue(
             "services:\n  web:\n    image: nginx\n",
         );
@@ -62,14 +66,14 @@ describe("ConfigTab", () => {
     });
 
     it("disables both Save buttons until the matching file is dirty", () => {
-        render(<ConfigTab files={makeFiles({composeDirty: false, envDirty: false})} />);
+        render(<ConfigTab files={makeFiles({composeDirty: false, envDirty: false})} stackName="My App" />);
         expect(screen.getByRole("button", {name: "Save compose file"})).toBeDisabled();
         expect(screen.getByRole("button", {name: "Save environment variables"})).toBeDisabled();
     });
 
     it("enables Save compose file once composeDirty is true and calls saveCompose on click", async () => {
         const files = makeFiles({composeDirty: true});
-        render(<ConfigTab files={files} />);
+        render(<ConfigTab files={files} stackName="My App" />);
         const button = screen.getByRole("button", {name: "Save compose file"});
         expect(button).toBeEnabled();
 
@@ -79,7 +83,7 @@ describe("ConfigTab", () => {
 
     it("enables Save environment variables once envDirty is true (editor valid by default) and calls saveEnv on click", async () => {
         const files = makeFiles({envDirty: true});
-        render(<ConfigTab files={files} />);
+        render(<ConfigTab files={files} stackName="My App" />);
         const button = screen.getByRole("button", {name: "Save environment variables"});
         expect(button).toBeEnabled();
 
@@ -89,7 +93,7 @@ describe("ConfigTab", () => {
 
     it("keeps Save environment variables disabled when the editor reports invalid, even though envDirty is true", async () => {
         const files = makeFiles({envDirty: true});
-        render(<ConfigTab files={files} />);
+        render(<ConfigTab files={files} stackName="My App" />);
         const button = screen.getByRole("button", {name: "Save environment variables"});
         expect(button).toBeEnabled();
 
@@ -100,9 +104,16 @@ describe("ConfigTab", () => {
         expect(button).toBeEnabled();
     });
 
+    it("disables both Save buttons while reviewPending is true, even if dirty", () => {
+        const files = makeFiles({composeDirty: true, envDirty: true, reviewPending: true});
+        render(<ConfigTab files={files} stackName="My App" />);
+        expect(screen.getByRole("button", {name: "Save compose file"})).toBeDisabled();
+        expect(screen.getByRole("button", {name: "Save environment variables"})).toBeDisabled();
+    });
+
     it("calls setComposeContent when the compose textbox changes", async () => {
         const files = makeFiles();
-        render(<ConfigTab files={files} />);
+        render(<ConfigTab files={files} stackName="My App" />);
         const textarea = screen.getByRole("textbox", {name: "Docker Compose File"});
 
         await userEvent.type(textarea, "x");
@@ -111,7 +122,7 @@ describe("ConfigTab", () => {
 
     it("calls setEnvContent when the environment textbox changes", async () => {
         const files = makeFiles();
-        render(<ConfigTab files={files} />);
+        render(<ConfigTab files={files} stackName="My App" />);
         const textarea = screen.getByRole("textbox", {name: "Environment Variables"});
 
         await userEvent.type(textarea, "x");
@@ -119,17 +130,71 @@ describe("ConfigTab", () => {
     });
 
     it("renders no Card component (D-03)", () => {
-        const {container} = render(<ConfigTab files={makeFiles()} />);
+        const {container} = render(<ConfigTab files={makeFiles()} stackName="My App" />);
         expect(container.querySelector('[data-slot="card"]')).toBeNull();
     });
 
     it("renders the Compose File section via ComposeEditor, not a plain textarea (D-18)", () => {
-        render(<ConfigTab files={makeFiles()} />);
+        render(<ConfigTab files={makeFiles()} stackName="My App" />);
         expect(screen.getByTestId("compose-editor-mock")).toBeInTheDocument();
     });
 
     it("renders the Environment section via EnvEditor, not a plain textarea (D-20/D-21)", () => {
-        render(<ConfigTab files={makeFiles()} />);
+        render(<ConfigTab files={makeFiles()} stackName="My App" />);
         expect(screen.getByTestId("env-editor-mock")).toBeInTheDocument();
+    });
+
+    describe("Issue #18/D-01/D-03: DiffConfirmDialog wiring", () => {
+        const sampleDiff = {
+            added: 1,
+            removed: 0,
+            hunks: [
+                {
+                    oldStart: 1,
+                    oldLines: 0,
+                    newStart: 1,
+                    newLines: 1,
+                    lines: [{kind: "added" as const, text: "new line", oldLine: null, newLine: 1}],
+                },
+            ],
+        };
+
+        it("opens the dialog with the compose diff when files.review.file is compose", () => {
+            const files = makeFiles({
+                review: {file: "compose", preview: {hasChanges: true, confirmationRequired: true, compose: sampleDiff, env: null}},
+            });
+            render(<ConfigTab files={files} stackName="My App" />);
+
+            expect(screen.getByRole("alertdialog")).toBeVisible();
+            expect(screen.getByText("Review changes to My App")).toBeVisible();
+            expect(screen.getByText("new line")).toBeVisible();
+        });
+
+        it("opens the dialog with the env diff and env title when files.review.file is env", () => {
+            const files = makeFiles({
+                review: {file: "env", preview: {hasChanges: true, confirmationRequired: true, compose: null, env: sampleDiff}},
+            });
+            render(<ConfigTab files={files} stackName="My App" />);
+
+            expect(screen.getByText("Review changes to My App's environment")).toBeVisible();
+        });
+
+        it("is closed when files.review is null", () => {
+            render(<ConfigTab files={makeFiles({review: null})} stackName="My App" />);
+            expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+        });
+
+        it("wires Confirm & Apply / Keep Editing to confirmReview/cancelReview", async () => {
+            const files = makeFiles({
+                review: {file: "compose", preview: {hasChanges: true, confirmationRequired: true, compose: sampleDiff, env: null}},
+            });
+            render(<ConfigTab files={files} stackName="My App" />);
+
+            await userEvent.click(screen.getByRole("button", {name: "Confirm & Apply"}));
+            expect(files.confirmReview).toHaveBeenCalledTimes(1);
+
+            await userEvent.click(screen.getByRole("button", {name: "Keep Editing"}));
+            expect(files.cancelReview).toHaveBeenCalledTimes(1);
+        });
     });
 });

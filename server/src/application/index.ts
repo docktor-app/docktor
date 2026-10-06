@@ -1,5 +1,6 @@
 import {StackFilesystem} from "../infrastructure/stack-filesystem.js";
 import {DockerExecutor} from "../infrastructure/docker-executor.js";
+import {composeRuleEngine} from "../infrastructure/compose-rule-engine.js";
 import {
     stackRepository,
     stackEventRepository,
@@ -10,8 +11,12 @@ import {
     certificateRepository,
     userRepository,
     imageUpdateCheckRepository,
+    templateRepository,
 } from "../repositories/index.js";
 import {StackService} from "./stack-service.js";
+import {ComposeReviewService} from "./compose-review-service.js";
+import {PortConflictService} from "./port-conflict-service.js";
+import {DeployPreflightService} from "./deploy-preflight-service.js";
 import {SettingsService} from "./settings-service.js";
 import {NotificationService} from "./notification-service.js";
 import {ResticExecutor} from "../infrastructure/restic-executor.js";
@@ -19,10 +24,16 @@ import {BackupService} from "./backup-service.js";
 import {ProxyService} from "./proxy-service.js";
 import {CertificateService} from "./certificate-service.js";
 import {LogService, type LogServiceStackReadPort} from "./log-service.js";
+import {TemplateService} from "./template-service.js";
+import {TemplateUpdateService} from "./template-update-service.js";
 import {certificateFilesystem} from "../infrastructure/certificate-filesystem.js";
 import {stateEventBroadcaster} from "../lib/state-broadcaster.js";
 import {dockerodeClient} from "../infrastructure/dockerode-client.js";
+import {socketInspector} from "../infrastructure/socket-inspector.js";
 import {smtpClient} from "../infrastructure/smtp-client.js";
+import {gitExecutor} from "../infrastructure/git-executor.js";
+import {templateSourceReader} from "../infrastructure/template-source-reader.js";
+import {getDefaultTemplateRepoUrl, getTemplateCacheDir} from "../lib/template-config.js";
 import {backupScheduler} from "../jobs/backup-scheduler.js";
 import {NotFoundError} from "../lib/errors.js";
 import type {BackupStackRepo} from "./backup-service.js";
@@ -37,7 +48,45 @@ const docker = new DockerExecutor();
 export {settingsRepository};
 export const settingsService = new SettingsService(settingsRepository);
 
-export const stackService = new StackService(repo, fs, docker, stackEventRepository, domainEventBus, settingsService, imageUpdateCheckRepository);
+// Issue #18/D-01: constructed before stackService since it's one of
+// stackService's constructor dependencies (the pre-write confirmation
+// check). Never constructed a second time elsewhere in the codebase.
+// composeRuleEngine/settingsService (Issue #20/D-04/D-10, plan 12-05) feed
+// the rule-findings-aware preview — settingsService is already constructed
+// above this line.
+export const composeReviewService = new ComposeReviewService(repo, fs, composeRuleEngine, settingsService);
+
+// Issue #21/D-13/D-14/D-15: constructed before stackService since it's one
+// of deployPreflightService's constructor dependencies below. dockerodeClient
+// (the Docker Engine API client), not `docker` (the `docker compose` CLI
+// wrapper) — the container-listing tier of the port-conflict check needs
+// the former.
+export const portConflictService = new PortConflictService(repo, fs, dockerodeClient, socketInspector);
+
+// Issue #21/D-09/D-14: the single pre-deploy check StackService runs before
+// every deploy/restart/update/upgrade — composeReviewService/portConflictService
+// are both already constructed above this line.
+export const deployPreflightService = new DeployPreflightService(composeReviewService, portConflictService);
+
+export const stackService = new StackService(repo, fs, docker, stackEventRepository, domainEventBus, settingsService, imageUpdateCheckRepository, composeReviewService, deployPreflightService);
+
+// Issue #19: stackService (above) is TemplateService's TemplateStackCreator
+// dependency — the single create path (StackService.createStack) that
+// createStackFromVariant reuses, so template-created stacks get the same
+// compose checks and 428 confirmation as any other new stack for free.
+export const templateService = new TemplateService(
+    templateRepository,
+    gitExecutor,
+    templateSourceReader,
+    stackService,
+    {defaultRepoUrl: getDefaultTemplateRepoUrl, cacheDir: getTemplateCacheDir},
+);
+
+// Issue #19/D-08: the background refresh TemplateRepoSync (12-11) calls on
+// its own cadence — repo/templateRepository are both already constructed
+// above this line.
+export const templateUpdateService = new TemplateUpdateService(repo, templateRepository);
+
 export const notificationService = new NotificationService(
     notificationRepository,
     settingsService,

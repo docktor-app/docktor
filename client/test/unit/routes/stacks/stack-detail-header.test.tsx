@@ -94,3 +94,22 @@ describe("StackDetailHeader (D-09)", () => {
         expect(screen.queryByText("update available")).not.toBeInTheDocument();
     });
 });
+
+describe("StackDetailHeader (Issue #19/D-08)", () => {
+    it("shows the 'template updated' badge next to StackUpdateBadge when templateUpdateAvailable is true", () => {
+        renderHeader({
+            stack: makeStack({
+                templateUpdateAvailable: true,
+                templatePath: "nextcloud/default",
+            }),
+        });
+
+        expect(screen.getByText("template updated")).toBeInTheDocument();
+    });
+
+    it("does not show the 'template updated' badge when templateUpdateAvailable is false/absent", () => {
+        renderHeader({stack: makeStack()});
+
+        expect(screen.queryByText("template updated")).not.toBeInTheDocument();
+    });
+});

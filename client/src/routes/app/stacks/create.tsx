@@ -1,54 +1,25 @@
-import {useState} from "react";
 import {Link, useNavigate} from "react-router";
-import {useForm} from "react-hook-form";
-import {standardSchemaResolver} from "@hookform/resolvers/standard-schema";
-import {type CreateStackInput, createStackSchema} from "@docktor/shared";
-import {createStack} from "@/lib/stacks-api";
+import {useCreateStack} from "@/hooks/use-create-stack";
+import {useCreateStackSource} from "@/hooks/use-create-stack-source";
+import {CreateStackForm} from "@/routes/app/stacks/components/create-stack-form";
+import {DiffConfirmDialog} from "@/components/domain/stack/diff-confirm-dialog";
 import {Button} from "@/components/ui/button";
-import {Input} from "@/components/ui/input";
-import {Card, CardContent, CardHeader, CardTitle} from "@/components/ui/card";
-import {Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage,} from "@/components/ui/form";
-import {ComposeEditor} from "@/components/domain/stack/compose-editor";
-import {EnvEditor} from "@/components/domain/stack/env-editor";
-import {
-    Breadcrumb,
-    BreadcrumbItem,
-    BreadcrumbLink,
-    BreadcrumbList,
-    BreadcrumbPage,
-    BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
-import {Page, PageContent, PageHeader, PageTitle} from "@/components/common/layout/page";
+import {Skeleton} from "@/components/ui/skeleton";
+import {Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator} from "@/components/ui/breadcrumb";
+import {Page, PageActions, PageContent, PageHeader, PageTitle} from "@/components/common/layout/page";
 
+// Issue #19/D-06: a ?variant=<id> search param (set by the template browse
+// page) prefills this same form from useCreateStackSource — the blank-slate
+// path (no variant) stays the default, with "Start from Template" as a
+// secondary entry point.
 export default function CreateStackPage() {
     const navigate = useNavigate();
-    const [error, setError] = useState("");
-    const [loading, setLoading] = useState(false);
-    // EnvEditor validates its own table rows; true by default so an
-    // untouched/raw-mode editor never blocks Create Stack.
-    const [envValid, setEnvValid] = useState(true);
-
-    const form = useForm<CreateStackInput>({
-        resolver: standardSchemaResolver(createStackSchema),
-        defaultValues: {
-            displayName: "",
-            description: "",
-            composeContent: "",
-            envContent: "",
-        },
+    const {variantId, variant, loading: sourceLoading, error: sourceError, defaultValues, create} =
+        useCreateStackSource();
+    const {submitting, error, review, submit, confirmReview, cancelReview} = useCreateStack({
+        create,
+        onCreated: (stackId) => navigate(`/stacks/${stackId}`),
     });
-
-    async function onSubmit(values: CreateStackInput) {
-        setError("");
-        setLoading(true);
-        try {
-            const stack = await createStack(values);
-            navigate(`/stacks/${stack.id}`);
-        } catch (err: unknown) {
-            setError(err instanceof Error ? err.message : "Failed to create stack");
-            setLoading(false);
-        }
-    }
 
     return (
         <Page>
@@ -56,145 +27,61 @@ export default function CreateStackPage() {
                 breadcrumbs={
                     <Breadcrumb>
                         <BreadcrumbList>
-                            <BreadcrumbItem>
-                                <BreadcrumbLink asChild>
-                                    <Link to="/stacks">Stacks</Link>
-                                </BreadcrumbLink>
-                            </BreadcrumbItem>
+                            <BreadcrumbItem><BreadcrumbLink asChild><Link to="/stacks">Stacks</Link></BreadcrumbLink></BreadcrumbItem>
                             <BreadcrumbSeparator />
-                            <BreadcrumbItem>
-                                <BreadcrumbPage>Create</BreadcrumbPage>
-                            </BreadcrumbItem>
+                            <BreadcrumbItem><BreadcrumbPage>Create</BreadcrumbPage></BreadcrumbItem>
                         </BreadcrumbList>
                     </Breadcrumb>
                 }
             >
                 <PageTitle>Create Stack</PageTitle>
+                {!variantId && (
+                    <PageActions>
+                        <Button asChild variant="outline">
+                            <Link to="/stacks/create/templates">Start from Template</Link>
+                        </Button>
+                    </PageActions>
+                )}
             </PageHeader>
 
             <PageContent className="max-w-2xl">
-                {error && (
+                {(error || sourceError) && (
                     <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                        {error}
+                        {error || sourceError}
                     </div>
                 )}
 
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Stack Configuration</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <Form {...form}>
-                            <form
-                                onSubmit={form.handleSubmit(onSubmit)}
-                                className="space-y-4"
-                            >
-                                <FormField
-                                    control={form.control}
-                                    name="displayName"
-                                    render={({field}) => (
-                                        <FormItem>
-                                            <FormLabel>Name</FormLabel>
-                                            <FormControl>
-                                                <Input
-                                                    placeholder="My Nextcloud"
-                                                    {...field}
-                                                />
-                                            </FormControl>
-                                            <FormDescription>
-                                                A friendly name for your stack
-                                            </FormDescription>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
+                {variant && (
+                    <p className="text-sm text-muted-foreground">Starting from {variant.template.name} — {variant.name}</p>
+                )}
+                {variant?.usage && <p className="whitespace-pre-wrap text-sm text-muted-foreground">{variant.usage}</p>}
 
-                                <FormField
-                                    control={form.control}
-                                    name="description"
-                                    render={({field}) => (
-                                        <FormItem>
-                                            <FormLabel>Description</FormLabel>
-                                            <FormControl>
-                                                <Input
-                                                    placeholder="Optional description"
-                                                    {...field}
-                                                />
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-
-                                <FormField
-                                    control={form.control}
-                                    name="composeContent"
-                                    render={({field}) => (
-                                        <FormItem>
-                                            <FormLabel>
-                                                Docker Compose File
-                                            </FormLabel>
-                                            {/* Not wrapped in FormControl: its Slot would forward
-                                                ids to ComposeEditor's wrapper div instead of the
-                                                CodeMirror textbox — the accessible name comes from
-                                                ComposeEditor's own ariaLabel below. */}
-                                            <ComposeEditor
-                                                value={field.value}
-                                                onChange={field.onChange}
-                                                height="300px"
-                                            />
-                                            <FormDescription>
-                                                Paste your docker-compose.yml
-                                                content
-                                            </FormDescription>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-
-                                <FormField
-                                    control={form.control}
-                                    name="envContent"
-                                    render={({field}) => (
-                                        <FormItem>
-                                            <FormLabel>
-                                                Environment Variables
-                                            </FormLabel>
-                                            {/* Not wrapped in FormControl: same reason as the
-                                                compose editor above — EnvEditor's accessible
-                                                name comes from its own ariaLabel default. */}
-                                            <EnvEditor
-                                                value={field.value ?? ""}
-                                                onChange={field.onChange}
-                                                onValidityChange={setEnvValid}
-                                            />
-                                            <FormDescription>
-                                                Optional .env file content
-                                            </FormDescription>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-
-                                <div className="flex gap-2">
-                                    <Button type="submit" disabled={loading || !envValid}>
-                                        {loading
-                                            ? "Creating..."
-                                            : "Create Stack"}
-                                    </Button>
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        onClick={() => navigate("/stacks")}
-                                    >
-                                        Cancel
-                                    </Button>
-                                </div>
-                            </form>
-                        </Form>
-                    </CardContent>
-                </Card>
+                {sourceLoading ? (
+                    <div className="space-y-4">
+                        <Skeleton className="h-9 w-full" />
+                        <Skeleton className="h-9 w-full" />
+                        <Skeleton className="h-64 w-full" />
+                    </div>
+                ) : (
+                    <CreateStackForm
+                        key={variantId ?? "blank"}
+                        defaultValues={defaultValues}
+                        submitting={submitting}
+                        onSubmit={submit}
+                        onCancel={() => navigate("/stacks")}
+                    />
+                )}
             </PageContent>
+
+            <DiffConfirmDialog
+                open={review !== null}
+                stackName={review?.values.displayName ?? ""}
+                subject={{kind: "create"}}
+                findings={review?.preview.findings}
+                composeParseError={review?.preview.composeParseError}
+                onConfirm={confirmReview}
+                onCancel={cancelReview}
+            />
         </Page>
     );
 }

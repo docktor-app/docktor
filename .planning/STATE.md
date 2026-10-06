@@ -3,17 +3,16 @@ gsd_state_version: "1.0"
 milestone: v0.1.0
 current_phase: 12
 current_phase_name: Compose Safety and Templates
-current_plan: Not started
+current_plan: 11
 status: "Phases 1-9 all complete, tested, and reviewed. Product tracking moved to GitHub Issues (docktor-app/docktor): the vision doc (docs/vision.md scope) and all .planning/todos/pending/ items were triaged into 49 GitHub issues, native Issue Types adopted (Bug/Feature/Chore/Documentation/Task), and CLAUDE.md documents the process (including a project-specific override redirecting gsd-capture's add-todo to GitHub issues instead of .planning/todos/). User curated 23 issues (later 24, adding #15 UI Rework) into GitHub milestone 'v0.1.0 - First Release' (renamed from the working 'v1.0.0' label since this is the first release). ROADMAP.md Phases 10-16 now scope that milestone, sourced 1:1 from those issues (Requirements fields list GitHub issue numbers, not REQ-IDs — REQUIREMENTS.md is frozen at its already-complete v1.0 content and not being extended for new work). Per user request, Phase 10 (Backend Architecture Refactor, #16) and Phase 11 (UI Rework, #15) were resequenced to run BEFORE the feature phases that add new server/client code (12, 14, 15), so that new work lands on the reworked structure instead of needing rework afterward — both are independent of each other (separate server/client tracks) and both are intentionally open-ended, flagged as needing /gsd-discuss-phase before /gsd-plan-phase. Phase 13 (Update Checker Reliability — narrow bug fixes, not new architecture) carries low rework risk and can run anytime. Phase 10 (Backend Architecture Refactor) has since been merged into main (PR #67). Phase 11 progressed through context capture, UI-SPEC approval, and phase planning (13 plans across 5 waves, plan-checker blockers resolved), and Wave 1's tracer plan 11-01 is now complete: the Config tab merge (D-01/D-02/D-03) and the stack-detail-page decomposition to an 89-line orchestrator (CLAUDE.md Known Refactoring Target closed) both landed, with the StackConfigFiles/ConfigTab/OverviewTab/StackDetailHeader contracts and the PLAYWRIGHT_PORT parameterization ready for the remaining 12 plans to build on. Note: the original executing session for 11-01 was interrupted by a container restart between finishing Task 2 and writing its SUMMARY.md — both tasks' commits were already pushed and no work was lost; a follow-up session independently re-verified everything (unit suite, typecheck, full Playwright E2E including the parallel-port case) before writing the SUMMARY. Wave 2's 11-02 (ToneBadge/StatusDot status-indicator unification, D-08/D-09/D-10/D-11) is now complete: same container-restart pattern hit again (interrupted between finishing Task 3's edits and its first commit, with zero commits made), recovered the same way — full verification (all task `<verify>` commands, all acceptance-criteria greps, full client suite, tsc -b) before splitting into 3 retroactive task commits and writing the SUMMARY. Wave 2 completed with 11-03 (dark mode via next-themes), 11-04 (dashboard StatCard extraction) and 11-05 (server update-info enrichment on GET /api/stacks — same interruption-and-recovery pattern as 11-02). Wave 3 is now underway: 11-06 (unified activity timeline + flat Services section) and 11-07 (proxy/backup dialogs) landed cleanly; 11-08 (shared LogTerminal + backup detail rebuild) fixed Phase 10 UAT gap G-10-2 (backup-history polling loop) and was interrupted twice — once by a Claude usage-limit error before any edits existed (clean restart), once by a container restart after Task 3's RED commit but before its GREEN commit (recovered in place after independent re-verification). Remaining in wave 3: 11-09 (CodeMirror YAML editor, a checkpoint plan), 11-10 (unsaved-changes guard), 11-11 (settings.tsx split). 11-09's Task 1 blocking-human package-legitimacy checkpoint (four new client deps: @uiw/react-codemirror, yaml, @codemirror/lang-yaml, @codemirror/lint — the first two SUS-flagged by the automated gate on recency only) was presented to the developer on 2026-09-27T17:32:19Z and explicitly approved as-is, no replacements. Session paused here (weekly usage limit) before Task 2's install/build work began — client/package.json and yarn.lock are untouched, so the next execute-phase run for 11-09 should proceed straight to Task 2 without re-presenting the checkpoint, and must record this approval (developer, 2026-09-27T17:32:19Z, all four packages approved) in 11-09-SUMMARY.md per the plan's own instruction. Wave 3 completed with 11-09 (CodeMirror YAML editor) and 11-10 (unsaved-changes guard); Wave 4's 11-11 (settings.tsx split) then landed, reducing settings.tsx from 1125 to a 72-line orchestrator and closing that CLAUDE.md Known Refactoring Target. Wave 4's 11-12 (structured env editor, D-20/D-21/D-22/D-06) is now also complete: replaced the raw .env textarea with a lossless table/raw-mode EnvEditor on both the Config tab and Create Stack page. During TDD execution, a real line-duplication bug was found and fixed in the editor's re-serialization ref design (the plan's own suggested single-ref approach corrupts the document one keystroke at a time whenever a newly-added row passes through its empty-key state) — caught by the plan's own E2E acceptance criteria before merge, fixed with a stable-base/self-vs-external ref split, and covered by a new regression unit test. Remaining in wave 4/phase 11: 11-13 (phase closeout)."
-stopped_at: Phase 11 complete, ready to plan Phase 12
-last_updated: "2026-10-02T09:59:33.815Z"
-state_head: 04ac6c96c6c0c10ac2ca34cd5e4aa8b6f1ca9b44
+stopped_at: Completed 12-11-PLAN.md (background template-repo refresh + passive 'template updated' badge — last plan in phase 12)
+last_updated: "2026-10-03T14:18:08.130Z"
+state_head: 7c974afbc2dbf7ffc45fe633f8fe66552711f316
 progress:
   total_phases: 17
   completed_phases: 9
-  total_plans: 118
-  completed_plans: 118
-  percent: 100
+  total_plans: 129
+  completed_plans: 129
 milestone_name: milestone
 ---
 
@@ -24,19 +23,19 @@ milestone_name: milestone
 See: .planning/PROJECT.md (updated 2026-09-22)
 
 **Core value:** Users can deploy, monitor, and manage Docker Compose stacks through a browser UI without needing SSH or Docker CLI access.
-**Current focus:** Phase 11 — ui-rework
+**Current focus:** Phase 12 — Compose Safety and Templates
 
 ## Current Position
 
-Phase: 12 — Compose Safety and Templates
-Current Plan: Not started
-Total Plans in Phase: 13
+Phase: 12 (Compose Safety and Templates) — COMPLETE
+Current Plan: 11
+Total Plans in Phase: 11
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 103
+- Total plans completed: 104
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -154,6 +153,17 @@ Total Plans in Phase: 13
 | Phase 11 P11 | 55min | 2 tasks | 11 files |
 | Phase 11 P12 | 70min | 2 tasks | 9 files |
 | Phase 11 P13 | ~4h50m (interrupted) | 3 tasks | 16 files |
+| Phase 12 P01 | 54min | 3 tasks | 24 files |
+| Phase 12 P02 | 15min | 2 tasks | 22 files |
+| Phase 12 P03 | 25min | 2 tasks | 8 files |
+| Phase 12 P04 | 35min | 2 tasks | 10 files |
+| Phase 12 P05 | 75min | 3 tasks | 20 files |
+| Phase 12 P06 | ~5min (continuation verification session; implementation already committed) | 2 tasks | 11 files |
+| Phase 12 P07 | 50min | 3 tasks | 19 files |
+| Phase 12 P08 | ~50min | 2 tasks | 20 files |
+| Phase 12 P09 | ~55min | 2 tasks | 19 files |
+| Phase 12 P10 | ~45min | 2 tasks | 11 files |
+| Phase 12 P11 | 24min | 2 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -357,6 +367,39 @@ Recent decisions affecting current work:
 - [Phase 11]: [Phase 11-12] isSecretKey's D-22 heuristic (`/password|secret|key|token/i`) is left exactly as broad as specified (e.g. it also masks a key merely containing "KEY"); Playwright tests disambiguate a masked value input from its own Show/Hide reveal button with `{exact: true}` rather than narrowing the regex
 - [Phase 11]: [Phase 11-13]: D-17 mobile audit found two real overflow bugs (EnvEditor grid-item min-width, WizardStepper flex fit-content sizing), both fixed with min-w-0/w-full rather than touching the shadcn-managed ancestor; icon-only touch-target findings triaged as issue-not-fix-now (#71) since none break a core flow
 - [Phase 11]: [Phase 11-13]: CLAUDE.md's Known Refactoring Targets table now tracks component-level debt (5 Settings cards' ad-hoc useState form state, flagged by 11-11) instead of the three now-closed page-file monoliths ([id].tsx, settings.tsx, dashboard.tsx)
+- [Phase 12]: [Phase 12-01]: diff@^9.0.0 (jsdiff) approved by raphael@muesseler.de via blocking-human package-legitimacy checkpoint — installed with no @types/diff
+- [Phase 12]: [Phase 12-01]: StackService.updateStack's review-before-apply confirmation check runs immediately after findByIdOrThrow and strictly before fs.writeCompose/writeEnv (Pitfall 2) — enforced via a new 8th constructor param (StackChangeReviewer), never bypassable by a direct API call
+- [Phase 12]: [Phase 12-01]: useStackConfigFiles' applyChange uses toast.loading/success/error/dismiss directly instead of toast.promise, because the 428-retry branch must resolve with neither a success nor an error toast — toast.promise always renders once its success option is structurally present
+- [Phase 12]: Severity names are danger/warning (not PATTERNS.md's draft blocking-style) — nothing in this phase blocks
+- [Phase 12]: resolveHostPath expands a leading ~ to the real home directory (os.homedir()) rather than lexically joining it against the stack directory, so a ~-prefixed bind mount is never misclassified as inside the stack
+- [Phase 12]: DOCKER_SOCKET_PATHS exported from docker-socket-rule.ts and reused by bind-outside-stack-rule.ts so a Docker-socket mount is never double-reported by both always-on rules
+- [Phase 12]: [Phase 12-03]: extractRequestedHostPorts() dedupes by port/protocol only (not hostIp), keeping the first service in compose declaration order
+- [Phase 12]: [Phase 12-03]: tier-2 container-to-stack attribution ignores the stack's DB status — a running container with a matching compose project label proves it holds the port regardless of a stale status column
+- [Phase 12]: [Phase 12-03]: ${VAR:-default} falls back on unset-or-empty (shell colon-dash semantics); ${VAR-default} falls back only on unset, using VAR's value even if empty
+- [Phase 12]: [Phase 12-03]: SocketInspector's 'neither ss nor lsof available' warning is rate-limited to once per instance, not once per call
+- [Phase 12]: [Phase 12-04]: ssh://git@host is rejected (not just https://user:pw@host) — isAllowedGitRemoteUrl treats any non-empty URL username as embedded credentials on every transport, consistent with #19's public-repos-only scope
+- [Phase 12]: [Phase 12-04]: file:// is opt-in only via GitExecutor's {allowedProtocols: ["file"]} constructor option — production code never passes it; it exists solely for the test suite to clone a local bare repo without a network dependency
+- [Phase 12]: [Phase 12-04]: MAX_VARIANTS_PER_REPO (500) is a global counter across the whole checkout, not per-template, closing the per-template-cap bypass
+- [Phase 12]: [Phase 12-04]: contentHash hashes the validated variant manifest object (not raw variant.yml bytes) plus compose/env content, so a whitespace-only manifest edit never bumps the pinned D-08 update-badge hash
+- [Phase 12]: [Phase 12-05]: Tasks 1-3 implemented as one engineering pass (not three independently-buildable states) because they modify the same tightly-coupled files (compose-review-service.ts, stacks-api.ts, diff-confirm-dialog.tsx) in ways that genuinely build on each other within single functions; commits split along each task's exclusive files instead
+- [Phase 12]: [Phase 12-05]: previewStackChange now always reads both compose AND env files on every preview call (not just the file being edited) — the rule engine's hasEnvFile context needs current .env state even for a compose-only edit
+- [Phase 12]: [Phase 12-05]: D-04 x #20 reconciliation formula: confirmationRequired = hasChanges && (!skipReview || findings.some(f => f.introduced)) — skip only ever suppresses confirmation for an edit introducing zero findings
+- [Phase 12]: [Phase 12-06]: useCreateStack's create option is injected (not imported from stacks-api.ts directly) so plan 12-09's template-based creation can reuse the hook unchanged
+- [Phase 12]: [Phase 12-06]: CreateStackForm keeps its own useForm/EnvEditor-validity state rather than lifting it into useCreateStack, so Keep Editing returns to intact fields without coupling the hook to react-hook-form
+- [Phase 12]: [Phase 12-06]: ComposeChecksCard's always-on rule list is derived as COMPOSE_RULE_IDS minus CONFIGURABLE_COMPOSE_RULE_IDS rather than hardcoded, preserving 12-05's no-code-path-can-disable-an-always-on-check invariant
+- [Phase 12]: [Phase 12-07] Migration generated via Branch B (from-schema-copy diff technique) — dev DB reachable at TCP level but Postgres wire-protocol handshake never completes (P1001), same documented environmental block as prior phases; WINDOWS.md entry #16 tracks the unapplied migration
+- [Phase 12]: [Phase 12-07] TemplateStackCreator's createStack signature is typed against the pre-widened signature in Task 2's commit, then widened to accept CreateStackOptions in Task 3's commit — avoids a throwaway intermediate interface
+- [Phase 12]: [Phase 12-07] TemplateRepository.recordSyncSuccess replaces a repo's whole template/variant index in one $transaction (upsert by composite key, prune the rest) so ids stay stable across re-syncs
+- [Phase 12]: 12-08: runPreflight() never-throws contract: a preflight-computation failure returns EMPTY_DEPLOY_WARNINGS; a setDeployWarnings persistence failure still returns the already-computed warnings — resolves a plan wording ambiguity in favor of the more detailed <action> text
+- [Phase 12]: 12-08: upgradeServiceImage's idempotent no-op path skips the preflight entirely and returns EMPTY_DEPLOY_WARNINGS, keeping the return shape uniform across both branches
+- [Phase 12]: 12-08: client PortHolder.process.pid is typed number | null (looser than the server's non-null domain type) since the value crosses Stack.deployWarnings' JSON round-trip
+- [Phase 12]: [Phase 12-09] useCreateStackSource() returns a create-source-agnostic `create` function (createStackFromTemplate when a variant is active, otherwise plain createStack) injected straight into 12-06's useCreateStack — the Create Stack page never branches on template-vs-blank itself
+- [Phase 12]: [Phase 12-09] The template browse route is /stacks/create/templates (static, registered ahead of the dynamic /stacks/:id/:tab? route) rather than /stacks/templates, since a stack id can never contain "/" and this keeps the two path shapes structurally distinct
+- [Phase 12]: [Phase 12-09] TemplateVariantDialog uses the dismissible shadcn Dialog (not AlertDialog) per UI-SPEC — a forward-navigation choice, not a destructive gate, so Escape/outside-click closing without choosing is correct
+- [Phase 12]: [Phase 12-10]: TemplateReposCard's add-form uses a manual toast.loading/success/error/dismiss lifecycle instead of toast.promise — a 409 duplicate-url response must set a field error with no generic error toast, which toast.promise's single error callback can't express
+- [Phase 12]: [Phase 12-10]: TemplateService.addRepo(url) composes existing 12-07 primitives (repo.createRepo then syncRepo) with no new persistence logic
+- [Phase 12]: [Phase 12-11]: Task 1/Task 2 split kept exactly as planned — straight-line tracer first (no per-write try/catch), then a separate hardening commit adding per-stack-write and per-job-step failure isolation
+- [Phase 12]: [Phase 12-11]: TemplateUpdateService depends only on two narrow ports (find-pinned-stacks + set-flag; current-index-hashes) — structurally incapable of writing a stack's compose/env files or any column other than templateUpdateAvailable (T-12-40), proven by a fake whose every other method throws if invoked
 
 ### Quick Tasks Completed
 
@@ -414,6 +457,7 @@ Recent decisions affecting current work:
 - [Phase 09-08] Custom-certificate feature live end-to-end (real nginx-proxy/acme-companion, real HTTPS, no ACME issuance attempt): RESOLVED 2026-09-19 — developer confirmed live via 09-UAT.md tests 39/46 against the same real instance. WINDOWS.md entry #12 can be closed; #10/#11 (the db-push upgrade path specifically) remain the only open Phase 09 live-verification gap.
 - [Phase 09, live UAT 2026-09-19] Also found and fixed: `server/src/lib/auth.ts`'s `trustedOrigins` never read the Settings/wizard "Base URL" field, so setting it through the setup wizard silently did nothing — users following the documented setup flow hit an unexplained "Invalid origin" login failure on a real deployment. Fixed in commit a5bfeaf to merge BETTER_AUTH_URL (env) and the Settings baseUrl (DB) dynamically, per-request, no restart required. Unit tested (server/test/unit/lib/auth.test.ts).
 - [Phase 09, live UAT 2026-09-19] Also found: `.env.example` never documents `POSTGRES_PASSWORD` even though `docker-compose.yml`'s own comment says to set it there and the `db` container refuses to boot without it — not yet filed as a todo or fixed; worth a follow-up.
+- [Phase 12-09] New Playwright templates.spec.ts (tracer + multi-variant dialog + no-match search + repo-sync-error/Retry) was written per plan but not executed in this session per the orchestrator's resource_constraint (no Playwright/integration suites on this host). All unit `<verify>` commands and tsc -b ran clean (31/31 tests). Tracked as WINDOWS.md entry #19 — a developer/CI must run PLAYWRIGHT_PORT=5215 yarn workspace @docktor/client test:integration templates.spec.ts to confirm these live.
 - [Phase 08-03] yarn workspace @docktor/client test:unit showed 5 unrelated test files (proxy-tab.test.tsx, certificates-card.test.tsx, service-upgrade-dialog.test.tsx, stack-actions.test.tsx, stack-detail-page.test.tsx) timing out at 15000ms under severe host contention (uptime load avg 86, swap exhausted) — same pre-existing flake class as Phase 06-05/08-01; none touch this plans scope; this plans own two test files pass 28/28 in isolation. A human should re-confirm the full suite on an unloaded host.
 
 ### Roadmap Evolution
@@ -427,6 +471,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-10-02T09:47:11.591Z
-Stopped at: Phase 11 complete, ready to plan Phase 12
+Last session: 2026-10-03T14:18:07.328Z
+Stopped at: Completed 12-11-PLAN.md (background template-repo refresh + passive 'template updated' badge — last plan in phase 12)
 Resume file: None

@@ -10,8 +10,10 @@ import {BackupRepositoryCard} from "@/routes/app/settings/components/backup-repo
 import {BackupDefaultsCard} from "@/routes/app/settings/components/backup-defaults-card";
 import {ProxySettingsCard} from "@/routes/app/settings/components/proxy-settings-card";
 import {CertificatesCard} from "@/routes/app/settings/components/certificates-card";
+import {ComposeChecksCard} from "@/routes/app/settings/components/compose-checks-card";
+import {TemplateReposCard} from "@/routes/app/settings/components/template-repos-card";
 
-const VALID_TABS = ["general", "notifications", "backup", "proxy"] as const;
+const VALID_TABS = ["general", "notifications", "backup", "proxy", "stacks"] as const;
 type Tab = typeof VALID_TABS[number];
 
 export default function SettingsPage() {
@@ -45,6 +47,7 @@ export default function SettingsPage() {
                             <TabsTrigger value="notifications">Notifications</TabsTrigger>
                             <TabsTrigger value="backup">Backup</TabsTrigger>
                             <TabsTrigger value="proxy">Proxy</TabsTrigger>
+                            <TabsTrigger value="stacks">Stacks</TabsTrigger>
                         </TabsList>
                     </div>
                     <TabsContent value="general">
@@ -64,6 +67,10 @@ export default function SettingsPage() {
                     <TabsContent value="proxy" className="space-y-6">
                         <ProxySettingsCard />
                         <CertificatesCard />
+                    </TabsContent>
+                    <TabsContent value="stacks" className="space-y-6">
+                        <ComposeChecksCard />
+                        <TemplateReposCard />
                     </TabsContent>
                 </Tabs>
             </PageContent>

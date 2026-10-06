@@ -2,6 +2,7 @@ import {prisma} from "../lib/db.js";
 import {NotFoundError} from "../lib/errors.js";
 import type {StackStatus} from "../generated/prisma/enums.js";
 import type {ComposeConfig} from "../domain/compose-config.js";
+import type {TemplatePin} from "../domain/template-pin.js";
 import path from "node:path";
 
 export class StackRepository {
@@ -51,6 +52,10 @@ export class StackRepository {
         hostPath: string;
         composeConfig: ComposeConfig;
         isProtected?: boolean;
+        // Issue #19/D-08: set only when the stack was created from a
+        // template variant — maps onto the four templateX columns in the
+        // same write, never touched again after creation.
+        templatePin?: TemplatePin;
     }) {
         return prisma.stack.create({
             data: {
@@ -61,6 +66,10 @@ export class StackRepository {
                 isProtected: data.isProtected ?? false,
                 lastKnownHash: data.composeConfig.hash,
                 lastParsedAt: new Date(),
+                templateRepoUrl: data.templatePin?.repoUrl ?? null,
+                templatePath: data.templatePin?.path ?? null,
+                templateCommitSha: data.templatePin?.commitSha ?? null,
+                templateContentHash: data.templatePin?.contentHash ?? null,
                 services: {
                     create: data.composeConfig.services.map((s) => ({
                         serviceName: s.serviceName,
@@ -423,6 +432,47 @@ export class StackRepository {
         },
     ) {
         await prisma.stack.update({where: {id}, data});
+    }
+
+    // Issue #21/D-14: persists the result of the pre-deploy check (compose-check
+    // findings + port conflicts), computed just before Docker runs, so GET
+    // /api/stacks/:id can read it back as Stack.deployWarnings — the banner
+    // survives a reload until the next deploy/restart/update replaces it.
+    async setDeployWarnings(id: string, warnings: unknown): Promise<void> {
+        await prisma.stack.update({
+            where: {id},
+            data: {deployWarnings: JSON.stringify(warnings)},
+        });
+    }
+
+    // Issue #19/D-08: every stack whose pin is complete (all three of
+    // repoUrl/path/contentHash non-null) — a stack never created from a
+    // template is never returned, so TemplateUpdateService never reads it.
+    async findTemplatePinnedStacks() {
+        return prisma.stack.findMany({
+            where: {
+                templateRepoUrl: {not: null},
+                templatePath: {not: null},
+                templateContentHash: {not: null},
+            },
+            select: {
+                id: true,
+                templateRepoUrl: true,
+                templatePath: true,
+                templateContentHash: true,
+                templateUpdateAvailable: true,
+            },
+        });
+    }
+
+    // Issue #19/D-08: the single write TemplateUpdateService is capable of —
+    // flips the passive badge flag only, never touches any other column
+    // (T-12-40).
+    async setTemplateUpdateAvailable(id: string, value: boolean): Promise<void> {
+        await prisma.stack.update({
+            where: {id},
+            data: {templateUpdateAvailable: value},
+        });
     }
 
 }

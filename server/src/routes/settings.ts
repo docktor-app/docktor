@@ -1,5 +1,6 @@
 import type {FastifyPluginAsyncZod} from "fastify-type-provider-zod"
 import {z} from "zod"
+import {composeCheckSettingsSchema} from "@docktor/shared"
 import {requireAuth} from "../lib/auth-middleware.js"
 import {settingsService, notificationService} from "../application/index.js"
 
@@ -97,6 +98,24 @@ const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
         async (request) => {
             await settingsService.updateNotificationTriggers(request.body)
             return {success: true}
+        },
+    )
+
+    // GET /api/settings/compose-checks — Issue #20/D-10: the skip-review
+    // toggle plus each configurable compose-check's enable flag
+    app.get("/api/settings/compose-checks", async () => {
+        return settingsService.getComposeCheckSettings()
+    })
+
+    // PUT /api/settings/compose-checks — saves the form, then returns the
+    // freshly-saved settings (not just {success: true}) so the settings
+    // card can re-sync its form state from the single source of truth.
+    app.put(
+        "/api/settings/compose-checks",
+        {schema: {body: composeCheckSettingsSchema}},
+        async (request) => {
+            await settingsService.saveComposeCheckSettings(request.body)
+            return settingsService.getComposeCheckSettings()
         },
     )
 }

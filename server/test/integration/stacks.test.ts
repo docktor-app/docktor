@@ -160,6 +160,164 @@ describe("Stacks API", () => {
         expect(body.description).toBe("New description");
     });
 
+    it("PUT /api/stacks/:id with changed compose and no confirmed flag → 428, file on disk untouched (Issue #18/D-01/D-03)", async () => {
+        await app.inject({
+            method: "POST",
+            url: "/api/stacks",
+            headers: {cookie},
+            payload: {
+                displayName: "Review Me",
+                composeContent: COMPOSE_CONTENT,
+            },
+        });
+
+        const res = await app.inject({
+            method: "PUT",
+            url: "/api/stacks/review-me",
+            headers: {cookie},
+            payload: {
+                composeContent: "services:\n  web:\n    image: nginx:1.27\n",
+            },
+        });
+
+        expect(res.statusCode).toBe(428);
+
+        const composeRes = await app.inject({
+            method: "GET",
+            url: "/api/stacks/review-me/compose",
+            headers: {cookie},
+        });
+        expect(composeRes.json().content).toBe(COMPOSE_CONTENT);
+    });
+
+    it("PUT /api/stacks/:id with changed compose and confirmed: true → 200, writes the new content", async () => {
+        await app.inject({
+            method: "POST",
+            url: "/api/stacks",
+            headers: {cookie},
+            payload: {
+                displayName: "Confirm Me",
+                composeContent: COMPOSE_CONTENT,
+            },
+        });
+
+        const newContent = "services:\n  web:\n    image: nginx:1.27\n";
+        const res = await app.inject({
+            method: "PUT",
+            url: "/api/stacks/confirm-me",
+            headers: {cookie},
+            payload: {
+                composeContent: newContent,
+                confirmed: true,
+            },
+        });
+
+        expect(res.statusCode).toBe(200);
+
+        const composeRes = await app.inject({
+            method: "GET",
+            url: "/api/stacks/confirm-me/compose",
+            headers: {cookie},
+        });
+        expect(composeRes.json().content).toBe(newContent);
+    });
+
+    it("POST /api/stacks/:id/preview → 200 with hasChanges: true and a non-empty compose.hunks, writes nothing", async () => {
+        await app.inject({
+            method: "POST",
+            url: "/api/stacks",
+            headers: {cookie},
+            payload: {
+                displayName: "Preview Me",
+                composeContent: COMPOSE_CONTENT,
+            },
+        });
+
+        const res = await app.inject({
+            method: "POST",
+            url: "/api/stacks/preview-me/preview",
+            headers: {cookie},
+            payload: {
+                composeContent: "services:\n  web:\n    image: nginx:1.27\n",
+            },
+        });
+
+        expect(res.statusCode).toBe(200);
+        const body = res.json();
+        expect(body.hasChanges).toBe(true);
+        expect(body.confirmationRequired).toBe(true);
+        expect(body.compose.hunks.length).toBeGreaterThan(0);
+
+        const composeRes = await app.inject({
+            method: "GET",
+            url: "/api/stacks/preview-me/compose",
+            headers: {cookie},
+        });
+        expect(composeRes.json().content).toBe(COMPOSE_CONTENT);
+    });
+
+    it("POST /api/stacks/preview → 200 {confirmationRequired, findings}, writes nothing", async () => {
+        const res = await app.inject({
+            method: "POST",
+            url: "/api/stacks/preview",
+            headers: {cookie},
+            payload: {
+                displayName: "Preview New Stack",
+                composeContent: "services:\n  web:\n    image: nginx:latest\n    privileged: true\n",
+            },
+        });
+
+        expect(res.statusCode).toBe(200);
+        const body = res.json();
+        expect(body.confirmationRequired).toBe(true);
+        expect(body.findings).toHaveLength(1);
+        expect(body.findings[0]).toMatchObject({ruleId: "privileged", introduced: true});
+
+        const getRes = await app.inject({
+            method: "GET",
+            url: "/api/stacks",
+            headers: {cookie},
+        });
+        expect(getRes.json()).toHaveLength(0);
+    });
+
+    it("POST /api/stacks with a privileged compose and no confirmed flag → 428, and GET /api/stacks lists nothing (Issue #20/D-02/T-12-20)", async () => {
+        const res = await app.inject({
+            method: "POST",
+            url: "/api/stacks",
+            headers: {cookie},
+            payload: {
+                displayName: "Dangerous New Stack",
+                composeContent: "services:\n  web:\n    image: nginx:latest\n    privileged: true\n",
+            },
+        });
+
+        expect(res.statusCode).toBe(428);
+
+        const getRes = await app.inject({
+            method: "GET",
+            url: "/api/stacks",
+            headers: {cookie},
+        });
+        expect(getRes.json()).toHaveLength(0);
+    });
+
+    it("POST /api/stacks with a privileged compose and confirmed: true → 201 (Issue #20/D-02/T-12-20)", async () => {
+        const res = await app.inject({
+            method: "POST",
+            url: "/api/stacks",
+            headers: {cookie},
+            payload: {
+                displayName: "Confirmed Dangerous Stack",
+                composeContent: "services:\n  web:\n    image: nginx:latest\n    privileged: true\n",
+                confirmed: true,
+            },
+        });
+
+        expect(res.statusCode).toBe(201);
+        expect(res.json().id).toBe("confirmed-dangerous-stack");
+    });
+
     it("DELETE /api/stacks/:id → 204", async () => {
         await app.inject({
             method: "POST",

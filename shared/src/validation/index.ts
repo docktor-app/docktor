@@ -4,3 +4,4 @@ export * from "./settings.js";
 export * from "./backups.js";
 export * from "./wizard.js";
 export * from "./proxy.js";
+export * from "./templates.js";
