@@ -1,7 +1,8 @@
 ---
 phase: "14"
 slug: "health-uptime-and-disk-visibility"
-status: draft
+status: approved
+reviewed_at: "2026-10-07"
 shadcn_initialized: true
 preset: "new-york / neutral (cssVariables, Tailwind v4)"
 created: "2026-10-07"
@@ -145,6 +146,7 @@ Voice follows existing copy: sentence case, verb-first actions, errors written a
 | Sidebar nav label | `Storage` |
 | Storage page title / description | `Storage` / `Disk used by stack volumes and local backups, measured once a day.` |
 | Storage measured stamp | `Last measured {locale date and time}` |
+| Storage stale warning | Alert title `Disk usage is out of date`, body `The last measurement was {relative time} ago. Check the server logs if this keeps happening.` |
 | Storage StatCard labels | `Total Disk Used`, `Stack Volumes`, `Local Backups` |
 | Storage empty (never measured) heading | `Disk usage hasn't been measured yet` |
 | Storage empty (never measured) body | `Docktor measures stack volumes and backups once a day. The first measurement appears shortly after startup.` |
@@ -201,7 +203,7 @@ Destructive actions in this phase: one. Shortening retention schedules irreversi
 - Breadcrumb: `Storage` as `BreadcrumbPage`, same shape as the Stacks page.
 
 ### B. Storage page (D-15, D-14 amended)
-Order inside `PageContent`: totals row, Stacks Section, Backups Section.
+Order inside `PageContent`: stale-measurement warning Alert (only when `measuredAt` is older than 48 hours), totals row, Stacks Section, Backups Section.
 1. **Totals** — `grid grid-cols-1 gap-4 sm:grid-cols-3` of three StatCards: Total Disk Used (`HardDrive`), Stack Volumes (`Database`), Local Backups (`Archive`). Grand total is volumes plus backups (never the whole stack directory), so nothing is counted twice. The `Last measured` stamp sits in `PageDescription`-adjacent muted 12px text under the page title.
 2. **Stacks Section** — `Table` with columns `Stack` and `Size`, plus a leading narrow expander cell.
    - Default sort Size descending. Column headers are `Button variant="ghost" size="sm"` containing the label and an `ArrowUp` / `ArrowDown` / `ArrowUpDown` icon (aria-hidden); the `<th>` carries `aria-sort` (`ascending`, `descending`, or `none`). First click on a new column applies its natural direction (Name ascending, Size descending); clicking again reverses. Ties break by name ascending. Unmeasured stacks always sort last, in both directions. Sorting is client-side, no pagination.
@@ -258,7 +260,7 @@ Order inside `PageContent`: totals row, Stacks Section, Backups Section.
 > Empty-state and error-state COPY live in `## Copywriting Contract` above — this section covers
 > state coverage and REFERENCES those rows rather than restating the copy (de-dup).
 
-Applicable state considerations resolved: 23 covered, 4 backstop, 1 unresolved
+Applicable state considerations resolved: 24 covered, 4 backstop, 0 unresolved
 
 | Category | Element(s) | Status | Resolution / Reason |
 |----------|------------|--------|---------------------|
@@ -289,7 +291,7 @@ Applicable state considerations resolved: 23 covered, 4 backstop, 1 unresolved
 | empty | Stack list Uptime column (null) | ✅ covered | A null percentage renders an em dash with `aria-label` 'No uptime data' and the documented tooltip |
 | loading | Retention card | ✅ covered | The card renders Skeleton rows until the setting loads, as ComposeChecksCard does |
 | error | Retention card | ✅ covered | A failed load renders the documented Alert; a failed save shows the documented error toast |
-| partial | Storage measurement staleness | ⚠ unresolved | No decision exists for a disk job that has silently failed for days; planner treats the 'Last measured' timestamp as the only staleness signal |
+| partial | Storage measurement staleness | ✅ covered | When `measuredAt` is more than 48 hours old, the page shows a warning Alert with the documented 'Disk usage is out of date' copy above the totals; below 48 hours or when nothing is measured yet, no banner renders |
 
 <!-- Status vocabulary (locked by probe-core projectTruths):
      ✅ covered   → a plain truth string lifted into must_haves.truths
@@ -320,12 +322,12 @@ Third-party registries: none declared. No vetting gate applies.
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
-- [ ] Dimension 7 Inventory Provenance: PASS
+- [x] Dimension 1 Copywriting: FLAG (non-blocking)
+- [x] Dimension 2 Visuals: FLAG (non-blocking)
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
+- [x] Dimension 7 Inventory Provenance: PASS
 
-**Approval:** pending
+**Approval:** approved 2026-10-07 (gsd-ui-checker VERIFIED, 5 PASS, 2 FLAG)
