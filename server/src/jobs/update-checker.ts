@@ -5,14 +5,8 @@ import {registryClient, RegistryUnavailableError} from "../infrastructure/regist
 import type {RegistryClientPort} from "../application/ports/registry-client-port.js"
 import type {EventBusPort} from "../application/ports/event-bus-port.js"
 import {domainEventBus} from "../infrastructure/event-bus.js"
-import {buildImageRefFromService} from "../domain/image-update-detection.js"
+import {buildImageRefFromService, isMovingTag} from "../domain/image-update-detection.js"
 import {IntervalJob} from "./job.js"
-
-// Tags with no version-ordered meaning — a moving tag always points at
-// whatever was last pushed, so ordering it against other tags is undefined.
-// Both selectUpgradeCandidates (as the current tag) and checkImage (before
-// fetching a candidate list at all) treat these as "digest comparison only".
-const MOVING_TAGS = new Set(["latest", "edge", "stable", "main", "master", "nightly"])
 
 export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000 // 6 hours
 
@@ -139,14 +133,14 @@ function extractVersionShape(tag: string): {version: string; suffix: string} | n
  * tag list) are always dropped.
  */
 export function selectUpgradeCandidates(currentTag: string, tags: string[]): string[] {
-    if (MOVING_TAGS.has(currentTag)) return []
+    if (isMovingTag(currentTag)) return []
 
     const currentIsDate = parseDateTag(currentTag) !== null
     const currentShape = currentIsDate ? null : extractVersionShape(currentTag)
     if (!currentIsDate && !currentShape) return []
 
     const shapeCompatible = tags.filter((candidateTag) => {
-        if (MOVING_TAGS.has(candidateTag)) return false
+        if (isMovingTag(candidateTag)) return false
         if (currentIsDate) return parseDateTag(candidateTag) !== null
         const candidateShape = extractVersionShape(candidateTag)
         return candidateShape !== null && candidateShape.suffix === currentShape!.suffix
@@ -376,7 +370,7 @@ export class UpdateChecker extends IntervalJob {
             // candidates were found this run.
             let availableTags: string[] | null = null
             let registryCheckError: string | null = null
-            if (!MOVING_TAGS.has(tag)) {
+            if (!isMovingTag(tag)) {
                 try {
                     const tags = await this.registry.listTags(imageRef)
                     if (tags) {

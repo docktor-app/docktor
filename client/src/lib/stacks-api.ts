@@ -263,6 +263,7 @@ export interface ServiceTagsResponse {
     currentTag: string;
     latestTag: string | null;
     candidates: string[];
+    isMovingTag: boolean;
 }
 
 export interface UpgradeServiceResponse {

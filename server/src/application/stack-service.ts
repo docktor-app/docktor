@@ -4,7 +4,7 @@ import {BadRequestError, ConfirmationRequiredError, ConflictError, NotFoundError
 import {createComposeConfig, type ComposeConfig} from "../domain/compose-config.js";
 import {hashComposeContent} from "../lib/compose-parser.js";
 import {assertTransition, TransitionError,} from "../domain/stack-status-machine.js";
-import {buildImageRefFromService, detectNoUpdates, toImageRef, type ImageDigestComparison} from "../domain/image-update-detection.js";
+import {buildImageRefFromService, detectNoUpdates, isMovingTag, toImageRef, type ImageDigestComparison} from "../domain/image-update-detection.js";
 import {ComposeEditError, getServiceImageTag, setServiceImageTag} from "../lib/compose-editor.js";
 import type {StackRepository} from "../repositories/stack-repository.js";
 import type {StackFilesystemPort} from "./ports/stack-filesystem-port.js";
@@ -251,7 +251,8 @@ export class StackService {
     }
 
     /**
-     * Returns the current tag, latest tag and upgrade-candidate list for
+     * Returns the current tag, latest tag, upgrade-candidate list and
+     * whether the current tag is a moving tag (D-06) for
      * one named service of one named stack — moved in from GET
      * /api/stacks/:id/services/:serviceName/tags (10-08 Task 2, D-01/D-10).
      *
@@ -264,7 +265,7 @@ export class StackService {
     async getUpgradeCandidates(
         id: string,
         serviceName: string,
-    ): Promise<{currentTag: string; latestTag: string | null; candidates: string[]}> {
+    ): Promise<{currentTag: string; latestTag: string | null; candidates: string[]; isMovingTag: boolean}> {
         const stack = await this.getStack(id);
         if (!stack) throw new NotFoundError("Stack not found");
 
@@ -275,7 +276,9 @@ export class StackService {
         const row = imageRef ? await this.updateChecks.findByImageRef(imageRef) : null;
         const {latestTag, candidates} = this.decodeUpgradeCandidates(row);
 
-        return {currentTag: svc.imageTag ?? "latest", latestTag, candidates};
+        const currentTag = svc.imageTag ?? "latest";
+
+        return {currentTag, latestTag, candidates, isMovingTag: isMovingTag(currentTag)};
     }
 
     /**
