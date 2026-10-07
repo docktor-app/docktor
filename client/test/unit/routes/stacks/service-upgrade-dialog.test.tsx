@@ -191,19 +191,72 @@ describe("ServiceUpgradeDialog", () => {
             expect(onUpgraded).not.toHaveBeenCalled();
         });
 
+        it("renders the Update Images button exactly once", async () => {
+            mockGetServiceTags.mockResolvedValue(movingTagResponse);
+
+            renderDialog({currentTag: "latest"});
+
+            await screen.findByText(/is a moving tag/i);
+            expect(screen.getAllByRole("button", {name: /update images/i})).toHaveLength(1);
+        });
+    });
+
+    describe("non-moving tag (pinned / semver)", () => {
+        const waitForReady = () =>
+            waitFor(() =>
+                expect(screen.queryByRole("status", {name: /loading available versions/i})).not.toBeInTheDocument(),
+            );
+
         it.each([
             ["select", {currentTag: "1.25", latestTag: "1.27", candidates: ["1.27"], isMovingTag: false}],
-            ["up-to-date", {currentTag: "1.27", latestTag: "1.27", candidates: [], isMovingTag: false}],
-            ["unchecked", {currentTag: "1.25", latestTag: null, candidates: [], isMovingTag: false}],
-        ])("renders no Update Images button in the %s state", async (_name, response) => {
+            ["up-to-date", {currentTag: "0.31", latestTag: "0.31", candidates: [], isMovingTag: false}],
+            ["unchecked", {currentTag: "0.31", latestTag: null, candidates: [], isMovingTag: false}],
+        ])("offers an enabled Update Images button without the moving-tag Alert in the %s state", async (_name, response) => {
             mockGetServiceTags.mockResolvedValue(response);
 
             renderDialog();
 
-            await waitFor(() =>
-                expect(screen.queryByRole("status", {name: /loading available versions/i})).not.toBeInTheDocument(),
-            );
-            expect(screen.queryByRole("button", {name: /update images/i})).not.toBeInTheDocument();
+            await waitForReady();
+            expect(await screen.findByRole("button", {name: /update images/i})).toBeEnabled();
+            expect(screen.getAllByRole("button", {name: /update images/i})).toHaveLength(1);
+            expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+            expect(screen.queryByText(/every service in this stack/i)).not.toBeInTheDocument();
+            expect(screen.queryByText(/is a moving tag/i)).not.toBeInTheDocument();
+        });
+
+        it("closes the dialog and runs the stack-wide update for a pinned semver tag", async () => {
+            mockGetServiceTags.mockResolvedValue({
+                currentTag: "0.31",
+                latestTag: "0.31",
+                candidates: [],
+                isMovingTag: false,
+            });
+            mockUpdateImages.mockResolvedValue({success: true, noUpdates: false});
+
+            const {onOpenChange, onUpgraded} = renderDialog({serviceName: "memos", currentTag: "0.31"});
+
+            await userEvent.click(await screen.findByRole("button", {name: /update images/i}));
+
+            expect(onOpenChange).toHaveBeenCalledWith(false);
+            await waitFor(() => expect(mockUpdateImages).toHaveBeenCalledTimes(1));
+            expect(mockUpdateImages).toHaveBeenCalledWith("my-stack");
+            await waitFor(() => expect(onUpgraded).toHaveBeenCalledTimes(1));
+            expect(mockUpgradeService).not.toHaveBeenCalled();
+        });
+
+        it("keeps the version picker and an enabled Upgrade alongside Update Images", async () => {
+            mockGetServiceTags.mockResolvedValue({
+                currentTag: "1.25",
+                latestTag: "1.27",
+                candidates: ["1.27"],
+                isMovingTag: false,
+            });
+
+            renderDialog();
+
+            expect(await screen.findByRole("combobox", {name: /target version/i})).toHaveTextContent("1.27");
+            expect(screen.getByRole("button", {name: /^upgrade$/i})).toBeEnabled();
+            expect(screen.getByRole("button", {name: /update images/i})).toBeInTheDocument();
         });
 
         it("keeps the generic description for a pinned tag with no stored check", async () => {
@@ -218,6 +271,23 @@ describe("ServiceUpgradeDialog", () => {
 
             expect(await screen.findByText(/has not been checked for this image yet/i)).toBeInTheDocument();
             expect(screen.queryByText(/is a moving tag/i)).not.toBeInTheDocument();
+        });
+
+        it("renders no Update Images button while loading", () => {
+            mockGetServiceTags.mockReturnValue(new Promise(() => {}));
+
+            renderDialog();
+
+            expect(screen.queryByRole("button", {name: /update images/i})).not.toBeInTheDocument();
+        });
+
+        it("renders no Update Images button in the error state", async () => {
+            mockGetServiceTags.mockRejectedValue(new ApiError("Registry unreachable", 502));
+
+            renderDialog();
+
+            expect(await screen.findByText("Registry unreachable")).toBeInTheDocument();
+            expect(screen.queryByRole("button", {name: /update images/i})).not.toBeInTheDocument();
         });
     });
 
