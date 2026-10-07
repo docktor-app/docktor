@@ -86,6 +86,12 @@ function createMockPreflight() {
     };
 }
 
+function createMockStateCatchUp() {
+    return {
+        catchUp: vi.fn().mockResolvedValue(undefined),
+    };
+}
+
 describe("StackService", () => {
     let service: StackService;
     let repo: ReturnType<typeof createMockRepo>;
@@ -97,6 +103,7 @@ describe("StackService", () => {
     let updateChecks: ReturnType<typeof createMockUpdateChecks>;
     let reviewer: ReturnType<typeof createMockReviewer>;
     let preflight: ReturnType<typeof createMockPreflight>;
+    let stateCatchUp: ReturnType<typeof createMockStateCatchUp>;
 
     beforeEach(() => {
         repo = createMockRepo();
@@ -108,7 +115,8 @@ describe("StackService", () => {
         updateChecks = createMockUpdateChecks();
         reviewer = createMockReviewer();
         preflight = createMockPreflight();
-        service = new StackService(repo as any, fs as any, docker as any, events as any, bus as any, settings as any, updateChecks as any, reviewer as any, preflight as any);
+        stateCatchUp = createMockStateCatchUp();
+        service = new StackService(repo as any, fs as any, docker as any, events as any, bus as any, settings as any, updateChecks as any, reviewer as any, preflight as any, stateCatchUp as any);
     });
 
     describe("createStack", () => {
@@ -540,6 +548,27 @@ describe("StackService", () => {
                 }),
             );
             expect(repo.clearConfigChanged).toHaveBeenCalledWith("my-app");
+        });
+
+        it("catches up the real container states once, after replaceServices and the DEPLOYING -> RUNNING transition", async () => {
+            repo.findByIdOrThrow.mockResolvedValue({id: "my-app", status: "DRAFT"});
+            docker.up.mockResolvedValue(undefined);
+            fs.readCompose.mockResolvedValue("services:\n  web:\n    image: nginx\n");
+
+            const result = await service.deployStack("my-app");
+
+            expect(result.success).toBe(true);
+            expect(stateCatchUp.catchUp).toHaveBeenCalledTimes(1);
+            expect(stateCatchUp.catchUp).toHaveBeenCalledWith("my-app");
+            const runningTransition = repo.transitionStatus.mock.calls.findIndex(
+                (call) => call[1] === "DEPLOYING" && call[2] === "RUNNING",
+            );
+            expect(runningTransition).toBeGreaterThanOrEqual(0);
+            const catchUpOrder = stateCatchUp.catchUp.mock.invocationCallOrder[0];
+            expect(catchUpOrder).toBeGreaterThan(repo.replaceServices.mock.invocationCallOrder[0]);
+            expect(catchUpOrder).toBeGreaterThan(
+                repo.transitionStatus.mock.invocationCallOrder[runningTransition],
+            );
         });
 
         it("records error deployment when docker fails", async () => {
