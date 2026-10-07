@@ -23,6 +23,15 @@ describe("StackUpdateBadge", () => {
         expect(badge).toHaveAttribute("data-tone", "blue");
     });
 
+    it("renders exactly one badge however many services are flagged", () => {
+        render(
+            <StackUpdateBadge
+                services={[{updateAvailable: true}, {updateAvailable: true}, {updateAvailable: true}]}
+            />,
+        );
+        expect(screen.getAllByText("update available")).toHaveLength(1);
+    });
+
     it("renders nothing when no service has an update", () => {
         const {container} = render(<StackUpdateBadge services={[{updateAvailable: false}]} />);
         expect(container).toBeEmptyDOMElement();

@@ -2,12 +2,13 @@ import {beforeEach, describe, expect, it, vi} from "vitest";
 import {render, screen, waitFor, within} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {ServiceUpgradeDialog} from "../../../../src/routes/app/stacks/components/service-upgrade-dialog";
-import {getServiceTags, upgradeService} from "@/lib/stacks-api";
+import {getServiceTags, updateImages, upgradeService} from "@/lib/stacks-api";
 import {ApiError} from "@/lib/api";
 
 vi.mock("@/lib/stacks-api", () => ({
     getServiceTags: vi.fn(),
     upgradeService: vi.fn(),
+    updateImages: vi.fn(),
 }));
 
 // Capture the loading/success/error callbacks toast.promise is invoked with,
@@ -38,6 +39,7 @@ if (!Element.prototype.scrollIntoView) {
 
 const mockGetServiceTags = vi.mocked(getServiceTags);
 const mockUpgradeService = vi.mocked(upgradeService);
+const mockUpdateImages = vi.mocked(updateImages);
 
 function renderDialog(overrides?: Partial<React.ComponentProps<typeof ServiceUpgradeDialog>>) {
     const onOpenChange = vi.fn();
@@ -59,6 +61,7 @@ function renderDialog(overrides?: Partial<React.ComponentProps<typeof ServiceUpg
 beforeEach(() => {
     mockGetServiceTags.mockReset();
     mockUpgradeService.mockReset();
+    mockUpdateImages.mockReset();
 });
 
 describe("ServiceUpgradeDialog", () => {
@@ -155,6 +158,48 @@ describe("ServiceUpgradeDialog", () => {
 
             await screen.findByText(/is a moving tag/i);
             expect(mockGetServiceTags).toHaveBeenCalledTimes(1);
+        });
+
+        it("offers an Update Images button that closes the dialog and runs the stack-wide update", async () => {
+            mockGetServiceTags.mockResolvedValue(movingTagResponse);
+            mockUpdateImages.mockResolvedValue({success: true, noUpdates: false});
+
+            const {onOpenChange, onUpgraded} = renderDialog({currentTag: "latest"});
+
+            await userEvent.click(await screen.findByRole("button", {name: /update images/i}));
+
+            expect(onOpenChange).toHaveBeenCalledWith(false);
+            await waitFor(() => expect(mockUpdateImages).toHaveBeenCalledTimes(1));
+            expect(mockUpdateImages).toHaveBeenCalledWith("my-stack");
+            await waitFor(() => expect(onUpgraded).toHaveBeenCalledTimes(1));
+            expect(mockUpgradeService).not.toHaveBeenCalled();
+        });
+
+        it("does not call onUpgraded when the stack-wide update is rejected", async () => {
+            mockGetServiceTags.mockResolvedValue(movingTagResponse);
+            mockUpdateImages.mockRejectedValue(new Error("Cannot UPDATE stack in UPDATING status"));
+
+            const {onUpgraded} = renderDialog({currentTag: "latest"});
+
+            await userEvent.click(await screen.findByRole("button", {name: /update images/i}));
+
+            await waitFor(() => expect(mockUpdateImages).toHaveBeenCalledTimes(1));
+            expect(onUpgraded).not.toHaveBeenCalled();
+        });
+
+        it.each([
+            ["select", {currentTag: "1.25", latestTag: "1.27", candidates: ["1.27"], isMovingTag: false}],
+            ["up-to-date", {currentTag: "1.27", latestTag: "1.27", candidates: [], isMovingTag: false}],
+            ["unchecked", {currentTag: "1.25", latestTag: null, candidates: [], isMovingTag: false}],
+        ])("renders no Update Images button in the %s state", async (_name, response) => {
+            mockGetServiceTags.mockResolvedValue(response);
+
+            renderDialog();
+
+            await waitFor(() =>
+                expect(screen.queryByRole("status", {name: /loading available versions/i})).not.toBeInTheDocument(),
+            );
+            expect(screen.queryByRole("button", {name: /update images/i})).not.toBeInTheDocument();
         });
 
         it("keeps the generic description for a pinned tag with no stored check", async () => {
