@@ -259,6 +259,27 @@ describe("ServiceUpgradeDialog", () => {
             expect(screen.getByRole("button", {name: /update images/i})).toBeInTheDocument();
         });
 
+        it("disables Update Images while an Upgrade is submitting", async () => {
+            mockGetServiceTags.mockResolvedValue({
+                currentTag: "1.25",
+                latestTag: "1.27",
+                candidates: ["1.27"],
+                isMovingTag: false,
+            });
+            mockUpgradeService.mockReturnValue(new Promise(() => {}));
+
+            const {onOpenChange} = renderDialog();
+
+            await screen.findByRole("combobox", {name: /target version/i});
+            await userEvent.click(screen.getByRole("button", {name: /^upgrade$/i}));
+
+            const updateImagesButton = screen.getByRole("button", {name: /update images/i});
+            await waitFor(() => expect(updateImagesButton).toBeDisabled());
+            await userEvent.click(updateImagesButton);
+            expect(mockUpdateImages).not.toHaveBeenCalled();
+            expect(onOpenChange).not.toHaveBeenCalledWith(false);
+        });
+
         it("keeps the generic description for a pinned tag with no stored check", async () => {
             mockGetServiceTags.mockResolvedValue({
                 currentTag: "1.25",
