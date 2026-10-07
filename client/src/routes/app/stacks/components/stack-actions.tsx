@@ -2,7 +2,7 @@ import {useNavigate} from "react-router";
 import {toast} from "sonner";
 import {Archive, MoreHorizontal, Play, RefreshCw, RotateCcw, Square, Trash2} from "lucide-react";
 
-import {deployStack, stopStack, restartStack, updateImages, deleteStack} from "@/lib/stacks-api";
+import {deployStack, stopStack, restartStack, deleteStack} from "@/lib/stacks-api";
 import {triggerBackup} from "@/lib/backups-api";
 import {Button} from "@/components/ui/button";
 import {
@@ -13,6 +13,8 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/components/ui/tooltip";
+
+import {runUpdateImages} from "./update-images-action";
 
 interface StackActionsProps {
     readonly stackId: string;
@@ -113,19 +115,7 @@ export function StackActions({stackId, stackName, status, isProtected, onAction}
     }
 
     function handleUpdateImages() {
-        toast.promise(
-            (async () => {
-                const result = await updateImages(stackId);
-                onAction();
-                return result;
-            })(),
-            {
-                loading: "Updating images...",
-                success: (result) =>
-                    result.noUpdates ? "Images are already up to date" : "Images updated successfully",
-                error: (err: Error) => err?.message ?? "Update images failed",
-            },
-        );
+        runUpdateImages(stackId, onAction);
     }
 
     async function handleBackupNow() {

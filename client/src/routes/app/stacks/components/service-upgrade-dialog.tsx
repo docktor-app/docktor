@@ -1,5 +1,5 @@
 import {useEffect, useState} from "react";
-import {Info} from "lucide-react";
+import {Info, RefreshCw} from "lucide-react";
 import {toast} from "sonner";
 import {
     Dialog,
@@ -22,6 +22,8 @@ import {Skeleton} from "@/components/ui/skeleton";
 import {Alert, AlertDescription} from "@/components/ui/alert";
 import {ApiError} from "@/lib/api";
 import {getServiceTags, upgradeService, type ServiceTagsResponse} from "@/lib/stacks-api";
+
+import {runUpdateImages} from "./update-images-action";
 
 export interface ServiceUpgradeDialogProps {
     readonly stackId: string;
@@ -114,6 +116,13 @@ export function ServiceUpgradeDialog({
         );
     }
 
+    // The dialog closes (unmounts) before the stack-wide update starts, so it
+    // cannot submit the action twice; the toast reports the outcome (D-05).
+    function handleUpdateImages() {
+        onOpenChange(false);
+        runUpdateImages(stackId, onUpgraded);
+    }
+
     const readyView = state.status === "ready" ? selectReadyView(state.data) : null;
 
     const isConfirmDisabled =
@@ -160,14 +169,20 @@ export function ServiceUpgradeDialog({
                 )}
 
                 {state.status === "ready" && readyView === "moving-tag" && (
-                    <Alert variant="default">
-                        <Info />
-                        <AlertDescription>
-                            Update Images pulls the newest image for every service in this stack and
-                            redeploys it — the same action as the Update Images button in the
-                            stack&apos;s header menu.
-                        </AlertDescription>
-                    </Alert>
+                    <div className="space-y-3">
+                        <Alert variant="default">
+                            <Info />
+                            <AlertDescription>
+                                Update Images pulls the newest image for every service in this stack
+                                and redeploys it — the same action as the Update Images button in the
+                                stack&apos;s header menu.
+                            </AlertDescription>
+                        </Alert>
+                        <Button variant="outline" size="sm" onClick={handleUpdateImages}>
+                            <RefreshCw className="h-4 w-4" />
+                            Update Images
+                        </Button>
+                    </div>
                 )}
 
                 {state.status === "ready" && readyView === "select" && (

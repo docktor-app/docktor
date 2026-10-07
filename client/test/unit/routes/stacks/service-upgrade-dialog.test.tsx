@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import {ServiceUpgradeDialog} from "../../../../src/routes/app/stacks/components/service-upgrade-dialog";
 import {getServiceTags, updateImages, upgradeService} from "@/lib/stacks-api";
 import {ApiError} from "@/lib/api";
+import {toast} from "sonner";
 
 vi.mock("@/lib/stacks-api", () => ({
     getServiceTags: vi.fn(),
@@ -62,6 +63,9 @@ beforeEach(() => {
     mockGetServiceTags.mockReset();
     mockUpgradeService.mockReset();
     mockUpdateImages.mockReset();
+    // toast.promise call history must not leak between tests: the no-change
+    // test reads the options of the first call it made itself.
+    vi.mocked(toast.promise).mockClear();
 });
 
 describe("ServiceUpgradeDialog", () => {
@@ -305,7 +309,6 @@ describe("ServiceUpgradeDialog", () => {
 
         await waitFor(() => expect(mockUpgradeService).toHaveBeenCalledTimes(1));
 
-        const {toast} = await import("sonner");
         const promiseCall = vi.mocked(toast.promise).mock.calls[0];
         const successMessage = promiseCall[1].success({
             success: true,
