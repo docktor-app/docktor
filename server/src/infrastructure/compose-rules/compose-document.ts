@@ -20,16 +20,22 @@ function flavourFor(directory: string): PathFlavour {
  * segment, which would otherwise lexically join underneath the stack
  * directory and be misclassified as contained).
  */
-function expandTilde(hostPath: string, flavour: PathFlavour): string {
-    if (hostPath === "~") return os.homedir();
+function expandTilde(hostPath: string): string {
+    const home = os.homedir();
+    if (hostPath === "~") return home;
     if (hostPath.startsWith("~/") || hostPath.startsWith("~\\")) {
-        return flavour.join(os.homedir(), hostPath.slice(2));
+        // Joined in the home directory's own flavour (not the stack
+        // directory's) so a Windows home stays a valid drive-rooted path.
+        return flavourFor(home).join(home, hostPath.slice(2));
     }
     return hostPath;
 }
 
 function resolveAndNormalize(directory: string, target: string, flavour: PathFlavour): string {
-    if (flavour.isAbsolute(target)) {
+    // A drive-rooted Windows path is absolute even to a POSIX directory (e.g.
+    // a Windows home expanded from "~"); resolving it lexically would graft
+    // it underneath the directory and misreport it as contained.
+    if (flavour.isAbsolute(target) || WINDOWS_DRIVE_PREFIX.test(target)) {
         return flavour.normalize(target);
     }
     return flavour.normalize(flavour.resolve(directory, target));
@@ -43,7 +49,7 @@ function resolveAndNormalize(directory: string, target: string, flavour: PathFla
  */
 export function resolveHostPath(stackDirectory: string, hostPath: string): string {
     const flavour = flavourFor(stackDirectory);
-    const expanded = expandTilde(hostPath, flavour);
+    const expanded = expandTilde(hostPath);
     return resolveAndNormalize(stackDirectory, expanded, flavour);
 }
 
@@ -56,6 +62,8 @@ export function resolveHostPath(stackDirectory: string, hostPath: string): strin
  */
 export function isWithinDirectory(directory: string, target: string): boolean {
     const flavour = flavourFor(directory);
+    // A drive-rooted Windows target can never live inside a POSIX directory.
+    if (WINDOWS_DRIVE_PREFIX.test(target) && flavour !== path.win32) return false;
     const resolved = resolveAndNormalize(directory, target, flavour);
     const rel = flavour.relative(directory, resolved);
 

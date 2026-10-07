@@ -54,7 +54,7 @@ describe("SocketInspector", () => {
             if (file === "ss") return {stdout: 'tcp   LISTEN 0 4096 0.0.0.0:3000 0.0.0.0:* users:(("node",pid=1,fd=20))'};
             throw new Error("should not reach lsof");
         };
-        const inspector = new SocketInspector(run);
+        const inspector = new SocketInspector([run]);
         expect(await inspector.listListeners()).toEqual([{port: 3000, protocol: "tcp", processName: "node", pid: 1}]);
     });
 
@@ -63,7 +63,7 @@ describe("SocketInspector", () => {
             if (file === "ss") throw new Error("ss: command not found");
             return {stdout: ["p1234", "cnginx", "PTCP", "n0.0.0.0:8080"].join("\n")};
         };
-        const inspector = new SocketInspector(run);
+        const inspector = new SocketInspector([run]);
         expect(await inspector.listListeners()).toEqual([{port: 8080, protocol: "tcp", processName: "nginx", pid: 1234}]);
     });
 
@@ -71,7 +71,7 @@ describe("SocketInspector", () => {
         const run = async () => {
             throw new Error("command not found");
         };
-        const inspector = new SocketInspector(run);
+        const inspector = new SocketInspector([run]);
         await expect(inspector.listListeners()).resolves.toEqual([]);
     });
 
@@ -81,11 +81,29 @@ describe("SocketInspector", () => {
             calls.push({file, args});
             throw new Error("unavailable");
         };
-        const inspector = new SocketInspector(run);
+        const inspector = new SocketInspector([run]);
         await inspector.listListeners();
         expect(calls).toEqual([
             {file: "ss", args: ["-H", "-l", "-n", "-p", "-t", "-u"]},
             {file: "lsof", args: ["-nP", "-iTCP", "-sTCP:LISTEN", "-iUDP", "-F", "pcPn"]},
         ]);
+    });
+
+    it("prefers the first (host-namespace) runner and falls back to the next when it fails", async () => {
+        const host = async () => {
+            throw new Error("no docker socket");
+        };
+        const local = async () => ({stdout: 'tcp LISTEN 0 1 0.0.0.0:80 0.0.0.0:* users:(("nginx",pid=7,fd=3))'});
+        const inspector = new SocketInspector([host, local]);
+        expect(await inspector.listListeners()).toEqual([{port: 80, protocol: "tcp", processName: "nginx", pid: 7}]);
+    });
+
+    it("uses the host-namespace result without consulting the local runner", async () => {
+        const host = async () => ({stdout: 'tcp LISTEN 0 1 0.0.0.0:9000 0.0.0.0:* users:(("nc",pid=42,fd=3))'});
+        const local = async () => {
+            throw new Error("must not be called");
+        };
+        const inspector = new SocketInspector([host, local]);
+        expect(await inspector.listListeners()).toEqual([{port: 9000, protocol: "tcp", processName: "nc", pid: 42}]);
     });
 });

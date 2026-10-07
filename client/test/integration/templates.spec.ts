@@ -146,7 +146,7 @@ test.describe("Templates", () => {
         await page.getByRole("link", {name: "Start from Template"}).click();
         await expect(page).toHaveURL("/stacks/create/templates");
         await expect(page.getByRole("heading", {name: "Start from a Template"})).toBeVisible();
-        await expect(page.getByText("Whoami")).toBeVisible();
+        await expect(page.getByText("Whoami", {exact: true})).toBeVisible();
 
         await page.getByRole("button", {name: "Use Template"}).click();
 
