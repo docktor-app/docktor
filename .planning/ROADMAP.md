@@ -542,14 +542,14 @@ These are narrow bug fixes to existing logic/UI, not new architecture, so this p
   4. Service status reflects reality within a few seconds after a deploy/update, not up to 60s (#34)
   5. `ImageUpdateCheck` rows for retired image+tag combinations are pruned (#29)
 
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 Plans:
 **Wave 1**
 - [x] 13-01-PLAN.md — Moving-tag upgrade dialog: shared MOVING_TAGS → `isMovingTag` on the tags endpoint, distinct dialog state + Update Images shortcut; verify-and-close #31/#32 (#33, #31, #32)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 13-02-PLAN.md — Post-deploy container-state catch-up for deploy/update/upgrade on success and failure, shared `deriveStackStatus`, per-service live events (#34)
+- [x] 13-02-PLAN.md — Post-deploy container-state catch-up for deploy/update/upgrade on success and failure, shared `deriveStackStatus`, per-service live events (#34)
 - [ ] 13-03-PLAN.md — Daily `ImageUpdateCheckPruner` job deleting rows for retired image+tags via the shared tracked-ref query (#29)
 
 ### Phase 14: Health, Uptime and Disk Visibility
