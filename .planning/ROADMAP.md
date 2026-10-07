@@ -25,7 +25,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 10: Backend Architecture Refactor** - Server-side architecture improvements without changing external API behavior, landed before other phases add new server-side code on top of the current structure — needs `/gsd-discuss-phase 10` to scope before planning ([#16](https://github.com/docktor-app/docktor/issues/16)) (completed 2026-09-25)
 - [x] **Phase 11: UI Rework** - Clean up the UI's component structure and visual design (shadcn patterns, less Card wrapping, tab-structure reconsideration, consolidated logs, consistent status indicators) before other phases add new UI on top of current patterns — scoped and planned (13 plans) ([#15](https://github.com/docktor-app/docktor/issues/15)) (completed 2026-10-01)
 - [x] **Phase 12: Compose Safety and Templates** - Diff-before-apply, dangerous-config warnings, port-conflict detection, and git-based stack templates ([#18](https://github.com/docktor-app/docktor/issues/18), [#19](https://github.com/docktor-app/docktor/issues/19), [#20](https://github.com/docktor-app/docktor/issues/20), [#21](https://github.com/docktor-app/docktor/issues/21))
-- [ ] **Phase 13: Update Checker Reliability** - Fix misleading update badges, wrong upgrade-dialog messaging, slow post-deploy status, and stale database rows ([#29](https://github.com/docktor-app/docktor/issues/29), [#31](https://github.com/docktor-app/docktor/issues/31), [#32](https://github.com/docktor-app/docktor/issues/32), [#33](https://github.com/docktor-app/docktor/issues/33), [#34](https://github.com/docktor-app/docktor/issues/34))
+- [x] **Phase 13: Update Checker Reliability** - Fix misleading update badges, wrong upgrade-dialog messaging, slow post-deploy status, and stale database rows ([#29](https://github.com/docktor-app/docktor/issues/29), [#31](https://github.com/docktor-app/docktor/issues/31), [#32](https://github.com/docktor-app/docktor/issues/32), [#33](https://github.com/docktor-app/docktor/issues/33), [#34](https://github.com/docktor-app/docktor/issues/34)) (completed 2026-10-07)
 - [ ] **Phase 14: Health, Uptime and Disk Visibility** - HTTP health probes with history, per-stack uptime, and disk usage per stack/volume ([#23](https://github.com/docktor-app/docktor/issues/23), [#24](https://github.com/docktor-app/docktor/issues/24), [#27](https://github.com/docktor-app/docktor/issues/27))
 - [ ] **Phase 15: Access Hardening** - TOTP 2FA and an auth-endpoint security audit (rate limiting, CSRF, cookies) ([#45](https://github.com/docktor-app/docktor/issues/45), [#46](https://github.com/docktor-app/docktor/issues/46))
 - [ ] **Phase 16: Release Readiness for v0.1.0** - Docs, demo instance, license decision, published images, hardened startup, community health files — closes the milestone ([#7](https://github.com/docktor-app/docktor/issues/7), [#11](https://github.com/docktor-app/docktor/issues/11), [#17](https://github.com/docktor-app/docktor/issues/17), [#42](https://github.com/docktor-app/docktor/issues/42), [#53](https://github.com/docktor-app/docktor/issues/53), [#54](https://github.com/docktor-app/docktor/issues/54), [#55](https://github.com/docktor-app/docktor/issues/55), [#57](https://github.com/docktor-app/docktor/issues/57))
@@ -542,11 +542,15 @@ These are narrow bug fixes to existing logic/UI, not new architecture, so this p
   4. Service status reflects reality within a few seconds after a deploy/update, not up to 60s (#34)
   5. `ImageUpdateCheck` rows for retired image+tag combinations are pruned (#29)
 
-**Plans:** 0 plans
+**Plans:** 3/3 plans complete
 
 Plans:
+**Wave 1**
+- [x] 13-01-PLAN.md — Moving-tag upgrade dialog: shared MOVING_TAGS → `isMovingTag` on the tags endpoint, distinct dialog state + Update Images shortcut; verify-and-close #31/#32 (#33, #31, #32)
 
-- [ ] TBD (run /gsd-plan-phase 13 to break down)
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 13-02-PLAN.md — Post-deploy container-state catch-up for deploy/update/upgrade on success and failure, shared `deriveStackStatus`, per-service live events (#34)
+- [x] 13-03-PLAN.md — Daily `ImageUpdateCheckPruner` job deleting rows for retired image+tags via the shared tracked-ref query (#29)
 
 ### Phase 14: Health, Uptime and Disk Visibility
 

@@ -5,14 +5,8 @@ import {registryClient, RegistryUnavailableError} from "../infrastructure/regist
 import type {RegistryClientPort} from "../application/ports/registry-client-port.js"
 import type {EventBusPort} from "../application/ports/event-bus-port.js"
 import {domainEventBus} from "../infrastructure/event-bus.js"
-import {buildImageRefFromService} from "../domain/image-update-detection.js"
+import {isMovingTag} from "../domain/image-update-detection.js"
 import {IntervalJob} from "./job.js"
-
-// Tags with no version-ordered meaning — a moving tag always points at
-// whatever was last pushed, so ordering it against other tags is undefined.
-// Both selectUpgradeCandidates (as the current tag) and checkImage (before
-// fetching a candidate list at all) treat these as "digest comparison only".
-const MOVING_TAGS = new Set(["latest", "edge", "stable", "main", "master", "nightly"])
 
 export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000 // 6 hours
 
@@ -139,14 +133,14 @@ function extractVersionShape(tag: string): {version: string; suffix: string} | n
  * tag list) are always dropped.
  */
 export function selectUpgradeCandidates(currentTag: string, tags: string[]): string[] {
-    if (MOVING_TAGS.has(currentTag)) return []
+    if (isMovingTag(currentTag)) return []
 
     const currentIsDate = parseDateTag(currentTag) !== null
     const currentShape = currentIsDate ? null : extractVersionShape(currentTag)
     if (!currentIsDate && !currentShape) return []
 
     const shapeCompatible = tags.filter((candidateTag) => {
-        if (MOVING_TAGS.has(candidateTag)) return false
+        if (isMovingTag(candidateTag)) return false
         if (currentIsDate) return parseDateTag(candidateTag) !== null
         const candidateShape = extractVersionShape(candidateTag)
         return candidateShape !== null && candidateShape.suffix === currentShape!.suffix
@@ -230,25 +224,12 @@ interface UpdateCheckerRepo {
 // ---------------------------------------------------------------------------
 
 async function createProductionRepo(): Promise<UpdateCheckerRepo> {
-    const [{prisma}, {imageUpdateCheckRepository}] = await Promise.all([
-        import("../lib/db.js"),
-        import("../repositories/image-update-check-repository.js"),
-    ])
+    const {imageUpdateCheckRepository} = await import("../repositories/image-update-check-repository.js")
 
     return {
         async findAllImageRefs(): Promise<string[]> {
-            const rows = await prisma.service.findMany({
-                select: {image: true, imageTag: true},
-                distinct: ["image", "imageTag"],
-            })
-            // Build-only services (no image) reconstruct into a ref of just
-            // a colon and a tag if not filtered — buildImageRefFromService
-            // returns null for those, which we drop here.
-            return rows
-                .map((r: {image: string; imageTag: string | null}) =>
-                    buildImageRefFromService(r.image, r.imageTag),
-                )
-                .filter((ref): ref is string => ref !== null)
+            // Shared with ImageUpdateCheckPruner so both jobs agree on what is tracked (D-11).
+            return imageUpdateCheckRepository.findTrackedImageRefs()
         },
 
         async getImageUpdateCheck(imageRef: string) {
@@ -269,16 +250,8 @@ async function createProductionRepo(): Promise<UpdateCheckerRepo> {
             const image = colonIndex > 0 ? normalizedRef.substring(0, colonIndex) : normalizedRef
             const tag = colonIndex > 0 ? normalizedRef.substring(colonIndex + 1) : null
 
-            // Find stacks that have at least one service using this imageRef
-            const services = await prisma.service.findMany({
-                where: {
-                    image: image,
-                    imageTag: tag,
-                },
-                select: {stackId: true},
-                distinct: ["stackId"],
-            })
-            return services.map((s: {stackId: string}) => ({id: s.stackId}))
+            const stackIds = await imageUpdateCheckRepository.findStackIdsUsingImage(image, tag)
+            return stackIds.map((id) => ({id}))
         },
     }
 }
@@ -376,7 +349,7 @@ export class UpdateChecker extends IntervalJob {
             // candidates were found this run.
             let availableTags: string[] | null = null
             let registryCheckError: string | null = null
-            if (!MOVING_TAGS.has(tag)) {
+            if (!isMovingTag(tag)) {
                 try {
                     const tags = await this.registry.listTags(imageRef)
                     if (tags) {

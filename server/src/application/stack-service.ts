@@ -4,7 +4,7 @@ import {BadRequestError, ConfirmationRequiredError, ConflictError, NotFoundError
 import {createComposeConfig, type ComposeConfig} from "../domain/compose-config.js";
 import {hashComposeContent} from "../lib/compose-parser.js";
 import {assertTransition, TransitionError,} from "../domain/stack-status-machine.js";
-import {buildImageRefFromService, detectNoUpdates, toImageRef, type ImageDigestComparison} from "../domain/image-update-detection.js";
+import {buildImageRefFromService, detectNoUpdates, isMovingTag, toImageRef, type ImageDigestComparison} from "../domain/image-update-detection.js";
 import {ComposeEditError, getServiceImageTag, setServiceImageTag} from "../lib/compose-editor.js";
 import type {StackRepository} from "../repositories/stack-repository.js";
 import type {StackFilesystemPort} from "./ports/stack-filesystem-port.js";
@@ -93,6 +93,16 @@ export interface DeployPreflight {
     run(stackId: string): Promise<DeployWarnings>;
 }
 
+/**
+ * Narrow port onto ContainerStateCatchUp (#34/D-07/D-08). Declared here
+ * rather than importing the concrete class, for the same reason as
+ * DeployPreflight above: this service stays unit-testable with a plain
+ * object and the dependency arrow keeps pointing inward.
+ */
+export interface StackStateCatchUp {
+    catchUp(stackId: string): Promise<void>;
+}
+
 export class StackService {
     constructor(
         private readonly repo: StackRepository,
@@ -104,6 +114,7 @@ export class StackService {
         private readonly updateChecks: ImageUpdateCheckReadRepo,
         private readonly review: StackChangeReviewer,
         private readonly preflight: DeployPreflight,
+        private readonly stateCatchUp: StackStateCatchUp,
     ) {}
 
     async createStack(input: CreateStackInput, options: CreateStackOptions = {}) {
@@ -251,7 +262,8 @@ export class StackService {
     }
 
     /**
-     * Returns the current tag, latest tag and upgrade-candidate list for
+     * Returns the current tag, latest tag, upgrade-candidate list and
+     * whether the current tag is a moving tag (D-06) for
      * one named service of one named stack — moved in from GET
      * /api/stacks/:id/services/:serviceName/tags (10-08 Task 2, D-01/D-10).
      *
@@ -264,7 +276,7 @@ export class StackService {
     async getUpgradeCandidates(
         id: string,
         serviceName: string,
-    ): Promise<{currentTag: string; latestTag: string | null; candidates: string[]}> {
+    ): Promise<{currentTag: string; latestTag: string | null; candidates: string[]; isMovingTag: boolean}> {
         const stack = await this.getStack(id);
         if (!stack) throw new NotFoundError("Stack not found");
 
@@ -275,7 +287,9 @@ export class StackService {
         const row = imageRef ? await this.updateChecks.findByImageRef(imageRef) : null;
         const {latestTag, candidates} = this.decodeUpgradeCandidates(row);
 
-        return {currentTag: svc.imageTag ?? "latest", latestTag, candidates};
+        const currentTag = svc.imageTag ?? "latest";
+
+        return {currentTag, latestTag, candidates, isMovingTag: isMovingTag(currentTag)};
     }
 
     /**
@@ -488,7 +502,7 @@ export class StackService {
             if (success) {
                 // Update service records to match the deployed compose file
                 await this.repo.replaceServices(id, composeConfig);
-                await this.transitionStatus(
+                await this.finishOperation(
                     id,
                     "DEPLOYING",
                     "RUNNING",
@@ -496,7 +510,7 @@ export class StackService {
                 );
                 await this.repo.clearConfigChanged(id);
             } else {
-                await this.transitionStatus(
+                await this.finishOperation(
                     id,
                     "DEPLOYING",
                     "ERROR",
@@ -506,7 +520,7 @@ export class StackService {
         } catch (err: any) {
             success = false;
             errorMessage = err.message ?? String(err);
-            await this.transitionStatus(
+            await this.finishOperation(
                 id,
                 "DEPLOYING",
                 "ERROR",
@@ -593,7 +607,7 @@ export class StackService {
             await this.docker.up(id);
             afterDigests = await this.snapshotDigests(refs);
         } catch (err: any) {
-            await this.transitionStatus(
+            await this.finishOperation(
                 id,
                 "UPDATING",
                 "ERROR",
@@ -613,7 +627,7 @@ export class StackService {
             const composeConfig = createComposeConfig(composeContent);
             await this.repo.replaceServices(id, composeConfig);
 
-            await this.transitionStatus(
+            await this.finishOperation(
                 id,
                 "UPDATING",
                 "RUNNING",
@@ -621,7 +635,7 @@ export class StackService {
             );
             await this.repo.clearConfigChanged(id);
         } catch (err: any) {
-            await this.transitionStatus(
+            await this.finishOperation(
                 id,
                 "UPDATING",
                 "ERROR",
@@ -745,7 +759,7 @@ export class StackService {
         try {
             newContent = setServiceImageTag(originalContent, serviceName, targetTag);
         } catch (err) {
-            await this.transitionStatus(id, "UPDATING", "ERROR", (err as Error).message);
+            await this.finishOperation(id, "UPDATING", "ERROR", (err as Error).message);
             throw this.translateComposeEditError(err);
         }
 
@@ -768,7 +782,7 @@ export class StackService {
                     restoreErr,
                 );
             }
-            await this.transitionStatus(
+            await this.finishOperation(
                 id,
                 "UPDATING",
                 "ERROR",
@@ -784,7 +798,7 @@ export class StackService {
         try {
             const composeConfig = createComposeConfig(newContent);
             await this.repo.replaceServices(id, composeConfig);
-            await this.transitionStatus(
+            await this.finishOperation(
                 id,
                 "UPDATING",
                 "RUNNING",
@@ -792,7 +806,7 @@ export class StackService {
             );
             await this.repo.clearConfigChanged(id);
         } catch (err: any) {
-            await this.transitionStatus(
+            await this.finishOperation(
                 id,
                 "UPDATING",
                 "ERROR",
@@ -845,6 +859,35 @@ export class StackService {
             this.bus.emit("stack.status_changed", {stackId: id, status: to});
         } catch (err) {
             console.error(`[StackService] failed to emit stack.status_changed for "${id}":`, err);
+        }
+    }
+
+    /**
+     * The single exit from DEPLOYING/UPDATING for the deploy family
+     * (D-07/D-08): leaves the transitional status, then refreshes the
+     * stack's real container states from Docker so open views do not sit on
+     * "unknown" until the next 60s reconcile (#34). Never used by
+     * stopStack/restartStack.
+     *
+     * Call-site contract: deployStack, updateImages and upgradeServiceImage
+     * route every transition whose `from` is DEPLOYING or UPDATING through
+     * here, on success and on every failure branch. Callers record their
+     * Deployment row / ERROR log entry and rethrow their own error exactly as
+     * before; the catch-up only runs after the status has left the
+     * transitional state, and a catch-up failure is logged and swallowed so it
+     * can never change the calling action's own outcome.
+     */
+    private async finishOperation(
+        id: string,
+        from: StackStatus,
+        to: StackStatus,
+        message?: string,
+    ): Promise<void> {
+        await this.transitionStatus(id, from, to, message);
+        try {
+            await this.stateCatchUp.catchUp(id);
+        } catch (err) {
+            console.error(`[StackService] container state catch-up failed for "${id}":`, err);
         }
     }
 

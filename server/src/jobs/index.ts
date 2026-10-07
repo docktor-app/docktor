@@ -7,6 +7,7 @@ import {notificationWatcher} from "./notification-watcher.js"
 import {backupScheduler} from "./backup-scheduler.js"
 import {proxyCertPoller} from "./proxy-cert-poller.js"
 import {templateRepoSync} from "./template-repo-sync.js"
+import {imageUpdateCheckPruner} from "./image-update-check-pruner.js"
 
 // Registered once, at module load, in the same order startJobs() used to
 // call startJob() for each — the registry's startAll()/stopAll() preserve
@@ -20,6 +21,7 @@ jobRegistry.register(notificationWatcher)
 jobRegistry.register(backupScheduler)
 jobRegistry.register(proxyCertPoller)
 jobRegistry.register(templateRepoSync)
+jobRegistry.register(imageUpdateCheckPruner)
 
 export async function startJobs(): Promise<void> {
     // Recovering orphaned in-progress backups stays an isolated pre-start

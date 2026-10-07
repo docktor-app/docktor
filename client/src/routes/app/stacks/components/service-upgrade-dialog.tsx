@@ -1,4 +1,5 @@
 import {useEffect, useState} from "react";
+import {Info, RefreshCw} from "lucide-react";
 import {toast} from "sonner";
 import {
     Dialog,
@@ -22,6 +23,8 @@ import {Alert, AlertDescription} from "@/components/ui/alert";
 import {ApiError} from "@/lib/api";
 import {getServiceTags, upgradeService, type ServiceTagsResponse} from "@/lib/stacks-api";
 
+import {runUpdateImages} from "./update-images-action";
+
 export interface ServiceUpgradeDialogProps {
     readonly stackId: string;
     readonly serviceName: string;
@@ -29,6 +32,19 @@ export interface ServiceUpgradeDialogProps {
     readonly open: boolean;
     readonly onOpenChange: (open: boolean) => void;
     readonly onUpgraded: () => void;
+}
+
+type ReadyView = "moving-tag" | "select" | "up-to-date" | "unchecked";
+
+// Precedence keeps the four ready states mutually exclusive by construction.
+// A moving tag is checked first so it can never fall through to a version
+// claim ("newest known version") or the "not checked yet" copy — its row
+// legitimately has no latestTag or candidates (D-04).
+function selectReadyView(data: ServiceTagsResponse): ReadyView {
+    if (data.isMovingTag) return "moving-tag";
+    if (data.candidates.length > 0) return "select";
+    if (data.latestTag) return "up-to-date";
+    return "unchecked";
 }
 
 type FetchState =
@@ -100,18 +116,40 @@ export function ServiceUpgradeDialog({
         );
     }
 
+    // Offered in every ready view: for moving tags (D-05) and for pinned tags,
+    // because a pinned tag can be republished with a new digest without any
+    // version change. The dialog closes (unmounts) before the stack-wide update
+    // starts, so it cannot submit the action twice; the toast reports the outcome.
+    function handleUpdateImages() {
+        onOpenChange(false);
+        runUpdateImages(stackId, onUpgraded);
+    }
+
+    const readyView = state.status === "ready" ? selectReadyView(state.data) : null;
+
     const isConfirmDisabled =
-        submitting || state.status !== "ready" || !selectedTag || selectedTag === currentTag;
+        submitting ||
+        state.status !== "ready" ||
+        readyView === "moving-tag" ||
+        !selectedTag ||
+        selectedTag === currentTag;
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent>
                 <DialogHeader>
                     <DialogTitle>Upgrade {serviceName}</DialogTitle>
-                    <DialogDescription>
-                        Choose a version to upgrade {serviceName} from its current version,{" "}
-                        {currentTag}.
-                    </DialogDescription>
+                    {state.status === "ready" && readyView === "moving-tag" ? (
+                        <DialogDescription>
+                            {state.data.currentTag} is a moving tag — it always points at the newest
+                            available image, so there&apos;s no fixed version here to select.
+                        </DialogDescription>
+                    ) : (
+                        <DialogDescription>
+                            Choose a version to upgrade {serviceName} from its current version,{" "}
+                            {currentTag}.
+                        </DialogDescription>
+                    )}
                 </DialogHeader>
 
                 {state.status === "loading" && (
@@ -132,7 +170,18 @@ export function ServiceUpgradeDialog({
                     </div>
                 )}
 
-                {state.status === "ready" && state.data.candidates.length > 0 && (
+                {state.status === "ready" && readyView === "moving-tag" && (
+                    <Alert variant="default">
+                        <Info />
+                        <AlertDescription>
+                            Update Images pulls the newest image for every service in this stack
+                            and redeploys it — the same action as the Update Images button in the
+                            stack&apos;s header menu.
+                        </AlertDescription>
+                    </Alert>
+                )}
+
+                {state.status === "ready" && readyView === "select" && (
                     <div className="space-y-2">
                         <Label htmlFor="upgrade-target-tag">Target version</Label>
                         <Select value={selectedTag} onValueChange={setSelectedTag}>
@@ -150,23 +199,33 @@ export function ServiceUpgradeDialog({
                     </div>
                 )}
 
-                {state.status === "ready" &&
-                    state.data.candidates.length === 0 &&
-                    state.data.latestTag && (
-                        <p className="text-sm text-muted-foreground">
-                            {serviceName} is already on the newest known version (
-                            {state.data.latestTag}).
-                        </p>
-                    )}
+                {state.status === "ready" && readyView === "up-to-date" && (
+                    <p className="text-sm text-muted-foreground">
+                        {serviceName} is already on the newest known version (
+                        {state.data.latestTag}).
+                    </p>
+                )}
 
-                {state.status === "ready" &&
-                    state.data.candidates.length === 0 &&
-                    !state.data.latestTag && (
-                        <p className="text-sm text-muted-foreground">
-                            The registry has not been checked for this image yet. Checks run on a
-                            staggered schedule — check back later.
-                        </p>
-                    )}
+                {state.status === "ready" && readyView === "unchecked" && (
+                    <p className="text-sm text-muted-foreground">
+                        The registry has not been checked for this image yet. Checks run on a
+                        staggered schedule — check back later.
+                    </p>
+                )}
+
+                {state.status === "ready" && (
+                    <div>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleUpdateImages}
+                            disabled={submitting}
+                        >
+                            <RefreshCw className="h-4 w-4" />
+                            Update Images
+                        </Button>
+                    </div>
+                )}
 
                 <DialogFooter>
                     <Button variant="outline" onClick={() => onOpenChange(false)}>

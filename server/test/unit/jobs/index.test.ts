@@ -24,6 +24,9 @@ vi.mock("../../../src/jobs/proxy-cert-poller.js", () => ({
 vi.mock("../../../src/jobs/template-repo-sync.js", () => ({
     templateRepoSync: { name: "TemplateRepoSync", kind: "interval", start: vi.fn(), stop: vi.fn(), setHealthReporter: vi.fn() },
 }))
+vi.mock("../../../src/jobs/image-update-check-pruner.js", () => ({
+    imageUpdateCheckPruner: { name: "ImageUpdateCheckPruner", kind: "interval", start: vi.fn(), stop: vi.fn(), setHealthReporter: vi.fn() },
+}))
 vi.mock("../../../src/application/index.js", () => ({
     backupService: { recoverInProgressBackups: vi.fn() },
 }))
@@ -37,6 +40,7 @@ import { notificationWatcher } from "../../../src/jobs/notification-watcher.js"
 import { backupScheduler } from "../../../src/jobs/backup-scheduler.js"
 import { proxyCertPoller } from "../../../src/jobs/proxy-cert-poller.js"
 import { templateRepoSync } from "../../../src/jobs/template-repo-sync.js"
+import { imageUpdateCheckPruner } from "../../../src/jobs/image-update-check-pruner.js"
 import { backupService } from "../../../src/application/index.js"
 
 describe("startJobs", () => {
@@ -63,9 +67,10 @@ describe("startJobs", () => {
         expect(backupScheduler.start).toHaveBeenCalledOnce()
         expect(proxyCertPoller.start).toHaveBeenCalledOnce()
         expect(templateRepoSync.start).toHaveBeenCalledOnce()
+        expect(imageUpdateCheckPruner.start).toHaveBeenCalledOnce()
     })
 
-    it("prints a started line naming all eight jobs, in registration order, on a successful boot (G-10-1)", async () => {
+    it("prints a started line naming all nine jobs, in registration order, on a successful boot (G-10-1)", async () => {
         const consoleLog = vi.spyOn(console, "log").mockImplementation(() => undefined)
 
         await startJobs()
@@ -84,6 +89,7 @@ describe("startJobs", () => {
             "BackupScheduler",
             "ProxyCertPoller",
             "TemplateRepoSync",
+            "ImageUpdateCheckPruner",
         ])
 
         consoleLog.mockRestore()
@@ -104,6 +110,7 @@ describe("startJobs", () => {
         expect(backupScheduler.start).toHaveBeenCalledOnce()
         expect(proxyCertPoller.start).toHaveBeenCalledOnce()
         expect(templateRepoSync.start).toHaveBeenCalledOnce()
+        expect(imageUpdateCheckPruner.start).toHaveBeenCalledOnce()
         expect(consoleErrorSpy).toHaveBeenCalled()
     })
 
@@ -120,6 +127,7 @@ describe("startJobs", () => {
         expect(backupScheduler.start).toHaveBeenCalledOnce()
         expect(proxyCertPoller.start).toHaveBeenCalledOnce()
         expect(templateRepoSync.start).toHaveBeenCalledOnce()
+        expect(imageUpdateCheckPruner.start).toHaveBeenCalledOnce()
     })
 })
 
@@ -146,6 +154,7 @@ describe("stopJobs", () => {
         expect(backupScheduler.stop).toHaveBeenCalledOnce()
         expect(proxyCertPoller.stop).toHaveBeenCalledOnce()
         expect(templateRepoSync.stop).toHaveBeenCalledOnce()
+        expect(imageUpdateCheckPruner.stop).toHaveBeenCalledOnce()
     })
 
     it("isolates a single job's stop() failure so a later job's stop() still runs — closes the pre-10-07 shutdown-leak gap (10-RESEARCH.md Pitfall 4)", async () => {
@@ -162,6 +171,7 @@ describe("stopJobs", () => {
         expect(backupScheduler.stop).toHaveBeenCalledOnce()
         expect(proxyCertPoller.stop).toHaveBeenCalledOnce()
         expect(templateRepoSync.stop).toHaveBeenCalledOnce()
+        expect(imageUpdateCheckPruner.stop).toHaveBeenCalledOnce()
         expect(consoleErrorSpy).toHaveBeenCalled()
     })
 })
