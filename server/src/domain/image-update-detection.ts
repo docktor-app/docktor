@@ -7,7 +7,24 @@
  * (StackService.updateImages()) is responsible for resolving the
  * before/after digests via DockerExecutor.imageDigest() and handing the
  * results here.
+ *
+ * Also the single home of the moving-tag definition (`MOVING_TAGS` /
+ * `isMovingTag`) shared by the UpdateChecker job and the upgrade-candidates
+ * endpoint, so the two can never disagree about which tags are "moving".
  */
+
+// Tags with no version-ordered meaning — a moving tag always points at
+// whatever was last pushed, so ordering it against other tags is undefined.
+// Both selectUpgradeCandidates (as the current tag) and checkImage (before
+// fetching a candidate list at all) treat these as "digest comparison only",
+// and the upgrade dialog uses the same set to explain that there is no fixed
+// version to pick.
+export const MOVING_TAGS: ReadonlySet<string> = new Set(["latest", "edge", "stable", "main", "master", "nightly"]);
+
+/** Exact, case-sensitive membership test against {@link MOVING_TAGS}. */
+export function isMovingTag(tag: string): boolean {
+    return MOVING_TAGS.has(tag);
+}
 
 /**
  * A single service's image ref plus the local image store digest observed

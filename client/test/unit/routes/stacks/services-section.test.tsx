@@ -127,6 +127,13 @@ describe("ServicesSection", () => {
         expect(screen.getByRole("button", {name: "Upgrade web"})).toBeInTheDocument();
     });
 
+    it("keeps the upgrade button visible and enabled for a moving-tag service with no latestTag (D-03)", () => {
+        renderSection({
+            services: [makeService({imageTag: "latest", updateAvailable: true, latestTag: null})],
+        });
+        expect(screen.getByRole("button", {name: "Upgrade web"})).toBeEnabled();
+    });
+
     it("disables the upgrade button with an explanatory label while the stack is deploying", () => {
         renderSection({
             services: [makeService({updateAvailable: true, latestTag: "1.27"})],
