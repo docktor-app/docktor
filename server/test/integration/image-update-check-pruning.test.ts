@@ -69,6 +69,42 @@ describe("ImageUpdateCheck pruning (Issue #29)", () => {
         expect(await remainingRefs()).toEqual(["nginx:1.27", "redis:7"]);
     });
 
+    it("prunes every row when there are no services at all", async () => {
+        const {imageUpdateCheckRepository} = await import("../../src/repositories/index.js");
+        await seedRows(["nginx:1.25", "postgres:16"]);
+
+        const tracked = await imageUpdateCheckRepository.findTrackedImageRefs();
+        expect(tracked).toEqual([]);
+
+        expect(await imageUpdateCheckRepository.deleteAllExcept(tracked)).toBe(2);
+        expect(await remainingRefs()).toEqual([]);
+    });
+
+    it("a second prune right after the first deletes zero rows (idempotent)", async () => {
+        const {imageUpdateCheckRepository} = await import("../../src/repositories/index.js");
+        await createStack("Prune Stack", COMPOSE);
+        await seedRows(["nginx:1.27", "redis:7", "nginx:1.25"]);
+
+        const first = await imageUpdateCheckRepository.deleteAllExcept(
+            await imageUpdateCheckRepository.findTrackedImageRefs(),
+        );
+        const second = await imageUpdateCheckRepository.deleteAllExcept(
+            await imageUpdateCheckRepository.findTrackedImageRefs(),
+        );
+
+        expect(first).toBe(1);
+        expect(second).toBe(0);
+        expect(await remainingRefs()).toEqual(["nginx:1.27", "redis:7"]);
+    });
+
+    it("findStackIdsUsingImage returns the stacks running that image+tag and none for an unused tag", async () => {
+        const {imageUpdateCheckRepository} = await import("../../src/repositories/index.js");
+        const stackId = await createStack("Prune Stack", COMPOSE);
+
+        expect(await imageUpdateCheckRepository.findStackIdsUsingImage("nginx", "1.27")).toEqual([stackId]);
+        expect(await imageUpdateCheckRepository.findStackIdsUsingImage("nginx", "9.9")).toEqual([]);
+    });
+
     it("ImageUpdateCheckPruner with production defaults removes a freshly seeded orphan row", async () => {
         const {ImageUpdateCheckPruner} = await import("../../src/jobs/image-update-check-pruner.js");
         await createStack("Prune Stack", COMPOSE);
