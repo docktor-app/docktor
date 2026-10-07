@@ -83,6 +83,16 @@ export class ImageUpdateCheckRepository {
             .filter((ref): ref is string => ref !== null)
     }
 
+    /** Ids of the stacks that have at least one service running this image+tag. */
+    async findStackIdsUsingImage(image: string, imageTag: string | null): Promise<string[]> {
+        const services = await prisma.service.findMany({
+            where: {image, imageTag},
+            select: {stackId: true},
+            distinct: ["stackId"],
+        })
+        return services.map((s) => s.stackId)
+    }
+
     /**
      * Deletes every row whose imageRef is outside the given set and returns
      * the number deleted. An empty set therefore deletes every row — callers

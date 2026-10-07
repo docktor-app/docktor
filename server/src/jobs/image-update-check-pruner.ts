@@ -41,6 +41,9 @@ export class ImageUpdateCheckPruner extends IntervalJob {
 
     protected async run(): Promise<void> {
         const store = await this.getStore()
+        // Deliberately not wrapped in try/catch: a failed read must reject
+        // the run (IntervalJob records it) and never be coerced into an
+        // empty set, which would delete every row.
         const trackedRefs = await store.findTrackedImageRefs()
         const pruned = await store.deleteAllExcept(trackedRefs)
         if (pruned > 0) {

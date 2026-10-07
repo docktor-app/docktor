@@ -224,10 +224,7 @@ interface UpdateCheckerRepo {
 // ---------------------------------------------------------------------------
 
 async function createProductionRepo(): Promise<UpdateCheckerRepo> {
-    const [{prisma}, {imageUpdateCheckRepository}] = await Promise.all([
-        import("../lib/db.js"),
-        import("../repositories/image-update-check-repository.js"),
-    ])
+    const {imageUpdateCheckRepository} = await import("../repositories/image-update-check-repository.js")
 
     return {
         async findAllImageRefs(): Promise<string[]> {
@@ -253,16 +250,8 @@ async function createProductionRepo(): Promise<UpdateCheckerRepo> {
             const image = colonIndex > 0 ? normalizedRef.substring(0, colonIndex) : normalizedRef
             const tag = colonIndex > 0 ? normalizedRef.substring(colonIndex + 1) : null
 
-            // Find stacks that have at least one service using this imageRef
-            const services = await prisma.service.findMany({
-                where: {
-                    image: image,
-                    imageTag: tag,
-                },
-                select: {stackId: true},
-                distinct: ["stackId"],
-            })
-            return services.map((s: {stackId: string}) => ({id: s.stackId}))
+            const stackIds = await imageUpdateCheckRepository.findStackIdsUsingImage(image, tag)
+            return stackIds.map((id) => ({id}))
         },
     }
 }
