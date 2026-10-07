@@ -124,12 +124,7 @@ describe("Stacks API", () => {
     });
 
     it("GET /api/stacks/:id/services/:serviceName/tags flags a moving-tag service and not a pinned one (D-06)", async () => {
-        const composeContent = "services:
-  web:
-    image: nginx:latest
-  db:
-    image: postgres:16
-";
+        const composeContent = "services:\n  web:\n    image: nginx:latest\n  db:\n    image: postgres:16\n";
 
         await app.inject({
             method: "POST",
