@@ -171,4 +171,174 @@ describe("ContainerStateCatchUp", () => {
             expect(firstEmit).toBeGreaterThan(lastWrite);
         });
     });
+
+    describe("services without a usable container", () => {
+        it("writes a service with no matching container as exited with no container id, and still emits for it", async () => {
+            givenStack("RUNNING", ["web", "worker"]);
+            docker.listContainers.mockResolvedValue([container("c-web", "my-app", "web")]);
+            docker.inspectContainer.mockResolvedValue({Id: "c-web", State: {Status: "running"}});
+
+            await catchUp.catchUp("my-app");
+
+            expect(repo.updateServiceState).toHaveBeenCalledWith({
+                stackId: "my-app",
+                serviceName: "worker",
+                containerId: null,
+                containerState: "exited",
+                healthStatus: null,
+            });
+            expect(bus.emit).toHaveBeenCalledTimes(2);
+            expect(bus.emit).toHaveBeenNthCalledWith(
+                2,
+                "stack.container_state_changed",
+                expect.objectContaining({serviceName: "worker", containerState: "exited", healthStatus: null}),
+            );
+            expect(repo.updateStackStatus).toHaveBeenCalledWith("my-app", "RUNNING");
+        });
+
+        it("never invents a running state: a stack whose containers are all missing is STOPPED", async () => {
+            givenStack("RUNNING", ["web"]);
+            docker.listContainers.mockResolvedValue([]);
+
+            await catchUp.catchUp("my-app");
+
+            expect(repo.updateStackStatus).toHaveBeenCalledWith("my-app", "STOPPED");
+            expect(docker.inspectContainer).not.toHaveBeenCalled();
+        });
+
+        it("falls back to the list summary state with no health when inspecting a container fails", async () => {
+            givenStack("RUNNING", ["web"]);
+            docker.listContainers.mockResolvedValue([container("c-web", "my-app", "web", "restarting")]);
+            docker.inspectContainer.mockRejectedValue(new Error("No such container"));
+
+            await catchUp.catchUp("my-app");
+
+            expect(repo.updateServiceState).toHaveBeenCalledWith({
+                stackId: "my-app",
+                serviceName: "web",
+                containerId: "c-web",
+                containerState: "restarting",
+                healthStatus: null,
+            });
+            expect(repo.updateStackStatus).toHaveBeenCalledWith("my-app", "ERROR");
+        });
+    });
+
+    describe("guards", () => {
+        it("does nothing for a stack that is no longer found", async () => {
+            repo.findByComposeProject.mockResolvedValue(null);
+
+            await catchUp.catchUp("my-app");
+
+            expect(docker.listContainers).not.toHaveBeenCalled();
+            expect(repo.updateServiceState).not.toHaveBeenCalled();
+            expect(repo.updateStackStatus).not.toHaveBeenCalled();
+            expect(bus.emit).not.toHaveBeenCalled();
+        });
+
+        it.each(["DEPLOYING", "UPDATING", "BACKING_UP", "RESTORING", "MIGRATING"])(
+            "writes and emits nothing when another operation has moved the stack to %s",
+            async (status) => {
+                givenStack(status, ["web"]);
+
+                await catchUp.catchUp("my-app");
+
+                expect(docker.listContainers).not.toHaveBeenCalled();
+                expect(repo.updateServiceState).not.toHaveBeenCalled();
+                expect(repo.updateStackStatus).not.toHaveBeenCalled();
+                expect(bus.emit).not.toHaveBeenCalled();
+            },
+        );
+
+        it("does nothing for a stack with zero Service rows", async () => {
+            givenStack("RUNNING", []);
+
+            await catchUp.catchUp("my-app");
+
+            expect(docker.listContainers).not.toHaveBeenCalled();
+            expect(repo.updateServiceState).not.toHaveBeenCalled();
+            expect(repo.updateStackStatus).not.toHaveBeenCalled();
+            expect(bus.emit).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("never rejects", () => {
+        it("logs and resolves without writes or events when listing containers fails", async () => {
+            const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+            givenStack("RUNNING", ["web"]);
+            docker.listContainers.mockRejectedValue(new Error("docker socket gone"));
+
+            await expect(catchUp.catchUp("my-app")).resolves.toBeUndefined();
+
+            expect(repo.updateServiceState).not.toHaveBeenCalled();
+            expect(bus.emit).not.toHaveBeenCalled();
+            expect(consoleErrorSpy).toHaveBeenCalled();
+            consoleErrorSpy.mockRestore();
+        });
+
+        it("logs and resolves without emitting when a service write fails", async () => {
+            const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+            givenRunningWebAndDb();
+            repo.updateServiceState.mockRejectedValue(new Error("DB unavailable"));
+
+            await expect(catchUp.catchUp("my-app")).resolves.toBeUndefined();
+
+            expect(bus.emit).not.toHaveBeenCalled();
+            consoleErrorSpy.mockRestore();
+        });
+
+        it("logs and resolves when reading the stack fails", async () => {
+            const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+            repo.findByComposeProject.mockRejectedValue(new Error("DB unavailable"));
+
+            await expect(catchUp.catchUp("my-app")).resolves.toBeUndefined();
+
+            expect(consoleErrorSpy).toHaveBeenCalled();
+            consoleErrorSpy.mockRestore();
+        });
+    });
+
+    describe("failure branch and idempotency", () => {
+        it("replaces a just-set ERROR with the status derived from real containers", async () => {
+            givenStack("ERROR", ["web", "db"]);
+            docker.listContainers.mockResolvedValue([
+                container("c-web", "my-app", "web"),
+                container("c-db", "my-app", "db"),
+            ]);
+            docker.inspectContainer.mockResolvedValue({State: {Status: "running"}});
+
+            await catchUp.catchUp("my-app");
+
+            expect(repo.updateStackStatus).toHaveBeenCalledWith("my-app", "RUNNING");
+        });
+
+        it("on a second run against unchanged containers writes the same rows and emits identical payloads minus the status log", async () => {
+            givenRunningWebAndDb();
+            repo.updateStackStatus
+                .mockResolvedValueOnce({
+                    id: "log-1",
+                    fromStatus: "RUNNING",
+                    toStatus: "HEALTHY",
+                    message: null,
+                    createdAt: new Date("2026-01-02T03:04:05.000Z"),
+                })
+                .mockResolvedValueOnce(null);
+
+            await catchUp.catchUp("my-app");
+            const firstWrites = repo.updateServiceState.mock.calls.map((call) => call[0]);
+            const firstEvents = bus.emit.mock.calls.map((call) => call[1]);
+            repo.updateServiceState.mockClear();
+            bus.emit.mockClear();
+
+            await catchUp.catchUp("my-app");
+            const secondWrites = repo.updateServiceState.mock.calls.map((call) => call[0]);
+            const secondEvents = bus.emit.mock.calls.map((call) => call[1]);
+
+            expect(secondWrites).toEqual(firstWrites);
+            expect(firstEvents[0]).toHaveProperty("statusLog");
+            expect(secondEvents).toEqual(
+                firstEvents.map(({statusLog: _statusLog, ...rest}) => rest),
+            );
+        });
+    });
 });

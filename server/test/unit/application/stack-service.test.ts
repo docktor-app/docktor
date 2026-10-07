@@ -1,7 +1,16 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import {StackService} from "../../../src/application/stack-service.js";
 import {BadRequestError, ConfirmationRequiredError, ConflictError, NotFoundError} from "../../../src/lib/errors.js";
+import {ComposeEditError, setServiceImageTag} from "../../../src/lib/compose-editor.js";
 import {EMPTY_DEPLOY_WARNINGS, type DeployWarnings} from "../../../src/application/deploy-preflight-service.js";
+
+// Delegates to the real implementation by default; one test overrides
+// setServiceImageTag once to reach the compose-edit failure branch, which
+// cannot be triggered with real compose content (get and set validate alike).
+vi.mock("../../../src/lib/compose-editor.js", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("../../../src/lib/compose-editor.js")>();
+    return {...actual, setServiceImageTag: vi.fn(actual.setServiceImageTag)};
+});
 
 function createMockRepo() {
     return {
@@ -1270,6 +1279,227 @@ describe("StackService", () => {
             expect(bus.emit).toHaveBeenLastCalledWith("stack.status_changed", {
                 stackId: "my-app",
                 status: "ERROR",
+            });
+        });
+    });
+
+    describe("post-operation container state catch-up (#34)", () => {
+        const COMPOSE = "services:\n  web:\n    image: nginx:1.25\n";
+
+        function transitionOrder(from: string, to: string): number {
+            const index = repo.transitionStatus.mock.calls.findIndex(
+                (call) => call[1] === from && call[2] === to,
+            );
+            expect(index).toBeGreaterThanOrEqual(0);
+            return repo.transitionStatus.mock.invocationCallOrder[index];
+        }
+
+        function catchUpOrder(): number {
+            expect(stateCatchUp.catchUp).toHaveBeenCalledTimes(1);
+            expect(stateCatchUp.catchUp).toHaveBeenCalledWith("my-app");
+            return stateCatchUp.catchUp.mock.invocationCallOrder[0];
+        }
+
+        describe("deployStack", () => {
+            beforeEach(() => {
+                repo.findByIdOrThrow.mockResolvedValue({id: "my-app", status: "DRAFT"});
+                fs.readCompose.mockResolvedValue(COMPOSE);
+                docker.up.mockResolvedValue(undefined);
+            });
+
+            it("catches up after the ERROR transition when docker up fails, without changing the failure result", async () => {
+                docker.up.mockRejectedValue(new Error("Container failed"));
+
+                const result = await service.deployStack("my-app");
+
+                expect(result.success).toBe(false);
+                expect(result.errorMessage).toBe("Container failed");
+                expect(catchUpOrder()).toBeGreaterThan(transitionOrder("DEPLOYING", "ERROR"));
+                expect(repo.recordDeployment.mock.invocationCallOrder[0]).toBeLessThan(catchUpOrder());
+                expect(repo.recordDeployment).toHaveBeenCalledWith(
+                    expect.objectContaining({success: false}),
+                );
+            });
+
+            it("catches up after the ERROR transition when the post-up sync fails", async () => {
+                fs.readCompose.mockRejectedValue(new Error("compose unreadable"));
+
+                const result = await service.deployStack("my-app");
+
+                expect(result.success).toBe(false);
+                expect(result.errorMessage).toBe("compose unreadable");
+                expect(catchUpOrder()).toBeGreaterThan(transitionOrder("DEPLOYING", "ERROR"));
+            });
+
+            it("still reports success when the catch-up itself rejects", async () => {
+                const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+                stateCatchUp.catchUp.mockRejectedValue(new Error("docker socket gone"));
+
+                const result = await service.deployStack("my-app");
+
+                expect(result.success).toBe(true);
+                expect(repo.transitionStatus).not.toHaveBeenCalledWith(
+                    "my-app",
+                    "DEPLOYING",
+                    "ERROR",
+                    expect.anything(),
+                );
+                consoleErrorSpy.mockRestore();
+            });
+
+            it("does not catch up when the status guard rejects the deploy", async () => {
+                repo.findByIdOrThrow.mockResolvedValue({id: "my-app", status: "DEPLOYING"});
+
+                await expect(service.deployStack("my-app")).rejects.toThrow();
+
+                expect(stateCatchUp.catchUp).not.toHaveBeenCalled();
+            });
+        });
+
+        describe("updateImages", () => {
+            beforeEach(() => {
+                repo.findByIdOrThrow.mockResolvedValue({id: "my-app", status: "RUNNING"});
+                fs.readCompose.mockResolvedValue(COMPOSE);
+                docker.composePull.mockResolvedValue("Pull complete");
+                docker.up.mockResolvedValue(undefined);
+            });
+
+            it("catches up after replaceServices and the UPDATING -> RUNNING transition, leaving the result unchanged", async () => {
+                const result = await service.updateImages("my-app");
+
+                expect(result).toEqual({noUpdates: false, warnings: EMPTY_DEPLOY_WARNINGS});
+                expect(catchUpOrder()).toBeGreaterThan(repo.replaceServices.mock.invocationCallOrder[0]);
+                expect(catchUpOrder()).toBeGreaterThan(transitionOrder("UPDATING", "RUNNING"));
+            });
+
+            it("catches up after the ERROR transition and rejects with the original error when composePull fails", async () => {
+                const pullError = new Error("pull failed");
+                docker.composePull.mockRejectedValue(pullError);
+
+                await expect(service.updateImages("my-app")).rejects.toBe(pullError);
+
+                expect(catchUpOrder()).toBeGreaterThan(transitionOrder("UPDATING", "ERROR"));
+            });
+
+            it("catches up after the ERROR transition and rejects with the original error when the post-pull sync fails", async () => {
+                const dbError = new Error("DB unavailable");
+                repo.replaceServices.mockRejectedValue(dbError);
+
+                await expect(service.updateImages("my-app")).rejects.toBe(dbError);
+
+                expect(catchUpOrder()).toBeGreaterThan(transitionOrder("UPDATING", "ERROR"));
+            });
+
+            it("rejects with the action's error, not the catch-up's, when both fail", async () => {
+                const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+                docker.composePull.mockRejectedValue(new Error("pull failed"));
+                stateCatchUp.catchUp.mockRejectedValue(new Error("catch-up failed"));
+
+                await expect(service.updateImages("my-app")).rejects.toThrow("pull failed");
+                consoleErrorSpy.mockRestore();
+            });
+
+            it("does not catch up when the status guard rejects the update", async () => {
+                repo.findByIdOrThrow.mockResolvedValue({id: "my-app", status: "UPDATING"});
+
+                await expect(service.updateImages("my-app")).rejects.toThrow();
+
+                expect(stateCatchUp.catchUp).not.toHaveBeenCalled();
+            });
+        });
+
+        describe("upgradeServiceImage", () => {
+            beforeEach(() => {
+                repo.findByIdOrThrow.mockResolvedValue({id: "my-app", status: "RUNNING"});
+                fs.readCompose.mockResolvedValue(COMPOSE);
+                docker.composePull.mockResolvedValue("Pull complete");
+                docker.up.mockResolvedValue(undefined);
+            });
+
+            it("catches up after the UPDATING -> RUNNING transition on success", async () => {
+                const result = await service.upgradeServiceImage("my-app", "web", "1.26");
+
+                expect(result.changed).toBe(true);
+                expect(catchUpOrder()).toBeGreaterThan(transitionOrder("UPDATING", "RUNNING"));
+                expect(catchUpOrder()).toBeGreaterThan(repo.replaceServices.mock.invocationCallOrder[0]);
+            });
+
+            it("restores the compose file, then catches up after ERROR and rejects with the original error when up fails", async () => {
+                const upError = new Error("recreate failed");
+                docker.up.mockRejectedValue(upError);
+
+                await expect(service.upgradeServiceImage("my-app", "web", "1.26")).rejects.toBe(upError);
+
+                expect(fs.writeCompose).toHaveBeenLastCalledWith("my-app", COMPOSE);
+                expect(catchUpOrder()).toBeGreaterThan(transitionOrder("UPDATING", "ERROR"));
+                expect(catchUpOrder()).toBeGreaterThan(fs.writeCompose.mock.invocationCallOrder[1]);
+            });
+
+            it("catches up after ERROR and rejects when the post-deploy sync fails", async () => {
+                const dbError = new Error("DB unavailable");
+                repo.replaceServices.mockRejectedValue(dbError);
+
+                await expect(service.upgradeServiceImage("my-app", "web", "1.26")).rejects.toBe(dbError);
+
+                expect(catchUpOrder()).toBeGreaterThan(transitionOrder("UPDATING", "ERROR"));
+            });
+
+            it("catches up after ERROR and rejects with the translated error when the compose edit fails", async () => {
+                vi.mocked(setServiceImageTag).mockImplementationOnce(() => {
+                    throw new ComposeEditError("cannot edit image", "no-image");
+                });
+
+                await expect(
+                    service.upgradeServiceImage("my-app", "web", "1.26"),
+                ).rejects.toThrow(BadRequestError);
+
+                expect(fs.writeCompose).not.toHaveBeenCalled();
+                expect(catchUpOrder()).toBeGreaterThan(transitionOrder("UPDATING", "ERROR"));
+            });
+
+            it("does not catch up on the idempotent no-op path", async () => {
+                await service.upgradeServiceImage("my-app", "web", "1.25");
+
+                expect(stateCatchUp.catchUp).not.toHaveBeenCalled();
+            });
+
+            it("does not catch up when the status guard rejects the upgrade", async () => {
+                repo.findByIdOrThrow.mockResolvedValue({id: "my-app", status: "UPDATING"});
+
+                await expect(
+                    service.upgradeServiceImage("my-app", "web", "1.26"),
+                ).rejects.toThrow(BadRequestError);
+
+                expect(stateCatchUp.catchUp).not.toHaveBeenCalled();
+            });
+        });
+
+        describe("stop and restart", () => {
+            it("does not catch up after a successful stop", async () => {
+                repo.findByIdOrThrow.mockResolvedValue({id: "my-app", status: "RUNNING"});
+                docker.stop.mockResolvedValue(undefined);
+
+                await service.stopStack("my-app");
+
+                expect(stateCatchUp.catchUp).not.toHaveBeenCalled();
+            });
+
+            it("does not catch up after a failed stop", async () => {
+                repo.findByIdOrThrow.mockResolvedValue({id: "my-app", status: "RUNNING"});
+                docker.stop.mockRejectedValue(new Error("stop failed"));
+
+                await expect(service.stopStack("my-app")).rejects.toThrow("stop failed");
+
+                expect(stateCatchUp.catchUp).not.toHaveBeenCalled();
+            });
+
+            it("does not catch up after a restart", async () => {
+                repo.findByIdOrThrow.mockResolvedValue({id: "my-app", status: "RUNNING"});
+                docker.restart.mockResolvedValue(undefined);
+
+                await service.restartStack("my-app");
+
+                expect(stateCatchUp.catchUp).not.toHaveBeenCalled();
             });
         });
     });
