@@ -510,7 +510,7 @@ export class StackService {
                 );
                 await this.repo.clearConfigChanged(id);
             } else {
-                await this.transitionStatus(
+                await this.finishOperation(
                     id,
                     "DEPLOYING",
                     "ERROR",
@@ -520,7 +520,7 @@ export class StackService {
         } catch (err: any) {
             success = false;
             errorMessage = err.message ?? String(err);
-            await this.transitionStatus(
+            await this.finishOperation(
                 id,
                 "DEPLOYING",
                 "ERROR",
@@ -607,7 +607,7 @@ export class StackService {
             await this.docker.up(id);
             afterDigests = await this.snapshotDigests(refs);
         } catch (err: any) {
-            await this.transitionStatus(
+            await this.finishOperation(
                 id,
                 "UPDATING",
                 "ERROR",
@@ -627,7 +627,7 @@ export class StackService {
             const composeConfig = createComposeConfig(composeContent);
             await this.repo.replaceServices(id, composeConfig);
 
-            await this.transitionStatus(
+            await this.finishOperation(
                 id,
                 "UPDATING",
                 "RUNNING",
@@ -635,7 +635,7 @@ export class StackService {
             );
             await this.repo.clearConfigChanged(id);
         } catch (err: any) {
-            await this.transitionStatus(
+            await this.finishOperation(
                 id,
                 "UPDATING",
                 "ERROR",
@@ -759,7 +759,7 @@ export class StackService {
         try {
             newContent = setServiceImageTag(originalContent, serviceName, targetTag);
         } catch (err) {
-            await this.transitionStatus(id, "UPDATING", "ERROR", (err as Error).message);
+            await this.finishOperation(id, "UPDATING", "ERROR", (err as Error).message);
             throw this.translateComposeEditError(err);
         }
 
@@ -782,7 +782,7 @@ export class StackService {
                     restoreErr,
                 );
             }
-            await this.transitionStatus(
+            await this.finishOperation(
                 id,
                 "UPDATING",
                 "ERROR",
@@ -798,7 +798,7 @@ export class StackService {
         try {
             const composeConfig = createComposeConfig(newContent);
             await this.repo.replaceServices(id, composeConfig);
-            await this.transitionStatus(
+            await this.finishOperation(
                 id,
                 "UPDATING",
                 "RUNNING",
@@ -806,7 +806,7 @@ export class StackService {
             );
             await this.repo.clearConfigChanged(id);
         } catch (err: any) {
-            await this.transitionStatus(
+            await this.finishOperation(
                 id,
                 "UPDATING",
                 "ERROR",
@@ -867,8 +867,15 @@ export class StackService {
      * (D-07/D-08): leaves the transitional status, then refreshes the
      * stack's real container states from Docker so open views do not sit on
      * "unknown" until the next 60s reconcile (#34). Never used by
-     * stopStack/restartStack. A catch-up failure is logged and swallowed so
-     * it can never change the calling action's own outcome.
+     * stopStack/restartStack.
+     *
+     * Call-site contract: deployStack, updateImages and upgradeServiceImage
+     * route every transition whose `from` is DEPLOYING or UPDATING through
+     * here, on success and on every failure branch. Callers record their
+     * Deployment row / ERROR log entry and rethrow their own error exactly as
+     * before; the catch-up only runs after the status has left the
+     * transitional state, and a catch-up failure is logged and swallowed so it
+     * can never change the calling action's own outcome.
      */
     private async finishOperation(
         id: string,

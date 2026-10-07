@@ -269,7 +269,7 @@ export class StackRepository {
     async updateServiceState(data: {
         stackId: string;
         serviceName: string;
-        containerId: string;
+        containerId: string | null;
         containerState: string;
         healthStatus: string | null;
     }) {

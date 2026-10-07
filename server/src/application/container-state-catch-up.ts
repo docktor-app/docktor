@@ -1,5 +1,5 @@
 import type {StackStatus} from "../generated/prisma/enums.js";
-import {deriveStackStatus} from "../domain/stack-state-derivation.js";
+import {deriveStackStatus, isTransitionalStatus} from "../domain/stack-state-derivation.js";
 import type {DockerodeClientPort} from "./ports/dockerode-client-port.js";
 import type {EventBusPort} from "./ports/event-bus-port.js";
 
@@ -17,7 +17,7 @@ export interface ContainerStateCatchUpRepo {
     updateServiceState(data: {
         stackId: string;
         serviceName: string;
-        containerId: string;
+        containerId: string | null;
         containerState: string;
         healthStatus: string | null;
     }): Promise<void>;
@@ -33,10 +33,12 @@ export interface ContainerStateCatchUpRepo {
 
 interface ServiceObservation {
     serviceName: string;
-    containerId: string;
+    containerId: string | null;
     containerState: string;
     healthStatus: string | null;
 }
+
+type ListedContainer = Awaited<ReturnType<DockerodeClientPort["listContainers"]>>[number];
 
 /**
  * Reads a stack's real containers from Docker right after a deploy-family
@@ -45,6 +47,8 @@ interface ServiceObservation {
  * StatePoller's per-service `stack.container_state_changed` event so every
  * open client view updates immediately instead of waiting for the next 60s
  * reconcile (#34).
+ *
+ * Never rejects: it must not mask the outcome of the action that called it.
  */
 export class ContainerStateCatchUp {
     constructor(
@@ -54,8 +58,19 @@ export class ContainerStateCatchUp {
     ) {}
 
     async catchUp(stackId: string): Promise<void> {
+        try {
+            await this.run(stackId);
+        } catch (err) {
+            console.error(`[ContainerStateCatchUp] catch-up failed for stack "${stackId}":`, err);
+        }
+    }
+
+    private async run(stackId: string): Promise<void> {
         const stack = await this.repo.findByComposeProject(stackId);
-        if (!stack) return;
+        // Skip a vanished or empty stack (deriving over no services would claim
+        // RUNNING) and a stack another operation has moved into a transitional
+        // status since: that operation owns the status and will finish it itself.
+        if (!stack || stack.services.length === 0 || isTransitionalStatus(stack.status)) return;
 
         const containers = (await this.docker.listContainers(true)).filter(
             (c) => c.Labels?.[COMPOSE_PROJECT_LABEL] === stackId,
@@ -63,30 +78,27 @@ export class ContainerStateCatchUp {
 
         const observations: ServiceObservation[] = [];
         for (const {serviceName} of stack.services) {
-            const match = containers.find((c) => c.Labels?.[COMPOSE_SERVICE_LABEL] === serviceName);
-            if (!match) continue;
-            const info = await this.docker.inspectContainer(match.Id);
-            observations.push({
-                serviceName,
-                containerId: match.Id,
-                containerState: info.State.Status,
-                healthStatus: info.State.Health?.Status ?? null,
-            });
+            observations.push(await this.observe(serviceName, containers));
         }
 
-        for (const o of observations) {
-            await this.repo.updateServiceState({stackId, ...o});
+        // All writes complete before any event is emitted, so a failed write
+        // never advertises state that was not persisted.
+        for (const observation of observations) {
+            await this.repo.updateServiceState({stackId, ...observation});
         }
 
+        // Intentionally replaces a just-set ERROR with the status derived from
+        // real containers, exactly as the 60s reconcile would; the action's own
+        // failure result, Deployment record and ERROR log entry are untouched.
         const stackStatus = deriveStackStatus(observations);
         const statusLog = await this.repo.updateStackStatus(stackId, stackStatus);
 
-        observations.forEach((o, index) => {
+        observations.forEach((observation, index) => {
             this.bus.emit("stack.container_state_changed", {
                 stackId,
-                serviceName: o.serviceName,
-                containerState: o.containerState,
-                healthStatus: o.healthStatus,
+                serviceName: observation.serviceName,
+                containerState: observation.containerState,
+                healthStatus: observation.healthStatus,
                 stackStatus,
                 // The status-log entry rides on exactly one event so the
                 // client timeline prepends it once.
@@ -101,5 +113,31 @@ export class ContainerStateCatchUp {
                 }),
             });
         });
+    }
+
+    private async observe(
+        serviceName: string,
+        containers: ReadonlyArray<ListedContainer>,
+    ): Promise<ServiceObservation> {
+        const match = containers.find((c) => c.Labels?.[COMPOSE_SERVICE_LABEL] === serviceName);
+        // No container after the operation: report it exited rather than
+        // inventing a state, matching reconcile's in-memory default.
+        if (!match) {
+            return {serviceName, containerId: null, containerState: "exited", healthStatus: null};
+        }
+
+        try {
+            const info = await this.docker.inspectContainer(match.Id);
+            return {
+                serviceName,
+                containerId: match.Id,
+                containerState: info.State.Status,
+                healthStatus: info.State.Health?.Status ?? null,
+            };
+        } catch {
+            // Container vanished between list and inspect (or inspect failed):
+            // fall back to the state the list call already reported.
+            return {serviceName, containerId: match.Id, containerState: match.State, healthStatus: null};
+        }
     }
 }
