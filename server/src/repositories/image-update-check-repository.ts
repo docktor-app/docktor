@@ -1,3 +1,4 @@
+import {buildImageRefFromService} from "../domain/image-update-detection.js"
 import {prisma} from "../lib/db.js"
 
 export interface UpsertImageUpdateCheckInput {
@@ -60,6 +61,38 @@ export class ImageUpdateCheckRepository {
         return prisma.imageUpdateCheck.findMany({
             where: {imageRef: {in: imageRefs}},
         })
+    }
+
+    /**
+     * The single definition of "the image refs the update checker tracks":
+     * every distinct Service image+tag, mapped through
+     * buildImageRefFromService. Both UpdateChecker's image scan and the
+     * stale-row pruner read this, so the prune set can never drift from
+     * what is being checked (Issue #29/D-11).
+     */
+    async findTrackedImageRefs(): Promise<string[]> {
+        const rows = await prisma.service.findMany({
+            select: {image: true, imageTag: true},
+            distinct: ["image", "imageTag"],
+        })
+        // Build-only services (no image) reconstruct into a ref of just
+        // a colon and a tag if not filtered — buildImageRefFromService
+        // returns null for those, which we drop here.
+        return rows
+            .map((r) => buildImageRefFromService(r.image, r.imageTag))
+            .filter((ref): ref is string => ref !== null)
+    }
+
+    /**
+     * Deletes every row whose imageRef is outside the given set and returns
+     * the number deleted. An empty set therefore deletes every row — callers
+     * must never derive it from a failed read (Issue #29/D-10).
+     */
+    async deleteAllExcept(imageRefs: readonly string[]): Promise<number> {
+        const result = await prisma.imageUpdateCheck.deleteMany({
+            where: {imageRef: {notIn: [...imageRefs]}},
+        })
+        return result.count
     }
 }
 

@@ -5,7 +5,7 @@ import {registryClient, RegistryUnavailableError} from "../infrastructure/regist
 import type {RegistryClientPort} from "../application/ports/registry-client-port.js"
 import type {EventBusPort} from "../application/ports/event-bus-port.js"
 import {domainEventBus} from "../infrastructure/event-bus.js"
-import {buildImageRefFromService, isMovingTag} from "../domain/image-update-detection.js"
+import {isMovingTag} from "../domain/image-update-detection.js"
 import {IntervalJob} from "./job.js"
 
 export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000 // 6 hours
@@ -231,18 +231,8 @@ async function createProductionRepo(): Promise<UpdateCheckerRepo> {
 
     return {
         async findAllImageRefs(): Promise<string[]> {
-            const rows = await prisma.service.findMany({
-                select: {image: true, imageTag: true},
-                distinct: ["image", "imageTag"],
-            })
-            // Build-only services (no image) reconstruct into a ref of just
-            // a colon and a tag if not filtered — buildImageRefFromService
-            // returns null for those, which we drop here.
-            return rows
-                .map((r: {image: string; imageTag: string | null}) =>
-                    buildImageRefFromService(r.image, r.imageTag),
-                )
-                .filter((ref): ref is string => ref !== null)
+            // Shared with ImageUpdateCheckPruner so both jobs agree on what is tracked (D-11).
+            return imageUpdateCheckRepository.findTrackedImageRefs()
         },
 
         async getImageUpdateCheck(imageRef: string) {
