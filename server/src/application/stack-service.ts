@@ -93,6 +93,16 @@ export interface DeployPreflight {
     run(stackId: string): Promise<DeployWarnings>;
 }
 
+/**
+ * Narrow port onto ContainerStateCatchUp (#34/D-07/D-08). Declared here
+ * rather than importing the concrete class, for the same reason as
+ * DeployPreflight above: this service stays unit-testable with a plain
+ * object and the dependency arrow keeps pointing inward.
+ */
+export interface StackStateCatchUp {
+    catchUp(stackId: string): Promise<void>;
+}
+
 export class StackService {
     constructor(
         private readonly repo: StackRepository,
@@ -104,6 +114,7 @@ export class StackService {
         private readonly updateChecks: ImageUpdateCheckReadRepo,
         private readonly review: StackChangeReviewer,
         private readonly preflight: DeployPreflight,
+        private readonly stateCatchUp: StackStateCatchUp,
     ) {}
 
     async createStack(input: CreateStackInput, options: CreateStackOptions = {}) {
@@ -491,7 +502,7 @@ export class StackService {
             if (success) {
                 // Update service records to match the deployed compose file
                 await this.repo.replaceServices(id, composeConfig);
-                await this.transitionStatus(
+                await this.finishOperation(
                     id,
                     "DEPLOYING",
                     "RUNNING",
@@ -848,6 +859,28 @@ export class StackService {
             this.bus.emit("stack.status_changed", {stackId: id, status: to});
         } catch (err) {
             console.error(`[StackService] failed to emit stack.status_changed for "${id}":`, err);
+        }
+    }
+
+    /**
+     * The single exit from DEPLOYING/UPDATING for the deploy family
+     * (D-07/D-08): leaves the transitional status, then refreshes the
+     * stack's real container states from Docker so open views do not sit on
+     * "unknown" until the next 60s reconcile (#34). Never used by
+     * stopStack/restartStack. A catch-up failure is logged and swallowed so
+     * it can never change the calling action's own outcome.
+     */
+    private async finishOperation(
+        id: string,
+        from: StackStatus,
+        to: StackStatus,
+        message?: string,
+    ): Promise<void> {
+        await this.transitionStatus(id, from, to, message);
+        try {
+            await this.stateCatchUp.catchUp(id);
+        } catch (err) {
+            console.error(`[StackService] container state catch-up failed for "${id}":`, err);
         }
     }
 

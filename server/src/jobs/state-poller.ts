@@ -3,6 +3,7 @@ import type {DockerodeClientPort} from "../application/ports/dockerode-client-po
 import type {EventBusPort} from "../application/ports/event-bus-port.js"
 import {domainEventBus} from "../infrastructure/event-bus.js"
 import type {StackStatus} from "../generated/prisma/enums.js"
+import {deriveStackStatus, isTransitionalStatus} from "../domain/stack-state-derivation.js"
 import {WatcherJob} from "./job.js"
 
 export interface ServiceState {
@@ -36,43 +37,6 @@ export interface StatePollerRepo {
         message: string | null
         createdAt: Date
     } | null>
-}
-
-const TRANSITIONAL_STATES = new Set<string>([
-    "DEPLOYING",
-    "UPDATING",
-    "BACKING_UP",
-    "RESTORING",
-    "MIGRATING",
-])
-
-function deriveStackStatus(services: Array<{containerState?: string | null; healthStatus?: string | null}>): StackStatus {
-    const states = services.map((s) => s.containerState ?? "")
-    const healthStatuses = services.map((s) => s.healthStatus ?? null)
-
-    // If ANY service is "restarting" or "dead" → ERROR
-    if (states.some((s) => s === "restarting" || s === "dead")) {
-        return "ERROR"
-    }
-
-    // If ALL services are "exited" → STOPPED
-    if (states.length > 0 && states.every((s) => s === "exited")) {
-        return "STOPPED"
-    }
-
-    // If ANY service is "unhealthy" → UNHEALTHY
-    if (healthStatuses.some((h) => h === "unhealthy")) {
-        return "UNHEALTHY"
-    }
-
-    // If ALL running services are "healthy" (and at least one has health check) → HEALTHY
-    const hasHealthCheck = healthStatuses.some((h) => h !== null)
-    if (hasHealthCheck && healthStatuses.every((h) => h === "healthy" || h === null)) {
-        return "HEALTHY"
-    }
-
-    // Default for mixed states and when all are running
-    return "RUNNING"
 }
 
 export class StatePoller extends WatcherJob {
@@ -200,7 +164,7 @@ export class StatePoller extends WatcherJob {
         if (!stack) return
 
         // Skip stacks in transitional states
-        if (TRANSITIONAL_STATES.has(stack.status)) return
+        if (isTransitionalStatus(stack.status)) return
 
         // Inspect the container (may no longer exist if destroy/remove event)
         let info
@@ -239,7 +203,7 @@ export class StatePoller extends WatcherJob {
         }
 
         const containerState = info.State.Status
-        const healthStatus = (info.State as any).Health?.Status ?? null
+        const healthStatus = info.State.Health?.Status ?? null
 
         console.log(`[StatePoller] Inspected: service=${serviceName}, state=${containerState}, health=${healthStatus}`)
 
@@ -307,7 +271,7 @@ export class StatePoller extends WatcherJob {
             try {
                 const stack = await repo.findByComposeProject(project)
                 if (!stack) continue
-                if (TRANSITIONAL_STATES.has(stack.status)) continue
+                if (isTransitionalStatus(stack.status)) continue
 
                 console.log(`[StatePoller] Processing stack=${stack.id}, services in DB: [${stack.services.map(s => s.serviceName).join(", ")}]`)
                 console.log(`[StatePoller] Containers found: [${projectContainers.map(c => c.Labels?.["com.docker.compose.service"]).join(", ")}]`)
