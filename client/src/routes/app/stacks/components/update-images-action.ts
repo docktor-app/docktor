@@ -4,7 +4,7 @@ import {updateImages} from "@/lib/stacks-api";
 
 /**
  * The stack-level "Update Images" action, shared by the header menu item and
- * the per-service upgrade dialog's moving-tag shortcut so the loading /
+ * the per-service upgrade dialog's Update Images shortcut so the loading /
  * success / error toast copy has exactly one home. A rejected request (for
  * example the server's guardTransition refusing while another operation holds
  * the stack) surfaces as the error toast and never calls `onSuccess`.

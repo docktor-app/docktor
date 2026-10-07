@@ -215,7 +215,12 @@ export function ServiceUpgradeDialog({
 
                 {state.status === "ready" && (
                     <div>
-                        <Button variant="outline" size="sm" onClick={handleUpdateImages}>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleUpdateImages}
+                            disabled={submitting}
+                        >
                             <RefreshCw className="h-4 w-4" />
                             Update Images
                         </Button>
