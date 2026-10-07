@@ -75,6 +75,7 @@ describe("ServiceUpgradeDialog", () => {
             currentTag: "1.25",
             latestTag: "1.27",
             candidates: ["1.27", "1.26"],
+            isMovingTag: false,
         });
 
         renderDialog();
@@ -94,6 +95,7 @@ describe("ServiceUpgradeDialog", () => {
             currentTag: "1.27",
             latestTag: "1.27",
             candidates: [],
+            isMovingTag: false,
         });
 
         renderDialog();
@@ -108,6 +110,7 @@ describe("ServiceUpgradeDialog", () => {
             currentTag: "1.25",
             latestTag: null,
             candidates: [],
+            isMovingTag: false,
         });
 
         renderDialog();
@@ -117,11 +120,64 @@ describe("ServiceUpgradeDialog", () => {
         ).toBeInTheDocument();
     });
 
+    describe("moving-tag state", () => {
+        const movingTagResponse = {
+            currentTag: "latest",
+            latestTag: null,
+            candidates: [] as string[],
+            isMovingTag: true,
+        };
+
+        it("explains that the tag is moving and never claims the image is unchecked", async () => {
+            mockGetServiceTags.mockResolvedValue(movingTagResponse);
+
+            renderDialog({currentTag: "latest"});
+
+            expect(await screen.findByText(/is a moving tag/i)).toBeInTheDocument();
+            expect(screen.getByText(/every service in this stack/i)).toBeInTheDocument();
+            expect(screen.queryByText(/has not been checked for this image yet/i)).not.toBeInTheDocument();
+        });
+
+        it("renders no version picker and a disabled Upgrade button", async () => {
+            mockGetServiceTags.mockResolvedValue(movingTagResponse);
+
+            renderDialog({currentTag: "latest"});
+
+            await screen.findByText(/is a moving tag/i);
+            expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+            expect(screen.getByRole("button", {name: /^upgrade$/i})).toBeDisabled();
+        });
+
+        it("requests the tags exactly once per open", async () => {
+            mockGetServiceTags.mockResolvedValue(movingTagResponse);
+
+            renderDialog({currentTag: "latest"});
+
+            await screen.findByText(/is a moving tag/i);
+            expect(mockGetServiceTags).toHaveBeenCalledTimes(1);
+        });
+
+        it("keeps the generic description for a pinned tag with no stored check", async () => {
+            mockGetServiceTags.mockResolvedValue({
+                currentTag: "1.25",
+                latestTag: null,
+                candidates: [],
+                isMovingTag: false,
+            });
+
+            renderDialog();
+
+            expect(await screen.findByText(/has not been checked for this image yet/i)).toBeInTheDocument();
+            expect(screen.queryByText(/is a moving tag/i)).not.toBeInTheDocument();
+        });
+    });
+
     it("asserts the two empty-state messages are distinct strings", async () => {
         mockGetServiceTags.mockResolvedValueOnce({
             currentTag: "1.27",
             latestTag: "1.27",
             candidates: [],
+            isMovingTag: false,
         });
         const {unmount} = renderDialog();
         const upToDateMessage = await screen.findByText(/already on the newest known version/i);
@@ -132,6 +188,7 @@ describe("ServiceUpgradeDialog", () => {
             currentTag: "1.25",
             latestTag: null,
             candidates: [],
+            isMovingTag: false,
         });
         renderDialog();
         const neverCheckedMessage = await screen.findByText(/has not been checked for this image yet/i);
@@ -150,6 +207,7 @@ describe("ServiceUpgradeDialog", () => {
             currentTag: "1.25",
             latestTag: "1.27",
             candidates: ["1.27"],
+            isMovingTag: false,
         });
         await userEvent.click(screen.getByRole("button", {name: /retry/i}));
 
@@ -162,6 +220,7 @@ describe("ServiceUpgradeDialog", () => {
             currentTag: "1.25",
             latestTag: "1.27",
             candidates: ["1.27", "1.26"],
+            isMovingTag: false,
         });
         mockUpgradeService.mockResolvedValue({
             success: true,
@@ -185,6 +244,7 @@ describe("ServiceUpgradeDialog", () => {
             currentTag: "1.25",
             latestTag: "1.26",
             candidates: ["1.26"],
+            isMovingTag: false,
         });
         mockUpgradeService.mockResolvedValue({
             success: true,
@@ -217,6 +277,7 @@ describe("ServiceUpgradeDialog", () => {
             currentTag: "1.25",
             latestTag: "1.27",
             candidates: ["1.27"],
+            isMovingTag: false,
         });
         mockUpgradeService.mockResolvedValue({
             success: true,

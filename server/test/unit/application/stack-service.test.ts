@@ -1498,7 +1498,7 @@ describe("StackService", () => {
             const result = await service.getUpgradeCandidates("my-app", "web");
 
             expect(updateChecks.findByImageRef).toHaveBeenCalledWith("nginx:1.25");
-            expect(result).toEqual({currentTag: "1.25", latestTag: "1.27", candidates: ["1.27", "1.26"]});
+            expect(result).toEqual({currentTag: "1.25", latestTag: "1.27", candidates: ["1.27", "1.26"], isMovingTag: false});
         });
 
         it("returns an empty candidate list and null latestTag for a service with no stored row", async () => {
@@ -1506,7 +1506,32 @@ describe("StackService", () => {
 
             const result = await service.getUpgradeCandidates("my-app", "web");
 
-            expect(result).toEqual({currentTag: "1.25", latestTag: null, candidates: []});
+            expect(result).toEqual({currentTag: "1.25", latestTag: null, candidates: [], isMovingTag: false});
+        });
+
+        it("flags a checked moving-tag service (stored row with no latestTag/availableTags) as isMovingTag", async () => {
+            repo.findByIdWithRelations.mockResolvedValue({
+                id: "my-app",
+                services: [{serviceName: "web", image: "nginx", imageTag: "latest"}],
+            });
+            updateChecks.findByImageRef.mockResolvedValue({latestTag: null, availableTags: null});
+
+            const result = await service.getUpgradeCandidates("my-app", "web");
+
+            expect(result).toEqual({currentTag: "latest", latestTag: null, candidates: [], isMovingTag: true});
+        });
+
+        it("treats a missing imageTag as latest and therefore as a moving tag", async () => {
+            repo.findByIdWithRelations.mockResolvedValue({
+                id: "my-app",
+                services: [{serviceName: "web", image: "nginx", imageTag: null}],
+            });
+            updateChecks.findByImageRef.mockResolvedValue(null);
+
+            const result = await service.getUpgradeCandidates("my-app", "web");
+
+            expect(result.currentTag).toBe("latest");
+            expect(result.isMovingTag).toBe(true);
         });
 
         it("raises NotFoundError before any update-check lookup when the requested service is not in the stack's own service list", async () => {
@@ -1530,7 +1555,7 @@ describe("StackService", () => {
 
             const result = await service.getUpgradeCandidates("my-app", "web");
 
-            expect(result).toEqual({currentTag: "1.25", latestTag: "1.27", candidates: []});
+            expect(result).toEqual({currentTag: "1.25", latestTag: "1.27", candidates: [], isMovingTag: false});
         });
     });
 });

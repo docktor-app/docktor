@@ -123,6 +123,38 @@ describe("Stacks API", () => {
         }
     });
 
+    it("GET /api/stacks/:id/services/:serviceName/tags flags a moving-tag service and not a pinned one (D-06)", async () => {
+        const composeContent = "services:
+  web:
+    image: nginx:latest
+  db:
+    image: postgres:16
+";
+
+        await app.inject({
+            method: "POST",
+            url: "/api/stacks",
+            headers: {cookie},
+            payload: {displayName: "Moving Tag Stack", composeContent},
+        });
+
+        const webRes = await app.inject({
+            method: "GET",
+            url: "/api/stacks/moving-tag-stack/services/web/tags",
+            headers: {cookie},
+        });
+        const dbRes = await app.inject({
+            method: "GET",
+            url: "/api/stacks/moving-tag-stack/services/db/tags",
+            headers: {cookie},
+        });
+
+        expect(webRes.statusCode).toBe(200);
+        expect(webRes.json()).toMatchObject({currentTag: "latest", isMovingTag: true});
+        expect(dbRes.statusCode).toBe(200);
+        expect(dbRes.json()).toMatchObject({currentTag: "16", isMovingTag: false});
+    });
+
     it("GET /api/stacks/:id → 404 for missing", async () => {
         const res = await app.inject({
             method: "GET",

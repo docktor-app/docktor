@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {buildImageRefFromService, detectNoUpdates, toImageRef} from "../../../src/domain/image-update-detection.js";
+import {buildImageRefFromService, detectNoUpdates, isMovingTag, MOVING_TAGS, toImageRef} from "../../../src/domain/image-update-detection.js";
 
 describe("toImageRef", () => {
     it("joins image and tag", () => {
@@ -98,5 +98,26 @@ describe("detectNoUpdates", () => {
                 {ref: "redis:7", before: "sha256:ccc", after: "sha256:ddd"},
             ]),
         ).toBe(false);
+    });
+});
+
+describe("isMovingTag", () => {
+    it.each(["latest", "edge", "stable", "main", "master", "nightly"])("is true for the moving tag %s", (tag) => {
+        expect(isMovingTag(tag)).toBe(true);
+    });
+
+    it.each(["1.25", "1.25-alpine", "2024-01-01", ""])("is false for the pinned tag %j", (tag) => {
+        expect(isMovingTag(tag)).toBe(false);
+    });
+
+    it("matches exactly, so case variants are not moving tags", () => {
+        expect(isMovingTag("Latest")).toBe(false);
+        expect(isMovingTag("LATEST")).toBe(false);
+    });
+
+    it("exposes exactly the six-member set as the single definition", () => {
+        expect([...MOVING_TAGS].sort((a, b) => a.localeCompare(b))).toEqual(
+            ["edge", "latest", "main", "master", "nightly", "stable"],
+        );
     });
 });
