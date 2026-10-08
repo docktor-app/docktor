@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 15
+open_count: 17
 waived_count: 0
 fixed_count: 8
-total_count: 23
-last_updated: 2026-10-08T08:08:04.656Z
+total_count: 25
+last_updated: 2026-10-08T08:31:21.830Z
 ---
 
 # Broken Windows Ledger
@@ -38,6 +38,8 @@ last_updated: 2026-10-08T08:08:04.656Z
 | 21 | 14 | unrun-verify | server/prisma/migrations/20261008073041_add_service_health_events/migration.sql |  | add_service_health_events migration generated via migrate diff (Branch B) but not applied to the dev database; the secret-read guard blocks commands naming the dev env file. syncDatabaseSchema() applies it at next boot. | open |  | 2026-10-08T07:35:14.437Z |  |
 | 22 | 14 | unrun-verify | server/prisma/migrations/20261008074500_add_stack_disk_usage/migration.sql |  | add_stack_disk_usage migration generated via migrate diff (Branch B) but not applied to the dev database; syncDatabaseSchema() applies it at next boot. | open |  | 2026-10-08T07:46:46.171Z |  |
 | 23 | 14 | unrun-verify | client/src/routes/app/stacks/components/service-health-timeline.tsx |  | 14-03 human-check not performed: eyeball the expanded health history in light and dark theme at Pixel 7 width (overflow measured by script; legibility and vertical stacking not visually reviewed) | open |  | 2026-10-08T08:08:04.656Z |  |
+| 24 | 14 | unrun-verify | client/src/routes/app/stacks/components/health-probe-form.tsx |  | 14-08 human-check (HTTP Health Probes section in light/dark at desktop and Pixel 7 width, long URL scroll, YAML-error swap) was reviewed from scripted Edge screenshots by the executor only, not by a person | open |  | 2026-10-08T08:31:20.996Z |  |
+| 25 | 14 | unrun-verify | client/test/integration/health-probe.spec.ts |  | 14-08 canonical Playwright command not run: browsers not installed, ran on system Edge; mobile-chromium project only matches mobile.spec.ts so phone width is emulated by setViewportSize on the chromium project | open |  | 2026-10-08T08:31:21.830Z |  |
 
 ````json
 [
@@ -325,6 +327,32 @@ last_updated: 2026-10-08T08:08:04.656Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-08T08:08:04.656Z",
+    "resolved_at": null,
+    "milestone": "v0.1.0"
+  },
+  {
+    "id": 24,
+    "kind": "unrun-verify",
+    "phase": "14",
+    "file": "client/src/routes/app/stacks/components/health-probe-form.tsx",
+    "line": null,
+    "description": "14-08 human-check (HTTP Health Probes section in light/dark at desktop and Pixel 7 width, long URL scroll, YAML-error swap) was reviewed from scripted Edge screenshots by the executor only, not by a person",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-08T08:31:20.996Z",
+    "resolved_at": null,
+    "milestone": "v0.1.0"
+  },
+  {
+    "id": 25,
+    "kind": "unrun-verify",
+    "phase": "14",
+    "file": "client/test/integration/health-probe.spec.ts",
+    "line": null,
+    "description": "14-08 canonical Playwright command not run: browsers not installed, ran on system Edge; mobile-chromium project only matches mobile.spec.ts so phone width is emulated by setViewportSize on the chromium project",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-08T08:31:21.830Z",
     "resolved_at": null,
     "milestone": "v0.1.0"
   }
