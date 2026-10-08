@@ -57,6 +57,24 @@ describe("ConfigTab", () => {
         expect(screen.getByRole("heading", {name: "Environment Variables"})).toBeVisible();
     });
 
+    it("renders the HTTP Health Probes section between Compose File and Environment Variables (D-01)", () => {
+        render(<ConfigTab files={makeFiles()} stackName="My App" />);
+        const headings = screen.getAllByRole("heading").map((heading) => heading.textContent);
+        expect(headings).toEqual(["Compose File", "HTTP Health Probes", "Environment Variables"]);
+    });
+
+    it("mounts the probe form on the compose buffer and writes edits back through setComposeContent", async () => {
+        const files = makeFiles();
+        render(<ConfigTab files={files} stackName="My App" />);
+
+        await userEvent.click(screen.getByRole("switch", {name: "Probe web over HTTP"}));
+        await userEvent.type(screen.getByLabelText("Probe URL"), "http://localhost:8080/health");
+        await userEvent.tab();
+
+        expect(files.setComposeContent).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(files.setComposeContent).mock.calls[0][0]).toContain("health-probe");
+    });
+
     it("renders the two named textboxes with their content", () => {
         render(<ConfigTab files={makeFiles()} stackName="My App" />);
         expect(screen.getByRole("textbox", {name: "Docker Compose File"})).toHaveValue(
