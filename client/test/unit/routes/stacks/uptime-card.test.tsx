@@ -1,7 +1,16 @@
 import {describe, expect, it} from "vitest";
-import {render, screen} from "@testing-library/react";
+import {act, render, screen} from "@testing-library/react";
 import {UptimeCard} from "../../../../src/routes/app/stacks/components/uptime-card";
 import type {Incident, StackUptime} from "@/lib/uptime-api";
+
+// jsdom has no ResizeObserver; Radix's Tooltip requires one.
+if (typeof globalThis.ResizeObserver === "undefined") {
+    globalThis.ResizeObserver = class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+    } as unknown as typeof ResizeObserver;
+}
 
 function makeIncident(overrides: Partial<Incident> = {}): Incident {
     return {
@@ -88,5 +97,51 @@ describe("UptimeCard", () => {
 
         expect(screen.queryByText("99.9%")).not.toBeInTheDocument();
         expect(screen.getByText("1.00 GB")).toBeInTheDocument();
+    });
+
+    it("reads an em dash for Uptime and Incidents on error, leaving Disk Used unaffected", () => {
+        renderCard({uptime: null, error: "boom"});
+
+        const uptimeCard = screen.getByText("Uptime").closest('[data-slot="stat-card"]') as HTMLElement;
+        const incidentsCard = screen.getByText("Incidents").closest('[data-slot="stat-card"]') as HTMLElement;
+        expect(uptimeCard).toHaveTextContent("—");
+        expect(incidentsCard).toHaveTextContent("—");
+        expect(screen.getByText("1.00 GB")).toBeInTheDocument();
+        expect(screen.queryByRole("group", {name: "No uptime data"})).not.toBeInTheDocument();
+    });
+
+    it("ignores stale data when an error is set", () => {
+        renderCard({error: "boom"});
+
+        expect(screen.queryByText("99.9%")).not.toBeInTheDocument();
+        expect(screen.queryByText("Incidents (last 30 days)")).not.toBeInTheDocument();
+    });
+
+    it("labels a null percentage as 'No uptime data' and explains it in a tooltip on focus", async () => {
+        renderCard({uptime: makeUptime({percent: null, incidents: []})});
+
+        const group = screen.getByRole("group", {name: "No uptime data"});
+        expect(group).toHaveTextContent("—");
+        expect(group).toHaveAttribute("tabindex", "0");
+
+        act(() => {
+            group.focus();
+        });
+
+        expect(await screen.findByRole("tooltip")).toHaveTextContent("No data in this window");
+    });
+
+    it("does not wrap the Uptime card in the hint when there is data", () => {
+        renderCard();
+
+        expect(screen.queryByRole("group", {name: "No uptime data"})).not.toBeInTheDocument();
+    });
+
+    it("switches the label to the observed start for a stack younger than the window", () => {
+        const since = "2026-09-13T00:00:00.000Z";
+        renderCard({uptime: makeUptime({since})});
+
+        expect(screen.getByText(`Uptime (since ${new Date(since).toLocaleDateString()})`)).toBeInTheDocument();
+        expect(screen.queryByText("Uptime (last 30 days)")).not.toBeInTheDocument();
     });
 });

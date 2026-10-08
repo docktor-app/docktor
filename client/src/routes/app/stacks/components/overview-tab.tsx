@@ -5,6 +5,7 @@ import {useServiceHealthEvents} from "@/hooks/use-service-health-events";
 import {useStackUptime} from "@/hooks/use-stack-uptime";
 import {UptimeCard} from "./uptime-card";
 import {ServicesSection} from "./services-section";
+import {IncidentList} from "./incident-list";
 import {ActivityTimeline} from "./activity-timeline";
 
 export interface OverviewTabProps {
@@ -13,8 +14,8 @@ export interface OverviewTabProps {
     readonly onUpgraded: () => void;
 }
 
-// D-16: the Overview tab opens with the UptimeCard row, then the Services
-// section and the Activity timeline (the IncidentList joins between them).
+// D-16: the Overview tab renders, in order, the UptimeCard row, the Services
+// section, the IncidentList and the Activity timeline.
 // D-07/D-03: the old three-Cards log surface (Recent Deployments table, plus
 // the two separate status/event log cards) is replaced by ActivityTimeline, a
 // pure client-side merge over data already fetched here (useStackEvents) and
@@ -49,6 +50,14 @@ export function OverviewTab({stack, onViewLogs, onUpgraded}: Readonly<OverviewTa
                 healthEventsLoading={health.loading}
                 healthEventsError={health.error}
                 onRetryHealthEvents={health.refetch}
+            />
+
+            <IncidentList
+                incidents={uptime.uptime?.incidents ?? []}
+                windowDays={uptime.uptime?.windowDays ?? null}
+                loading={uptime.loading}
+                error={uptime.error}
+                onRetry={uptime.retry}
             />
 
             <ActivityTimeline
