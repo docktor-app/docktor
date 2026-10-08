@@ -93,6 +93,17 @@ export const test = base.extend<{_coverage: void; _apiRouteGuard: void}>({
                 }),
             );
 
+            // RESEARCH Pitfall 7: every Settings visit renders the Health
+            // History retention card (GET /api/settings/health). Default to
+            // the 30-day window; uptime-retention.spec.ts overrides per test.
+            await page.route("**/api/settings/health", (route) =>
+                route.fulfill({
+                    status: 200,
+                    contentType: "application/json",
+                    body: JSON.stringify({retentionDays: 30}),
+                }),
+            );
+
             await use();
 
             if (unstubbed.length > 0) {

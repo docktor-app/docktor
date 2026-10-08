@@ -29,7 +29,7 @@ import {
 } from "@/lib/backups-api";
 import {getProxySettings} from "@/lib/proxy-api";
 import {getCertificates} from "@/lib/certificates-api";
-import {getComposeCheckSettings, saveComposeCheckSettings} from "@/lib/settings-api";
+import {getComposeCheckSettings, getHealthSettings, saveComposeCheckSettings} from "@/lib/settings-api";
 import {listTemplateRepos} from "@/lib/templates-api";
 
 vi.mock("@/lib/settings-api", () => ({
@@ -37,6 +37,8 @@ vi.mock("@/lib/settings-api", () => ({
     updateGeneralSettings: vi.fn(),
     getComposeCheckSettings: vi.fn(),
     saveComposeCheckSettings: vi.fn(),
+    getHealthSettings: vi.fn(),
+    saveHealthSettings: vi.fn(),
 }));
 
 vi.mock("@/lib/templates-api", () => ({
@@ -90,6 +92,7 @@ const mockGetProxySettings = vi.mocked(getProxySettings);
 const mockGetCertificates = vi.mocked(getCertificates);
 const mockGetComposeCheckSettings = vi.mocked(getComposeCheckSettings);
 const mockSaveComposeCheckSettings = vi.mocked(saveComposeCheckSettings);
+const mockGetHealthSettings = vi.mocked(getHealthSettings);
 const mockListTemplateRepos = vi.mocked(listTemplateRepos);
 
 function renderSettingsAt(path: string) {
@@ -149,6 +152,7 @@ describe("SettingsPage", () => {
             checks: {namedVolume: true, inlineEnv: true, missingEnvFile: true},
         });
         mockSaveComposeCheckSettings.mockReset();
+        mockGetHealthSettings.mockResolvedValue({retentionDays: 30});
         mockListTemplateRepos.mockResolvedValue([]);
 
         // jsdom does not implement matchMedia; SidebarProvider's mobile-detection
@@ -217,13 +221,23 @@ describe("SettingsPage", () => {
         expect(await screen.findByText(/no certificates uploaded yet/i)).toBeInTheDocument();
     });
 
-    it("renders the Compose Checks and Template Repositories cards on the Stacks tab", async () => {
+    it("renders the Compose Checks, Template Repositories and Health History cards on the Stacks tab", async () => {
         renderSettingsAt("/settings/stacks");
 
         expect(await screen.findByText("Compose Checks")).toBeInTheDocument();
         expect(screen.getByRole("button", {name: "Save Compose Checks"})).toBeInTheDocument();
         expect(await screen.findByText("Template Repositories")).toBeInTheDocument();
         expect(screen.getByRole("button", {name: "Add Repository"})).toBeInTheDocument();
+        expect(await screen.findByText("Health History")).toBeInTheDocument();
+        expect(await screen.findByLabelText("Retention (days)")).toHaveValue(30);
+    });
+
+    it("renders the Health History card after the Template Repositories card", async () => {
+        renderSettingsAt("/settings/stacks");
+
+        const templates = await screen.findByText("Template Repositories");
+        const health = await screen.findByText("Health History");
+        expect(templates.compareDocumentPosition(health) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
     it("falls back to the General tab for an unknown tab value", async () => {
