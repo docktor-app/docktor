@@ -3,17 +3,19 @@ import type {StateBroadcaster} from "../../lib/state-broadcaster.js";
 import {subscribeStackEvents, type StackEventSubscriberRepo} from "./stack-event-subscriber.js";
 import {subscribeNotifications, type NotificationSubscriberNotificationService} from "./notification-subscriber.js";
 import {subscribeStateBroadcast} from "./state-broadcast-subscriber.js";
+import {subscribeServiceHealthHistory, type ServiceHealthHistoryRepo} from "./service-health-history-subscriber.js";
 
 export interface RegisterDomainSubscribersDeps {
     stackEventRepo: StackEventSubscriberRepo;
     notificationService: NotificationSubscriberNotificationService;
     broadcaster: Pick<StateBroadcaster, "publish">;
+    serviceHealthEventRepo: ServiceHealthHistoryRepo;
 }
 
 /**
  * The single place this phase's subscription order is decided (D-15). Not a
  * barrel — application/index.ts calls this one function instead of
- * subscribing each of the three categories inline, so the order below is a
+ * subscribing each of the categories inline, so the order below is a
  * deliberate, documented decision rather than an accident of import order.
  *
  * Order, and why it is fixed:
@@ -28,6 +30,8 @@ export interface RegisterDomainSubscribersDeps {
  *   3. Live-state bridge (plan 10-11) — subscribes to the same
  *      stack.config_changed event the audit subscriber does; must be
  *      registered after it per the ordering guarantee above.
+ *   4. Service health history (#23, D-12) — no ordering dependency: it is the
+ *      only consumer of service.health_changed, so it is registered last.
  */
 export function registerDomainSubscribers(
     bus: Pick<EventBusPort, "subscribe">,
@@ -36,10 +40,12 @@ export function registerDomainSubscribers(
     const disposeStackEvents = subscribeStackEvents(bus, deps.stackEventRepo);
     const disposeNotifications = subscribeNotifications(bus, deps.notificationService);
     const disposeStateBroadcast = subscribeStateBroadcast(bus, deps.broadcaster);
+    const disposeServiceHealthHistory = subscribeServiceHealthHistory(bus, deps.serviceHealthEventRepo);
 
     return () => {
         disposeStackEvents();
         disposeNotifications();
         disposeStateBroadcast();
+        disposeServiceHealthHistory();
     };
 }

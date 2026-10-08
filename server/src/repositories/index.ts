@@ -16,3 +16,4 @@ export {certificateRepository} from "./certificate-repository.js";
 export {imageUpdateCheckRepository} from "./image-update-check-repository.js";
 export {userRepository} from "./user-repository.js";
 export {templateRepository} from "./template-repository.js";
+export {serviceHealthEventRepository} from "./service-health-event-repository.js";

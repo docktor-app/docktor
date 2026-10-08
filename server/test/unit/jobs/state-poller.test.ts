@@ -106,6 +106,111 @@ describe("StatePoller", () => {
         });
     });
 
+    describe("handleEvent — service.health_changed (#23, D-12)", () => {
+        const event = {
+            Type: "container",
+            Action: "health_status: unhealthy",
+            Actor: {
+                ID: "container-web",
+                Attributes: {
+                    "com.docker.compose.project": "my-stack",
+                    "com.docker.compose.service": "web",
+                },
+            },
+        };
+
+        function setup(opts: {previousHealth: string | null; nextHealth: string | null; services?: string[]}) {
+            const bus = new InMemoryEventBus();
+            const emitted: string[] = [];
+            const healthListener = vi.fn(() => {
+                emitted.push("service.health_changed");
+            });
+            bus.subscribe("service.health_changed", healthListener);
+            bus.subscribe("stack.container_state_changed", () => {
+                emitted.push("stack.container_state_changed");
+            });
+            const pollerWithBus = new StatePoller(mockDockerClient as any, mockStackRepo as any, bus);
+
+            mockDockerClient.inspectContainer.mockResolvedValue({
+                Id: "container-web",
+                State: {
+                    Status: "running",
+                    ...(opts.nextHealth === null ? {} : {Health: {Status: opts.nextHealth}}),
+                },
+            });
+            mockStackRepo.findByComposeProject.mockResolvedValue({
+                id: "my-stack",
+                status: "RUNNING",
+                services: (opts.services ?? ["web"]).map((serviceName) => ({
+                    serviceName,
+                    containerState: "running",
+                    healthStatus: serviceName === "web" ? opts.previousHealth : null,
+                })),
+            });
+            mockStackRepo.updateServiceState.mockResolvedValue(undefined);
+            mockStackRepo.updateStackStatus.mockResolvedValue(null);
+            return {pollerWithBus, healthListener, emitted};
+        }
+
+        it("emits service.health_changed with the previous and next health after the Service row was written", async () => {
+            const {pollerWithBus, healthListener} = setup({previousHealth: "healthy", nextHealth: "unhealthy"});
+
+            await pollerWithBus.handleEvent(event);
+
+            expect(healthListener).toHaveBeenCalledTimes(1);
+            expect(healthListener).toHaveBeenCalledWith({
+                stackId: "my-stack",
+                serviceName: "web",
+                fromStatus: "healthy",
+                toStatus: "unhealthy",
+                source: "docker-healthcheck",
+            });
+            const writeOrder = mockStackRepo.updateServiceState.mock.invocationCallOrder[0] ?? Infinity;
+            const healthOrder = healthListener.mock.invocationCallOrder[0] ?? -Infinity;
+            expect(writeOrder).toBeLessThan(healthOrder);
+        });
+
+        it("emits the health event before the existing container_state_changed event", async () => {
+            const {pollerWithBus, emitted} = setup({previousHealth: "healthy", nextHealth: "unhealthy"});
+
+            await pollerWithBus.handleEvent(event);
+
+            expect(emitted).toEqual(["service.health_changed", "stack.container_state_changed"]);
+        });
+
+        it("records a transition to null when the health check clears", async () => {
+            const {pollerWithBus, healthListener} = setup({previousHealth: "healthy", nextHealth: null});
+
+            await pollerWithBus.handleEvent(event);
+
+            expect(healthListener).toHaveBeenCalledWith(
+                expect.objectContaining({fromStatus: "healthy", toStatus: null}),
+            );
+        });
+
+        it("emits no health event when the health value is unchanged", async () => {
+            const {pollerWithBus, healthListener, emitted} = setup({previousHealth: "healthy", nextHealth: "healthy"});
+
+            await pollerWithBus.handleEvent(event);
+
+            expect(healthListener).not.toHaveBeenCalled();
+            expect(emitted).toEqual(["stack.container_state_changed"]);
+        });
+
+        it("emits no health event when the container's service has no Service row", async () => {
+            const {pollerWithBus, healthListener, emitted} = setup({
+                previousHealth: null,
+                nextHealth: "healthy",
+                services: ["db"],
+            });
+
+            await pollerWithBus.handleEvent(event);
+
+            expect(healthListener).not.toHaveBeenCalled();
+            expect(emitted).toEqual(["stack.container_state_changed"]);
+        });
+    });
+
     describe("handleEvent — skip conditions (OBS-03)", () => {
         it.each(TRANSITIONAL_STATES)(
             "skips update when stack.status is '%s' (transitional state)",

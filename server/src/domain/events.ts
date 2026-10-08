@@ -9,7 +9,8 @@
  * This catalog covers only events with an existing, grounded producer in
  * server/src/ today. Plan 10-13 closed the last outstanding category (the
  * StackEvent audit trail) by adding the two audit-only fields below to
- * StackConfigChangedEvent.
+ * StackConfigChangedEvent. Producers added since: StatePoller emits
+ * service.health_changed (#23) after persisting a service's health.
  */
 
 /** A stack's status-machine transition completed. */
@@ -142,6 +143,22 @@ export interface DiskSpaceThresholdCrossedEvent {
 }
 
 /**
+ * A service's resolved health value changed; the producer has already
+ * persisted it (write-before-emit). `fromStatus`/`toStatus` are null when
+ * the service has no health value (no healthcheck, or the health cleared).
+ * `source` mirrors domain/service-health.ts's HealthSourceName — written out
+ * as a literal union so this catalog stays import-free.
+ */
+export interface ServiceHealthChangedEvent {
+    stackId: string;
+    serviceName: string;
+    fromStatus: string | null;
+    toStatus: string | null;
+    source: "docker-healthcheck" | "http-probe";
+    message?: string;
+}
+
+/**
  * The domain-event catalog: one key per event, mapped to its payload type.
  * The bus (EventBusPort) is generic over this map so emit()/subscribe()
  * infer the correct payload from the event name.
@@ -159,4 +176,5 @@ export interface DomainEventMap {
     "restore.completed": RestoreCompletedEvent;
     "restore.failed": RestoreFailedEvent;
     "disk.threshold_crossed": DiskSpaceThresholdCrossedEvent;
+    "service.health_changed": ServiceHealthChangedEvent;
 }

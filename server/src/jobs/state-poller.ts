@@ -4,7 +4,14 @@ import type {EventBusPort} from "../application/ports/event-bus-port.js"
 import {domainEventBus} from "../infrastructure/event-bus.js"
 import type {StackStatus} from "../generated/prisma/enums.js"
 import {deriveStackStatus, isTransitionalStatus} from "../domain/stack-state-derivation.js"
+import {isHealthTransition, normalizeHealth} from "../domain/service-health.js"
 import {WatcherJob} from "./job.js"
+
+// Narrows an unknown thrown value to one carrying a given HTTP status code
+// (dockerode attaches `statusCode` to its errors).
+function hasStatusCode(err: unknown, statusCode: number): boolean {
+    return typeof err === "object" && err !== null && "statusCode" in err && err.statusCode === statusCode
+}
 
 export interface ServiceState {
     serviceName: string
@@ -170,9 +177,9 @@ export class StatePoller extends WatcherJob {
         let info
         try {
             info = await this.docker.inspectContainer(containerId)
-        } catch (err: any) {
+        } catch (err: unknown) {
             // Container no longer exists - use event action instead
-            if (err.statusCode === 404) {
+            if (hasStatusCode(err, 404)) {
                 const containerState = action === "destroy" ? "exited" : (action || "unknown")
                 await repo.updateServiceState({
                     stackId: stack.id,
@@ -215,6 +222,20 @@ export class StatePoller extends WatcherJob {
             containerState,
             healthStatus,
         })
+
+        // Write-before-emit: the history row is appended by a subscriber, so
+        // the event goes out only after the Service row above is persisted,
+        // and only when this service has a row and its health really changed.
+        const previous = stack.services.find((s) => s.serviceName === serviceName)
+        if (previous && isHealthTransition(previous.healthStatus, healthStatus)) {
+            this.bus.emit("service.health_changed", {
+                stackId: stack.id,
+                serviceName,
+                fromStatus: normalizeHealth(previous.healthStatus),
+                toStatus: normalizeHealth(healthStatus),
+                source: "docker-healthcheck",
+            })
+        }
 
         // Derive aggregate stack status
         const updatedServices = stack.services.map((s) => {

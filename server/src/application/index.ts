@@ -12,6 +12,7 @@ import {
     userRepository,
     imageUpdateCheckRepository,
     templateRepository,
+    serviceHealthEventRepository,
 } from "../repositories/index.js";
 import {StackService} from "./stack-service.js";
 import {ComposeReviewService} from "./compose-review-service.js";
@@ -26,6 +27,7 @@ import {CertificateService} from "./certificate-service.js";
 import {LogService, type LogServiceStackReadPort} from "./log-service.js";
 import {TemplateService} from "./template-service.js";
 import {TemplateUpdateService} from "./template-update-service.js";
+import {ServiceHealthHistoryService} from "./service-health-history-service.js";
 import {certificateFilesystem} from "../infrastructure/certificate-filesystem.js";
 import {stateEventBroadcaster} from "../lib/state-broadcaster.js";
 import {dockerodeClient} from "../infrastructure/dockerode-client.js";
@@ -101,14 +103,20 @@ export const notificationService = new NotificationService(
     smtpClient,
 );
 
-// D-15: registers all three subscriber categories (audit trail, plan 10-13;
-// notifications, plan 10-12; live-state bridge, plan 10-11) from one place
-// in the fixed, documented order subscribers/register.ts explains. Exported
-// so a test can tear it down.
+// #23/D-12: read side of the retained per-service health history — the
+// stack repository answers "does this stack exist", the event repository
+// serves the rows the history subscriber below writes.
+export const serviceHealthHistoryService = new ServiceHealthHistoryService(repo, serviceHealthEventRepository);
+
+// D-15: registers all subscriber categories (audit trail, plan 10-13;
+// notifications, plan 10-12; live-state bridge, plan 10-11; service health
+// history, #23) from one place in the fixed, documented order
+// subscribers/register.ts explains. Exported so a test can tear it down.
 export const disposeDomainSubscribers = registerDomainSubscribers(domainEventBus, {
     stackEventRepo: stackEventRepository,
     notificationService,
     broadcaster: stateEventBroadcaster,
+    serviceHealthEventRepo: serviceHealthEventRepository,
 });
 
 // Adapter: StackRepository -> BackupStackRepo interface

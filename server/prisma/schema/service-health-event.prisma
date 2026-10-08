@@ -1,0 +1,28 @@
+// Retained per-service health history (#23, D-12 amended).
+//
+// Rows are keyed by (stackId, serviceName) — deliberately NOT by Service.id
+// and with no foreign key to Service. StackRepository.replaceServices()
+// deletes and recreates every Service row on each deploy, so a Service.id
+// reference would either cascade the history away or dangle. The stack
+// itself is the only lifetime this history is tied to.
+enum HealthSource {
+  DOCKER_HEALTHCHECK
+  HTTP_PROBE
+}
+
+model ServiceHealthEvent {
+  id      String @id @default(cuid())
+  stackId String
+  stack   Stack  @relation(fields: [stackId], references: [id], onDelete: Cascade)
+
+  serviceName String
+  fromStatus  String? // null = no health value (no healthcheck / not yet observed)
+  toStatus    String? // null = health cleared
+  source      HealthSource
+  message     String?
+
+  createdAt DateTime @default(now())
+
+  @@index([stackId, serviceName, createdAt])
+  @@index([createdAt])
+}

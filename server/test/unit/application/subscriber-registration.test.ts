@@ -41,6 +41,7 @@ function createDeps() {
         stackEventRepo: {createEvent: vi.fn().mockResolvedValue(undefined)},
         notificationService: {notify: vi.fn().mockResolvedValue(undefined)},
         broadcaster: {publish: vi.fn()},
+        serviceHealthEventRepo: {record: vi.fn().mockResolvedValue(undefined)},
     }
 }
 
@@ -68,6 +69,14 @@ describe("registerDomainSubscribers", () => {
         )
 
         expect(firstAuditOrder).toBeLessThan(firstNotificationOrder)
+    })
+
+    it("registers the service-health history subscriber for service.health_changed", () => {
+        const {bus, subscriptions} = createRecordingBus()
+
+        registerDomainSubscribers(bus, createDeps())
+
+        expect(subscriptions.filter((s) => s.event === "service.health_changed")).toHaveLength(1)
     })
 
     it("returns a disposer that removes every underlying subscription", () => {

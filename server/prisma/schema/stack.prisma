@@ -66,6 +66,7 @@ model Stack {
   deployments   Deployment[]
   notifications Notification[]
   incidents     StackIncident[]
+  serviceHealthEvents ServiceHealthEvent[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
