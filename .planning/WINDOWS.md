@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 19
+open_count: 20
 waived_count: 0
 fixed_count: 8
-total_count: 27
-last_updated: 2026-10-08T09:11:45.184Z
+total_count: 28
+last_updated: 2026-10-08T09:41:48.843Z
 ---
 
 # Broken Windows Ledger
@@ -42,6 +42,7 @@ last_updated: 2026-10-08T09:11:45.184Z
 | 25 | 14 | unrun-verify | client/test/integration/health-probe.spec.ts |  | 14-08 canonical Playwright command not run: browsers not installed, ran on system Edge; mobile-chromium project only matches mobile.spec.ts so phone width is emulated by setViewportSize on the chromium project | open |  | 2026-10-08T08:31:21.830Z |  |
 | 26 | 14 | unrun-verify | server/prisma/migrations/20261008084300_add_status_log_stack_created_index/migration.sql |  | 14-04 migration add_status_log_stack_created_index generated via migrate diff (Branch B) and not applied to the dev database; integration suite exercises the index through prisma db push, syncDatabaseSchema() applies it at next boot | open |  | 2026-10-08T08:51:58.272Z |  |
 | 27 | 14 | unrun-verify | client/src/routes/app/storage.tsx |  | 14-05 Task 2 human-check not performed by a person: Storage page in light and dark theme at desktop and Pixel 7 width (80+ char names truncate with title, no horizontal scroll, chevron rotation and reduced motion, Tab order). Overflow and truncation were measured by script at 412px in storage.spec.ts only | open |  | 2026-10-08T09:11:45.184Z |  |
+| 28 | 14 | unrun-verify | client/src/routes/app/stacks/components/incident-list.tsx |  | 14-07 Task 2 human-check not performed by a person: stack Overview in light and dark theme at desktop and Pixel 7 width with 30 incidents (one ongoing): tone contrast of uptime value and incident count, vertical scroll past 384px, horizontal scroll on the phone, StatCards collapsing to one column. Overflow and scroll were measured by script at 412px in uptime.spec.ts only | open |  | 2026-10-08T09:41:48.843Z |  |
 
 ````json
 [
@@ -381,6 +382,19 @@ last_updated: 2026-10-08T09:11:45.184Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-08T09:11:45.184Z",
+    "resolved_at": null,
+    "milestone": "v0.1.0"
+  },
+  {
+    "id": 28,
+    "kind": "unrun-verify",
+    "phase": "14",
+    "file": "client/src/routes/app/stacks/components/incident-list.tsx",
+    "line": null,
+    "description": "14-07 Task 2 human-check not performed by a person: stack Overview in light and dark theme at desktop and Pixel 7 width with 30 incidents (one ongoing): tone contrast of uptime value and incident count, vertical scroll past 384px, horizontal scroll on the phone, StatCards collapsing to one column. Overflow and scroll were measured by script at 412px in uptime.spec.ts only",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-08T09:41:48.843Z",
     "resolved_at": null,
     "milestone": "v0.1.0"
   }
