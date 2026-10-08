@@ -566,7 +566,7 @@ Needs Phase 10's backend structure for the new health-probe job and Phase 11's U
   3. Each stack shows an uptime percentage and an incident list over a retention window (#24)
   4. Disk usage is viewable per stack and per volume, sortable, with a total (#27)
 
-**Plans:** 11/14 plans executed
+**Plans:** 12/14 plans executed
 
 Plans:
 **Wave 1**
@@ -589,7 +589,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 - [x] 14-06-PLAN.md — HTTP probe engine: HealthProbeJob, node:http transport to the container IP, 3-failure/60s-grace evaluation, probe-driven status through existing events (#23)
-- [ ] 14-10-PLAN.md — Stack-list Uptime column and Health History retention card (#24)
+- [x] 14-10-PLAN.md — Stack-list Uptime column and Health History retention card (#24)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 - [ ] 14-13-PLAN.md — Probe lifecycle: `service.probe_cleared` on probe removal or container stop, fail-closed invalid blocks, 8-probe concurrency cap, real-bus NotificationWatcher preservation proof (#23)
