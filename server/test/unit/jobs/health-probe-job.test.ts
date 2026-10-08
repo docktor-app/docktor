@@ -1,5 +1,6 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest"
-import {HealthProbeJob, type ProbeJobStack} from "../../../src/jobs/health-probe-job.js"
+import {HealthProbeJob, PROBE_CONCURRENCY, type ProbeJobStack} from "../../../src/jobs/health-probe-job.js"
+import {parseHealthProbes} from "../../../src/lib/compose-health-probe.js"
 import {PROBE_INTERVAL_MS, probeStaggerOffsetMs} from "../../../src/domain/health-probe.js"
 import type {ProbeObservation} from "../../../src/application/ports/probe-transport-port.js"
 
@@ -13,6 +14,7 @@ const WITHOUT_PROBE = "services:\n  web:\n    image: nginx\n"
 function runningStack(overrides: Partial<ProbeJobStack["services"][number]> = {}, id = "app"): ProbeJobStack {
     return {
         id,
+        status: "RUNNING",
         services: [{serviceName: "web", containerId: "c1", containerState: "running", ...overrides}],
     }
 }
@@ -88,10 +90,9 @@ describe("HealthProbeJob", () => {
 
     it.each([
         ["without a probe block", {stacks: [runningStack()], compose: {app: WITHOUT_PROBE}}],
-        ["with a probe block but no Service row", {stacks: [{id: "app", services: []}], compose: {app: WITH_PROBE}}],
+        ["with a probe block but no Service row", {stacks: [{id: "app", status: "RUNNING", services: []}], compose: {app: WITH_PROBE}}],
         ["whose container is not running", {stacks: [runningStack({containerState: "exited"})], compose: {app: WITH_PROBE}}],
         ["without a container id", {stacks: [runningStack({containerId: null})], compose: {app: WITH_PROBE}}],
-        ["with an invalid probe block", {stacks: [runningStack()], compose: {app: WITH_PROBE.replace("localhost", "example.com")}}],
         ["whose compose file does not parse", {stacks: [runningStack()], compose: {app: "services:\n  web: [unclosed"}}],
     ])("never probes a service %s", async (_label, options) => {
         const {clock, transport, tick} = createJob(options)
@@ -178,5 +179,230 @@ describe("HealthProbeJob", () => {
         await expect(tick()).resolves.toBeUndefined()
 
         expect(transport.probe).toHaveBeenCalledTimes(2)
+    })
+})
+
+function emittedEvents(bus: {emit: ReturnType<typeof vi.fn>}, name: string): unknown[] {
+    return bus.emit.mock.calls.filter((call) => call[0] === name).map((call) => call[1])
+}
+
+describe("HealthProbeJob lifecycle", () => {
+    let consoleError: ReturnType<typeof vi.spyOn>
+
+    beforeEach(() => {
+        consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    })
+
+    afterEach(() => {
+        consoleError.mockRestore()
+    })
+
+    // The first tick that sees a key schedules it; one interval later it is due.
+    async function probeOnce(ctx: ReturnType<typeof createJob>): Promise<void> {
+        await ctx.tick()
+        ctx.clock.now += PROBE_INTERVAL_MS
+        await ctx.tick()
+    }
+
+    it("emits one container-not-running clear when a probed container stops, then stays quiet", async () => {
+        const ctx = createJob()
+        await probeOnce(ctx)
+        expect(ctx.transport.probe).toHaveBeenCalledTimes(1)
+
+        ctx.store.listStacks.mockResolvedValue([runningStack({containerState: "exited"})])
+        ctx.clock.now += PROBE_INTERVAL_MS
+        await ctx.tick()
+        await ctx.tick()
+
+        expect(emittedEvents(ctx.bus, "service.probe_cleared")).toEqual([
+            {stackId: "app", serviceName: "web", reason: "container-not-running"},
+        ])
+        expect(ctx.transport.probe).toHaveBeenCalledTimes(1)
+    })
+
+    it("staggers a restarted container anew instead of probing it at once", async () => {
+        const ctx = createJob()
+        await probeOnce(ctx)
+        ctx.store.listStacks.mockResolvedValue([runningStack({containerState: "exited"})])
+        ctx.clock.now += PROBE_INTERVAL_MS
+        await ctx.tick()
+
+        ctx.store.listStacks.mockResolvedValue([runningStack()])
+        ctx.clock.now += PROBE_INTERVAL_MS
+        await ctx.tick()
+        expect(ctx.transport.probe).toHaveBeenCalledTimes(1)
+
+        ctx.clock.now += probeStaggerOffsetMs("app/web")
+        await ctx.tick()
+        expect(ctx.transport.probe).toHaveBeenCalledTimes(2)
+    })
+
+    it("emits one probe-removed clear when the block is removed from the compose file", async () => {
+        const ctx = createJob()
+        await probeOnce(ctx)
+
+        ctx.compose.app = WITHOUT_PROBE
+        ctx.clock.now += PROBE_INTERVAL_MS
+        await ctx.tick()
+        await ctx.tick()
+
+        expect(emittedEvents(ctx.bus, "service.probe_cleared")).toEqual([
+            {stackId: "app", serviceName: "web", reason: "probe-removed"},
+        ])
+        expect(ctx.transport.probe).toHaveBeenCalledTimes(1)
+    })
+
+    it("clears every scheduled service of a stack that disappears", async () => {
+        const twoProbes = `${WITH_PROBE}  db:\n    image: postgres\n    x-docktor:\n      health-probe:\n        url: http://localhost:5432/\n`
+        const stack: ProbeJobStack = {
+            id: "app",
+            status: "RUNNING",
+            services: [
+                {serviceName: "web", containerId: "c1", containerState: "running"},
+                {serviceName: "db", containerId: "c2", containerState: "running"},
+            ],
+        }
+        const ctx = createJob({stacks: [stack], compose: {app: twoProbes}})
+        await ctx.tick()
+
+        ctx.store.listStacks.mockResolvedValue([])
+        await ctx.tick()
+
+        const cleared = emittedEvents(ctx.bus, "service.probe_cleared")
+        expect(cleared).toHaveLength(2)
+        expect(cleared).toEqual(
+            expect.arrayContaining([
+                {stackId: "app", serviceName: "web", reason: "probe-removed"},
+                {stackId: "app", serviceName: "db", reason: "probe-removed"},
+            ]),
+        )
+    })
+
+    it("clears a scheduled service whose Service row is gone", async () => {
+        const ctx = createJob()
+        await ctx.tick()
+
+        ctx.store.listStacks.mockResolvedValue([{id: "app", status: "RUNNING", services: []}])
+        await ctx.tick()
+
+        expect(emittedEvents(ctx.bus, "service.probe_cleared")).toEqual([
+            {stackId: "app", serviceName: "web", reason: "probe-removed"},
+        ])
+    })
+
+    it("probes an invalid block as a failure on the same cadence, without any transport call", async () => {
+        const invalid = WITH_PROBE.replace("localhost", "example.com")
+        const spec = parseHealthProbes(invalid)?.get("web")
+        expect(spec?.kind).toBe("invalid")
+        const message = spec?.kind === "invalid" ? spec.message : ""
+        expect(message).not.toBe("")
+        const ctx = createJob({compose: {app: invalid}})
+
+        await probeOnce(ctx)
+        ctx.clock.now += PROBE_INTERVAL_MS
+        await ctx.tick()
+
+        expect(ctx.transport.probe).not.toHaveBeenCalled()
+        const outcome = {ok: false, reason: {kind: "invalid-config", message}}
+        expect(emittedEvents(ctx.bus, "service.probe_completed")).toEqual([
+            {stackId: "app", serviceName: "web", containerId: "c1", containerStartedAt: null, outcome},
+            {stackId: "app", serviceName: "web", containerId: "c1", containerStartedAt: null, outcome},
+        ])
+    })
+
+    it("keeps the last good probes when the compose file stops parsing", async () => {
+        const ctx = createJob()
+        await probeOnce(ctx)
+
+        ctx.compose.app = "services:\n  web: [unclosed"
+        ctx.clock.now += PROBE_INTERVAL_MS
+        await ctx.tick()
+
+        expect(ctx.transport.probe).toHaveBeenCalledTimes(2)
+        expect(emittedEvents(ctx.bus, "service.probe_cleared")).toEqual([])
+    })
+
+    it("keeps the last good probes when the compose file cannot be read", async () => {
+        const ctx = createJob()
+        await probeOnce(ctx)
+
+        ctx.readCompose.mockRejectedValue(new Error("EACCES"))
+        ctx.clock.now += PROBE_INTERVAL_MS
+        await ctx.tick()
+
+        expect(ctx.transport.probe).toHaveBeenCalledTimes(2)
+        expect(emittedEvents(ctx.bus, "service.probe_cleared")).toEqual([])
+    })
+
+    it("neither probes nor clears a stack in a transitional status, and keeps its schedule", async () => {
+        const ctx = createJob()
+        await ctx.tick()
+
+        ctx.store.listStacks.mockResolvedValue([{...runningStack({containerState: "exited"}), status: "DEPLOYING"}])
+        ctx.compose.app = WITHOUT_PROBE
+        ctx.clock.now += PROBE_INTERVAL_MS
+        await ctx.tick()
+        expect(ctx.transport.probe).not.toHaveBeenCalled()
+        expect(emittedEvents(ctx.bus, "service.probe_cleared")).toEqual([])
+
+        // Back to RUNNING: the kept entry is already due, so no new stagger applies.
+        ctx.store.listStacks.mockResolvedValue([runningStack()])
+        ctx.compose.app = WITH_PROBE
+        ctx.clock.now += PROBE_INTERVAL_MS
+        await ctx.tick()
+        expect(ctx.transport.probe).toHaveBeenCalledTimes(1)
+    })
+
+    it("logs and survives a bus failure while emitting a clear", async () => {
+        const ctx = createJob()
+        await ctx.tick()
+        ctx.bus.emit.mockImplementation(() => {
+            throw new Error("listener blew up")
+        })
+
+        ctx.compose.app = WITHOUT_PROBE
+        await expect(ctx.tick()).resolves.toBeUndefined()
+
+        expect(consoleError).toHaveBeenCalledWith("[HealthProbeJob] bus emit failed", expect.any(Error))
+    })
+
+    it("runs at most PROBE_CONCURRENCY probes at once", async () => {
+        const names = Array.from({length: 10}, (_, i) => `svc${i}`)
+        const compose = `services:\n${names.map((name) => `  ${name}:\n    image: x\n    x-docktor:\n      health-probe:\n        url: http://localhost:80/\n`).join("")}`
+        const stack: ProbeJobStack = {
+            id: "app",
+            status: "RUNNING",
+            services: names.map((name) => ({serviceName: name, containerId: `c-${name}`, containerState: "running"})),
+        }
+        const ctx = createJob({stacks: [stack], compose: {app: compose}})
+        const pending: Array<() => void> = []
+        let inFlight = 0
+        let maxInFlight = 0
+        ctx.transport.probe.mockImplementation(
+            () =>
+                new Promise<ProbeObservation>((resolve) => {
+                    inFlight++
+                    maxInFlight = Math.max(maxInFlight, inFlight)
+                    pending.push(() => {
+                        inFlight--
+                        resolve(OBSERVATION)
+                    })
+                }),
+        )
+        await ctx.tick()
+        ctx.clock.now += PROBE_INTERVAL_MS
+
+        const running = ctx.tick()
+        await vi.waitFor(() => expect(ctx.transport.probe).toHaveBeenCalledTimes(PROBE_CONCURRENCY))
+        expect(inFlight).toBe(PROBE_CONCURRENCY)
+
+        for (let finished = 0; finished < names.length; finished++) {
+            await vi.waitFor(() => expect(pending.length).toBeGreaterThan(0))
+            pending.shift()?.()
+        }
+        await running
+
+        expect(ctx.transport.probe).toHaveBeenCalledTimes(10)
+        expect(maxInFlight).toBe(PROBE_CONCURRENCY)
     })
 })

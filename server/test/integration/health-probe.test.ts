@@ -188,4 +188,25 @@ describe("HTTP health probe pipeline (#23)", () => {
 
         expect(await healthEvents()).toHaveLength(1);
     });
+
+    it("reverts the health to Docker's own when the probe block is removed from the compose file", async () => {
+        await tick();
+        await tick();
+        await expect.poll(async () => (await healthEvents())[0]?.toStatus, {timeout: 5000}).toBe("healthy");
+
+        // No Docker daemon knows container "c1" here, so the inspect behind the
+        // revert fails and Docker's health resolves to none (null).
+        await fs.writeFile(path.join(stacksRoot, stackId, "docker-compose.yml"), "services:\n  web:\n    image: nginx\n", "utf-8");
+        await tick();
+
+        await expect.poll(async () => (await healthEvents()).length, {timeout: 5000}).toBe(2);
+        const [removed] = await healthEvents();
+        expect(removed).toMatchObject({
+            serviceName: "web",
+            fromStatus: "healthy",
+            toStatus: null,
+            source: "docker-healthcheck",
+            message: "HTTP probe removed",
+        });
+    });
 });

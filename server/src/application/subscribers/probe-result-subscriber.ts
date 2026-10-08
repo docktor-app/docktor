@@ -1,16 +1,24 @@
 import type {EventBusPort} from "../ports/event-bus-port.js";
 import type {ServiceHealthService} from "../service-health-service.js";
 
-export type ProbeResultHandler = Pick<ServiceHealthService, "handleProbeCompleted">;
+export type ProbeResultHandler = Pick<ServiceHealthService, "handleProbeCompleted" | "handleProbeCleared">;
 
 /**
- * Feeds finished HTTP probes into the service that turns them into health
- * (#23, D-03). The handler never rejects, so the subscriber can return its
- * promise without a try/catch of its own.
+ * Feeds finished and cleared HTTP probes into the service that turns them into
+ * health (#23, D-03). The handler never rejects, so the subscriber can return
+ * its promise without a try/catch of its own.
  */
 export function subscribeProbeResults(
     bus: Pick<EventBusPort, "subscribe">,
     handler: ProbeResultHandler,
 ): () => void {
-    return bus.subscribe("service.probe_completed", (payload) => handler.handleProbeCompleted(payload));
+    const disposers = [
+        bus.subscribe("service.probe_completed", (payload) => handler.handleProbeCompleted(payload)),
+        bus.subscribe("service.probe_cleared", (payload) => handler.handleProbeCleared(payload)),
+    ];
+    return () => {
+        for (const dispose of disposers) {
+            dispose();
+        }
+    };
 }

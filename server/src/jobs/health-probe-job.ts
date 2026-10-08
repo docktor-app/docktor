@@ -1,11 +1,16 @@
 import type {EventBusPort} from "../application/ports/event-bus-port.js"
 import type {ProbeObservation, ProbeTransportPort} from "../application/ports/probe-transport-port.js"
+import type {DomainEventMap, ServiceProbeClearedEvent} from "../domain/events.js"
 import {PROBE_INTERVAL_MS, probeStaggerOffsetMs} from "../domain/health-probe.js"
+import {isTransitionalStatus} from "../domain/stack-state-derivation.js"
 import {domainEventBus} from "../infrastructure/event-bus.js"
 import type {HealthProbeSpec} from "../lib/compose-health-probe.js"
 import {parseHealthProbes} from "../lib/compose-health-probe.js"
 import type {Job, JobHealthReporter} from "./job.js"
 import {IntervalJob} from "./job.js"
+
+/** D-06: no more than this many probes are in flight at once (T-14-51). */
+export const PROBE_CONCURRENCY = 8
 
 export interface ProbeJobService {
     serviceName: string
@@ -15,6 +20,7 @@ export interface ProbeJobService {
 
 export interface ProbeJobStack {
     id: string
+    status: string
     services: ReadonlyArray<ProbeJobService>
 }
 
@@ -33,7 +39,23 @@ export interface HealthProbeJobDeps {
 
 interface ParsedCompose {
     content: string
-    probes: ReadonlyMap<string, HealthProbeSpec> | null
+    /** The probes to act on: the last file content that parsed (empty before any did). */
+    probes: ReadonlyMap<string, HealthProbeSpec>
+}
+
+/** A scheduled probe; the ids are kept so a cleared event can be emitted without the stack row. */
+interface ScheduleEntry {
+    stackId: string
+    serviceName: string
+    nextDueAt: number
+}
+
+interface DueProbe {
+    stackId: string
+    serviceName: string
+    containerId: string
+    spec: HealthProbeSpec
+    key: string
 }
 
 /**
@@ -43,8 +65,14 @@ interface ParsedCompose {
  * read from each stack's compose file on every tick (D-01), so a compose edit
  * takes effect without a redeploy.
  *
- * The job does I/O and emits `service.probe_completed`; deciding what a result
- * means and persisting it belongs to ServiceHealthService (Phase 10 pattern).
+ * Lifecycle: a service that stops being probed (block removed, service or stack
+ * gone, container no longer running) gets one `service.probe_cleared` so its
+ * health never stays stale. A broken block is probed as a failure without any
+ * request (fail-closed, D-08), and a compose file that stops parsing keeps its
+ * last good probes. A stack in a transitional status is left alone entirely.
+ *
+ * The job does I/O and emits events; deciding what a result means and
+ * persisting it belongs to ServiceHealthService (Phase 10 pattern).
  */
 export class HealthProbeJob extends IntervalJob {
     readonly name = "HealthProbeJob"
@@ -53,7 +81,7 @@ export class HealthProbeJob extends IntervalJob {
     protected readonly runImmediatelyOnStart = false
 
     private inFlight = false
-    private readonly nextDueAt = new Map<string, number>()
+    private readonly schedule = new Map<string, ScheduleEntry>()
     private readonly composeCache = new Map<string, ParsedCompose>()
 
     constructor(private readonly deps: HealthProbeJobDeps) {
@@ -76,53 +104,103 @@ export class HealthProbeJob extends IntervalJob {
     private async tick(): Promise<void> {
         const now = this.deps.now()
         const stacks = await this.deps.store.listStacks()
+        const due = await this.collectDue(stacks, now)
+        await this.runDue(due)
+    }
+
+    // Walks every stack, schedules what is new, clears what stopped being
+    // probed, and returns the probes that are due now.
+    private async collectDue(stacks: ReadonlyArray<ProbeJobStack>, now: number): Promise<DueProbe[]> {
         const seen = new Set<string>()
+        const due: DueProbe[] = []
 
         for (const stack of stacks) {
+            if (isTransitionalStatus(stack.status)) {
+                // An operation owns the stack: neither probe nor clear it.
+                this.keepScheduled(stack.id, seen)
+                continue
+            }
             const probes = await this.probesFor(stack.id)
-            if (probes === null) continue
-
             for (const service of stack.services) {
                 const spec = probes.get(service.serviceName)
-                if (spec?.kind !== "valid" || service.containerState !== "running" || !service.containerId) continue
+                if (spec === undefined) continue
 
-                const key = `${stack.id}/${service.serviceName}`
+                const key = scheduleKey(stack.id, service.serviceName)
+                if (service.containerState !== "running" || !service.containerId) {
+                    if (this.schedule.delete(key)) this.emitCleared(stack.id, service.serviceName, "container-not-running")
+                    continue
+                }
                 seen.add(key)
-                if (this.isDue(key, now)) {
-                    await this.probeService(stack.id, service.serviceName, service.containerId, spec, key, now)
+                if (this.isDue(key, stack.id, service.serviceName, now)) {
+                    due.push({stackId: stack.id, serviceName: service.serviceName, containerId: service.containerId, spec, key})
                 }
             }
         }
 
-        // Forget services that are no longer probed, so the schedule cannot
-        // grow with every removed stack and a restarted container is staggered anew.
-        for (const key of this.nextDueAt.keys()) {
-            if (!seen.has(key)) this.nextDueAt.delete(key)
+        this.clearUnseen(seen)
+        this.forgetRemovedStacks(stacks)
+        return due
+    }
+
+    private keepScheduled(stackId: string, seen: Set<string>): void {
+        for (const [key, entry] of this.schedule) {
+            if (entry.stackId === stackId) seen.add(key)
+        }
+    }
+
+    // Anything still scheduled that this tick did not see lost its probe: the
+    // block was removed, or the service or its whole stack is gone.
+    private clearUnseen(seen: ReadonlySet<string>): void {
+        for (const [key, entry] of [...this.schedule]) {
+            if (seen.has(key)) continue
+            this.schedule.delete(key)
+            this.emitCleared(entry.stackId, entry.serviceName, "probe-removed")
+        }
+    }
+
+    private forgetRemovedStacks(stacks: ReadonlyArray<ProbeJobStack>): void {
+        const present = new Set(stacks.map((stack) => stack.id))
+        for (const stackId of this.composeCache.keys()) {
+            if (!present.has(stackId)) this.composeCache.delete(stackId)
         }
     }
 
     // The first sighting of a key schedules its first probe at a deterministic
-    // offset inside the first interval (D-06).
-    private isDue(key: string, now: number): boolean {
-        let due = this.nextDueAt.get(key)
-        if (due === undefined) {
-            due = now + probeStaggerOffsetMs(key)
-            this.nextDueAt.set(key, due)
+    // offset inside the first interval (D-06). A due key is rescheduled right
+    // away, before its request, so a slow probe does not shorten the time to
+    // the next one.
+    private isDue(key: string, stackId: string, serviceName: string, now: number): boolean {
+        let entry = this.schedule.get(key)
+        if (entry === undefined) {
+            entry = {stackId, serviceName, nextDueAt: now + probeStaggerOffsetMs(key)}
+            this.schedule.set(key, entry)
         }
-        return due <= now
+        if (entry.nextDueAt > now) return false
+        entry.nextDueAt = now + PROBE_INTERVAL_MS
+        return true
     }
 
-    private async probeService(
-        stackId: string,
-        serviceName: string,
-        containerId: string,
-        spec: Extract<HealthProbeSpec, {kind: "valid"}>,
-        key: string,
-        now: number,
-    ): Promise<void> {
-        // Rescheduled before the request so a slow probe does not shorten the
-        // time to the next one.
-        this.nextDueAt.set(key, now + PROBE_INTERVAL_MS)
+    // A small promise pool: PROBE_CONCURRENCY workers drain one shared queue.
+    private async runDue(due: ReadonlyArray<DueProbe>): Promise<void> {
+        let next = 0
+        const worker = async (): Promise<void> => {
+            for (let probe = due[next++]; probe !== undefined; probe = due[next++]) {
+                await this.probeService(probe)
+            }
+        }
+        await Promise.all(Array.from({length: Math.min(PROBE_CONCURRENCY, due.length)}, worker))
+    }
+
+    private async probeService({stackId, serviceName, containerId, spec, key}: DueProbe): Promise<void> {
+        if (spec.kind === "invalid") {
+            // Fail-closed (D-08): the user asked for a probe, so a broken one is
+            // a failed probe carrying the reason, and no request is made.
+            this.emitCompleted(stackId, serviceName, containerId, {
+                containerStartedAt: null,
+                outcome: {ok: false, reason: {kind: "invalid-config", message: spec.message}},
+            })
+            return
+        }
 
         let observation: ProbeObservation
         try {
@@ -133,37 +211,56 @@ export class HealthProbeJob extends IntervalJob {
             console.error(`[HealthProbeJob] probe request failed for "${key}":`, err)
             return
         }
+        this.emitCompleted(stackId, serviceName, containerId, observation)
+    }
 
-        // Defence in depth alongside the bus's own per-subscriber isolation
-        // (D-17), as in DiskChecker.
+    private emitCompleted(stackId: string, serviceName: string, containerId: string, observation: ProbeObservation): void {
+        this.emit("service.probe_completed", {
+            stackId,
+            serviceName,
+            containerId,
+            containerStartedAt: observation.containerStartedAt,
+            outcome: observation.outcome,
+        })
+    }
+
+    private emitCleared(stackId: string, serviceName: string, reason: ServiceProbeClearedEvent["reason"]): void {
+        this.emit("service.probe_cleared", {stackId, serviceName, reason})
+    }
+
+    // Defence in depth alongside the bus's own per-subscriber isolation
+    // (D-17), as in DiskChecker.
+    private emit<K extends keyof DomainEventMap & string>(event: K, payload: DomainEventMap[K]): void {
         try {
-            this.deps.bus.emit("service.probe_completed", {
-                stackId,
-                serviceName,
-                containerId,
-                containerStartedAt: observation.containerStartedAt,
-                outcome: observation.outcome,
-            })
+            this.deps.bus.emit(event, payload)
         } catch (err) {
             console.error("[HealthProbeJob] bus emit failed", err)
         }
     }
 
-    // Parsed per stack and re-parsed only when the file's content changes.
-    private async probesFor(stackId: string): Promise<ReadonlyMap<string, HealthProbeSpec> | null> {
+    // Parsed per stack and re-parsed only when the file's content changes. A
+    // file that cannot be read or no longer parses keeps the last good probes,
+    // so a typo in the YAML never silently turns probing off.
+    private async probesFor(stackId: string): Promise<ReadonlyMap<string, HealthProbeSpec>> {
+        const cached = this.composeCache.get(stackId)
         try {
             const content = await this.deps.readCompose(stackId)
-            const cached = this.composeCache.get(stackId)
             if (cached?.content === content) return cached.probes
 
-            const probes = parseHealthProbes(content)
+            const probes = parseHealthProbes(content) ?? cached?.probes ?? EMPTY_PROBES
             this.composeCache.set(stackId, {content, probes})
             return probes
         } catch (err) {
             console.error(`[HealthProbeJob] failed to read the compose file of stack "${stackId}":`, err)
-            return null
+            return cached?.probes ?? EMPTY_PROBES
         }
     }
+}
+
+const EMPTY_PROBES: ReadonlyMap<string, HealthProbeSpec> = new Map()
+
+function scheduleKey(stackId: string, serviceName: string): string {
+    return `${stackId}/${serviceName}`
 }
 
 let _job: HealthProbeJob | null = null

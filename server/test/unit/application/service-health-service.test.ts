@@ -5,7 +5,7 @@ import {
     type ServiceHealthServiceRow,
 } from "../../../src/application/service-health-service.js";
 import type {ProbeOutcome} from "../../../src/domain/health-probe.js";
-import type {ServiceProbeCompletedEvent} from "../../../src/domain/events.js";
+import type {ServiceProbeClearedEvent, ServiceProbeCompletedEvent} from "../../../src/domain/events.js";
 
 const STACK_ID = "app";
 const NOW = Date.parse("2026-10-08T12:00:00.000Z");
@@ -38,7 +38,7 @@ function createWorld(options: {
 } = {}) {
     const world = {
         status: options.status ?? "RUNNING",
-        rows: options.rows ?? [{serviceName: "web", containerState: "running", healthStatus: null}],
+        rows: options.rows ?? [{serviceName: "web", containerId: "c-web", containerState: "running", healthStatus: null}],
     };
     const repo = {
         findByComposeProject: vi.fn(async () => ({
@@ -184,7 +184,7 @@ describe("ServiceHealthService.handleProbeCompleted", () => {
     });
 
     it("does not write or emit when the outcome leaves the health unchanged", async () => {
-        const {repo} = createWorld({rows: [{serviceName: "web", containerState: "running", healthStatus: "healthy"}]});
+        const {repo} = createWorld({rows: [{serviceName: "web", containerId: "c-web", containerState: "running", healthStatus: "healthy"}]});
         const {service, bus} = createService(repo);
 
         await service.handleProbeCompleted(probeEvent());
@@ -232,7 +232,7 @@ describe("ServiceHealthService.handleProbeCompleted", () => {
     });
 
     it("continues from the stored health after a Docktor restart instead of resetting it", async () => {
-        const {repo} = createWorld({rows: [{serviceName: "web", containerState: "running", healthStatus: "unhealthy"}]});
+        const {repo} = createWorld({rows: [{serviceName: "web", containerId: "c-web", containerState: "running", healthStatus: "unhealthy"}]});
         const {service, bus} = createService(repo);
 
         await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
@@ -243,8 +243,8 @@ describe("ServiceHealthService.handleProbeCompleted", () => {
 
     it.each([
         ["a stack in a transitional status", () => createWorld({status: "DEPLOYING"})],
-        ["a service that is no longer running", () => createWorld({rows: [{serviceName: "web", containerState: "exited", healthStatus: null}]})],
-        ["a service without a row", () => createWorld({rows: [{serviceName: "db", containerState: "running", healthStatus: null}]})],
+        ["a service that is no longer running", () => createWorld({rows: [{serviceName: "web", containerId: "c-web", containerState: "exited", healthStatus: null}]})],
+        ["a service without a row", () => createWorld({rows: [{serviceName: "db", containerId: "c-db", containerState: "running", healthStatus: null}]})],
     ])("ignores a result for %s", async (_label, build) => {
         const {repo} = build();
         const {service, bus} = createService(repo);
@@ -269,8 +269,8 @@ describe("ServiceHealthService.handleProbeCompleted", () => {
     it("derives the stack status from every service, not just the probed one", async () => {
         const {repo, world} = createWorld({
             rows: [
-                {serviceName: "web", containerState: "running", healthStatus: null},
-                {serviceName: "db", containerState: "running", healthStatus: "unhealthy"},
+                {serviceName: "web", containerId: "c-web", containerState: "running", healthStatus: null},
+                {serviceName: "db", containerId: "c-db", containerState: "running", healthStatus: "unhealthy"},
             ],
             status: "UNHEALTHY",
         });
@@ -284,8 +284,8 @@ describe("ServiceHealthService.handleProbeCompleted", () => {
     it("serialises results for one stack so the second sees the first's write", async () => {
         const {repo, world} = createWorld({
             rows: [
-                {serviceName: "web", containerState: "running", healthStatus: null},
-                {serviceName: "db", containerState: "running", healthStatus: null},
+                {serviceName: "web", containerId: "c-web", containerState: "running", healthStatus: null},
+                {serviceName: "db", containerId: "c-db", containerState: "running", healthStatus: null},
             ],
         });
         const {service} = createService(repo);
@@ -313,6 +313,188 @@ describe("ServiceHealthService.handleProbeCompleted", () => {
         expect(consoleError).toHaveBeenCalledTimes(1);
         const [message] = consoleError.mock.calls[0] as [string];
         expect(message).toContain("ServiceHealthService");
+        expect(message).toContain("app/web");
+        expect(bus.emit).not.toHaveBeenCalled();
+    });
+});
+
+function clearedEvent(overrides: Partial<ServiceProbeClearedEvent> = {}): ServiceProbeClearedEvent {
+    return {stackId: STACK_ID, serviceName: "web", reason: "probe-removed", ...overrides};
+}
+
+function inspectResult(healthStatus?: string) {
+    return {State: healthStatus === undefined ? {} : {Health: {Status: healthStatus}}} as never;
+}
+
+describe("ServiceHealthService.handleProbeCleared", () => {
+    let consoleError: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+        consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+        consoleError.mockRestore();
+    });
+
+    const unhealthyExited = (): ServiceHealthServiceRow[] => [
+        {serviceName: "web", containerId: "c1", containerState: "exited", healthStatus: "unhealthy"},
+    ];
+    const unhealthyRunning = (): ServiceHealthServiceRow[] => [
+        {serviceName: "web", containerId: "c1", containerState: "running", healthStatus: "unhealthy"},
+    ];
+
+    it("clears the probe health of a service whose container stopped and re-derives the stack", async () => {
+        const {repo, world} = createWorld({rows: unhealthyExited(), status: "UNHEALTHY"});
+        const {service, bus, docker} = createService(repo);
+
+        await service.handleProbeCleared(clearedEvent({reason: "container-not-running"}));
+
+        expect(repo.updateServiceState).toHaveBeenCalledExactlyOnceWith({
+            stackId: STACK_ID,
+            serviceName: "web",
+            containerId: "c1",
+            containerState: "exited",
+            healthStatus: null,
+        });
+        expect(emitted(bus, "service.health_changed")).toEqual([
+            {stackId: STACK_ID, serviceName: "web", fromStatus: "unhealthy", toStatus: null, source: "http-probe"},
+        ]);
+        expect(emitted(bus, "stack.container_state_changed")).toHaveLength(1);
+        expect(world.status).toBe("STOPPED");
+        expect(docker.inspectContainer).not.toHaveBeenCalled();
+    });
+
+    it("restores Docker's own health when the probe block was removed from a running container", async () => {
+        const {repo, world} = createWorld({rows: unhealthyRunning(), status: "UNHEALTHY"});
+        const {service, bus, docker} = createService(repo);
+        docker.inspectContainer.mockResolvedValue(inspectResult("healthy"));
+
+        await service.handleProbeCleared(clearedEvent());
+
+        expect(docker.inspectContainer).toHaveBeenCalledExactlyOnceWith("c1");
+        expect(world.rows[0]?.healthStatus).toBe("healthy");
+        expect(emitted(bus, "service.health_changed")).toEqual([
+            {
+                stackId: STACK_ID,
+                serviceName: "web",
+                fromStatus: "unhealthy",
+                toStatus: "healthy",
+                source: "docker-healthcheck",
+                message: "HTTP probe removed",
+            },
+        ]);
+        expect(world.status).toBe("HEALTHY");
+    });
+
+    it("clears to null when the container has no healthcheck of its own", async () => {
+        const {repo, world} = createWorld({rows: unhealthyRunning(), status: "UNHEALTHY"});
+        const {service, bus, docker} = createService(repo);
+        docker.inspectContainer.mockResolvedValue(inspectResult());
+
+        await service.handleProbeCleared(clearedEvent());
+
+        expect(world.rows[0]?.healthStatus).toBeNull();
+        expect(emitted(bus, "service.health_changed")).toEqual([
+            {
+                stackId: STACK_ID,
+                serviceName: "web",
+                fromStatus: "unhealthy",
+                toStatus: null,
+                source: "docker-healthcheck",
+                message: "HTTP probe removed",
+            },
+        ]);
+        expect(world.status).toBe("RUNNING");
+    });
+
+    it("clears to null when the container cannot be inspected", async () => {
+        const {repo, world} = createWorld({rows: unhealthyRunning(), status: "UNHEALTHY"});
+        const {service, docker} = createService(repo);
+        docker.inspectContainer.mockRejectedValue(new Error("no such container"));
+
+        await service.handleProbeCleared(clearedEvent());
+
+        expect(world.rows[0]?.healthStatus).toBeNull();
+    });
+
+    it("writes and emits nothing when the stored health already equals the target", async () => {
+        const {repo} = createWorld({
+            rows: [{serviceName: "web", containerId: "c1", containerState: "running", healthStatus: "healthy"}],
+        });
+        const {service, bus, docker} = createService(repo);
+        docker.inspectContainer.mockResolvedValue(inspectResult("healthy"));
+
+        await service.handleProbeCleared(clearedEvent());
+
+        expect(repo.updateServiceState).not.toHaveBeenCalled();
+        expect(bus.emit).not.toHaveBeenCalled();
+    });
+
+    it("leaves the health alone when the container is running again after a stop was observed", async () => {
+        const {repo} = createWorld({rows: unhealthyRunning(), status: "UNHEALTHY"});
+        const {service, bus, docker} = createService(repo);
+
+        await service.handleProbeCleared(clearedEvent({reason: "container-not-running"}));
+
+        expect(repo.updateServiceState).not.toHaveBeenCalled();
+        expect(docker.inspectContainer).not.toHaveBeenCalled();
+        expect(bus.emit).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ["a stack in a transitional status", () => createWorld({status: "DEPLOYING", rows: unhealthyExited()})],
+        [
+            "a service without a row",
+            () => createWorld({rows: [{serviceName: "db", containerId: null, containerState: "exited", healthStatus: "unhealthy"}]}),
+        ],
+    ])("ignores a clear for %s", async (_label, build) => {
+        const {repo} = build();
+        const {service, bus} = createService(repo);
+
+        await service.handleProbeCleared(clearedEvent({reason: "container-not-running"}));
+
+        expect(repo.updateServiceState).not.toHaveBeenCalled();
+        expect(bus.emit).not.toHaveBeenCalled();
+    });
+
+    it("ignores a clear for an unknown stack", async () => {
+        const {repo} = createWorld();
+        repo.findByComposeProject.mockResolvedValueOnce(null as never);
+        const {service, bus} = createService(repo);
+
+        await service.handleProbeCleared(clearedEvent());
+
+        expect(bus.emit).not.toHaveBeenCalled();
+    });
+
+    it("drops the in-memory probe state so a later probe seeds again from the stored health", async () => {
+        const {repo, world} = createWorld();
+        const {service, docker} = createService(repo);
+        docker.inspectContainer.mockResolvedValue(inspectResult("healthy"));
+        await service.handleProbeCompleted(probeEvent());
+        for (let i = 0; i < 2; i++) {
+            await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
+        }
+        expect(world.rows[0]?.healthStatus).toBe("healthy");
+
+        // Two failures are remembered. Without the clear, one more would make
+        // it unhealthy; after the clear the next probe starts over.
+        await service.handleProbeCleared(clearedEvent());
+        await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
+
+        expect(world.rows[0]?.healthStatus).toBe("healthy");
+    });
+
+    it("logs a failed write with the stack and service, and resolves", async () => {
+        const {repo} = createWorld({rows: unhealthyExited()});
+        repo.updateServiceState.mockRejectedValueOnce(new Error("db down"));
+        const {service, bus} = createService(repo);
+
+        await expect(service.handleProbeCleared(clearedEvent({reason: "container-not-running"}))).resolves.toBeUndefined();
+
+        expect(consoleError).toHaveBeenCalledTimes(1);
+        const [message] = consoleError.mock.calls[0] as [string];
         expect(message).toContain("app/web");
         expect(bus.emit).not.toHaveBeenCalled();
     });

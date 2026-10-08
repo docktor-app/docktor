@@ -3,11 +3,10 @@ import {
     describeProbeTransition,
     evaluateProbe,
     seedProbeState,
-    type ProbeHealth,
     type ProbeState,
 } from "../domain/health-probe.js";
-import type {ServiceProbeCompletedEvent} from "../domain/events.js";
-import {normalizeHealth} from "../domain/service-health.js";
+import type {ServiceProbeClearedEvent, ServiceProbeCompletedEvent} from "../domain/events.js";
+import {normalizeHealth, type HealthSourceName} from "../domain/service-health.js";
 import {deriveStackStatus, isTransitionalStatus} from "../domain/stack-state-derivation.js";
 import {withKeyedLock} from "../lib/keyed-mutex.js";
 import type {DockerodeClientPort} from "./ports/dockerode-client-port.js";
@@ -15,6 +14,7 @@ import type {EventBusPort} from "./ports/event-bus-port.js";
 
 export interface ServiceHealthServiceRow {
     serviceName: string;
+    containerId: string | null;
     containerState: string | null;
     healthStatus: string | null;
 }
@@ -46,6 +46,18 @@ export interface ServiceHealthServiceRepo {
         createdAt: Date;
     } | null>;
 }
+
+/** One persisted health change of a Service row, whoever caused it. */
+interface HealthChange {
+    containerId: string | null;
+    containerState: string;
+    previous: string | null;
+    next: string | null;
+    source: HealthSourceName;
+    message: string | null;
+}
+
+const PROBE_REMOVED_MESSAGE = "HTTP probe removed";
 
 /** What the service remembers about the container it last probed (Pitfall 5). */
 interface ProbeEntry {
@@ -115,7 +127,83 @@ export class ServiceHealthService {
         if (probe.health === stored) {
             return;
         }
-        await this.applyHealth(stack, row, event, stored, probe.health);
+        await this.applyHealth(stack, row, {
+            containerId: event.containerId,
+            containerState: "running",
+            previous: stored,
+            next: probe.health,
+            source: "http-probe",
+            message: describeProbeTransition(probe.health, event.outcome),
+        });
+    }
+
+    /**
+     * A service stopped being probed. Its in-memory probe state is dropped so a
+     * later probe starts over, and a health value the probe left behind is
+     * replaced by the truth (RESEARCH Pitfall 4): null when the container
+     * stopped, Docker's own health when the probe block was removed. Never
+     * rejects, like handleProbeCompleted.
+     */
+    async handleProbeCleared(event: ServiceProbeClearedEvent): Promise<void> {
+        await withKeyedLock(`service-health:${event.stackId}`, async () => {
+            try {
+                await this.applyProbeCleared(event);
+            } catch (err) {
+                console.error(
+                    `[ServiceHealthService] failed to clear probe health for "${event.stackId}/${event.serviceName}":`,
+                    err,
+                );
+            }
+        });
+    }
+
+    private async applyProbeCleared(event: ServiceProbeClearedEvent): Promise<void> {
+        this.entries.delete(`${event.stackId}/${event.serviceName}`);
+
+        const stack = await this.repo.findByComposeProject(event.stackId);
+        if (stack === null || isTransitionalStatus(stack.status)) {
+            return;
+        }
+        const row = stack.services.find((service) => service.serviceName === event.serviceName);
+        // The job saw the container stopped, but it may have started again
+        // since; its probes resume and decide the health then.
+        if (row === undefined || (event.reason === "container-not-running" && row.containerState === "running")) {
+            return;
+        }
+
+        const stored = normalizeHealth(row.healthStatus);
+        const revert = await this.healthAfterClear(event, row);
+        if (revert.next === stored) {
+            return;
+        }
+        await this.applyHealth(stack, row, {
+            containerId: row.containerId,
+            containerState: row.containerState ?? "",
+            previous: stored,
+            ...revert,
+        });
+    }
+
+    // A stopped container has no health; a container that is still running goes
+    // back to what Docker itself reports, which is null when it has no healthcheck.
+    private async healthAfterClear(
+        event: ServiceProbeClearedEvent,
+        row: ServiceHealthServiceRow,
+    ): Promise<{next: string | null; source: HealthSourceName; message: string | null}> {
+        if (event.reason === "container-not-running" || row.containerState !== "running" || row.containerId === null) {
+            return {next: null, source: "http-probe", message: null};
+        }
+        return {next: await this.dockerHealth(row.containerId), source: "docker-healthcheck", message: PROBE_REMOVED_MESSAGE};
+    }
+
+    private async dockerHealth(containerId: string): Promise<string | null> {
+        try {
+            const info = await this.docker.inspectContainer(containerId);
+            return normalizeHealth(info.State.Health?.Status);
+        } catch {
+            // Without a readable container there is no health to restore.
+            return null;
+        }
     }
 
     // Runs the pure rule for this result and remembers the new state. A new
@@ -151,18 +239,14 @@ export class ServiceHealthService {
     private async applyHealth(
         stack: ServiceHealthServiceStack,
         row: ServiceHealthServiceRow,
-        event: ServiceProbeCompletedEvent,
-        previous: string | null,
-        next: ProbeHealth,
+        change: HealthChange,
     ): Promise<void> {
-        // applyProbeResult only lets results for running services through.
-        const containerState = "running";
-        const message = describeProbeTransition(next, event.outcome);
+        const {containerId, containerState, previous, next, source, message} = change;
 
         await this.repo.updateServiceState({
             stackId: stack.id,
             serviceName: row.serviceName,
-            containerId: event.containerId,
+            containerId,
             containerState,
             healthStatus: next,
         });
@@ -171,7 +255,7 @@ export class ServiceHealthService {
             serviceName: row.serviceName,
             fromStatus: previous,
             toStatus: next,
-            source: "http-probe",
+            source,
             ...(message !== null && {message}),
         });
 
