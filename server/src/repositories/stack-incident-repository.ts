@@ -39,6 +39,16 @@ export class StackIncidentRepository {
     }
 
     /**
+     * Retention prune (D-10): removes incidents resolved before `cutoff`. A
+     * comparison never matches a NULL resolvedAt, so open incidents are never
+     * deleted.
+     */
+    async deleteResolvedBefore(cutoff: Date): Promise<number> {
+        const {count} = await prisma.stackIncident.deleteMany({where: {resolvedAt: {lt: cutoff}}});
+        return count;
+    }
+
+    /**
      * Incidents that intersect the window, newest first: still open, or
      * resolved at or after `windowStart` — so one that began before the
      * window but ended inside it is listed.

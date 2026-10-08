@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import {cleanDatabase, createTestUser, getApp, getPrisma, startContainer, stopContainer} from "./setup.js";
 import {domainEventBus} from "../../src/infrastructure/event-bus.js";
+import {HealthHistoryPruner} from "../../src/jobs/health-history-pruner.js";
 
 const COMPOSE = "services:\n  web:\n    image: nginx:1.27\n";
 const DAY = 86_400_000;
@@ -304,6 +305,44 @@ describe("uptime read path (#24, D-09, D-10, D-16)", () => {
             await settle();
             expect(await openCount()).toBe(1);
             expect(await getPrisma().stackIncident.count({where: {stackId: id}})).toBe(1);
+        });
+    });
+
+    describe("HealthHistoryPruner (#24, D-10, D-11)", () => {
+        async function runPruner(): Promise<void> {
+            await (new HealthHistoryPruner() as unknown as {run(): Promise<void>}).run();
+        }
+
+        it("deletes aged-out health events and resolved incidents but keeps open incidents and every StatusLog row", async () => {
+            const id = await createStack("prune-a");
+            expect(await putRetention(7)).toBe(200);
+            const now = Date.now();
+            const prisma = getPrisma();
+            const healthEvent = (createdAt: Date) =>
+                prisma.serviceHealthEvent.create({
+                    data: {stackId: id, serviceName: "web", fromStatus: null, toStatus: "healthy", source: "DOCKER_HEALTHCHECK", createdAt},
+                });
+            const oldEvent = await healthEvent(new Date(now - 8 * DAY));
+            const recentEvent = await healthEvent(new Date(now - DAY));
+            const oldResolved = await prisma.stackIncident.create({
+                data: {stackId: id, triggerType: "UNHEALTHY", createdAt: new Date(now - 9 * DAY), resolvedAt: new Date(now - 8 * DAY)},
+            });
+            const stillOpen = await prisma.stackIncident.create({
+                data: {stackId: id, triggerType: "ERROR", createdAt: new Date(now - 20 * DAY)},
+            });
+            await logStatus(id, "RUNNING", new Date(now - 25 * DAY));
+            await logStatus(id, "UNHEALTHY", new Date(now - 24 * DAY));
+            const statusLogCount = await prisma.statusLog.count({where: {stackId: id}});
+
+            await runPruner();
+
+            const remainingEvents = await prisma.serviceHealthEvent.findMany({where: {stackId: id}, select: {id: true}});
+            expect(remainingEvents.map((e) => e.id)).toEqual([recentEvent.id]);
+            expect(remainingEvents.map((e) => e.id)).not.toContain(oldEvent.id);
+            const remainingIncidents = await prisma.stackIncident.findMany({where: {stackId: id}, select: {id: true}});
+            expect(remainingIncidents.map((i) => i.id)).toEqual([stillOpen.id]);
+            expect(remainingIncidents.map((i) => i.id)).not.toContain(oldResolved.id);
+            expect(await prisma.statusLog.count({where: {stackId: id}})).toBe(statusLogCount);
         });
     });
 });

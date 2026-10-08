@@ -78,6 +78,12 @@ export class ServiceHealthEventRepository {
         )
         return perService.flat().sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
     }
+
+    /** Retention prune (D-10): removes events created before `cutoff`, served by the createdAt index. */
+    async deleteCreatedBefore(cutoff: Date): Promise<number> {
+        const {count} = await prisma.serviceHealthEvent.deleteMany({where: {createdAt: {lt: cutoff}}})
+        return count
+    }
 }
 
 export const serviceHealthEventRepository = new ServiceHealthEventRepository()

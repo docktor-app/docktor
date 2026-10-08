@@ -8,6 +8,7 @@ import {backupScheduler} from "./backup-scheduler.js"
 import {proxyCertPoller} from "./proxy-cert-poller.js"
 import {templateRepoSync} from "./template-repo-sync.js"
 import {imageUpdateCheckPruner} from "./image-update-check-pruner.js"
+import {healthHistoryPruner} from "./health-history-pruner.js"
 import {diskUsageJob} from "./disk-usage-job.js"
 
 // Registered once, at module load, in the same order startJobs() used to
@@ -23,6 +24,7 @@ jobRegistry.register(backupScheduler)
 jobRegistry.register(proxyCertPoller)
 jobRegistry.register(templateRepoSync)
 jobRegistry.register(imageUpdateCheckPruner)
+jobRegistry.register(healthHistoryPruner)
 // Always the LAST registration (RESEARCH Finding 7): startAll() awaits each
 // start() in sequence, so a job that does heavy work must never sit in front
 // of another one. DiskUsageJob only schedules a delayed first scan, but the
