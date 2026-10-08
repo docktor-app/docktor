@@ -566,7 +566,7 @@ Needs Phase 10's backend structure for the new health-probe job and Phase 11's U
   3. Each stack shows an uptime percentage and an incident list over a retention window (#24)
   4. Disk usage is viewable per stack and per volume, sortable, with a total (#27)
 
-**Plans:** 5/14 plans executed
+**Plans:** 6/14 plans executed
 
 Plans:
 **Wave 1**
@@ -579,7 +579,7 @@ Plans:
 - [x] 14-11-PLAN.md — Stable health state: reconcile and the post-deploy catch-up read real Docker health instead of clobbering it, and record every observed transition (#23)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 14-04-PLAN.md — Uptime server read path: retention setting, StatusLog index, StatusLog-based uptime, incident list read, uptime endpoints (#24)
+- [x] 14-04-PLAN.md — Uptime server read path: retention setting, StatusLog index, StatusLog-based uptime, incident list read, uptime endpoints (#24)
 - [ ] 14-05-PLAN.md — Storage page: sortable per-stack table with expandable volumes, Backups section, totals, sidebar nav (#27)
 - [ ] 14-14-PLAN.md — Local backups in the disk picture (`<stack>/backups`, symlink-safe) and `du` robustness: exit-1 tolerance, previous values kept on failure, per-stack isolation (#27)
 

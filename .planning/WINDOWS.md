@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 17
+open_count: 18
 waived_count: 0
 fixed_count: 8
-total_count: 25
-last_updated: 2026-10-08T08:31:21.830Z
+total_count: 26
+last_updated: 2026-10-08T08:51:58.272Z
 ---
 
 # Broken Windows Ledger
@@ -40,6 +40,7 @@ last_updated: 2026-10-08T08:31:21.830Z
 | 23 | 14 | unrun-verify | client/src/routes/app/stacks/components/service-health-timeline.tsx |  | 14-03 human-check not performed: eyeball the expanded health history in light and dark theme at Pixel 7 width (overflow measured by script; legibility and vertical stacking not visually reviewed) | open |  | 2026-10-08T08:08:04.656Z |  |
 | 24 | 14 | unrun-verify | client/src/routes/app/stacks/components/health-probe-form.tsx |  | 14-08 human-check (HTTP Health Probes section in light/dark at desktop and Pixel 7 width, long URL scroll, YAML-error swap) was reviewed from scripted Edge screenshots by the executor only, not by a person | open |  | 2026-10-08T08:31:20.996Z |  |
 | 25 | 14 | unrun-verify | client/test/integration/health-probe.spec.ts |  | 14-08 canonical Playwright command not run: browsers not installed, ran on system Edge; mobile-chromium project only matches mobile.spec.ts so phone width is emulated by setViewportSize on the chromium project | open |  | 2026-10-08T08:31:21.830Z |  |
+| 26 | 14 | unrun-verify | server/prisma/migrations/20261008084300_add_status_log_stack_created_index/migration.sql |  | 14-04 migration add_status_log_stack_created_index generated via migrate diff (Branch B) and not applied to the dev database; integration suite exercises the index through prisma db push, syncDatabaseSchema() applies it at next boot | open |  | 2026-10-08T08:51:58.272Z |  |
 
 ````json
 [
@@ -353,6 +354,19 @@ last_updated: 2026-10-08T08:31:21.830Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-08T08:31:21.830Z",
+    "resolved_at": null,
+    "milestone": "v0.1.0"
+  },
+  {
+    "id": 26,
+    "kind": "unrun-verify",
+    "phase": "14",
+    "file": "server/prisma/migrations/20261008084300_add_status_log_stack_created_index/migration.sql",
+    "line": null,
+    "description": "14-04 migration add_status_log_stack_created_index generated via migrate diff (Branch B) and not applied to the dev database; integration suite exercises the index through prisma db push, syncDatabaseSchema() applies it at next boot",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-08T08:51:58.272Z",
     "resolved_at": null,
     "milestone": "v0.1.0"
   }
