@@ -30,6 +30,11 @@ export interface Stack {
     templateRepoUrl?: string | null;
     templatePath?: string | null;
     templateUpdateAvailable?: boolean;
+    // Issue #27/D-13: last measured ./volumes and ./backups sizes in bytes,
+    // serialized as numbers by StackService.toStackSizeDto (14-02); null until
+    // the daily measurement has run for this stack.
+    volumeSizeBytes?: number | null;
+    backupSizeBytes?: number | null;
     createdAt: string;
     updatedAt: string;
 }

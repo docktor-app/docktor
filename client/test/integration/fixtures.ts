@@ -62,6 +62,26 @@ export const test = base.extend<{_coverage: void; _apiRouteGuard: void}>({
                 }),
             );
 
+            // RESEARCH Pitfall 7: every stack Overview visit now fetches the
+            // stack's uptime (useStackUptime). Default to an empty summary;
+            // specs that assert on uptime override this route per test.
+            await page.route("**/api/stacks/*/uptime", (route) =>
+                route.fulfill({
+                    status: 200,
+                    contentType: "application/json",
+                    body: JSON.stringify({
+                        stackId: "stub",
+                        windowDays: 30,
+                        windowStart: "2026-01-01T00:00:00.000Z",
+                        since: null,
+                        percent: null,
+                        upMs: 0,
+                        downMs: 0,
+                        incidents: [],
+                    }),
+                }),
+            );
+
             await use();
 
             if (unstubbed.length > 0) {
