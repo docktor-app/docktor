@@ -107,11 +107,15 @@ describe("HTTP health probe pipeline (#23)", () => {
                 Config: {Labels: {}},
                 NetworkSettings: {Networks: {probe_default: {IPAddress: "127.0.0.1"}}},
             }) as unknown as Dockerode.ContainerInspectInfo),
+            connectNetwork: vi.fn(async () => {}),
+            disconnectNetwork: vi.fn(async () => {}),
         };
+        // The test host is not Docktor's container: no attach, the container IP is used directly.
+        const notContainerized = {containerId: async () => null};
         job = new HealthProbeJob({
             store: {listStacks: () => stackRepository.findAll()},
             readCompose: (id) => new StackFilesystem().readCompose(id),
-            transport: new ProbeTransport(docker),
+            transport: new ProbeTransport(docker, notContainerized),
             ownership: probedServiceRegistry,
             bus: domainEventBus,
             now: () => clockNow,

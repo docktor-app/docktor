@@ -12,9 +12,10 @@ const EPHEMERAL_FILESYSTEM_TYPES = new Set(["overlay", "overlayfs", "tmpfs", "ra
  * that the process is actually inside a container at all, as opposed to
  * running directly on a host whose root filesystem happens to have no
  * dedicated mount for the stacks path — see that function's doc comment for
- * why this check exists.
+ * why this check exists. Also used to decide whether Docktor can attach its
+ * own container to another network (health probes).
  */
-async function defaultIsContainerized(): Promise<boolean> {
+export async function isContainerized(): Promise<boolean> {
     try {
         await access(DOCKERENV_PATH);
         return true;
@@ -275,7 +276,7 @@ function unescapeMountinfoField(field: string): string {
  * evidence of ephemerality at all, and treating it as such previously bricked
  * exactly that layout (07-VERIFICATION.md gap).
  *
- * The optional `readMountinfo` and `isContainerized` parameters (default:
+ * The optional `readMountinfo` and `containerized` parameters (default:
  * read the real /proc/self/mountinfo, and check for a real /.dockerenv)
  * exist purely for testability — unit tests inject fixture content /
  * fixed booleans instead of mocking node:fs/promises, since this module is
@@ -284,7 +285,7 @@ function unescapeMountinfoField(field: string): string {
  */
 export async function assertStacksDirIsMounted(
     readMountinfo: () => Promise<string> = () => readFile(MOUNTINFO_PATH, "utf-8"),
-    isContainerized: () => Promise<boolean> = defaultIsContainerized,
+    containerized: () => Promise<boolean> = isContainerized,
 ): Promise<void> {
     const target = getStacksDir();
 
@@ -316,7 +317,7 @@ export async function assertStacksDirIsMounted(
 
     const hostDir = process.env.DOCKTOR_STACKS_HOST_DIR;
     const isContainerRootWithHostDir =
-        entry.mountPoint === "/" && !!hostDir && (await isContainerized());
+        entry.mountPoint === "/" && !!hostDir && (await containerized());
     const isEphemeral =
         EPHEMERAL_FILESYSTEM_TYPES.has(entry.filesystemType) || isContainerRootWithHostDir;
 

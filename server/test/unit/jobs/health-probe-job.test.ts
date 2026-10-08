@@ -25,7 +25,7 @@ function createJob(options: {stacks?: ProbeJobStack[]; compose?: Record<string, 
     const compose: Record<string, string> = options.compose ?? {app: WITH_PROBE}
     const store = {listStacks: vi.fn(async () => options.stacks ?? [runningStack()])}
     const readCompose = vi.fn(async (stackId: string) => compose[stackId] ?? "")
-    const transport = {probe: vi.fn(async () => OBSERVATION)}
+    const transport = {probe: vi.fn(async () => OBSERVATION), sweepStaleAttachments: vi.fn(async () => 0)}
     const bus = {emit: vi.fn()}
     const ownership = {replaceStack: vi.fn(), retainStacks: vi.fn()}
     const job = new HealthProbeJob({store, readCompose, transport, ownership, bus, now: () => clock.now})
@@ -480,6 +480,40 @@ describe("HealthProbeJob ownership (D-07)", () => {
         expect(schedule).toHaveBeenCalledTimes(1)
         expect(ctx.ownership.retainStacks).toHaveBeenCalledWith(["app"])
         expect(ctx.transport.probe).not.toHaveBeenCalled()
+    })
+
+    it("start() sweeps stale network attachments once, before the ownership refresh and the schedule (amended D-05)", async () => {
+        const ctx = createJob()
+        const order: string[] = []
+        ctx.transport.sweepStaleAttachments.mockImplementation(async () => {
+            order.push("sweep")
+            return 1
+        })
+        ctx.store.listStacks.mockImplementation(async () => {
+            order.push("refresh")
+            return [runningStack()]
+        })
+        stubSchedule().mockImplementation(async () => {
+            order.push("schedule")
+        })
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined)
+
+        await ctx.job.start()
+
+        expect(order).toEqual(["sweep", "refresh", "schedule"])
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining("1 stale probe network attachment"))
+    })
+
+    it("start() logs a sweep rejection and still seeds ownership and starts", async () => {
+        const ctx = createJob()
+        ctx.transport.sweepStaleAttachments.mockRejectedValue(new Error("docker down"))
+        const schedule = stubSchedule()
+
+        await expect(ctx.job.start()).resolves.toBeUndefined()
+
+        expect(consoleError).toHaveBeenCalledWith("[HealthProbeJob] stale attachment sweep failed:", expect.any(Error))
+        expect(ownedNames(ctx.ownership)).toEqual(["web"])
+        expect(schedule).toHaveBeenCalledTimes(1)
     })
 
     it("start() logs a store failure and still resolves", async () => {

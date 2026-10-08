@@ -19,4 +19,15 @@ export interface DockerodeClientPort {
     getLogStream(containerId: string, tail?: number): Promise<NodeJS.ReadableStream>;
 
     getLogTail(containerId: string, tail?: number): Promise<string>;
+
+    /**
+     * Connects a container to a network under the given endpoint aliases.
+     * Used only by the probe transport, which joins a stack's network for the
+     * duration of one probe request (amended D-05). Rejects with the daemon's
+     * error (HTTP 403 when the container is already connected).
+     */
+    connectNetwork(networkId: string, containerId: string, aliases: readonly string[]): Promise<void>;
+
+    /** Disconnects a container from a network; the counterpart of connecting. */
+    disconnectNetwork(networkId: string, containerId: string): Promise<void>;
 }

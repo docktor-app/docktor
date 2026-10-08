@@ -29,4 +29,11 @@ export interface ProbeObservation {
  */
 export interface ProbeTransportPort {
     probe(request: ProbeRequest): Promise<ProbeObservation>;
+
+    /**
+     * Disconnects the network endpoints a crashed run left behind (amended
+     * D-05): those Docktor attached for a probe and never detached. Resolves
+     * the number of endpoints removed and never rejects.
+     */
+    sweepStaleAttachments(): Promise<number>;
 }

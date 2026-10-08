@@ -96,11 +96,22 @@ export class HealthProbeJob extends IntervalJob {
         super()
     }
 
-    // Ownership is seeded before the schedule begins so it is known before
+    // Before the schedule begins: attachments a crashed run left behind are
+    // removed (amended D-05), and ownership is seeded so it is known before
     // StatePoller's first 60-second reconcile (D-07).
     override async start(): Promise<void> {
+        await this.sweepStaleAttachments()
         await this.refreshOwnership()
         await super.start()
+    }
+
+    private async sweepStaleAttachments(): Promise<void> {
+        try {
+            const removed = await this.deps.transport.sweepStaleAttachments()
+            if (removed > 0) console.warn(`[HealthProbeJob] removed ${removed} stale probe network attachment(s)`)
+        } catch (err) {
+            console.error("[HealthProbeJob] stale attachment sweep failed:", err)
+        }
     }
 
     private async refreshOwnership(): Promise<void> {

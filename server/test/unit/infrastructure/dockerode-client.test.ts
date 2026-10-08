@@ -6,6 +6,7 @@ const mockDocker = {
     getEvents: vi.fn(),
     getContainer: vi.fn(),
     listContainers: vi.fn(),
+    getNetwork: vi.fn(),
 };
 
 vi.mock("dockerode", () => ({
@@ -83,6 +84,38 @@ describe("DockerodeClient", () => {
             expect(mockDocker.getContainer).toHaveBeenCalledWith("container-abc");
             expect(mockContainer.inspect).toHaveBeenCalledOnce();
             expect(result).toEqual(mockInspectData);
+        });
+    });
+
+    describe("connectNetwork / disconnectNetwork (amended D-05)", () => {
+        it("connects a container to the network under the given endpoint aliases", async () => {
+            const network = {connect: vi.fn().mockResolvedValue(undefined)};
+            mockDocker.getNetwork.mockReturnValue(network);
+
+            await client.connectNetwork("n1", "self1", ["docktor-health-probe"]);
+
+            expect(mockDocker.getNetwork).toHaveBeenCalledWith("n1");
+            expect(network.connect).toHaveBeenCalledExactlyOnceWith({
+                Container: "self1",
+                EndpointConfig: {Aliases: ["docktor-health-probe"]},
+            });
+        });
+
+        it("disconnects a container from the network without forcing", async () => {
+            const network = {disconnect: vi.fn().mockResolvedValue(undefined)};
+            mockDocker.getNetwork.mockReturnValue(network);
+
+            await client.disconnectNetwork("n1", "self1");
+
+            expect(mockDocker.getNetwork).toHaveBeenCalledWith("n1");
+            expect(network.disconnect).toHaveBeenCalledExactlyOnceWith({Container: "self1", Force: false});
+        });
+
+        it("lets the daemon's error through so the caller can classify it", async () => {
+            const failure = Object.assign(new Error("already exists in network"), {statusCode: 403});
+            mockDocker.getNetwork.mockReturnValue({connect: vi.fn().mockRejectedValue(failure)});
+
+            await expect(client.connectNetwork("n1", "self1", [])).rejects.toBe(failure);
         });
     });
 

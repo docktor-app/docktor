@@ -35,6 +35,17 @@ export class DockerodeClient implements DockerodeClientPort {
         return this.docker.listContainers({all})
     }
 
+    async connectNetwork(networkId: string, containerId: string, aliases: readonly string[]): Promise<void> {
+        await this.docker.getNetwork(networkId).connect({
+            Container: containerId,
+            EndpointConfig: {Aliases: [...aliases]},
+        })
+    }
+
+    async disconnectNetwork(networkId: string, containerId: string): Promise<void> {
+        await this.docker.getNetwork(networkId).disconnect({Container: containerId, Force: false})
+    }
+
     async getLogStream(containerId: string, tail = 100): Promise<NodeJS.ReadableStream> {
         return this.docker.getContainer(containerId).logs({
             stdout: true,
