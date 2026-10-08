@@ -5,6 +5,7 @@ import {subscribeNotifications, type NotificationSubscriberNotificationService} 
 import {subscribeStateBroadcast} from "./state-broadcast-subscriber.js";
 import {subscribeServiceHealthHistory, type ServiceHealthHistoryRepo} from "./service-health-history-subscriber.js";
 import {subscribeIncidentTracking, type IncidentTrackingPort} from "./incident-subscriber.js";
+import {subscribeProbeResults, type ProbeResultHandler} from "./probe-result-subscriber.js";
 
 export interface RegisterDomainSubscribersDeps {
     stackEventRepo: StackEventSubscriberRepo;
@@ -12,6 +13,7 @@ export interface RegisterDomainSubscribersDeps {
     broadcaster: Pick<StateBroadcaster, "publish">;
     serviceHealthEventRepo: ServiceHealthHistoryRepo;
     incidentTracker: IncidentTrackingPort;
+    probeResultHandler: ProbeResultHandler;
 }
 
 /**
@@ -36,7 +38,11 @@ export interface RegisterDomainSubscribersDeps {
  *      only consumer of service.health_changed.
  *   5. Incident tracking (#24, D-11) — no ordering dependency: it is
  *      state-based and idempotent like NotificationWatcher, so it does not
- *      matter which subscriber sees a status first. Registered last.
+ *      matter which subscriber sees a status first.
+ *   6. Probe results (#23, D-03) — no ordering dependency: it is the only
+ *      consumer of service.probe_completed. It produces
+ *      service.health_changed and stack.container_state_changed, which the
+ *      subscribers above handle whenever they run. Registered last.
  */
 export function registerDomainSubscribers(
     bus: Pick<EventBusPort, "subscribe">,
@@ -47,6 +53,7 @@ export function registerDomainSubscribers(
     const disposeStateBroadcast = subscribeStateBroadcast(bus, deps.broadcaster);
     const disposeServiceHealthHistory = subscribeServiceHealthHistory(bus, deps.serviceHealthEventRepo);
     const disposeIncidentTracking = subscribeIncidentTracking(bus, deps.incidentTracker);
+    const disposeProbeResults = subscribeProbeResults(bus, deps.probeResultHandler);
 
     return () => {
         disposeStackEvents();
@@ -54,5 +61,6 @@ export function registerDomainSubscribers(
         disposeStateBroadcast();
         disposeServiceHealthHistory();
         disposeIncidentTracking();
+        disposeProbeResults();
     };
 }

@@ -34,6 +34,7 @@ import {ServiceHealthHistoryService} from "./service-health-history-service.js";
 import {StorageService} from "./storage-service.js";
 import {UptimeService} from "./uptime-service.js";
 import {IncidentTracker} from "./incident-tracker.js";
+import {ServiceHealthService} from "./service-health-service.js";
 import {certificateFilesystem} from "../infrastructure/certificate-filesystem.js";
 import {stateEventBroadcaster} from "../lib/state-broadcaster.js";
 import {dockerodeClient} from "../infrastructure/dockerode-client.js";
@@ -135,16 +136,23 @@ export const uptimeService = new UptimeService(
 // UNHEALTHY/ERROR episode, fed by the incident subscriber below.
 export const incidentTracker = new IncidentTracker(stackIncidentRepository);
 
+// #23/D-03/D-07: the only writer of probe-derived health — turns a finished
+// HTTP probe into Service.healthStatus, http-probe history and the re-derived
+// stack status, re-emitting the existing stack.container_state_changed event.
+export const serviceHealthService = new ServiceHealthService(repo, domainEventBus, dockerodeClient);
+
 // D-15: registers all subscriber categories (audit trail, plan 10-13;
 // notifications, plan 10-12; live-state bridge, plan 10-11; service health
-// history, #23; incident tracking, #24) from one place in the fixed, documented order
-// subscribers/register.ts explains. Exported so a test can tear it down.
+// history, #23; incident tracking, #24; probe results, #23) from one place in
+// the fixed, documented order subscribers/register.ts explains. Exported so a
+// test can tear it down.
 export const disposeDomainSubscribers = registerDomainSubscribers(domainEventBus, {
     stackEventRepo: stackEventRepository,
     notificationService,
     broadcaster: stateEventBroadcaster,
     serviceHealthEventRepo: serviceHealthEventRepository,
     incidentTracker,
+    probeResultHandler: serviceHealthService,
 });
 
 // Adapter: StackRepository -> BackupStackRepo interface

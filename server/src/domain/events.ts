@@ -10,8 +10,11 @@
  * server/src/ today. Plan 10-13 closed the last outstanding category (the
  * StackEvent audit trail) by adding the two audit-only fields below to
  * StackConfigChangedEvent. Producers added since: StatePoller emits
- * service.health_changed (#23) after persisting a service's health.
+ * service.health_changed (#23) after persisting a service's health, and
+ * HealthProbeJob emits service.probe_completed / service.probe_cleared (#23).
  */
+
+import type {ProbeOutcome} from "./health-probe.js";
 
 /** A stack's status-machine transition completed. */
 export interface StackStatusChangedEvent {
@@ -159,6 +162,28 @@ export interface ServiceHealthChangedEvent {
 }
 
 /**
+ * A probe finished; the producer has not persisted anything. The consumer
+ * (ServiceHealthService) decides whether the outcome changes the service's
+ * health. `containerStartedAt` is the container's `State.StartedAt`, which
+ * together with `containerId` identifies the container instance the outcome
+ * belongs to.
+ */
+export interface ServiceProbeCompletedEvent {
+    stackId: string;
+    serviceName: string;
+    containerId: string;
+    containerStartedAt: string | null;
+    outcome: ProbeOutcome;
+}
+
+/** A service stopped being probed (its probe block was removed, or its container stopped). */
+export interface ServiceProbeClearedEvent {
+    stackId: string;
+    serviceName: string;
+    reason: "probe-removed" | "container-not-running";
+}
+
+/**
  * The domain-event catalog: one key per event, mapped to its payload type.
  * The bus (EventBusPort) is generic over this map so emit()/subscribe()
  * infer the correct payload from the event name.
@@ -177,4 +202,6 @@ export interface DomainEventMap {
     "restore.failed": RestoreFailedEvent;
     "disk.threshold_crossed": DiskSpaceThresholdCrossedEvent;
     "service.health_changed": ServiceHealthChangedEvent;
+    "service.probe_completed": ServiceProbeCompletedEvent;
+    "service.probe_cleared": ServiceProbeClearedEvent;
 }
