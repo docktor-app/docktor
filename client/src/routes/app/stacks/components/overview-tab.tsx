@@ -1,6 +1,7 @@
 import type {StackDetail} from "@/lib/stacks-api";
 import {useStackEvents} from "@/hooks/use-stack-events";
 import {useStackTimeline} from "@/hooks/use-stack-timeline";
+import {useServiceHealthEvents} from "@/hooks/use-service-health-events";
 import {ServicesSection} from "./services-section";
 import {ActivityTimeline} from "./activity-timeline";
 
@@ -15,9 +16,12 @@ export interface OverviewTabProps {
 // separate status/event log cards) is replaced by ActivityTimeline, a pure client-side merge
 // over data already fetched here (useStackEvents) and passed down from the
 // page (stack.deployments/statusLogs) — no new endpoint, no new SSE type.
+// D-12: per-service health history comes from one stack-wide fetch
+// (useServiceHealthEvents) handed to ServicesSection, never a request per service.
 export function OverviewTab({stack, onViewLogs, onUpgraded}: Readonly<OverviewTabProps>) {
     const {events, loading, error, refetch} = useStackEvents(stack.id);
     const timeline = useStackTimeline(stack.deployments, stack.statusLogs, events);
+    const health = useServiceHealthEvents(stack.id);
 
     return (
         <div className="space-y-8">
@@ -27,6 +31,10 @@ export function OverviewTab({stack, onViewLogs, onUpgraded}: Readonly<OverviewTa
                 stackStatus={stack.status}
                 onViewLogs={onViewLogs}
                 onUpgraded={onUpgraded}
+                healthEventsByService={health.eventsByService}
+                healthEventsLoading={health.loading}
+                healthEventsError={health.error}
+                onRetryHealthEvents={health.refetch}
             />
 
             <ActivityTimeline

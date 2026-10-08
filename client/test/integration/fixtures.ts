@@ -38,6 +38,14 @@ export const test = base.extend<{_coverage: void; _apiRouteGuard: void}>({
                 route.fulfill({status: 200, contentType: "text/event-stream", body: ""}),
             );
 
+            // RESEARCH Pitfall 7: every stack Overview visit now fetches the
+            // stack's service health events (useServiceHealthEvents). Default
+            // to an empty history so existing specs stay green; a spec that
+            // cares overrides this route in its own body.
+            await page.route("**/api/stacks/*/health-events**", (route) =>
+                route.fulfill({status: 200, contentType: "application/json", body: "[]"}),
+            );
+
             await use();
 
             if (unstubbed.length > 0) {
