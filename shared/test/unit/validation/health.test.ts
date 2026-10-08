@@ -5,6 +5,10 @@ import {
     HEALTH_PROBE_MAX_TIMEOUT_SECONDS,
     healthProbeFormSchema,
     healthProbeSchema,
+    healthSettingsSchema,
+    HEALTH_RETENTION_DEFAULT_DAYS,
+    HEALTH_RETENTION_MAX_DAYS,
+    HEALTH_RETENTION_MIN_DAYS,
     serviceHealthEventsQuerySchema,
 } from "../../../src/validation/health.js";
 
@@ -166,5 +170,23 @@ describe("healthProbeFormSchema", () => {
         expect(result.error?.issues).toHaveLength(1);
         expect(result.error?.issues[0]?.path.join(".")).toBe("probes.1.url");
         expect(result.error?.issues[0]?.message).toBe(HOST_MESSAGE);
+    });
+});
+
+describe("healthSettingsSchema (D-10)", () => {
+    const RETENTION_MESSAGE = "Enter a whole number from 1 to 365.";
+
+    it("exposes the documented bounds", () => {
+        expect([HEALTH_RETENTION_DEFAULT_DAYS, HEALTH_RETENTION_MIN_DAYS, HEALTH_RETENTION_MAX_DAYS]).toEqual([30, 1, 365]);
+    });
+
+    it.each([30, 1, 365])("accepts retentionDays %d", (retentionDays) => {
+        expect(healthSettingsSchema.parse({retentionDays})).toEqual({retentionDays});
+    });
+
+    it.each([0, 366, 1.5, "30"])("rejects retentionDays %j with the retention message", (retentionDays) => {
+        const result = healthSettingsSchema.safeParse({retentionDays});
+        expect(result.success).toBe(false);
+        expect(result.error?.issues[0]?.message).toBe(RETENTION_MESSAGE);
     });
 });

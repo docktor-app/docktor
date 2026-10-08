@@ -1,6 +1,6 @@
 import type {FastifyPluginAsyncZod} from "fastify-type-provider-zod"
 import {z} from "zod"
-import {composeCheckSettingsSchema} from "@docktor/shared"
+import {composeCheckSettingsSchema, healthSettingsSchema} from "@docktor/shared"
 import {requireAuth} from "../lib/auth-middleware.js"
 import {settingsService, notificationService} from "../application/index.js"
 
@@ -116,6 +116,21 @@ const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
         async (request) => {
             await settingsService.saveComposeCheckSettings(request.body)
             return settingsService.getComposeCheckSettings()
+        },
+    )
+
+    // #24/D-10: the global health history retention window (days)
+    app.get("/api/settings/health", async () => {
+        return settingsService.getHealthSettings()
+    })
+
+    // Saves the window, then returns the fresh value (compose-checks shape)
+    app.put(
+        "/api/settings/health",
+        {schema: {body: healthSettingsSchema}},
+        async (request) => {
+            await settingsService.saveHealthSettings(request.body)
+            return settingsService.getHealthSettings()
         },
     )
 }

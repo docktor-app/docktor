@@ -14,6 +14,8 @@ import {
     templateRepository,
     serviceHealthEventRepository,
     stackDiskUsageRepository,
+    statusLogRepository,
+    stackIncidentRepository,
 } from "../repositories/index.js";
 import {StackService} from "./stack-service.js";
 import {ComposeReviewService} from "./compose-review-service.js";
@@ -30,6 +32,7 @@ import {TemplateService} from "./template-service.js";
 import {TemplateUpdateService} from "./template-update-service.js";
 import {ServiceHealthHistoryService} from "./service-health-history-service.js";
 import {StorageService} from "./storage-service.js";
+import {UptimeService} from "./uptime-service.js";
 import {certificateFilesystem} from "../infrastructure/certificate-filesystem.js";
 import {stateEventBroadcaster} from "../lib/state-broadcaster.js";
 import {dockerodeClient} from "../infrastructure/dockerode-client.js";
@@ -113,6 +116,19 @@ export const serviceHealthHistoryService = new ServiceHealthHistoryService(repo,
 // #27/D-15: read side of the disk usage figures DiskUsageJob stores — serves
 // GET /api/storage.
 export const storageService = new StorageService(stackDiskUsageRepository);
+
+// #24/D-09/D-10/D-16: read side of the per-stack uptime view — the uptime
+// percentage comes from StatusLog intervals over the global retention window
+// (settingsService), the incident list from StackIncident rows.
+export const uptimeService = new UptimeService(
+    {
+        exists: (id) => repo.exists(id),
+        listStackIds: async () => (await repo.findAll()).map((stack) => stack.id),
+    },
+    statusLogRepository,
+    stackIncidentRepository,
+    settingsService,
+);
 
 // D-15: registers all subscriber categories (audit trail, plan 10-13;
 // notifications, plan 10-12; live-state bridge, plan 10-11; service health

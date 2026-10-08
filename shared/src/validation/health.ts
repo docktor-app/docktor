@@ -121,3 +121,22 @@ export const healthProbeFormSchema = z.object({
 });
 
 export type HealthProbeFormValues = z.infer<typeof healthProbeFormSchema>;
+
+// Health history retention (D-10). One global window, in whole days, shared
+// by the uptime percentage (#24) and the pruner that trims the Phase 14
+// history tables; there is deliberately no per-stack override.
+export const HEALTH_RETENTION_DEFAULT_DAYS = 30;
+export const HEALTH_RETENTION_MIN_DAYS = 1;
+export const HEALTH_RETENTION_MAX_DAYS = 365;
+
+const RETENTION_MESSAGE = `Enter a whole number from ${HEALTH_RETENTION_MIN_DAYS} to ${HEALTH_RETENTION_MAX_DAYS}.`;
+
+export const healthSettingsSchema = z.object({
+    retentionDays: z
+        .number({error: RETENTION_MESSAGE})
+        .int(RETENTION_MESSAGE)
+        .min(HEALTH_RETENTION_MIN_DAYS, RETENTION_MESSAGE)
+        .max(HEALTH_RETENTION_MAX_DAYS, RETENTION_MESSAGE),
+});
+
+export type HealthSettings = z.infer<typeof healthSettingsSchema>;

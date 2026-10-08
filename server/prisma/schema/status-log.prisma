@@ -9,4 +9,9 @@ model StatusLog {
   output     String? // command output (truncated)
 
   createdAt DateTime @default(now())
+
+  // #24 uptime reads, per stack, the newest row at or before the window start
+  // plus every row inside the window. StatusLog is not pruned (D-11), so this
+  // index keeps those reads cheap as it grows.
+  @@index([stackId, createdAt])
 }
