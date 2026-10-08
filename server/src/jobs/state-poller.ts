@@ -33,6 +33,13 @@ export interface UpdateServiceStateArgs {
     healthStatus: string | null
 }
 
+type ListedContainer = Awaited<ReturnType<DockerodeClientPort["listContainers"]>>[number]
+
+interface ObservedContainer {
+    containerState: string
+    healthStatus: string | null
+}
+
 export interface StatePollerRepo {
     findByComposeProject(composeProject: string): Promise<StackWithServices | null>
     findAll(): Promise<StackWithServices[]>
@@ -188,6 +195,7 @@ export class StatePoller extends WatcherJob {
                     containerState,
                     healthStatus: null,
                 })
+                this.emitHealthTransition(stack.id, serviceName, stack.services, null)
                 const derivedStatus = deriveStackStatus(
                     stack.services.map((s) =>
                         s.serviceName === serviceName
@@ -223,19 +231,7 @@ export class StatePoller extends WatcherJob {
             healthStatus,
         })
 
-        // Write-before-emit: the history row is appended by a subscriber, so
-        // the event goes out only after the Service row above is persisted,
-        // and only when this service has a row and its health really changed.
-        const previous = stack.services.find((s) => s.serviceName === serviceName)
-        if (previous && isHealthTransition(previous.healthStatus, healthStatus)) {
-            this.bus.emit("service.health_changed", {
-                stackId: stack.id,
-                serviceName,
-                fromStatus: normalizeHealth(previous.healthStatus),
-                toStatus: normalizeHealth(healthStatus),
-                source: "docker-healthcheck",
-            })
-        }
+        this.emitHealthTransition(stack.id, serviceName, stack.services, healthStatus)
 
         // Derive aggregate stack status
         const updatedServices = stack.services.map((s) => {
@@ -271,6 +267,61 @@ export class StatePoller extends WatcherJob {
         })
     }
 
+    // Reads one container's real state and Docker health and persists them.
+    // When inspect fails, the list summary's state and the *stored* health are
+    // kept: a transient Docker error must not reset a HEALTHY/UNHEALTHY
+    // service to "no health" (RESEARCH Finding 4).
+    private async observeContainer(
+        repo: StatePollerRepo,
+        stack: StackWithServices,
+        serviceName: string,
+        container: ListedContainer,
+    ): Promise<ObservedContainer> {
+        let containerState = container.State
+        let healthStatus = normalizeHealth(stack.services.find((s) => s.serviceName === serviceName)?.healthStatus)
+
+        try {
+            const info = await this.docker.inspectContainer(container.Id)
+            containerState = info.State.Status
+            healthStatus = info.State.Health?.Status ?? null
+        } catch {
+            // Fall back to the values above; the per-project error path in
+            // reconcile() is reserved for failures that abort the project.
+        }
+
+        await repo.updateServiceState({
+            stackId: stack.id,
+            serviceName,
+            containerId: container.Id,
+            containerState,
+            healthStatus,
+        })
+        this.emitHealthTransition(stack.id, serviceName, stack.services, healthStatus)
+
+        return {containerState, healthStatus}
+    }
+
+    // Write-before-emit: the history row is appended by a subscriber, so call
+    // this only after the Service row is persisted. Emits only when the
+    // service has a row in `services` and its normalized health really changed.
+    private emitHealthTransition(
+        stackId: string,
+        serviceName: string,
+        services: ReadonlyArray<ServiceState>,
+        nextHealth: string | null,
+    ): void {
+        const previous = services.find((s) => s.serviceName === serviceName)
+        if (!previous || !isHealthTransition(previous.healthStatus, nextHealth)) return
+
+        this.bus.emit("service.health_changed", {
+            stackId,
+            serviceName,
+            fromStatus: normalizeHealth(previous.healthStatus),
+            toStatus: normalizeHealth(nextHealth),
+            source: "docker-healthcheck",
+        })
+    }
+
     protected async reconcile(): Promise<void> {
         console.log("[StatePoller] Starting reconcile...")
         const repo = await this.getRepo()
@@ -297,30 +348,22 @@ export class StatePoller extends WatcherJob {
                 console.log(`[StatePoller] Processing stack=${stack.id}, services in DB: [${stack.services.map(s => s.serviceName).join(", ")}]`)
                 console.log(`[StatePoller] Containers found: [${projectContainers.map(c => c.Labels?.["com.docker.compose.service"]).join(", ")}]`)
 
-                // Update all service states
+                // Observe and write every container's real state and health.
+                // The first container seen for a service is the one the
+                // stack status is derived from.
+                const observed = new Map<string, ObservedContainer>()
                 for (const container of projectContainers) {
                     const svcName = container.Labels?.["com.docker.compose.service"]
                     if (!svcName) continue
 
-                    await repo.updateServiceState({
-                        stackId: stack.id,
-                        serviceName: svcName,
-                        containerId: container.Id,
-                        containerState: container.State,
-                        healthStatus: null,
-                    })
+                    const observation = await this.observeContainer(repo, stack, svcName, container)
+                    if (!observed.has(svcName)) observed.set(svcName, observation)
                 }
 
                 // Recalculate and update stack status
                 const updatedServices = stack.services.map((s) => {
-                    const matchingContainer = projectContainers.find(
-                        (c) => c.Labels?.["com.docker.compose.service"] === s.serviceName,
-                    )
-                    if (matchingContainer) {
-                        return {containerState: matchingContainer.State, healthStatus: null}
-                    }
-                    // Service has no running container
-                    return {containerState: "exited", healthStatus: null}
+                    // A service with no container counts as exited.
+                    return observed.get(s.serviceName) ?? {containerState: "exited", healthStatus: null}
                 })
                 const derivedStatus = deriveStackStatus(updatedServices)
 

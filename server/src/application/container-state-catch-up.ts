@@ -1,4 +1,5 @@
 import type {StackStatus} from "../generated/prisma/enums.js";
+import {isHealthTransition, normalizeHealth} from "../domain/service-health.js";
 import {deriveStackStatus, isTransitionalStatus} from "../domain/stack-state-derivation.js";
 import type {DockerodeClientPort} from "./ports/dockerode-client-port.js";
 import type {EventBusPort} from "./ports/event-bus-port.js";
@@ -11,7 +12,7 @@ export interface ContainerStateCatchUpRepo {
     findByComposeProject(id: string): Promise<{
         id: string;
         status: string;
-        services: ReadonlyArray<{serviceName: string}>;
+        services: ReadonlyArray<{serviceName: string; healthStatus: string | null}>;
     } | null>;
 
     updateServiceState(data: {
@@ -77,8 +78,8 @@ export class ContainerStateCatchUp {
         );
 
         const observations: ServiceObservation[] = [];
-        for (const {serviceName} of stack.services) {
-            observations.push(await this.observe(serviceName, containers));
+        for (const service of stack.services) {
+            observations.push(await this.observe(service, containers));
         }
 
         // All writes complete before any event is emitted, so a failed write
@@ -92,6 +93,20 @@ export class ContainerStateCatchUp {
         // failure result, Deployment record and ERROR log entry are untouched.
         const stackStatus = deriveStackStatus(observations);
         const statusLog = await this.repo.updateStackStatus(stackId, stackStatus);
+
+        // Record each Docker-health transition seen here in the history, after
+        // every write above and before the per-service state events.
+        observations.forEach((observation, index) => {
+            const stored = stack.services[index]?.healthStatus;
+            if (!isHealthTransition(stored, observation.healthStatus)) return;
+            this.bus.emit("service.health_changed", {
+                stackId,
+                serviceName: observation.serviceName,
+                fromStatus: normalizeHealth(stored),
+                toStatus: normalizeHealth(observation.healthStatus),
+                source: "docker-healthcheck",
+            });
+        });
 
         observations.forEach((observation, index) => {
             this.bus.emit("stack.container_state_changed", {
@@ -116,7 +131,7 @@ export class ContainerStateCatchUp {
     }
 
     private async observe(
-        serviceName: string,
+        {serviceName, healthStatus: storedHealth}: {serviceName: string; healthStatus: string | null},
         containers: ReadonlyArray<ListedContainer>,
     ): Promise<ServiceObservation> {
         const match = containers.find((c) => c.Labels?.[COMPOSE_SERVICE_LABEL] === serviceName);
@@ -136,8 +151,14 @@ export class ContainerStateCatchUp {
             };
         } catch {
             // Container vanished between list and inspect (or inspect failed):
-            // fall back to the state the list call already reported.
-            return {serviceName, containerId: match.Id, containerState: match.State, healthStatus: null};
+            // fall back to the state the list call already reported and keep
+            // the stored health rather than resetting it to null.
+            return {
+                serviceName,
+                containerId: match.Id,
+                containerState: match.State,
+                healthStatus: normalizeHealth(storedHealth),
+            };
         }
     }
 }

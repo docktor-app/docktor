@@ -47,16 +47,25 @@ describe("ContainerStateCatchUp", () => {
         );
     });
 
-    function givenStack(status: string, serviceNames: string[]): void {
+    function givenStack(
+        status: string,
+        serviceNames: string[],
+        storedHealth: Record<string, string | null> = {},
+    ): void {
         repo.findByComposeProject.mockResolvedValue({
             id: "my-app",
             status,
-            services: serviceNames.map((serviceName) => ({serviceName})),
+            services: serviceNames.map((serviceName) => ({
+                serviceName,
+                healthStatus: storedHealth[serviceName] ?? null,
+            })),
         });
     }
 
     function givenRunningWebAndDb(): void {
-        givenStack("RUNNING", ["web", "db"]);
+        // web's stored health already matches what inspect reports, so the
+        // happy path observes no health transition.
+        givenStack("RUNNING", ["web", "db"], {web: "healthy"});
         docker.listContainers.mockResolvedValue([
             container("c-web", "my-app", "web"),
             container("c-db", "my-app", "db"),
@@ -221,6 +230,100 @@ describe("ContainerStateCatchUp", () => {
                 healthStatus: null,
             });
             expect(repo.updateStackStatus).toHaveBeenCalledWith("my-app", "ERROR");
+        });
+    });
+
+    describe("health transitions (#23, D-12)", () => {
+        function healthEvents(): Array<Record<string, unknown>> {
+            return bus.emit.mock.calls
+                .filter((call) => call[0] === "service.health_changed")
+                .map((call) => call[1]);
+        }
+
+        it("keeps the stored health, and emits no health event, when inspecting a container fails", async () => {
+            givenStack("RUNNING", ["web"], {web: "healthy"});
+            docker.listContainers.mockResolvedValue([container("c-web", "my-app", "web", "running")]);
+            docker.inspectContainer.mockRejectedValue(new Error("No such container"));
+
+            await catchUp.catchUp("my-app");
+
+            expect(repo.updateServiceState).toHaveBeenCalledWith({
+                stackId: "my-app",
+                serviceName: "web",
+                containerId: "c-web",
+                containerState: "running",
+                healthStatus: "healthy",
+            });
+            expect(healthEvents()).toEqual([]);
+        });
+
+        it("writes the new health and emits one service.health_changed after all writes, before container_state_changed", async () => {
+            givenStack("RUNNING", ["web", "db"], {web: "healthy"});
+            docker.listContainers.mockResolvedValue([
+                container("c-web", "my-app", "web"),
+                container("c-db", "my-app", "db"),
+            ]);
+            docker.inspectContainer.mockImplementation(async (id: string) =>
+                id === "c-web"
+                    ? {Id: id, State: {Status: "running", Health: {Status: "unhealthy"}}}
+                    : {Id: id, State: {Status: "running"}},
+            );
+
+            await catchUp.catchUp("my-app");
+
+            expect(repo.updateServiceState).toHaveBeenCalledWith(
+                expect.objectContaining({serviceName: "web", healthStatus: "unhealthy"}),
+            );
+            expect(healthEvents()).toEqual([
+                {
+                    stackId: "my-app",
+                    serviceName: "web",
+                    fromStatus: "healthy",
+                    toStatus: "unhealthy",
+                    source: "docker-healthcheck",
+                },
+            ]);
+
+            const lastWrite = Math.max(
+                ...repo.updateServiceState.mock.invocationCallOrder,
+                ...repo.updateStackStatus.mock.invocationCallOrder,
+            );
+            const healthIndex = bus.emit.mock.calls.findIndex((call) => call[0] === "service.health_changed");
+            const stateIndex = bus.emit.mock.calls.findIndex((call) => call[0] === "stack.container_state_changed");
+            expect(bus.emit.mock.invocationCallOrder[healthIndex]).toBeGreaterThan(lastWrite);
+            expect(healthIndex).toBeLessThan(stateIndex);
+        });
+
+        it("clears health to null and emits healthy -> null when the container is missing", async () => {
+            givenStack("RUNNING", ["web"], {web: "healthy"});
+            docker.listContainers.mockResolvedValue([]);
+
+            await catchUp.catchUp("my-app");
+
+            expect(repo.updateServiceState).toHaveBeenCalledWith({
+                stackId: "my-app",
+                serviceName: "web",
+                containerId: null,
+                containerState: "exited",
+                healthStatus: null,
+            });
+            expect(healthEvents()).toEqual([
+                {
+                    stackId: "my-app",
+                    serviceName: "web",
+                    fromStatus: "healthy",
+                    toStatus: null,
+                    source: "docker-healthcheck",
+                },
+            ]);
+        });
+
+        it("emits no health event when no service's health changed", async () => {
+            givenRunningWebAndDb();
+
+            await catchUp.catchUp("my-app");
+
+            expect(healthEvents()).toEqual([]);
         });
     });
 

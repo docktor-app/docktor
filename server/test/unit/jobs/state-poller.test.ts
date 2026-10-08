@@ -258,8 +258,65 @@ describe("StatePoller", () => {
         });
     });
 
+    describe("handleEvent — 404 path clears health (#23, D-12)", () => {
+        const destroyEvent = {
+            Type: "container",
+            Action: "destroy",
+            Actor: {
+                ID: "container-web",
+                Attributes: {
+                    "com.docker.compose.project": "my-stack",
+                    "com.docker.compose.service": "web",
+                },
+            },
+        };
+
+        function setupGone(storedHealth: string | null) {
+            const bus = new InMemoryEventBus();
+            const healthListener = vi.fn();
+            bus.subscribe("service.health_changed", healthListener);
+            const pollerWithBus = new StatePoller(mockDockerClient as any, mockStackRepo as any, bus);
+
+            mockDockerClient.inspectContainer.mockRejectedValue(Object.assign(new Error("gone"), {statusCode: 404}));
+            mockStackRepo.findByComposeProject.mockResolvedValue({
+                id: "my-stack",
+                status: "RUNNING",
+                services: [{serviceName: "web", containerState: "running", healthStatus: storedHealth}],
+            });
+            mockStackRepo.updateServiceState.mockResolvedValue(undefined);
+            mockStackRepo.updateStackStatus.mockResolvedValue(null);
+            return {pollerWithBus, healthListener};
+        }
+
+        it("emits service.health_changed to null after the write when the stored health was non-null", async () => {
+            const {pollerWithBus, healthListener} = setupGone("healthy");
+
+            await pollerWithBus.handleEvent(destroyEvent);
+
+            expect(healthListener).toHaveBeenCalledTimes(1);
+            expect(healthListener).toHaveBeenCalledWith({
+                stackId: "my-stack",
+                serviceName: "web",
+                fromStatus: "healthy",
+                toStatus: null,
+                source: "docker-healthcheck",
+            });
+            const writeOrder = mockStackRepo.updateServiceState.mock.invocationCallOrder[0] ?? Infinity;
+            const healthOrder = healthListener.mock.invocationCallOrder[0] ?? -Infinity;
+            expect(writeOrder).toBeLessThan(healthOrder);
+        });
+
+        it("emits nothing when the stored health was already null", async () => {
+            const {pollerWithBus, healthListener} = setupGone(null);
+
+            await pollerWithBus.handleEvent(destroyEvent);
+
+            expect(healthListener).not.toHaveBeenCalled();
+        });
+    });
+
     describe("reconcile (OBS-04)", () => {
-        function mockOneContainerStack(overrides: {stackStatus?: string} = {}) {
+        function mockOneContainerStack(overrides: {stackStatus?: string; storedHealth?: string | null} = {}) {
             mockDockerClient.listContainers.mockResolvedValue([
                 {
                     Id: "c1",
@@ -273,9 +330,18 @@ describe("StatePoller", () => {
             mockStackRepo.findByComposeProject.mockResolvedValue({
                 id: "docktor-proxy",
                 status: overrides.stackStatus ?? "RUNNING",
-                services: [{serviceName: "nginx"}],
+                services: [{serviceName: "nginx", containerState: "running", healthStatus: overrides.storedHealth ?? null}],
             });
             mockStackRepo.updateServiceState.mockResolvedValue(undefined);
+            // Default: a running container with no healthcheck.
+            mockDockerClient.inspectContainer.mockResolvedValue({Id: "c1", State: {Status: "running"}});
+        }
+
+        function inspectedWithHealth(health: string) {
+            mockDockerClient.inspectContainer.mockResolvedValue({
+                Id: "c1",
+                State: {Status: "running", Health: {Status: health}},
+            });
         }
 
         // reconcile() is protected — invoked through a narrow structural cast
@@ -359,6 +425,139 @@ describe("StatePoller", () => {
                 consoleLog.mockRestore();
                 await watcher.stop();
             }
+        });
+
+        describe("real Docker health (#23, RESEARCH Finding 4)", () => {
+            function busWithHealthListener() {
+                const bus = new InMemoryEventBus();
+                const healthListener = vi.fn();
+                bus.subscribe("service.health_changed", healthListener);
+                return {bus, healthListener, pollerWithBus: new StatePoller(mockDockerClient as any, mockStackRepo as any, bus)};
+            }
+
+            it("writes the inspected health and derives HEALTHY, with no event when health is unchanged", async () => {
+                const {healthListener, pollerWithBus} = busWithHealthListener();
+                mockOneContainerStack({storedHealth: "healthy"});
+                inspectedWithHealth("healthy");
+                mockStackRepo.updateStackStatus.mockResolvedValue(null);
+
+                await callReconcile(pollerWithBus);
+
+                expect(mockDockerClient.inspectContainer).toHaveBeenCalledWith("c1");
+                expect(mockStackRepo.updateServiceState).toHaveBeenCalledWith({
+                    stackId: "docktor-proxy",
+                    serviceName: "nginx",
+                    containerId: "c1",
+                    containerState: "running",
+                    healthStatus: "healthy",
+                });
+                expect(mockStackRepo.updateStackStatus).toHaveBeenCalledWith("docktor-proxy", "HEALTHY");
+                expect(healthListener).not.toHaveBeenCalled();
+            });
+
+            it("emits service.health_changed after the write when the inspected health changed, and derives UNHEALTHY", async () => {
+                const {healthListener, pollerWithBus} = busWithHealthListener();
+                mockOneContainerStack({storedHealth: "healthy"});
+                inspectedWithHealth("unhealthy");
+                mockStackRepo.updateStackStatus.mockResolvedValue(null);
+
+                await callReconcile(pollerWithBus);
+
+                expect(mockStackRepo.updateServiceState).toHaveBeenCalledWith(
+                    expect.objectContaining({healthStatus: "unhealthy"}),
+                );
+                expect(mockStackRepo.updateStackStatus).toHaveBeenCalledWith("docktor-proxy", "UNHEALTHY");
+                expect(healthListener).toHaveBeenCalledTimes(1);
+                expect(healthListener).toHaveBeenCalledWith({
+                    stackId: "docktor-proxy",
+                    serviceName: "nginx",
+                    fromStatus: "healthy",
+                    toStatus: "unhealthy",
+                    source: "docker-healthcheck",
+                });
+                const writeOrder = mockStackRepo.updateServiceState.mock.invocationCallOrder[0] ?? Infinity;
+                const healthOrder = healthListener.mock.invocationCallOrder[0] ?? -Infinity;
+                expect(writeOrder).toBeLessThan(healthOrder);
+            });
+
+            it("keeps the stored health, emits nothing and continues with the next project when inspect rejects", async () => {
+                const {healthListener, pollerWithBus} = busWithHealthListener();
+                mockDockerClient.listContainers.mockResolvedValue([
+                    {
+                        Id: "c1",
+                        State: "running",
+                        Labels: {"com.docker.compose.project": "first", "com.docker.compose.service": "nginx"},
+                    },
+                    {
+                        Id: "c2",
+                        State: "running",
+                        Labels: {"com.docker.compose.project": "second", "com.docker.compose.service": "api"},
+                    },
+                ]);
+                mockStackRepo.findByComposeProject.mockImplementation(async (project: string) =>
+                    project === "first"
+                        ? {id: "first", status: "RUNNING", services: [{serviceName: "nginx", containerState: "running", healthStatus: "healthy"}]}
+                        : {id: "second", status: "RUNNING", services: [{serviceName: "api", containerState: "running", healthStatus: null}]},
+                );
+                mockDockerClient.inspectContainer.mockImplementation(async (id: string) => {
+                    if (id === "c1") throw new Error("docker hiccup");
+                    return {Id: id, State: {Status: "running"}};
+                });
+                mockStackRepo.updateServiceState.mockResolvedValue(undefined);
+                mockStackRepo.updateStackStatus.mockResolvedValue(null);
+
+                await callReconcile(pollerWithBus);
+
+                expect(mockStackRepo.updateServiceState).toHaveBeenCalledWith({
+                    stackId: "first",
+                    serviceName: "nginx",
+                    containerId: "c1",
+                    containerState: "running",
+                    healthStatus: "healthy",
+                });
+                expect(mockStackRepo.updateStackStatus).toHaveBeenCalledWith("first", "HEALTHY");
+                expect(mockStackRepo.updateServiceState).toHaveBeenCalledWith(
+                    expect.objectContaining({stackId: "second", serviceName: "api"}),
+                );
+                expect(healthListener).not.toHaveBeenCalled();
+            });
+
+            it("emits no stack.status_changed for a steady UNHEALTHY stack, so NotificationWatcher's timer is not cancelled", async () => {
+                const bus = new InMemoryEventBus();
+                const emitSpy = vi.spyOn(bus, "emit");
+                const pollerWithBus = new StatePoller(mockDockerClient as any, mockStackRepo as any, bus);
+                mockOneContainerStack({stackStatus: "UNHEALTHY", storedHealth: "unhealthy"});
+                inspectedWithHealth("unhealthy");
+                // The repository reports no change: the stack is already UNHEALTHY.
+                mockStackRepo.updateStackStatus.mockResolvedValue(null);
+
+                await callReconcile(pollerWithBus);
+
+                expect(mockStackRepo.updateStackStatus).toHaveBeenCalledWith("docktor-proxy", "UNHEALTHY");
+                expect(emitSpy).not.toHaveBeenCalledWith("stack.status_changed", expect.anything());
+                expect(emitSpy).not.toHaveBeenCalledWith("service.health_changed", expect.anything());
+            });
+
+            it("keeps the exited/null default for a service with no container", async () => {
+                mockOneContainerStack();
+                inspectedWithHealth("healthy");
+                mockStackRepo.findByComposeProject.mockResolvedValue({
+                    id: "docktor-proxy",
+                    status: "RUNNING",
+                    services: [
+                        {serviceName: "nginx", containerState: "running", healthStatus: "healthy"},
+                        {serviceName: "worker", containerState: "running", healthStatus: "unhealthy"},
+                    ],
+                });
+                mockStackRepo.updateStackStatus.mockResolvedValue(null);
+
+                await callReconcile(poller);
+
+                // worker has no container: it is derived as exited with null health, so its
+                // stale stored "unhealthy" does not leak into the derived stack status.
+                expect(mockStackRepo.updateServiceState).toHaveBeenCalledTimes(1);
+                expect(mockStackRepo.updateStackStatus).toHaveBeenCalledWith("docktor-proxy", "HEALTHY");
+            });
         });
 
         it("emits nothing on stack.status_changed when a tick's status is unchanged, but still updates the service row", async () => {
