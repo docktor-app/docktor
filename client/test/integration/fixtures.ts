@@ -82,6 +82,17 @@ export const test = base.extend<{_coverage: void; _apiRouteGuard: void}>({
                 }),
             );
 
+            // RESEARCH Pitfall 7: the Dashboard and the Stacks page now fetch
+            // the batch uptime (useStackUptimes). Default to no stacks, so
+            // every cell reads an em dash; uptime-retention.spec.ts overrides.
+            await page.route("**/api/uptime/stacks", (route) =>
+                route.fulfill({
+                    status: 200,
+                    contentType: "application/json",
+                    body: JSON.stringify({windowDays: 30, stacks: []}),
+                }),
+            );
+
             await use();
 
             if (unstubbed.length > 0) {

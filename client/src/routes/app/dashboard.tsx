@@ -7,11 +7,13 @@ import {Section, SectionActions, SectionHeader, SectionTitle} from "@/components
 import {StackList} from "@/components/domain/stack/stack-list";
 import {DashboardStatCards} from "@/routes/app/dashboard/components/dashboard-stat-cards";
 import {useStacks} from "@/hooks/use-stacks";
+import {useStackUptimes} from "@/hooks/use-stack-uptimes";
 import {useBackupDefaults} from "@/hooks/use-backup-defaults";
 import {computeDashboardStats} from "@/lib/dashboard-stats";
 
 export default function Dashboard() {
     const {stacks, loading, error} = useStacks();
+    const uptimes = useStackUptimes();
     const {defaultSchedule, loading: defaultsLoading, error: defaultsError} = useBackupDefaults();
 
     const stats = computeDashboardStats(stacks, defaultSchedule);
@@ -60,7 +62,7 @@ export default function Dashboard() {
                             </SectionActions>
                         )}
                     </SectionHeader>
-                    <StackList stacks={recentStacks} loading={loading} pagination={false} />
+                    <StackList stacks={recentStacks} loading={loading} pagination={false} uptimes={uptimes} />
                 </Section>
             </PageContent>
         </Page>

@@ -1,7 +1,7 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import {render, screen} from "@testing-library/react";
 import {MemoryRouter} from "react-router";
-import {StackList} from "@/components/domain/stack/stack-list";
+import {StackList, type StackListUptimes} from "@/components/domain/stack/stack-list";
 import type {Service, StackWithServices} from "@/lib/stacks-api";
 
 // jsdom does not implement matchMedia; DataTable's mobile-detection hook
@@ -59,10 +59,10 @@ function buildStack(overrides: Partial<StackWithServices> = {}): StackWithServic
     };
 }
 
-function renderList(stacks: StackWithServices[]) {
+function renderList(stacks: StackWithServices[], uptimes?: StackListUptimes) {
     return render(
         <MemoryRouter>
-            <StackList stacks={stacks} pagination={false} />
+            <StackList stacks={stacks} pagination={false} uptimes={uptimes} />
         </MemoryRouter>,
     );
 }
@@ -88,5 +88,44 @@ describe("StackList", () => {
         renderList([stack]);
 
         expect(screen.queryByText("update available")).not.toBeInTheDocument();
+    });
+
+    describe("Uptime column", () => {
+        const stackA = buildStack({id: "a", displayName: "Stack A"});
+        const stackB = buildStack({id: "b", displayName: "Stack B"});
+
+        function buildUptimes(overrides: Partial<StackListUptimes> = {}): StackListUptimes {
+            return {byStackId: new Map([["a", 99.95]]), windowDays: 30, loading: false, ...overrides};
+        }
+
+        function headerNames(): string[] {
+            return screen.getAllByRole("columnheader").map((header) => header.textContent ?? "");
+        }
+
+        it("renders no Uptime column without the uptimes prop", () => {
+            renderList([stackA]);
+
+            expect(screen.queryByRole("columnheader", {name: "Uptime"})).not.toBeInTheDocument();
+        });
+
+        it("places the Uptime column between Status and Services", () => {
+            renderList([stackA], buildUptimes());
+
+            expect(headerNames()).toEqual(["Name", "Status", "Uptime", "Services", "Created"]);
+        });
+
+        it("shows the truncated percentage, and an em dash for a stack missing from the batch", () => {
+            renderList([stackA, stackB], buildUptimes());
+
+            expect(screen.getByText("99.9%")).toBeInTheDocument();
+            expect(screen.getByLabelText("No uptime data")).toHaveTextContent("—");
+        });
+
+        it("renders a skeleton in every Uptime cell while loading", () => {
+            const {container} = renderList([stackA, stackB], buildUptimes({loading: true}));
+
+            expect(screen.queryByText("99.9%")).not.toBeInTheDocument();
+            expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(2);
+        });
     });
 });

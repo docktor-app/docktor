@@ -28,3 +28,14 @@ export interface StackUptime {
 export function getStackUptime(stackId: string): Promise<StackUptime> {
     return apiFetch<StackUptime>(`/api/stacks/${encodeURIComponent(stackId)}/uptime`);
 }
+
+// Mirrors the 14-04 contract of GET /api/uptime/stacks: one percentage per
+// stack over the configured retention window (null = no data in the window).
+export interface StackUptimes {
+    windowDays: number;
+    stacks: Array<{stackId: string; percent: number | null}>;
+}
+
+export function getStackUptimes(): Promise<StackUptimes> {
+    return apiFetch<StackUptimes>("/api/uptime/stacks");
+}
