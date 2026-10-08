@@ -8,6 +8,7 @@ import {backupScheduler} from "./backup-scheduler.js"
 import {proxyCertPoller} from "./proxy-cert-poller.js"
 import {templateRepoSync} from "./template-repo-sync.js"
 import {imageUpdateCheckPruner} from "./image-update-check-pruner.js"
+import {diskUsageJob} from "./disk-usage-job.js"
 
 // Registered once, at module load, in the same order startJobs() used to
 // call startJob() for each — the registry's startAll()/stopAll() preserve
@@ -22,6 +23,11 @@ jobRegistry.register(backupScheduler)
 jobRegistry.register(proxyCertPoller)
 jobRegistry.register(templateRepoSync)
 jobRegistry.register(imageUpdateCheckPruner)
+// Always the LAST registration (RESEARCH Finding 7): startAll() awaits each
+// start() in sequence, so a job that does heavy work must never sit in front
+// of another one. DiskUsageJob only schedules a delayed first scan, but the
+// ordering keeps that guarantee independent of how it is implemented.
+jobRegistry.register(diskUsageJob)
 
 export async function startJobs(): Promise<void> {
     // Recovering orphaned in-progress backups stays an isolated pre-start

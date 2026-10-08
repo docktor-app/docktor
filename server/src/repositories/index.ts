@@ -17,3 +17,4 @@ export {imageUpdateCheckRepository} from "./image-update-check-repository.js";
 export {userRepository} from "./user-repository.js";
 export {templateRepository} from "./template-repository.js";
 export {serviceHealthEventRepository} from "./service-health-event-repository.js";
+export {stackDiskUsageRepository} from "./stack-disk-usage-repository.js";

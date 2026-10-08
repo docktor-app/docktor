@@ -11,6 +11,7 @@ import {imageUpdateCheckRepository} from "../../../src/repositories/image-update
 import {userRepository} from "../../../src/repositories/user-repository.js";
 import {templateRepository} from "../../../src/repositories/template-repository.js";
 import {serviceHealthEventRepository} from "../../../src/repositories/service-health-event-repository.js";
+import {stackDiskUsageRepository} from "../../../src/repositories/stack-disk-usage-repository.js";
 
 // repositories/index.ts is the single source of repository singletons for
 // the whole composition root (D-09). Every export here must be
@@ -30,6 +31,7 @@ describe("repositories/index.ts", () => {
         ["userRepository", userRepository],
         ["templateRepository", templateRepository],
         ["serviceHealthEventRepository", serviceHealthEventRepository],
+        ["stackDiskUsageRepository", stackDiskUsageRepository],
     ];
 
     for (const [name, ownModuleSingleton] of expectedSingletons) {

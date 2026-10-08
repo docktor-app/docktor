@@ -33,6 +33,7 @@ model Stack {
   // Disk usage
   volumeSizeBytes  BigInt? // last measured size of ./volumes/
   volumeSizeAt     DateTime? // when volumeSizeBytes was last updated
+  backupSizeBytes  BigInt? // last measured size of ./backups/ (stack-local restic repo); null = no local repo or never measured
 
   // Backup hooks (optional)
   backupPreHook    String? // shell command to run before backup
@@ -67,6 +68,7 @@ model Stack {
   notifications Notification[]
   incidents     StackIncident[]
   serviceHealthEvents ServiceHealthEvent[]
+  volumeUsages        StackVolumeUsage[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

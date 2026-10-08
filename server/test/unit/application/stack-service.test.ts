@@ -1,5 +1,5 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
-import {StackService} from "../../../src/application/stack-service.js";
+import {StackService, toStackSizeDto} from "../../../src/application/stack-service.js";
 import {BadRequestError, ConfirmationRequiredError, ConflictError, NotFoundError} from "../../../src/lib/errors.js";
 import {ComposeEditError, setServiceImageTag} from "../../../src/lib/compose-editor.js";
 import {EMPTY_DEPLOY_WARNINGS, type DeployWarnings} from "../../../src/application/deploy-preflight-service.js";
@@ -11,6 +11,9 @@ vi.mock("../../../src/lib/compose-editor.js", async (importOriginal) => {
     const actual = await importOriginal<typeof import("../../../src/lib/compose-editor.js")>();
     return {...actual, setServiceImageTag: vi.fn(actual.setServiceImageTag)};
 });
+
+// Prisma rows always carry the disk usage columns; null = never measured.
+const NO_SIZES = {volumeSizeBytes: null, backupSizeBytes: null};
 
 function createMockRepo() {
     return {
@@ -101,6 +104,22 @@ function createMockStateCatchUp() {
     };
 }
 
+describe("toStackSizeDto (RESEARCH Finding 5)", () => {
+    it("converts BigInt sizes to numbers and keeps null", () => {
+        const dto = toStackSizeDto({id: "a", volumeSizeBytes: 1_050_624n, backupSizeBytes: null});
+
+        expect(dto).toEqual({id: "a", volumeSizeBytes: 1_050_624, backupSizeBytes: null});
+        expect(typeof dto.volumeSizeBytes).toBe("number");
+    });
+
+    it("makes a stack row with BigInt sizes JSON-serializable", () => {
+        const row = {id: "a", volumeSizeBytes: 5n, backupSizeBytes: 7n};
+
+        expect(() => JSON.stringify(row)).toThrow(TypeError);
+        expect(JSON.parse(JSON.stringify(toStackSizeDto(row)))).toEqual({id: "a", volumeSizeBytes: 5, backupSizeBytes: 7});
+    });
+});
+
 describe("StackService", () => {
     let service: StackService;
     let repo: ReturnType<typeof createMockRepo>;
@@ -131,7 +150,7 @@ describe("StackService", () => {
     describe("createStack", () => {
         it("creates a stack successfully", async () => {
             repo.exists.mockResolvedValue(false);
-            repo.create.mockResolvedValue({id: "my-app", displayName: "My App"});
+            repo.create.mockResolvedValue({id: "my-app", displayName: "My App", ...NO_SIZES});
 
             const result = await service.createStack({
                 displayName: "My App",
@@ -145,7 +164,7 @@ describe("StackService", () => {
                 "services:\n  web:\n    image: nginx\n",
             );
             expect(repo.create).toHaveBeenCalled();
-            expect(result).toEqual({id: "my-app", displayName: "My App"});
+            expect(result).toEqual({id: "my-app", displayName: "My App", ...NO_SIZES});
         });
 
         it("throws ConflictError when stack already exists", async () => {
@@ -231,7 +250,7 @@ describe("StackService", () => {
 
             it("creates the stack normally when the reviewer reports confirmationRequired: false (no findings)", async () => {
                 repo.exists.mockResolvedValue(false);
-                repo.create.mockResolvedValue({id: "my-app"});
+                repo.create.mockResolvedValue({id: "my-app", ...NO_SIZES});
                 reviewer.previewNewStack.mockResolvedValue({confirmationRequired: false});
 
                 const result = await service.createStack({
@@ -239,7 +258,7 @@ describe("StackService", () => {
                     composeContent: "services:\n  web:\n    image: nginx\n",
                 });
 
-                expect(result).toEqual({id: "my-app"});
+                expect(result).toEqual({id: "my-app", ...NO_SIZES});
                 expect(fs.createDirectory).toHaveBeenCalledWith("my-app");
             });
 
@@ -287,8 +306,8 @@ describe("StackService", () => {
 
     describe("listStacks", () => {
         const allStacks = [
-            {id: "my-app", displayName: "My App", isProtected: false, services: []},
-            {id: "docktor-proxy", displayName: "Docktor Proxy", isProtected: true, services: []},
+            {id: "my-app", displayName: "My App", isProtected: false, services: [], ...NO_SIZES},
+            {id: "docktor-proxy", displayName: "Docktor Proxy", isProtected: true, services: [], ...NO_SIZES},
         ];
 
         it("omits protected stacks when showInDashboard is false", async () => {
@@ -307,6 +326,17 @@ describe("StackService", () => {
             const result = await service.listStacks();
 
             expect(result).toEqual(allStacks);
+        });
+
+        it("serves BigInt disk sizes as JSON-serializable numbers (RESEARCH Finding 5)", async () => {
+            repo.findAll.mockResolvedValue([
+                {id: "my-app", displayName: "My App", isProtected: false, services: [], volumeSizeBytes: 1_050_624n, backupSizeBytes: null},
+            ]);
+
+            const result = await service.listStacks();
+
+            expect(() => JSON.stringify(result)).not.toThrow();
+            expect(result[0]).toMatchObject({volumeSizeBytes: 1_050_624, backupSizeBytes: null});
         });
 
         it("never omits a stack with isProtected: false, regardless of the setting", async () => {
@@ -1507,7 +1537,15 @@ describe("StackService", () => {
     describe("updateStack", () => {
         beforeEach(() => {
             repo.findByIdOrThrow.mockResolvedValue({id: "my-app", lastKnownHash: "hash-1"});
-            repo.findByIdWithRelations.mockResolvedValue({id: "my-app"});
+            repo.findByIdWithRelations.mockResolvedValue({id: "my-app", ...NO_SIZES});
+        });
+
+        it("returns the updated stack with BigInt disk sizes converted to numbers", async () => {
+            repo.findByIdWithRelations.mockResolvedValue({id: "my-app", volumeSizeBytes: 10n, backupSizeBytes: null});
+
+            const result = await service.updateStack("my-app", {description: "x"});
+
+            expect(result).toEqual({id: "my-app", volumeSizeBytes: 10, backupSizeBytes: null});
         });
 
         it("flags configChanged and publishes config_changed when envContent is written", async () => {
@@ -1705,6 +1743,20 @@ describe("StackService", () => {
     });
 
     describe("getStackWithUpdateInfo", () => {
+        it("serves BigInt disk sizes as numbers on the detail payload", async () => {
+            repo.findByIdWithRelations.mockResolvedValue({
+                id: "my-app",
+                services: [],
+                volumeSizeBytes: 2048n,
+                backupSizeBytes: 4096n,
+            });
+
+            const result = await service.getStackWithUpdateInfo("my-app");
+
+            expect(result).toMatchObject({volumeSizeBytes: 2048, backupSizeBytes: 4096});
+            expect(() => JSON.stringify(result)).not.toThrow();
+        });
+
         it("augments each service with updateAvailable/latestTag from a matching stored row", async () => {
             repo.findByIdWithRelations.mockResolvedValue({
                 id: "my-app",

@@ -13,6 +13,7 @@ import {
     imageUpdateCheckRepository,
     templateRepository,
     serviceHealthEventRepository,
+    stackDiskUsageRepository,
 } from "../repositories/index.js";
 import {StackService} from "./stack-service.js";
 import {ComposeReviewService} from "./compose-review-service.js";
@@ -28,6 +29,7 @@ import {LogService, type LogServiceStackReadPort} from "./log-service.js";
 import {TemplateService} from "./template-service.js";
 import {TemplateUpdateService} from "./template-update-service.js";
 import {ServiceHealthHistoryService} from "./service-health-history-service.js";
+import {StorageService} from "./storage-service.js";
 import {certificateFilesystem} from "../infrastructure/certificate-filesystem.js";
 import {stateEventBroadcaster} from "../lib/state-broadcaster.js";
 import {dockerodeClient} from "../infrastructure/dockerode-client.js";
@@ -107,6 +109,10 @@ export const notificationService = new NotificationService(
 // stack repository answers "does this stack exist", the event repository
 // serves the rows the history subscriber below writes.
 export const serviceHealthHistoryService = new ServiceHealthHistoryService(repo, serviceHealthEventRepository);
+
+// #27/D-15: read side of the disk usage figures DiskUsageJob stores — serves
+// GET /api/storage.
+export const storageService = new StorageService(stackDiskUsageRepository);
 
 // D-15: registers all subscriber categories (audit trail, plan 10-13;
 // notifications, plan 10-12; live-state bridge, plan 10-11; service health
