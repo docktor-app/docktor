@@ -27,6 +27,14 @@ describe("ServiceStatusBadge", () => {
         expect(dot).toHaveAttribute("data-pulse", "true");
     });
 
+    it("renders running+starting (probe grace period) as a static yellow 'starting' dot", () => {
+        render(<ServiceStatusBadge containerState="running" healthStatus="starting" />);
+        const badge = screen.getByText("starting");
+        expect(badge).toHaveAttribute("data-tone", "yellow");
+        const dot = badge.querySelector('[data-slot="status-dot"]');
+        expect(dot).toHaveAttribute("data-pulse", "false");
+    });
+
     it("renders exited as a static neutral dot", () => {
         render(<ServiceStatusBadge containerState="exited" healthStatus={null} />);
         const badge = screen.getByText("exited");
@@ -55,6 +63,7 @@ describe("ServiceStatusBadge", () => {
         expect(getServiceStatusPresentation(null, null)).toEqual({label: "unknown", tone: "neutral", dotPulse: false});
         expect(getServiceStatusPresentation("running", "healthy")).toEqual({label: "healthy", tone: "green", dotPulse: true});
         expect(getServiceStatusPresentation("running", "unhealthy")).toEqual({label: "unhealthy", tone: "red", dotPulse: false});
+        expect(getServiceStatusPresentation("running", "starting")).toEqual({label: "starting", tone: "yellow", dotPulse: false});
         expect(getServiceStatusPresentation("running", null)).toEqual({label: "running", tone: "green", dotPulse: true});
         expect(getServiceStatusPresentation("exited", null)).toEqual({label: "exited", tone: "neutral", dotPulse: false});
         expect(getServiceStatusPresentation("restarting", null)).toEqual({label: "restarting", tone: "yellow", dotPulse: false});

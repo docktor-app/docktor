@@ -100,12 +100,46 @@ test.describe("Service health history (#23)", () => {
         await expect(page.getByText("Health history", {exact: true})).toBeVisible();
         await expect(page.getByText("healthy → unhealthy")).toBeVisible();
         await expect(page.getByText("unknown → healthy")).toBeVisible();
-        await expect(page.getByText("HTTP probe", {exact: true})).toBeVisible();
-        await expect(page.getByText("Docker healthcheck", {exact: true})).toBeVisible();
+        // "HTTP probe" also labels the Status cell (probed service), so scope to the panel.
+        const panel = page.locator("#health-history-web");
+        await expect(panel.getByText("HTTP probe", {exact: true})).toBeVisible();
+        await expect(panel.getByText("Docker healthcheck", {exact: true})).toBeVisible();
+        await expect(page.getByRole("row", {name: /web/}).first().getByText("HTTP probe", {exact: true})).toBeVisible();
         await expect(page.getByText("Responded with HTTP 503 after 3 failed checks")).toBeVisible();
 
         await page.getByRole("button", {name: "Hide health history for web"}).click();
         await expect(page.getByText("Health history", {exact: true})).toHaveCount(0);
+    });
+
+    // UI-SPEC UI Considerations (long-text): the table cell is whitespace-nowrap,
+    // so a 200-character probe message used to run ~1600px wide and scroll the page.
+    test("a 200-character probe message wraps inside the panel without horizontal page overflow", async ({page}) => {
+        const longMessage = `${"Responded with HTTP 503 ".repeat(8).slice(0, 190)} after 3 failed checks`;
+        const unbroken = `http://localhost:8080/health?${"x".repeat(170)}`;
+        await mockStackPage(page, [
+            {...webHealthEvents[0], id: "evt-long", message: longMessage},
+            {...webHealthEvents[1], id: "evt-unbroken", message: unbroken},
+        ]);
+
+        await page.goto("/stacks/my-app");
+        await page.getByRole("button", {name: "Show health history for web"}).click();
+        const panel = page.locator("#health-history-web");
+        await expect(panel.getByText(longMessage)).toBeVisible();
+        await expect(panel.getByText(unbroken)).toBeVisible();
+
+        const overflow = await page.evaluate(() => {
+            const viewport = document.querySelector<HTMLElement>(
+                '#health-history-web [data-slot="scroll-area-viewport"]',
+            );
+            return {
+                pageScroll: document.documentElement.scrollWidth,
+                pageClient: document.documentElement.clientWidth,
+                panelScroll: viewport?.scrollWidth ?? -1,
+                panelClient: viewport?.clientWidth ?? -2,
+            };
+        });
+        expect(overflow.pageScroll).toBeLessThanOrEqual(overflow.pageClient);
+        expect(overflow.panelScroll).toBeLessThanOrEqual(overflow.panelClient);
     });
 
     test("serves every service from one stack-wide fetch; opening panels sends no further request", async ({page}) => {

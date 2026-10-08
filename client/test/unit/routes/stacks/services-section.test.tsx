@@ -186,6 +186,83 @@ describe("ServicesSection", () => {
         expect(onViewLogs).toHaveBeenCalledWith("web");
     });
 
+    describe("HTTP probe badge (UI-SPEC D)", () => {
+        it("shows 'HTTP probe' in the Status cell of a service with an http-probe event", () => {
+            renderSection({
+                healthEventsByService: new Map([["web", [makeHealthEvent({source: "http-probe"})]]]),
+            });
+            expect(screen.getByText("HTTP probe")).toHaveAttribute("data-tone", "neutral");
+            expect(screen.getByText("HTTP probe").closest("td")).toContainElement(screen.getByText("running"));
+        });
+
+        it("shows no probe badge on a service whose events are all docker-healthcheck, or that has none", () => {
+            renderSection({
+                services: [
+                    makeService({id: "svc-1", serviceName: "web"}),
+                    makeService({id: "svc-2", serviceName: "db"}),
+                ],
+                healthEventsByService: new Map([
+                    ["web", [makeHealthEvent({source: "docker-healthcheck"})]],
+                ]),
+            });
+            expect(screen.queryByText("HTTP probe")).not.toBeInTheDocument();
+        });
+
+        it("scopes the badge to the probed service only", () => {
+            renderSection({
+                services: [
+                    makeService({id: "svc-1", serviceName: "web"}),
+                    makeService({id: "svc-2", serviceName: "db"}),
+                ],
+                healthEventsByService: new Map([
+                    ["db", [makeHealthEvent({serviceName: "db", source: "http-probe"})]],
+                ]),
+            });
+            const badge = screen.getByText("HTTP probe");
+            expect(badge.closest("tr")).toHaveTextContent("db");
+            expect(badge.closest("tr")).not.toHaveTextContent("web");
+        });
+
+        it("renders the loading, error and empty states inside an opened panel", async () => {
+            const user = userEvent.setup();
+            const {rerender, onRetryHealthEvents} = renderSection({healthEventsLoading: true});
+            await user.click(screen.getByRole("button", {name: "Show health history for web"}));
+            expect(screen.getByRole("status", {name: "Loading health history"})).toBeInTheDocument();
+
+            rerender(
+                <ServicesSection
+                    services={[makeService()]}
+                    stackId="my-app"
+                    stackStatus="RUNNING"
+                    onViewLogs={vi.fn()}
+                    onUpgraded={vi.fn()}
+                    healthEventsByService={new Map()}
+                    healthEventsLoading={false}
+                    healthEventsError="boom"
+                    onRetryHealthEvents={onRetryHealthEvents}
+                />,
+            );
+            expect(screen.getByRole("alert")).toHaveTextContent("Couldn't load health history — boom. Try again.");
+            await user.click(screen.getByRole("button", {name: "Retry"}));
+            expect(onRetryHealthEvents).toHaveBeenCalledTimes(1);
+
+            rerender(
+                <ServicesSection
+                    services={[makeService()]}
+                    stackId="my-app"
+                    stackStatus="RUNNING"
+                    onViewLogs={vi.fn()}
+                    onUpgraded={vi.fn()}
+                    healthEventsByService={new Map()}
+                    healthEventsLoading={false}
+                    healthEventsError={null}
+                    onRetryHealthEvents={onRetryHealthEvents}
+                />,
+            );
+            expect(screen.getByText("No health changes recorded for this service yet.")).toBeInTheDocument();
+        });
+    });
+
     describe("health history (D-12)", () => {
         const webEvents = new Map([["web", [makeHealthEvent()]]]);
 

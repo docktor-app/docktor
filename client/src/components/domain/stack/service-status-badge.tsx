@@ -29,6 +29,12 @@ export function getServiceStatusPresentation(
         return {label: "unhealthy", tone: "red", dotPulse: false};
     }
 
+    // D-08/14-06: a probed service reports "starting" during its 60s grace
+    // period after each start, so the wait reads as in-progress, not healthy.
+    if (containerState === "running" && healthStatus === "starting") {
+        return {label: "starting", tone: "yellow", dotPulse: false};
+    }
+
     if (containerState === "running") {
         return {label: "running", tone: "green", dotPulse: true};
     }

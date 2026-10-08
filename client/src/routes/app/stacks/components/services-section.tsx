@@ -16,6 +16,7 @@ import type {Service} from "@/lib/stacks-api";
 import type {ServiceHealthEvent} from "@/lib/health-api";
 import {getServiceColor} from "@/lib/service-color";
 import {formatPorts, parsePorts} from "@/lib/service-ports";
+import {ToneBadge} from "@/components/common/tone-badge";
 import {ServiceStatusBadge} from "@/components/domain/stack/service-status-badge";
 import {ServiceUpdateBadge} from "@/components/domain/stack/service-update-badge";
 import {ServiceUpgradeDialog} from "./service-upgrade-dialog";
@@ -99,6 +100,10 @@ export function ServicesSection({
                     <TableBody>
                         {services.map((svc) => {
                             const isExpanded = expanded.has(svc.serviceName);
+                            const serviceEvents = healthEventsByService.get(svc.serviceName) ?? NO_HEALTH_EVENTS;
+                            // RESEARCH Open Question 4: there is no DB probe column, so a
+                            // service reads as probed once it has any http-probe event.
+                            const isProbed = serviceEvents.some((event) => event.source === "http-probe");
                             const historyLabel = `${isExpanded ? "Hide" : "Show"} health history for ${svc.serviceName}`;
 
                             return (
@@ -114,11 +119,14 @@ export function ServicesSection({
                                             </span>
                                         </TableCell>
                                         <TableCell>
-                                            <ServiceStatusBadge
-                                                containerState={svc.containerState}
-                                                healthStatus={svc.healthStatus}
-                                                display="compact"
-                                            />
+                                            <div className="flex flex-wrap items-center gap-1">
+                                                <ServiceStatusBadge
+                                                    containerState={svc.containerState}
+                                                    healthStatus={svc.healthStatus}
+                                                    display="compact"
+                                                />
+                                                {isProbed && <ToneBadge tone="neutral">HTTP probe</ToneBadge>}
+                                            </div>
                                         </TableCell>
                                         <TableCell>
                                             <div className="flex flex-row flex-wrap items-center gap-2">
@@ -202,7 +210,7 @@ export function ServicesSection({
                                             <TableCell colSpan={6} className="bg-muted/50">
                                                 <ServiceHealthTimeline
                                                     serviceName={svc.serviceName}
-                                                    events={healthEventsByService.get(svc.serviceName) ?? NO_HEALTH_EVENTS}
+                                                    events={serviceEvents}
                                                     loading={healthEventsLoading}
                                                     error={healthEventsError}
                                                     onRetry={onRetryHealthEvents}

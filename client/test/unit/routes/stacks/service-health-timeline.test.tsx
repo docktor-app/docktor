@@ -1,5 +1,6 @@
 import {describe, expect, it, vi} from "vitest";
 import {render, screen} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import {ServiceHealthTimeline} from "../../../../src/routes/app/stacks/components/service-health-timeline";
 import type {ServiceHealthEvent} from "@/lib/health-api";
 
@@ -91,6 +92,14 @@ describe("ServiceHealthTimeline", () => {
         expect(container.querySelector("img")).not.toBeInTheDocument();
     });
 
+    it("resets inherited nowrap and lets a long message break, so it wraps inside the table cell it renders in", () => {
+        const message = "Responded with HTTP 503 ".repeat(9);
+        const {container} = renderTimeline({events: [makeEvent({source: "http-probe", message})]});
+        // TableCell is whitespace-nowrap; without this reset break-words is inert.
+        expect(container.querySelector("#health-history-web")).toHaveClass("whitespace-normal");
+        expect(container.querySelector(".break-words")).toHaveClass("min-w-0", "wrap-anywhere");
+    });
+
     it("omits the message element when the message is null", () => {
         const {container} = renderTimeline({events: [makeEvent({message: null})]});
         expect(container.querySelector(".break-words")).not.toBeInTheDocument();
@@ -100,5 +109,46 @@ describe("ServiceHealthTimeline", () => {
         renderTimeline();
         const stamp = screen.getByText(new Date("2026-10-08T07:00:00Z").toLocaleString());
         expect(stamp).toHaveClass("text-xs", "text-muted-foreground");
+    });
+
+    describe("states", () => {
+        it("shows two skeleton lines and no rows while loading", () => {
+            const {container} = renderTimeline({loading: true});
+            expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(2);
+            expect(container.querySelector('[data-slot="status-dot"]')).not.toBeInTheDocument();
+            expect(screen.getByText("Health history")).toBeInTheDocument();
+        });
+
+        it("prefers the loading state over a stale error", () => {
+            const {container} = renderTimeline({loading: true, error: "boom"});
+            expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(2);
+            expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+        });
+
+        it("shows the error copy and a Retry button that calls onRetry once", async () => {
+            const user = userEvent.setup();
+            const onRetry = vi.fn();
+            renderTimeline({error: "boom", events: [], onRetry});
+
+            expect(screen.getByRole("alert")).toHaveTextContent("Couldn't load health history — boom. Try again.");
+
+            await user.click(screen.getByRole("button", {name: "Retry"}));
+            expect(onRetry).toHaveBeenCalledTimes(1);
+        });
+
+        it("shows the empty copy when there are no events", () => {
+            renderTimeline({events: []});
+            expect(screen.getByText("No health changes recorded for this service yet.")).toBeInTheDocument();
+            expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+        });
+
+        it("keeps the container id on every state so aria-controls always resolves", () => {
+            const {container, rerender} = renderTimeline({loading: true});
+            expect(container.querySelector("#health-history-web")).toBeInTheDocument();
+            rerender(
+                <ServiceHealthTimeline serviceName="web" events={[]} loading={false} error={null} onRetry={vi.fn()}/>,
+            );
+            expect(container.querySelector("#health-history-web")).toBeInTheDocument();
+        });
     });
 });
