@@ -12,6 +12,7 @@ import {
 } from "@/lib/compose-health-probe";
 import {cn} from "@/lib/utils";
 import {getServiceColor} from "@/lib/service-color";
+import {Alert, AlertDescription} from "@/components/ui/alert";
 import {Input} from "@/components/ui/input";
 import {Switch} from "@/components/ui/switch";
 import {
@@ -105,10 +106,14 @@ function ProbeRow({form, index, serviceName, onToggle, onCommit}: Readonly<Probe
                             />
                             <FormLabel className="truncate">{serviceName}</FormLabel>
                         </div>
+                        {/* `?? false`: for one render after an external edit adds a service, this
+                            row's index has no form value yet (the re-seed effect runs after paint),
+                            and an undefined `checked` would flip the Switch from uncontrolled to
+                            controlled. */}
                         <FormControl>
                             <Switch
                                 aria-label={`Probe ${serviceName} over HTTP`}
-                                checked={field.value}
+                                checked={field.value ?? false}
                                 onCheckedChange={(checked) => {
                                     field.onChange(checked);
                                     onToggle(index, checked);
@@ -214,8 +219,20 @@ export function HealthProbeForm({composeContent, onChange}: Readonly<HealthProbe
 
     async function commitRow(index: number): Promise<void> {
         const valid = await form.trigger(`probes.${index}`);
+        // Re-read after the async validation: the user may have switched the
+        // row off (the blur that started this commit fires before the switch's
+        // click) or the buffer may have been re-seeded meanwhile. A validation
+        // result for a row that is no longer enabled must not leave an error.
+        const row: ProbeRowValues | undefined = form.getValues(`probes.${index}`);
+        if (row === undefined) {
+            return;
+        }
+        if (!row.enabled) {
+            form.clearErrors(`probes.${index}`);
+            return;
+        }
         if (valid) {
-            emit(form.getValues(`probes.${index}`));
+            emit(row);
         }
     }
 
@@ -232,25 +249,40 @@ export function HealthProbeForm({composeContent, onChange}: Readonly<HealthProbe
         }
     }
 
-    const services = read.ok ? read.services : [];
+    let rows: React.JSX.Element;
+    if (!read.ok) {
+        // The form is replaced, not just disabled, so nothing can write to a
+        // buffer that does not parse.
+        rows = (
+            <Alert>
+                <AlertDescription>Fix the compose file's YAML errors to edit probes here.</AlertDescription>
+            </Alert>
+        );
+    } else if (read.services.length === 0) {
+        rows = (
+            <p className="text-sm text-muted-foreground">Add a service to the compose file to configure a probe.</p>
+        );
+    } else {
+        rows = (
+            <ul className="divide-y">
+                {read.services.map(({serviceName}, index) => (
+                    <ProbeRow
+                        key={serviceName}
+                        form={form}
+                        index={index}
+                        serviceName={serviceName}
+                        onToggle={handleToggle}
+                        onCommit={(rowIndex) => void commitRow(rowIndex)}
+                    />
+                ))}
+            </ul>
+        );
+    }
 
     return (
         <Form {...form}>
             <div className="space-y-4">
-                {services.length > 0 && (
-                    <ul className="divide-y">
-                        {services.map(({serviceName}, index) => (
-                            <ProbeRow
-                                key={serviceName}
-                                form={form}
-                                index={index}
-                                serviceName={serviceName}
-                                onToggle={handleToggle}
-                                onCommit={(rowIndex) => void commitRow(rowIndex)}
-                            />
-                        ))}
-                    </ul>
-                )}
+                {rows}
                 <div className="space-y-1">
                     <p className="text-xs text-muted-foreground">{BEHAVIOR_NOTE}</p>
                     <p className="text-xs text-muted-foreground">{SAVE_HINT}</p>
