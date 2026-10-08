@@ -575,4 +575,214 @@ describe("StatePoller", () => {
             expect(mockStackRepo.updateServiceState).toHaveBeenCalledTimes(1);
         });
     });
+
+    describe("probe-owned services (D-07)", () => {
+        const OWNED = {
+            isProbeOwned: (stackId: string, serviceName: string) => stackId === "my-stack" && serviceName === "web",
+        };
+
+        function pollerWithOwnership() {
+            const bus = new InMemoryEventBus();
+            const healthListener = vi.fn();
+            const stateListener = vi.fn();
+            bus.subscribe("service.health_changed", healthListener);
+            bus.subscribe("stack.container_state_changed", stateListener);
+            const ownedPoller = new StatePoller(mockDockerClient as any, mockStackRepo as any, bus, OWNED);
+            mockStackRepo.updateServiceState.mockResolvedValue(undefined);
+            mockStackRepo.updateStackStatus.mockResolvedValue(null);
+            return {ownedPoller, healthListener, stateListener};
+        }
+
+        const eventFor = (serviceName: string) => ({
+            Type: "container",
+            Action: "health_status: healthy",
+            Actor: {
+                ID: `container-${serviceName}`,
+                Attributes: {
+                    "com.docker.compose.project": "my-stack",
+                    "com.docker.compose.service": serviceName,
+                },
+            },
+        });
+
+        async function callReconcile(p: StatePoller): Promise<void> {
+            // reconcile() is protected; this narrow structural cast only exposes that one method.
+            await (p as unknown as {reconcile(): Promise<void>}).reconcile();
+        }
+
+        it("handleEvent keeps the stored probe health, derives from it and records no docker-healthcheck change", async () => {
+            const {ownedPoller, healthListener, stateListener} = pollerWithOwnership();
+            mockDockerClient.inspectContainer.mockResolvedValue({
+                Id: "container-web",
+                State: {Status: "running", Health: {Status: "healthy"}},
+            });
+            mockStackRepo.findByComposeProject.mockResolvedValue({
+                id: "my-stack",
+                status: "UNHEALTHY",
+                services: [{serviceName: "web", containerState: "running", healthStatus: "unhealthy"}],
+            });
+
+            await ownedPoller.handleEvent(eventFor("web"));
+
+            expect(mockStackRepo.updateServiceState).toHaveBeenCalledWith({
+                stackId: "my-stack",
+                serviceName: "web",
+                containerId: "container-web",
+                containerState: "running",
+                healthStatus: "unhealthy",
+            });
+            expect(mockStackRepo.updateStackStatus).toHaveBeenCalledWith("my-stack", "UNHEALTHY");
+            expect(healthListener).not.toHaveBeenCalled();
+            expect(stateListener).toHaveBeenCalledWith(expect.objectContaining({healthStatus: "unhealthy"}));
+        });
+
+        it("handleEvent still takes the container state from Docker for a probe-owned service", async () => {
+            const {ownedPoller} = pollerWithOwnership();
+            mockDockerClient.inspectContainer.mockResolvedValue({Id: "container-web", State: {Status: "exited"}});
+            mockStackRepo.findByComposeProject.mockResolvedValue({
+                id: "my-stack",
+                status: "HEALTHY",
+                services: [{serviceName: "web", containerState: "running", healthStatus: "healthy"}],
+            });
+
+            await ownedPoller.handleEvent(eventFor("web"));
+
+            expect(mockStackRepo.updateServiceState).toHaveBeenCalledWith(
+                expect.objectContaining({containerState: "exited", healthStatus: "healthy"}),
+            );
+        });
+
+        it("handleEvent treats a service that is not probe-owned exactly as before", async () => {
+            const {ownedPoller, healthListener} = pollerWithOwnership();
+            mockDockerClient.inspectContainer.mockResolvedValue({
+                Id: "container-db",
+                State: {Status: "running", Health: {Status: "healthy"}},
+            });
+            mockStackRepo.findByComposeProject.mockResolvedValue({
+                id: "my-stack",
+                status: "RUNNING",
+                services: [{serviceName: "db", containerState: "running", healthStatus: "unhealthy"}],
+            });
+
+            await ownedPoller.handleEvent(eventFor("db"));
+
+            expect(mockStackRepo.updateServiceState).toHaveBeenCalledWith(
+                expect.objectContaining({serviceName: "db", healthStatus: "healthy"}),
+            );
+            expect(healthListener).toHaveBeenCalledWith({
+                stackId: "my-stack",
+                serviceName: "db",
+                fromStatus: "unhealthy",
+                toStatus: "healthy",
+                source: "docker-healthcheck",
+            });
+        });
+
+        it("handleEvent still clears health when the container of a probe-owned service is gone", async () => {
+            const {ownedPoller} = pollerWithOwnership();
+            mockDockerClient.inspectContainer.mockRejectedValue(Object.assign(new Error("gone"), {statusCode: 404}));
+            mockStackRepo.findByComposeProject.mockResolvedValue({
+                id: "my-stack",
+                status: "HEALTHY",
+                services: [{serviceName: "web", containerState: "running", healthStatus: "healthy"}],
+            });
+
+            await ownedPoller.handleEvent({...eventFor("web"), Action: "destroy"});
+
+            expect(mockStackRepo.updateServiceState).toHaveBeenCalledWith(
+                expect.objectContaining({containerState: "exited", healthStatus: null}),
+            );
+        });
+
+        it("reconcile writes the stored probe health for an owned service while a sibling gets its Docker health", async () => {
+            const {ownedPoller, healthListener} = pollerWithOwnership();
+            mockDockerClient.listContainers.mockResolvedValue(
+                ["web", "db"].map((service) => ({
+                    Id: `c-${service}`,
+                    State: "running",
+                    Labels: {"com.docker.compose.project": "my-stack", "com.docker.compose.service": service},
+                })),
+            );
+            // web has no Docker healthcheck; db reports healthy.
+            mockDockerClient.inspectContainer.mockImplementation(async (id: string) =>
+                id === "c-db"
+                    ? {Id: id, State: {Status: "running", Health: {Status: "healthy"}}}
+                    : {Id: id, State: {Status: "running"}},
+            );
+            mockStackRepo.findByComposeProject.mockResolvedValue({
+                id: "my-stack",
+                status: "HEALTHY",
+                services: [
+                    {serviceName: "web", containerState: "running", healthStatus: "healthy"},
+                    {serviceName: "db", containerState: "running", healthStatus: "unhealthy"},
+                ],
+            });
+
+            await callReconcile(ownedPoller);
+
+            expect(mockStackRepo.updateServiceState).toHaveBeenCalledWith(
+                expect.objectContaining({serviceName: "web", healthStatus: "healthy"}),
+            );
+            expect(mockStackRepo.updateServiceState).toHaveBeenCalledWith(
+                expect.objectContaining({serviceName: "db", healthStatus: "healthy"}),
+            );
+            expect(mockStackRepo.updateStackStatus).toHaveBeenCalledWith("my-stack", "HEALTHY");
+            // Only the unprobed sibling's Docker health change is recorded.
+            expect(healthListener).toHaveBeenCalledTimes(1);
+            expect(healthListener).toHaveBeenCalledWith(expect.objectContaining({serviceName: "db"}));
+        });
+
+        it("reconcile keeps an owned service's probe health when Docker reports an unhealthy check", async () => {
+            const {ownedPoller, healthListener} = pollerWithOwnership();
+            mockDockerClient.listContainers.mockResolvedValue([
+                {
+                    Id: "c-web",
+                    State: "running",
+                    Labels: {"com.docker.compose.project": "my-stack", "com.docker.compose.service": "web"},
+                },
+            ]);
+            mockDockerClient.inspectContainer.mockResolvedValue({
+                Id: "c-web",
+                State: {Status: "running", Health: {Status: "unhealthy"}},
+            });
+            mockStackRepo.findByComposeProject.mockResolvedValue({
+                id: "my-stack",
+                status: "HEALTHY",
+                services: [{serviceName: "web", containerState: "running", healthStatus: "healthy"}],
+            });
+
+            await callReconcile(ownedPoller);
+
+            expect(mockStackRepo.updateServiceState).toHaveBeenCalledWith(
+                expect.objectContaining({healthStatus: "healthy"}),
+            );
+            expect(mockStackRepo.updateStackStatus).toHaveBeenCalledWith("my-stack", "HEALTHY");
+            expect(healthListener).not.toHaveBeenCalled();
+        });
+
+        it("uses the shared registry when constructed without an ownership port", async () => {
+            const {probedServiceRegistry} = await import("../../../../src/application/probed-service-registry.js");
+            probedServiceRegistry.replaceStack("my-stack", ["web"]);
+            try {
+                mockDockerClient.inspectContainer.mockResolvedValue({
+                    Id: "container-web",
+                    State: {Status: "running", Health: {Status: "healthy"}},
+                });
+                mockStackRepo.findByComposeProject.mockResolvedValue({
+                    id: "my-stack",
+                    status: "UNHEALTHY",
+                    services: [{serviceName: "web", containerState: "running", healthStatus: "unhealthy"}],
+                });
+                mockStackRepo.updateStackStatus.mockResolvedValue(null);
+
+                await poller.handleEvent(eventFor("web"));
+
+                expect(mockStackRepo.updateServiceState).toHaveBeenCalledWith(
+                    expect.objectContaining({healthStatus: "unhealthy"}),
+                );
+            } finally {
+                probedServiceRegistry.replaceStack("my-stack", []);
+            }
+        });
+    });
 });

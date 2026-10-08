@@ -1,5 +1,6 @@
 import type {EventBusPort} from "../application/ports/event-bus-port.js"
 import type {ProbeObservation, ProbeTransportPort} from "../application/ports/probe-transport-port.js"
+import type {ProbeOwnershipWriter} from "../application/probed-service-registry.js"
 import type {DomainEventMap, ServiceProbeClearedEvent} from "../domain/events.js"
 import {PROBE_INTERVAL_MS, probeStaggerOffsetMs} from "../domain/health-probe.js"
 import {isTransitionalStatus} from "../domain/stack-state-derivation.js"
@@ -33,6 +34,8 @@ export interface HealthProbeJobDeps {
     store: HealthProbeJobStore
     readCompose: (stackId: string) => Promise<string>
     transport: ProbeTransportPort
+    /** D-07: told which services each stack's compose file gives a probe, so Docker stops owning their health. */
+    ownership: ProbeOwnershipWriter
     bus: Pick<EventBusPort, "emit">
     now: () => number
 }
@@ -71,6 +74,11 @@ interface DueProbe {
  * request (fail-closed, D-08), and a compose file that stops parsing keeps its
  * last good probes. A stack in a transitional status is left alone entirely.
  *
+ * Ownership (D-07): every tick, and once in start() before the schedule begins,
+ * the job tells the ownership registry which services of each stack carry a
+ * probe block (valid or not), so StatePoller and the catch-up leave their
+ * health to the probe. Nothing is probed at start.
+ *
  * The job does I/O and emits events; deciding what a result means and
  * persisting it belongs to ServiceHealthService (Phase 10 pattern).
  */
@@ -86,6 +94,25 @@ export class HealthProbeJob extends IntervalJob {
 
     constructor(private readonly deps: HealthProbeJobDeps) {
         super()
+    }
+
+    // Ownership is seeded before the schedule begins so it is known before
+    // StatePoller's first 60-second reconcile (D-07).
+    override async start(): Promise<void> {
+        await this.refreshOwnership()
+        await super.start()
+    }
+
+    private async refreshOwnership(): Promise<void> {
+        try {
+            const stacks = await this.deps.store.listStacks()
+            for (const stack of stacks) {
+                this.deps.ownership.replaceStack(stack.id, (await this.probesFor(stack.id)).keys())
+            }
+            this.deps.ownership.retainStacks(stacks.map((stack) => stack.id))
+        } catch (err) {
+            console.error("[HealthProbeJob] ownership refresh failed:", err)
+        }
     }
 
     protected async run(): Promise<void> {
@@ -121,6 +148,9 @@ export class HealthProbeJob extends IntervalJob {
                 continue
             }
             const probes = await this.probesFor(stack.id)
+            // Valid and invalid specs both own the service: a broken probe must
+            // not hand its health back to Docker (fail-closed, D-07/D-08).
+            this.deps.ownership.replaceStack(stack.id, probes.keys())
             for (const service of stack.services) {
                 const spec = probes.get(service.serviceName)
                 if (spec === undefined) continue
@@ -139,6 +169,7 @@ export class HealthProbeJob extends IntervalJob {
 
         this.clearUnseen(seen)
         this.forgetRemovedStacks(stacks)
+        this.deps.ownership.retainStacks(stacks.map((stack) => stack.id))
         return due
     }
 
@@ -267,10 +298,11 @@ let _job: HealthProbeJob | null = null
 let _healthReporter: JobHealthReporter | null = null
 
 async function createProductionHealthProbeJob(): Promise<HealthProbeJob> {
-    const [{stackRepository}, {StackFilesystem}, {probeTransport}] = await Promise.all([
+    const [{stackRepository}, {StackFilesystem}, {probeTransport}, {probedServiceRegistry}] = await Promise.all([
         import("../repositories/index.js"),
         import("../infrastructure/stack-filesystem.js"),
         import("../infrastructure/probe-transport.js"),
+        import("../application/probed-service-registry.js"),
     ])
 
     const filesystem = new StackFilesystem()
@@ -278,6 +310,7 @@ async function createProductionHealthProbeJob(): Promise<HealthProbeJob> {
         store: {listStacks: () => stackRepository.findAll()},
         readCompose: (stackId) => filesystem.readCompose(stackId),
         transport: probeTransport,
+        ownership: probedServiceRegistry,
         bus: domainEventBus,
         now: Date.now,
     })

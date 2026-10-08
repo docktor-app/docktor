@@ -1,6 +1,8 @@
 import {dockerodeClient} from "../infrastructure/dockerode-client.js"
 import type {DockerodeClientPort} from "../application/ports/dockerode-client-port.js"
 import type {EventBusPort} from "../application/ports/event-bus-port.js"
+import type {ProbeOwnershipPort} from "../application/ports/probe-ownership-port.js"
+import {probedServiceRegistry} from "../application/probed-service-registry.js"
 import {domainEventBus} from "../infrastructure/event-bus.js"
 import type {StackStatus} from "../generated/prisma/enums.js"
 import {deriveStackStatus, isTransitionalStatus} from "../domain/stack-state-derivation.js"
@@ -33,6 +35,10 @@ export interface UpdateServiceStateArgs {
     healthStatus: string | null
 }
 
+function storedHealthOf(services: ReadonlyArray<ServiceState>, serviceName: string): string | null {
+    return normalizeHealth(services.find((s) => s.serviceName === serviceName)?.healthStatus)
+}
+
 type ListedContainer = Awaited<ReturnType<DockerodeClientPort["listContainers"]>>[number]
 
 interface ObservedContainer {
@@ -62,17 +68,20 @@ export class StatePoller extends WatcherJob {
     private readonly docker: Pick<DockerodeClientPort, "getEventStream" | "inspectContainer" | "listContainers">
     private readonly repo: StatePollerRepo | null
     private readonly bus: Pick<EventBusPort, "emit">
+    private readonly probeOwnership: ProbeOwnershipPort
 
     constructor(
         docker?: Pick<DockerodeClientPort, "getEventStream" | "inspectContainer" | "listContainers">,
         repo?: StatePollerRepo,
         bus?: Pick<EventBusPort, "emit">,
+        probeOwnership: ProbeOwnershipPort = probedServiceRegistry,
     ) {
         super()
         this.docker = docker ?? dockerodeClient
         // repo is stored as-is; if undefined, getRepo() will load it lazily
         this.repo = repo ?? null
         this.bus = bus ?? domainEventBus
+        this.probeOwnership = probeOwnership
     }
 
     private async getRepo(): Promise<StatePollerRepo> {
@@ -218,7 +227,12 @@ export class StatePoller extends WatcherJob {
         }
 
         const containerState = info.State.Status
-        const healthStatus = info.State.Health?.Status ?? null
+        // D-07: a probe-owned service keeps its stored (probe) health; Docker's
+        // healthcheck value is neither written, derived from, nor recorded.
+        const probeOwned = this.probeOwnership.isProbeOwned(stack.id, serviceName)
+        const healthStatus = probeOwned
+            ? storedHealthOf(stack.services, serviceName)
+            : (info.State.Health?.Status ?? null)
 
         console.log(`[StatePoller] Inspected: service=${serviceName}, state=${containerState}, health=${healthStatus}`)
 
@@ -231,7 +245,7 @@ export class StatePoller extends WatcherJob {
             healthStatus,
         })
 
-        this.emitHealthTransition(stack.id, serviceName, stack.services, healthStatus)
+        if (!probeOwned) this.emitHealthTransition(stack.id, serviceName, stack.services, healthStatus)
 
         // Derive aggregate stack status
         const updatedServices = stack.services.map((s) => {
@@ -278,12 +292,14 @@ export class StatePoller extends WatcherJob {
         container: ListedContainer,
     ): Promise<ObservedContainer> {
         let containerState = container.State
-        let healthStatus = normalizeHealth(stack.services.find((s) => s.serviceName === serviceName)?.healthStatus)
+        let healthStatus = storedHealthOf(stack.services, serviceName)
+        // D-07: a probe-owned service keeps its stored (probe) health.
+        const probeOwned = this.probeOwnership.isProbeOwned(stack.id, serviceName)
 
         try {
             const info = await this.docker.inspectContainer(container.Id)
             containerState = info.State.Status
-            healthStatus = info.State.Health?.Status ?? null
+            if (!probeOwned) healthStatus = info.State.Health?.Status ?? null
         } catch {
             // Fall back to the values above; the per-project error path in
             // reconcile() is reserved for failures that abort the project.
@@ -296,7 +312,7 @@ export class StatePoller extends WatcherJob {
             containerState,
             healthStatus,
         })
-        this.emitHealthTransition(stack.id, serviceName, stack.services, healthStatus)
+        if (!probeOwned) this.emitHealthTransition(stack.id, serviceName, stack.services, healthStatus)
 
         return {containerState, healthStatus}
     }

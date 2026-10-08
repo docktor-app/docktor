@@ -3,6 +3,8 @@ import {isHealthTransition, normalizeHealth} from "../domain/service-health.js";
 import {deriveStackStatus, isTransitionalStatus} from "../domain/stack-state-derivation.js";
 import type {DockerodeClientPort} from "./ports/dockerode-client-port.js";
 import type {EventBusPort} from "./ports/event-bus-port.js";
+import type {ProbeOwnershipPort} from "./ports/probe-ownership-port.js";
+import {probedServiceRegistry} from "./probed-service-registry.js";
 
 const COMPOSE_PROJECT_LABEL = "com.docker.compose.project";
 const COMPOSE_SERVICE_LABEL = "com.docker.compose.service";
@@ -56,6 +58,7 @@ export class ContainerStateCatchUp {
         private readonly docker: Pick<DockerodeClientPort, "listContainers" | "inspectContainer">,
         private readonly repo: ContainerStateCatchUpRepo,
         private readonly bus: Pick<EventBusPort, "emit">,
+        private readonly probeOwnership: ProbeOwnershipPort = probedServiceRegistry,
     ) {}
 
     async catchUp(stackId: string): Promise<void> {
@@ -79,7 +82,7 @@ export class ContainerStateCatchUp {
 
         const observations: ServiceObservation[] = [];
         for (const service of stack.services) {
-            observations.push(await this.observe(service, containers));
+            observations.push(await this.observe(stackId, service, containers));
         }
 
         // All writes complete before any event is emitted, so a failed write
@@ -97,6 +100,9 @@ export class ContainerStateCatchUp {
         // Record each Docker-health transition seen here in the history, after
         // every write above and before the per-service state events.
         observations.forEach((observation, index) => {
+            // D-07: a probe-owned service's health is the probe's, so Docker
+            // never records a transition for it.
+            if (this.probeOwnership.isProbeOwned(stackId, observation.serviceName)) return;
             const stored = stack.services[index]?.healthStatus;
             if (!isHealthTransition(stored, observation.healthStatus)) return;
             this.bus.emit("service.health_changed", {
@@ -131,6 +137,7 @@ export class ContainerStateCatchUp {
     }
 
     private async observe(
+        stackId: string,
         {serviceName, healthStatus: storedHealth}: {serviceName: string; healthStatus: string | null},
         containers: ReadonlyArray<ListedContainer>,
     ): Promise<ServiceObservation> {
@@ -141,13 +148,16 @@ export class ContainerStateCatchUp {
             return {serviceName, containerId: null, containerState: "exited", healthStatus: null};
         }
 
+        // D-07: a probe-owned service keeps its stored (probe) health.
+        const probeOwned = this.probeOwnership.isProbeOwned(stackId, serviceName);
+
         try {
             const info = await this.docker.inspectContainer(match.Id);
             return {
                 serviceName,
                 containerId: match.Id,
                 containerState: info.State.Status,
-                healthStatus: info.State.Health?.Status ?? null,
+                healthStatus: probeOwned ? normalizeHealth(storedHealth) : (info.State.Health?.Status ?? null),
             };
         } catch {
             // Container vanished between list and inspect (or inspect failed):

@@ -444,4 +444,53 @@ describe("ContainerStateCatchUp", () => {
             );
         });
     });
+
+    describe("probe-owned services (D-07)", () => {
+        function catchUpOwning(...owned: string[]): ContainerStateCatchUp {
+            return new ContainerStateCatchUp(
+                docker,
+                repo as unknown as ContainerStateCatchUpRepo,
+                bus,
+                {isProbeOwned: vi.fn((_stackId: string, serviceName: string) => owned.includes(serviceName))},
+            );
+        }
+
+        it("keeps the stored probe health instead of Docker's, derives from it and records no change for it", async () => {
+            givenStack("RUNNING", ["web", "db"], {web: "starting"});
+            docker.listContainers.mockResolvedValue([
+                container("c-web", "my-app", "web"),
+                container("c-db", "my-app", "db"),
+            ]);
+            docker.inspectContainer.mockImplementation(async (id: string) =>
+                id === "c-web"
+                    ? {Id: id, State: {Status: "running", Health: {Status: "unhealthy"}}}
+                    : {Id: id, State: {Status: "running", Health: {Status: "healthy"}}},
+            );
+
+            await catchUpOwning("web").catchUp("my-app");
+
+            expect(repo.updateServiceState).toHaveBeenCalledWith(
+                expect.objectContaining({serviceName: "web", containerState: "running", healthStatus: "starting"}),
+            );
+            expect(repo.updateServiceState).toHaveBeenCalledWith(
+                expect.objectContaining({serviceName: "db", healthStatus: "healthy"}),
+            );
+            // Docker's "unhealthy" for web would have derived UNHEALTHY.
+            expect(repo.updateStackStatus).toHaveBeenCalledWith("my-app", "RUNNING");
+            const healthEvents = bus.emit.mock.calls.filter((call) => call[0] === "service.health_changed");
+            expect(healthEvents.map((call) => call[1].serviceName)).toEqual(["db"]);
+        });
+
+        it("keeps the stored probe health when inspect fails too", async () => {
+            givenStack("HEALTHY", ["web"], {web: "healthy"});
+            docker.listContainers.mockResolvedValue([container("c-web", "my-app", "web")]);
+            docker.inspectContainer.mockRejectedValue(new Error("inspect failed"));
+
+            await catchUpOwning("web").catchUp("my-app");
+
+            expect(repo.updateServiceState).toHaveBeenCalledWith(
+                expect.objectContaining({serviceName: "web", healthStatus: "healthy"}),
+            );
+        });
+    });
 });

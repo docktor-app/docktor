@@ -11,7 +11,9 @@ import {domainEventBus} from "../../src/infrastructure/event-bus.js";
 import {StackFilesystem} from "../../src/infrastructure/stack-filesystem.js";
 import {ProbeTransport} from "../../src/infrastructure/probe-transport.js";
 import {stackRepository} from "../../src/repositories/index.js";
+import {probedServiceRegistry} from "../../src/application/probed-service-registry.js";
 import {HealthProbeJob} from "../../src/jobs/health-probe-job.js";
+import {StatePoller} from "../../src/jobs/state-poller.js";
 
 interface HealthEventBody {
     serviceName: string;
@@ -110,6 +112,7 @@ describe("HTTP health probe pipeline (#23)", () => {
             store: {listStacks: () => stackRepository.findAll()},
             readCompose: (id) => new StackFilesystem().readCompose(id),
             transport: new ProbeTransport(docker),
+            ownership: probedServiceRegistry,
             bus: domainEventBus,
             now: () => clockNow,
         });
@@ -186,6 +189,33 @@ describe("HTTP health probe pipeline (#23)", () => {
         await tick();
         await new Promise((resolve) => setTimeout(resolve, 200));
 
+        expect(await healthEvents()).toHaveLength(1);
+    });
+
+    it("keeps the probe's health when a Docker event reports a container without any healthcheck (D-07)", async () => {
+        await tick();
+        await tick();
+        await expect.poll(stackStatus, {timeout: 5000}).toBe("HEALTHY");
+
+        const dockerWithoutHealthcheck = {
+            getEventStream: vi.fn(),
+            listContainers: vi.fn(),
+            inspectContainer: vi.fn(async () => ({State: {Status: "running"}}) as unknown as Dockerode.ContainerInspectInfo),
+        };
+        const poller = new StatePoller(dockerWithoutHealthcheck, stackRepository, domainEventBus, probedServiceRegistry);
+
+        await poller.handleEvent({
+            Type: "container",
+            Action: "health_status",
+            Actor: {
+                ID: "c1",
+                Attributes: {"com.docker.compose.project": stackId, "com.docker.compose.service": "web"},
+            },
+        });
+
+        const row = await getPrisma().service.findFirstOrThrow({where: {stackId, serviceName: "web"}});
+        expect(row.healthStatus).toBe("healthy");
+        expect(await stackStatus()).toBe("HEALTHY");
         expect(await healthEvents()).toHaveLength(1);
     });
 

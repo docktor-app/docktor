@@ -1,5 +1,6 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest"
 import {HealthProbeJob, PROBE_CONCURRENCY, type ProbeJobStack} from "../../../src/jobs/health-probe-job.js"
+import {IntervalJob} from "../../../src/jobs/job.js"
 import {parseHealthProbes} from "../../../src/lib/compose-health-probe.js"
 import {PROBE_INTERVAL_MS, probeStaggerOffsetMs} from "../../../src/domain/health-probe.js"
 import type {ProbeObservation} from "../../../src/application/ports/probe-transport-port.js"
@@ -26,9 +27,10 @@ function createJob(options: {stacks?: ProbeJobStack[]; compose?: Record<string, 
     const readCompose = vi.fn(async (stackId: string) => compose[stackId] ?? "")
     const transport = {probe: vi.fn(async () => OBSERVATION)}
     const bus = {emit: vi.fn()}
-    const job = new HealthProbeJob({store, readCompose, transport, bus, now: () => clock.now})
+    const ownership = {replaceStack: vi.fn(), retainStacks: vi.fn()}
+    const job = new HealthProbeJob({store, readCompose, transport, ownership, bus, now: () => clock.now})
     const tick = () => (job as unknown as {run(): Promise<void>}).run()
-    return {job, clock, compose, store, readCompose, transport, bus, tick}
+    return {job, clock, compose, store, readCompose, transport, ownership, bus, tick}
 }
 
 describe("HealthProbeJob", () => {
@@ -404,5 +406,90 @@ describe("HealthProbeJob lifecycle", () => {
 
         expect(ctx.transport.probe).toHaveBeenCalledTimes(10)
         expect(maxInFlight).toBe(PROBE_CONCURRENCY)
+    })
+})
+
+describe("HealthProbeJob ownership (D-07)", () => {
+    let consoleError: ReturnType<typeof vi.spyOn>
+
+    beforeEach(() => {
+        consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    })
+
+    afterEach(() => {
+        vi.restoreAllMocks()
+    })
+
+    function ownedNames(ownership: {replaceStack: ReturnType<typeof vi.fn>}): string[] {
+        const names: unknown = ownership.replaceStack.mock.calls.at(-1)?.[1]
+        return names instanceof Object && Symbol.iterator in names ? [...(names as Iterable<string>)] : []
+    }
+
+    // Replaces the cron scheduling of IntervalJob.start so a unit test never starts a real timer.
+    function stubSchedule() {
+        return vi.spyOn(IntervalJob.prototype, "start").mockResolvedValue(undefined)
+    }
+
+    it("owns every service with a probe block, valid or invalid (fail-closed)", async () => {
+        const compose = `${WITH_PROBE}  db:\n    image: postgres\n    x-docktor:\n      health-probe:\n        url: http://example.com/\n  cache:\n    image: redis\n`
+        const ctx = createJob({compose: {app: compose}})
+
+        await ctx.tick()
+
+        expect(ctx.ownership.replaceStack).toHaveBeenCalledExactlyOnceWith("app", expect.anything())
+        expect(ownedNames(ctx.ownership).sort()).toEqual(["db", "web"])
+    })
+
+    it("releases ownership when the probe block is removed from the compose file", async () => {
+        const ctx = createJob()
+        await ctx.tick()
+        expect(ownedNames(ctx.ownership)).toEqual(["web"])
+
+        ctx.compose.app = WITHOUT_PROBE
+        await ctx.tick()
+
+        expect(ownedNames(ctx.ownership)).toEqual([])
+    })
+
+    it("retains exactly the listed stacks, so a vanished stack is dropped", async () => {
+        const ctx = createJob({stacks: [runningStack({}, "app"), runningStack({}, "other")]})
+
+        await ctx.tick()
+
+        expect(ctx.ownership.retainStacks).toHaveBeenCalledWith(["app", "other"])
+    })
+
+    it("keeps the ownership of a stack in a transitional status", async () => {
+        const ctx = createJob({stacks: [{...runningStack(), status: "DEPLOYING"}]})
+
+        await ctx.tick()
+
+        expect(ctx.ownership.replaceStack).not.toHaveBeenCalled()
+        expect(ctx.ownership.retainStacks).toHaveBeenCalledWith(["app"])
+    })
+
+    it("start() seeds ownership before the schedule begins, without probing", async () => {
+        const ctx = createJob()
+        const schedule = stubSchedule()
+        schedule.mockImplementation(async () => {
+            expect(ownedNames(ctx.ownership)).toEqual(["web"])
+        })
+
+        await ctx.job.start()
+
+        expect(schedule).toHaveBeenCalledTimes(1)
+        expect(ctx.ownership.retainStacks).toHaveBeenCalledWith(["app"])
+        expect(ctx.transport.probe).not.toHaveBeenCalled()
+    })
+
+    it("start() logs a store failure and still resolves", async () => {
+        const ctx = createJob()
+        ctx.store.listStacks.mockRejectedValue(new Error("db down"))
+        const schedule = stubSchedule()
+
+        await expect(ctx.job.start()).resolves.toBeUndefined()
+
+        expect(consoleError).toHaveBeenCalledWith("[HealthProbeJob] ownership refresh failed:", expect.any(Error))
+        expect(schedule).toHaveBeenCalledTimes(1)
     })
 })

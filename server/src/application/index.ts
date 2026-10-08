@@ -50,6 +50,7 @@ import type {StackStatus} from "../generated/prisma/enums.js";
 import {domainEventBus} from "../infrastructure/event-bus.js";
 import {registerDomainSubscribers} from "./subscribers/register.js";
 import {ContainerStateCatchUp} from "./container-state-catch-up.js";
+import {probedServiceRegistry} from "./probed-service-registry.js";
 
 const repo = stackRepository;
 const fs = new StackFilesystem();
@@ -81,7 +82,7 @@ export const deployPreflightService = new DeployPreflightService(composeReviewSe
 // Issue #34: refreshes real container states right after a deploy-family
 // operation finishes, so open views do not wait for the 60s reconcile —
 // constructed before stackService since it is its 10th dependency.
-export const containerStateCatchUp = new ContainerStateCatchUp(dockerodeClient, repo, domainEventBus);
+export const containerStateCatchUp = new ContainerStateCatchUp(dockerodeClient, repo, domainEventBus, probedServiceRegistry);
 
 export const stackService = new StackService(repo, fs, docker, stackEventRepository, domainEventBus, settingsService, imageUpdateCheckRepository, composeReviewService, deployPreflightService, containerStateCatchUp);
 
