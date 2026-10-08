@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {cleanDatabase, createTestUser, getApp, getPrisma, startContainer, stopContainer} from "./setup.js";
+import {domainEventBus} from "../../src/infrastructure/event-bus.js";
 
 const COMPOSE = "services:\n  web:\n    image: nginx:1.27\n";
 const DAY = 86_400_000;
@@ -249,6 +250,60 @@ describe("uptime read path (#24, D-09, D-10, D-16)", () => {
 
             expect(res.statusCode).toBe(200);
             expect(res.json()).toMatchObject({id: "uptime"});
+        });
+    });
+
+    describe("incident tracking (#24, D-11)", () => {
+        const SETTLE_MS = 100;
+
+        async function fetchIncidents(stackId: string): Promise<UptimeBody["incidents"]> {
+            const res = await app.inject({method: "GET", url: `/api/stacks/${stackId}/uptime`, headers: {cookie}});
+            return (res.json() as UptimeBody).incidents;
+        }
+
+        async function settle(): Promise<void> {
+            await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
+        }
+
+        it("records one incident per episode from status events and closes it on recovery", async () => {
+            const id = await createStack("incident-a");
+
+            domainEventBus.emit("stack.status_changed", {stackId: id, status: "UNHEALTHY"});
+            await expect.poll(async () => (await fetchIncidents(id)).length, {timeout: 2000}).toBe(1);
+            const [opened] = await fetchIncidents(id);
+            expect(opened).toMatchObject({cause: "UNHEALTHY", endedAt: null, durationMs: null});
+
+            domainEventBus.emit("stack.status_changed", {stackId: id, status: "ERROR"});
+            await settle();
+            expect(await fetchIncidents(id)).toHaveLength(1);
+
+            domainEventBus.emit("stack.status_changed", {stackId: id, status: "RUNNING"});
+            await expect
+                .poll(async () => (await fetchIncidents(id))[0]?.endedAt ?? null, {timeout: 2000})
+                .not.toBeNull();
+            const [closed] = await fetchIncidents(id);
+            expect(closed).toMatchObject({id: opened?.id, cause: "UNHEALTHY"});
+            expect(closed?.durationMs).toBeGreaterThanOrEqual(0);
+        });
+
+        it("never opens two incidents for back-to-back container-state events", async () => {
+            const id = await createStack("incident-b");
+
+            for (let i = 0; i < 5; i++) {
+                domainEventBus.emit("stack.container_state_changed", {
+                    stackId: id,
+                    serviceName: "web",
+                    containerState: "running",
+                    healthStatus: "unhealthy",
+                    stackStatus: "UNHEALTHY",
+                });
+            }
+
+            const openCount = () => getPrisma().stackIncident.count({where: {stackId: id, resolvedAt: null}});
+            await expect.poll(openCount, {timeout: 2000}).toBe(1);
+            await settle();
+            expect(await openCount()).toBe(1);
+            expect(await getPrisma().stackIncident.count({where: {stackId: id}})).toBe(1);
         });
     });
 });

@@ -4,12 +4,14 @@ import {subscribeStackEvents, type StackEventSubscriberRepo} from "./stack-event
 import {subscribeNotifications, type NotificationSubscriberNotificationService} from "./notification-subscriber.js";
 import {subscribeStateBroadcast} from "./state-broadcast-subscriber.js";
 import {subscribeServiceHealthHistory, type ServiceHealthHistoryRepo} from "./service-health-history-subscriber.js";
+import {subscribeIncidentTracking, type IncidentTrackingPort} from "./incident-subscriber.js";
 
 export interface RegisterDomainSubscribersDeps {
     stackEventRepo: StackEventSubscriberRepo;
     notificationService: NotificationSubscriberNotificationService;
     broadcaster: Pick<StateBroadcaster, "publish">;
     serviceHealthEventRepo: ServiceHealthHistoryRepo;
+    incidentTracker: IncidentTrackingPort;
 }
 
 /**
@@ -31,7 +33,10 @@ export interface RegisterDomainSubscribersDeps {
  *      stack.config_changed event the audit subscriber does; must be
  *      registered after it per the ordering guarantee above.
  *   4. Service health history (#23, D-12) — no ordering dependency: it is the
- *      only consumer of service.health_changed, so it is registered last.
+ *      only consumer of service.health_changed.
+ *   5. Incident tracking (#24, D-11) — no ordering dependency: it is
+ *      state-based and idempotent like NotificationWatcher, so it does not
+ *      matter which subscriber sees a status first. Registered last.
  */
 export function registerDomainSubscribers(
     bus: Pick<EventBusPort, "subscribe">,
@@ -41,11 +46,13 @@ export function registerDomainSubscribers(
     const disposeNotifications = subscribeNotifications(bus, deps.notificationService);
     const disposeStateBroadcast = subscribeStateBroadcast(bus, deps.broadcaster);
     const disposeServiceHealthHistory = subscribeServiceHealthHistory(bus, deps.serviceHealthEventRepo);
+    const disposeIncidentTracking = subscribeIncidentTracking(bus, deps.incidentTracker);
 
     return () => {
         disposeStackEvents();
         disposeNotifications();
         disposeStateBroadcast();
         disposeServiceHealthHistory();
+        disposeIncidentTracking();
     };
 }

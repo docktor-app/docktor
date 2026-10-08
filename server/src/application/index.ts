@@ -33,6 +33,7 @@ import {TemplateUpdateService} from "./template-update-service.js";
 import {ServiceHealthHistoryService} from "./service-health-history-service.js";
 import {StorageService} from "./storage-service.js";
 import {UptimeService} from "./uptime-service.js";
+import {IncidentTracker} from "./incident-tracker.js";
 import {certificateFilesystem} from "../infrastructure/certificate-filesystem.js";
 import {stateEventBroadcaster} from "../lib/state-broadcaster.js";
 import {dockerodeClient} from "../infrastructure/dockerode-client.js";
@@ -130,15 +131,20 @@ export const uptimeService = new UptimeService(
     settingsService,
 );
 
+// #24/D-11: the write side of the incident list — one StackIncident row per
+// UNHEALTHY/ERROR episode, fed by the incident subscriber below.
+export const incidentTracker = new IncidentTracker(stackIncidentRepository);
+
 // D-15: registers all subscriber categories (audit trail, plan 10-13;
 // notifications, plan 10-12; live-state bridge, plan 10-11; service health
-// history, #23) from one place in the fixed, documented order
+// history, #23; incident tracking, #24) from one place in the fixed, documented order
 // subscribers/register.ts explains. Exported so a test can tear it down.
 export const disposeDomainSubscribers = registerDomainSubscribers(domainEventBus, {
     stackEventRepo: stackEventRepository,
     notificationService,
     broadcaster: stateEventBroadcaster,
     serviceHealthEventRepo: serviceHealthEventRepository,
+    incidentTracker,
 });
 
 // Adapter: StackRepository -> BackupStackRepo interface

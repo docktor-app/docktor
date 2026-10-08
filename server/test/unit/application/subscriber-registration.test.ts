@@ -42,6 +42,7 @@ function createDeps() {
         notificationService: {notify: vi.fn().mockResolvedValue(undefined)},
         broadcaster: {publish: vi.fn()},
         serviceHealthEventRepo: {record: vi.fn().mockResolvedValue(undefined)},
+        incidentTracker: {observeStackStatus: vi.fn().mockResolvedValue(undefined)},
     }
 }
 
@@ -77,6 +78,19 @@ describe("registerDomainSubscribers", () => {
         registerDomainSubscribers(bus, createDeps())
 
         expect(subscriptions.filter((s) => s.event === "service.health_changed")).toHaveLength(1)
+    })
+
+    it("registers the incident tracker for both stack status events, after the service-health history subscriber", () => {
+        const {bus, subscriptions} = createRecordingBus()
+
+        registerDomainSubscribers(bus, createDeps())
+
+        const healthOrder = subscriptions.find((s) => s.event === "service.health_changed")?.order as number
+        // The state-broadcast bridge also listens to these events; the two
+        // incident subscriptions are the last two registrations overall.
+        const lastTwo = subscriptions.slice(-2)
+        expect(lastTwo.map((s) => s.event).sort()).toEqual(["stack.container_state_changed", "stack.status_changed"])
+        expect(Math.min(...lastTwo.map((s) => s.order))).toBeGreaterThan(healthOrder)
     })
 
     it("returns a disposer that removes every underlying subscription", () => {
