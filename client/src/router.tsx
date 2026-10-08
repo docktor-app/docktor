@@ -10,6 +10,7 @@ import TemplateBrowsePage from "@/routes/app/stacks/templates";
 import ImportStackPage from "@/routes/app/stacks/import";
 import StackDetailPage from "@/routes/app/stacks/[id]";
 import SettingsPage from "@/routes/app/settings";
+import StoragePage from "@/routes/app/storage";
 import BackupDetailPage from "@/routes/app/stacks/backups/[backupId]";
 import LoginPage from "@/routes/auth/login";
 import SignupPage from "@/routes/auth/signup";
@@ -58,6 +59,7 @@ export const router = ReactRouterCore.createBrowserRouter(
                 <Route path="/stacks/import" element={<ImportStackPage />} />
                 <Route path="/stacks/:id/backups/:backupId" element={<BackupDetailPage />} />
                 <Route path="/stacks/:id/:tab?" element={<StackDetailPage />} />
+                <Route path="/storage" element={<StoragePage />} />
                 <Route path="/settings" element={<Navigate to="/settings/general" replace />} />
                 <Route path="/settings/:tab" element={<SettingsPage />} />
             </Route>

@@ -46,6 +46,22 @@ export const test = base.extend<{_coverage: void; _apiRouteGuard: void}>({
                 route.fulfill({status: 200, contentType: "application/json", body: "[]"}),
             );
 
+            // RESEARCH Pitfall 7: the Storage page (sidebar item on every
+            // authenticated page) fetches GET /api/storage. Default to nothing
+            // measured; storage.spec.ts overrides this route with real data.
+            await page.route("**/api/storage", (route) =>
+                route.fulfill({
+                    status: 200,
+                    contentType: "application/json",
+                    body: JSON.stringify({
+                        measuredAt: null,
+                        totals: {volumesBytes: null, backupsBytes: null, totalBytes: null},
+                        stacks: [],
+                        backups: [],
+                    }),
+                }),
+            );
+
             await use();
 
             if (unstubbed.length > 0) {
