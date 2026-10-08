@@ -566,7 +566,7 @@ Needs Phase 10's backend structure for the new health-probe job and Phase 11's U
   3. Each stack shows an uptime percentage and an incident list over a retention window (#24)
   4. Disk usage is viewable per stack and per volume, sortable, with a total (#27)
 
-**Plans:** 13/14 plans executed
+**Plans:** 14/14 plans executed
 
 Plans:
 **Wave 1**
@@ -595,7 +595,7 @@ Plans:
 - [x] 14-13-PLAN.md — Probe lifecycle: `service.probe_cleared` on probe removal or container stop, fail-closed invalid blocks, 8-probe concurrency cap, real-bus NotificationWatcher preservation proof (#23)
 
 **Wave 7** *(blocked on Wave 6 completion)*
-- [ ] 14-09-PLAN.md — Probe ownership over StatePoller (D-07) and ephemeral network attach for reachability (amended D-05) (#23)
+- [x] 14-09-PLAN.md — Probe ownership over StatePoller (D-07) and ephemeral network attach for reachability (amended D-05) (#23)
 
 ### Phase 15: Access Hardening
 
