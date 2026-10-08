@@ -15,4 +15,10 @@ export interface DiskUsageScannerPort {
 
     /** Allocated size of `path` in bytes, or null when it cannot be determined. */
     measureBytes(path: string): Promise<number | null>;
+
+    /**
+     * True only for a real directory. lstat-based, so a symlink (even one that
+     * points at a directory) and a missing path are both false.
+     */
+    isRealDirectory(path: string): Promise<boolean>;
 }

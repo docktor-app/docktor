@@ -22,11 +22,18 @@ interface StorageBody {
     backups: Array<{stackId: string; displayName: string; sizeBytes: number}>;
 }
 
-/** A scanner that never touches the filesystem or runs du (the dev host is Windows). */
-function fakeScanner(volumes: Record<string, number>): DiskUsageScannerPort {
+/**
+ * A scanner that never touches the filesystem or runs du (the dev host is
+ * Windows). `backupsBytes` makes every stack's `backups` folder a real
+ * directory of that size; omitted, no stack has a local repository.
+ */
+function fakeScanner(volumes: Record<string, number>, backupsBytes?: number): DiskUsageScannerPort {
     return {
         listVolumeDirectories: vi.fn(async () => Object.keys(volumes)),
-        measureBytes: vi.fn(async (p: string) => volumes[path.basename(p)] ?? null),
+        measureBytes: vi.fn(async (p: string) =>
+            path.basename(p) === "backups" ? (backupsBytes ?? null) : (volumes[path.basename(p)] ?? null),
+        ),
+        isRealDirectory: vi.fn(async (p: string) => backupsBytes !== undefined && path.basename(p) === "backups"),
     };
 }
 
@@ -150,6 +157,27 @@ describe("GET /api/storage (#27, D-13, D-15)", () => {
 
         expect(body.backups.map((b) => b.stackId)).toEqual([big, small]);
         expect(body.totals).toEqual({volumesBytes: 2048, backupsBytes: 1000, totalBytes: 3048});
+    });
+
+    it("measures the stack-local backups repository into the backups list and counts it once in the total (D-14 amended)", async () => {
+        const id = await createStack("disk-backed");
+        await new DiskUsageJob(undefined, fakeScanner({db: 1024}, 4096)).kickoff();
+
+        const body = await fetchStorage();
+
+        expect(body.backups).toEqual([expect.objectContaining({stackId: id, sizeBytes: 4096})]);
+        expect(body.totals).toEqual({volumesBytes: 1024, backupsBytes: 4096, totalBytes: 5120});
+    });
+
+    it("clears a stored backup size when the stack no longer has a local repository", async () => {
+        const id = await createStack("disk-unbacked");
+        await new DiskUsageJob(undefined, fakeScanner({db: 1024}, 4096)).kickoff();
+        await new DiskUsageJob(undefined, fakeScanner({db: 1024})).kickoff();
+
+        const body = await fetchStorage();
+
+        expect(body.backups).toEqual([]);
+        expect(body.stacks.find((s) => s.stackId === id)).toMatchObject({volumeSizeBytes: 1024});
     });
 
     it("returns 401 without a session cookie", async () => {

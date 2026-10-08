@@ -19,8 +19,9 @@ export interface DiskUsageJobStore {
 export const KICKOFF_DELAY_MS = 60_000
 
 /**
- * #27/D-13: measures every stack's `<stack>/volumes/*` subdirectories with
- * `du` once a day, writes Stack.volumeSizeBytes (the sum) and volumeSizeAt,
+ * #27/D-13: measures every stack's `<stack>/volumes/*` subdirectories and its
+ * local `<stack>/backups` repository (D-14 amended) with `du` once a day,
+ * writes Stack.volumeSizeBytes (the sum), backupSizeBytes and volumeSizeAt,
  * and replaces the stack's StackVolumeUsage rows in one transaction.
  *
  * `runImmediatelyOnStart` is false on purpose; see KICKOFF_DELAY_MS. The
@@ -88,35 +89,72 @@ export class DiskUsageJob extends IntervalJob {
     protected async run(): Promise<void> {
         const store = await this.getStore()
         const stackIds = await store.listStackIds()
+        let measured = 0
         for (const stackId of stackIds) {
+            if (await this.recordStack(store, stackId)) measured++
+        }
+        console.log(`[DiskUsageJob] measured ${measured} stack(s)`)
+    }
+
+    /**
+     * One stack's measure-and-record step. Never throws (T-14-56): an escape-check
+     * failure, an unavailable measurement or a rejected write skips this stack only.
+     */
+    private async recordStack(store: DiskUsageJobStore, stackId: string): Promise<boolean> {
+        try {
             const usage = await this.measureStack(stackId)
-            if (usage !== null) await store.recordStackUsage(usage)
+            if (usage === null) {
+                // T-14-55: keep the previously stored figures rather than a partial or zero value.
+                console.warn(`[DiskUsageJob] skipped stack "${stackId}": a measurement was unavailable`)
+                return false
+            }
+            await store.recordStackUsage(usage)
+            return true
+        } catch (err) {
+            console.error(`[DiskUsageJob] failed to measure stack "${stackId}":`, err)
+            return false
         }
     }
 
-    /** Null when any volume could not be sized: the stack keeps its previous figures instead of a partial sum. */
+    /** Null when any volume or the backups repository could not be sized: the stack keeps its previous figures. */
     private async measureStack(stackId: string): Promise<RecordStackUsageInput | null> {
-        const volumesDir = path.join(this.resolveStackPath(stackId), "volumes")
-        const names = await this.scanner.listVolumeDirectories(volumesDir)
+        const stackPath = this.resolveStackPath(stackId)
+        const volumes = await this.measureVolumes(path.join(stackPath, "volumes"))
+        if (volumes === null) return null
+        const backups = await this.measureBackups(path.join(stackPath, "backups"))
+        if (backups === null) return null
 
-        // D-13 / RESEARCH Open Question 3: `<stack>/volumes` is the only
-        // measured location. A missing folder means the stack holds no
-        // volume data, which is measured as 0 bytes, not "unmeasured".
+        return {
+            stackId,
+            volumes,
+            volumeSizeBytes: volumes.reduce((sum, volume) => sum + volume.sizeBytes, 0),
+            backupSizeBytes: backups.sizeBytes,
+            measuredAt: this.now(),
+        }
+    }
+
+    private async measureVolumes(volumesDir: string): Promise<Array<{name: string; sizeBytes: number}> | null> {
+        // D-13 / RESEARCH Open Question 3: a missing folder means the stack holds
+        // no volume data, which is measured as 0 bytes, not "unmeasured".
+        const names = await this.scanner.listVolumeDirectories(volumesDir)
         const volumes: Array<{name: string; sizeBytes: number}> = []
         for (const name of names ?? []) {
             const sizeBytes = await this.scanner.measureBytes(path.join(volumesDir, name))
             if (sizeBytes === null) return null
             volumes.push({name, sizeBytes})
         }
+        return volumes
+    }
 
-        return {
-            stackId,
-            volumes,
-            volumeSizeBytes: volumes.reduce((sum, volume) => sum + volume.sizeBytes, 0),
-            // `<stack>/backups` is measured by the follow-up plan (14-14).
-            backupSizeBytes: null,
-            measuredAt: this.now(),
-        }
+    /**
+     * D-14 (amended): `<stack>/backups` is the stack-local restic repository.
+     * Only a real directory is sized (Pitfall 9: a symlink is never followed);
+     * no local repository is a measured null. The outer null means unavailable.
+     */
+    private async measureBackups(backupsDir: string): Promise<{sizeBytes: number | null} | null> {
+        if (!(await this.scanner.isRealDirectory(backupsDir))) return {sizeBytes: null}
+        const sizeBytes = await this.scanner.measureBytes(backupsDir)
+        return sizeBytes === null ? null : {sizeBytes}
     }
 }
 

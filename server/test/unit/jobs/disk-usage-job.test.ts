@@ -11,10 +11,15 @@ function createStore(stackIds: string[]) {
     }
 }
 
-function createScanner(volumesByDir: Record<string, string[] | null>, sizes: Record<string, number>) {
+function createScanner(
+    volumesByDir: Record<string, string[] | null>,
+    sizes: Record<string, number>,
+    realDirectories: string[] = [],
+) {
     return {
         listVolumeDirectories: vi.fn(async (dir: string) => volumesByDir[dir] ?? null),
         measureBytes: vi.fn(async (p: string) => sizes[p] ?? null),
+        isRealDirectory: vi.fn(async (p: string) => realDirectories.includes(p)),
     }
 }
 
@@ -76,6 +81,104 @@ describe("DiskUsageJob (#27, D-13)", () => {
         await runOf(buildJob(store, scanner))
 
         expect(store.recordStackUsage).not.toHaveBeenCalled()
+    })
+
+    describe("local backups (D-14 amended, Pitfall 9)", () => {
+        it("measures a real <stack>/backups directory into backupSizeBytes", async () => {
+            const backupsDir = path.join("stacks", "a", "backups")
+            const store = createStore(["a"])
+            const scanner = createScanner({}, {[backupsDir]: 4096}, [backupsDir])
+
+            await runOf(buildJob(store, scanner))
+
+            expect(scanner.measureBytes).toHaveBeenCalledWith(backupsDir)
+            expect(store.recordStackUsage).toHaveBeenCalledWith(expect.objectContaining({stackId: "a", backupSizeBytes: 4096}))
+        })
+
+        it("leaves backupSizeBytes null and never sizes a symlinked or missing backups path", async () => {
+            const backupsDir = path.join("stacks", "a", "backups")
+            const store = createStore(["a"])
+            const scanner = createScanner({}, {[backupsDir]: 4096}, [])
+
+            await runOf(buildJob(store, scanner))
+
+            expect(scanner.isRealDirectory).toHaveBeenCalledWith(backupsDir)
+            expect(scanner.measureBytes).not.toHaveBeenCalledWith(backupsDir)
+            expect(store.recordStackUsage).toHaveBeenCalledWith(expect.objectContaining({stackId: "a", backupSizeBytes: null}))
+        })
+
+        it("keeps the previous figures when a real backups directory cannot be sized", async () => {
+            const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined)
+            const store = createStore(["a"])
+            const scanner = createScanner({}, {}, [path.join("stacks", "a", "backups")])
+
+            await runOf(buildJob(store, scanner))
+
+            expect(store.recordStackUsage).not.toHaveBeenCalled()
+            expect(warn).toHaveBeenCalledWith(expect.stringContaining('"a"'))
+            warn.mockRestore()
+        })
+    })
+
+    describe("per-stack isolation and skipping (Pitfalls 8/9, T-14-55, T-14-56)", () => {
+        it("skips a stack whose volume cannot be sized, warns with its id, and still records the next stack", async () => {
+            const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined)
+            const volumesA = path.join("stacks", "a", "volumes")
+            const store = createStore(["a", "b"])
+            const scanner = createScanner({[volumesA]: ["broken"]}, {})
+
+            await runOf(buildJob(store, scanner))
+
+            expect(store.recordStackUsage).toHaveBeenCalledOnce()
+            expect(store.recordStackUsage).toHaveBeenCalledWith(expect.objectContaining({stackId: "b"}))
+            expect(warn).toHaveBeenCalledWith(expect.stringContaining('"a"'))
+            warn.mockRestore()
+        })
+
+        it("logs and continues when recording one stack rejects, and run() still resolves", async () => {
+            const error = vi.spyOn(console, "error").mockImplementation(() => undefined)
+            const store = createStore(["a", "b"])
+            store.recordStackUsage.mockImplementation(async (input: {stackId: string}) => {
+                if (input.stackId === "a") throw new Error("stack deleted mid-scan")
+            })
+
+            await expect(runOf(buildJob(store, createScanner({}, {})))).resolves.toBeUndefined()
+
+            expect(store.recordStackUsage).toHaveBeenCalledTimes(2)
+            expect(error).toHaveBeenCalledWith(expect.stringContaining('"a"'), expect.any(Error))
+            error.mockRestore()
+        })
+
+        it("logs and skips a stack whose path fails the escape check, then records the rest", async () => {
+            const error = vi.spyOn(console, "error").mockImplementation(() => undefined)
+            const store = createStore(["../evil", "b"])
+            const resolve = (id: string): string => {
+                if (id.includes("..")) throw new Error("escapes stacks dir")
+                return path.join("stacks", id)
+            }
+            const job = new DiskUsageJob(store, createScanner({}, {}), resolve, () => NOW)
+
+            await runOf(job)
+
+            expect(store.recordStackUsage.mock.calls.map(([input]) => input.stackId)).toEqual(["b"])
+            expect(error).toHaveBeenCalledWith(expect.stringContaining("../evil"), expect.any(Error))
+            error.mockRestore()
+        })
+
+        it("ends the run with one summary line counting the recorded stacks", async () => {
+            const log = vi.spyOn(console, "log").mockImplementation(() => undefined)
+            const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined)
+            const volumesC = path.join("stacks", "c", "volumes")
+            const store = createStore(["a", "b", "c"])
+            const scanner = createScanner({[volumesC]: ["broken"]}, {})
+
+            await runOf(buildJob(store, scanner))
+
+            const summaries = log.mock.calls.filter(([line]) => String(line).startsWith("[DiskUsageJob] measured"))
+            expect(summaries).toEqual([["[DiskUsageJob] measured 2 stack(s)"]])
+            log.mockRestore()
+            warn.mockRestore()
+        })
     })
 
     it("records one entry per stack, in order", async () => {
