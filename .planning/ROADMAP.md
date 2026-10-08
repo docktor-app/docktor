@@ -566,28 +566,36 @@ Needs Phase 10's backend structure for the new health-probe job and Phase 11's U
   3. Each stack shows an uptime percentage and an incident list over a retention window (#24)
   4. Disk usage is viewable per stack and per volume, sortable, with a total (#27)
 
-**Plans:** 10 plans
+**Plans:** 14 plans
 
 Plans:
 **Wave 1**
-- [ ] 14-01-PLAN.md — Docker-health history: ServiceHealthEvent model keyed by (stackId, serviceName), `service.health_changed` + history subscriber, GET /api/stacks/:id/health-events, reconcile stops clobbering health (#23)
+- [ ] 14-01-PLAN.md — Docker-health history: ServiceHealthEvent model keyed by (stackId, serviceName), `service.health_changed` from StatePoller.handleEvent + history subscriber, GET /api/stacks/:id/health-events (#23)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 14-02-PLAN.md — Disk usage server: daily non-blocking `du` job over `<stack>/volumes/*` and `<stack>/backups`, StackVolumeUsage rows, GET /api/storage, BigInt DTO fix (#27)
+- [ ] 14-02-PLAN.md — Disk usage server: daily non-blocking `du` job over `<stack>/volumes/*`, StackVolumeUsage rows, GET /api/storage with backups list and totals, BigInt DTO fix (#27)
 - [ ] 14-03-PLAN.md — Health history client: per-service History panel on the Overview, `starting` presentation, `HTTP probe` badge (#23)
 - [ ] 14-08-PLAN.md — Probe config: shared probe schema with localhost-only host guard, Config-tab HTTP Health Probes form writing `x-docktor.health-probe` through diff-confirm (#23)
+- [ ] 14-11-PLAN.md — Stable health state: reconcile and the post-deploy catch-up read real Docker health instead of clobbering it, and record every observed transition (#23)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 14-04-PLAN.md — Uptime server: retention setting, StatusLog-based uptime, StackIncident tracker, uptime endpoints, daily history pruner (#24)
+- [ ] 14-04-PLAN.md — Uptime server read path: retention setting, StatusLog index, StatusLog-based uptime, incident list read, uptime endpoints (#24)
 - [ ] 14-05-PLAN.md — Storage page: sortable per-stack table with expandable volumes, Backups section, totals, sidebar nav (#27)
+- [ ] 14-14-PLAN.md — Local backups in the disk picture (`<stack>/backups`, symlink-safe) and `du` robustness: exit-1 tolerance, previous values kept on failure, per-stack isolation (#27)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 14-06-PLAN.md — HTTP probe engine: HealthProbeJob, node:http transport to the container IP, 3-failure/60s-grace evaluation, probe-driven status through existing events (#23)
 - [ ] 14-07-PLAN.md — Overview uptime: Uptime/Incidents/Disk StatCards and incident list (#24, #27)
+- [ ] 14-12-PLAN.md — Incident tracking (one StackIncident per UNHEALTHY/ERROR episode, per-stack keyed lock) and the daily HealthHistoryPruner (#24)
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 14-09-PLAN.md — Probe ownership over StatePoller (D-07) and ephemeral network attach for reachability (amended D-05) (#23)
+- [ ] 14-06-PLAN.md — HTTP probe engine: HealthProbeJob, node:http transport to the container IP, 3-failure/60s-grace evaluation, probe-driven status through existing events (#23)
 - [ ] 14-10-PLAN.md — Stack-list Uptime column and Health History retention card (#24)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 14-13-PLAN.md — Probe lifecycle: `service.probe_cleared` on probe removal or container stop, fail-closed invalid blocks, 8-probe concurrency cap, real-bus NotificationWatcher preservation proof (#23)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 14-09-PLAN.md — Probe ownership over StatePoller (D-07) and ephemeral network attach for reachability (amended D-05) (#23)
 
 ### Phase 15: Access Hardening
 

@@ -254,6 +254,15 @@ None — the phase-scope-matched todos were reviewed, not folded (see Deferred).
 
 </deferred>
 
+## Post-Research Amendments (2026-10-07)
+
+Confirmed with the user after 14-RESEARCH.md; these supersede the conflicting decisions above.
+
+- **D-05 amended (reachability):** Docktor joins the target stack network for the duration of each probe, then leaves it (no helper container, no permanent attachment). Verify `compose down` behaviour with a foreign container attached.
+- **D-05 amended (hosts):** probe URL host is restricted to `localhost`, `127.0.0.1`, `[::1]` (SSRF guard); request is routed to the container with the `Host` header preserved.
+- **D-14 amended:** local backups live at `<stack>/backups`, not `DOCKTOR_BACKUP_DIR`. Backups section = one row per stack; grand total = volumes + backups (no double counting).
+- **D-12 amended:** health-event history is keyed by `(stackId, serviceName)`, not `serviceId` (Service rows are recreated on every deploy).
+
 ---
 *Phase: 14-health-uptime-and-disk-visibility*
 *Context gathered: 2026-10-06*
