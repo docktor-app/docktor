@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 21
+open_count: 22
 waived_count: 0
 fixed_count: 8
-total_count: 29
-last_updated: 2026-10-08T13:56:26.900Z
+total_count: 30
+last_updated: 2026-10-08T14:22:59.073Z
 ---
 
 # Broken Windows Ledger
@@ -44,6 +44,7 @@ last_updated: 2026-10-08T13:56:26.900Z
 | 27 | 14 | unrun-verify | client/src/routes/app/storage.tsx |  | 14-05 Task 2 human-check not performed by a person: Storage page in light and dark theme at desktop and Pixel 7 width (80+ char names truncate with title, no horizontal scroll, chevron rotation and reduced motion, Tab order). Overflow and truncation were measured by script at 412px in storage.spec.ts only | open |  | 2026-10-08T09:11:45.184Z |  |
 | 28 | 14 | unrun-verify | client/src/routes/app/stacks/components/incident-list.tsx |  | 14-07 Task 2 human-check not performed by a person: stack Overview in light and dark theme at desktop and Pixel 7 width with 30 incidents (one ongoing): tone contrast of uptime value and incident count, vertical scroll past 384px, horizontal scroll on the phone, StatCards collapsing to one column. Overflow and scroll were measured by script at 412px in uptime.spec.ts only | open |  | 2026-10-08T09:41:48.843Z |  |
 | 29 | 14 | unrun-verify | client/src/routes/app/settings/components/health-retention-card.tsx |  | 14-10 human-check not performed: Health History card and shorten-retention dialog in light/dark at desktop and Pixel 7 width, validation shown on blur | open |  | 2026-10-08T13:56:26.900Z |  |
+| 30 | 14 | unrun-verify | server/src/infrastructure/probe-transport.ts |  | 14-09 human-check not performed: live probe attach/detach, startup sweep and Delete Stack with active probes on a dedicated Docker host with a collision-proof project name | open |  | 2026-10-08T14:22:59.073Z |  |
 
 ````json
 [
@@ -409,6 +410,19 @@ last_updated: 2026-10-08T13:56:26.900Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-08T13:56:26.900Z",
+    "resolved_at": null,
+    "milestone": "v0.1.0"
+  },
+  {
+    "id": 30,
+    "kind": "unrun-verify",
+    "phase": "14",
+    "file": "server/src/infrastructure/probe-transport.ts",
+    "line": null,
+    "description": "14-09 human-check not performed: live probe attach/detach, startup sweep and Delete Stack with active probes on a dedicated Docker host with a collision-proof project name",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-08T14:22:59.073Z",
     "resolved_at": null,
     "milestone": "v0.1.0"
   }
