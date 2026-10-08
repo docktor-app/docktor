@@ -566,7 +566,7 @@ Needs Phase 10's backend structure for the new health-probe job and Phase 11's U
   3. Each stack shows an uptime percentage and an incident list over a retention window (#24)
   4. Disk usage is viewable per stack and per volume, sortable, with a total (#27)
 
-**Plans:** 2/14 plans executed
+**Plans:** 3/14 plans executed
 
 Plans:
 **Wave 1**
@@ -574,7 +574,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [x] 14-02-PLAN.md — Disk usage server: daily non-blocking `du` job over `<stack>/volumes/*`, StackVolumeUsage rows, GET /api/storage with backups list and totals, BigInt DTO fix (#27)
-- [ ] 14-03-PLAN.md — Health history client: per-service History panel on the Overview, `starting` presentation, `HTTP probe` badge (#23)
+- [x] 14-03-PLAN.md — Health history client: per-service History panel on the Overview, `starting` presentation, `HTTP probe` badge (#23)
 - [ ] 14-08-PLAN.md — Probe config: shared probe schema with localhost-only host guard, Config-tab HTTP Health Probes form writing `x-docktor.health-probe` through diff-confirm (#23)
 - [ ] 14-11-PLAN.md — Stable health state: reconcile and the post-deploy catch-up read real Docker health instead of clobbering it, and record every observed transition (#23)
 

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 14
+open_count: 15
 waived_count: 0
 fixed_count: 8
-total_count: 22
-last_updated: 2026-10-08T07:46:46.171Z
+total_count: 23
+last_updated: 2026-10-08T08:08:04.656Z
 ---
 
 # Broken Windows Ledger
@@ -37,6 +37,7 @@ last_updated: 2026-10-08T07:46:46.171Z
 | 20 | 12 | unrun-verify | server/test/integration/templates.test.ts |  | New POST/GET /api/template-repos integration tests for plan 12-10 (201 on a well-formed https url, 400 for file://, ext::, -u payloads with no row created, 409 for an already-configured url, 401 without a cookie on both routes) were written per the plan's <behavior> but deliberately NOT executed in this session — the orchestrator's resource_constraint for this run forbids starting the testcontainers-based integration suite on this host. Unit-level TemplateService.listRepos/addRepo behavior is independently proven (19/19 passing). A developer/CI must run yarn workspace @docktor/server test:integration test/integration/templates.test.ts to confirm these live. | open |  | 2026-10-03T13:49:11.471Z |  |
 | 21 | 14 | unrun-verify | server/prisma/migrations/20261008073041_add_service_health_events/migration.sql |  | add_service_health_events migration generated via migrate diff (Branch B) but not applied to the dev database; the secret-read guard blocks commands naming the dev env file. syncDatabaseSchema() applies it at next boot. | open |  | 2026-10-08T07:35:14.437Z |  |
 | 22 | 14 | unrun-verify | server/prisma/migrations/20261008074500_add_stack_disk_usage/migration.sql |  | add_stack_disk_usage migration generated via migrate diff (Branch B) but not applied to the dev database; syncDatabaseSchema() applies it at next boot. | open |  | 2026-10-08T07:46:46.171Z |  |
+| 23 | 14 | unrun-verify | client/src/routes/app/stacks/components/service-health-timeline.tsx |  | 14-03 human-check not performed: eyeball the expanded health history in light and dark theme at Pixel 7 width (overflow measured by script; legibility and vertical stacking not visually reviewed) | open |  | 2026-10-08T08:08:04.656Z |  |
 
 ````json
 [
@@ -311,6 +312,19 @@ last_updated: 2026-10-08T07:46:46.171Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-08T07:46:46.171Z",
+    "resolved_at": null,
+    "milestone": "v0.1.0"
+  },
+  {
+    "id": 23,
+    "kind": "unrun-verify",
+    "phase": "14",
+    "file": "client/src/routes/app/stacks/components/service-health-timeline.tsx",
+    "line": null,
+    "description": "14-03 human-check not performed: eyeball the expanded health history in light and dark theme at Pixel 7 width (overflow measured by script; legibility and vertical stacking not visually reviewed)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-08T08:08:04.656Z",
     "resolved_at": null,
     "milestone": "v0.1.0"
   }
