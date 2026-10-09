@@ -121,6 +121,14 @@ export class ServiceHealthService {
         if (row === undefined || row.containerState !== "running") {
             return;
         }
+        // D-08: a result is applied only to the container it was taken from. One
+        // still queued for a container a deploy or restart replaced must not
+        // write the old id, history or health over the new container's row. A
+        // null row id means Docktor does not know the current container, so no
+        // result can be attributed to it (HealthProbeJob never probes such a row).
+        if (row.containerId !== event.containerId) {
+            return;
+        }
 
         const stored = normalizeHealth(row.healthStatus);
         const probe = this.advance(event, stored);
@@ -206,9 +214,13 @@ export class ServiceHealthService {
         }
     }
 
-    // Runs the pure rule for this result and remembers the new state. A new
-    // container (changed id or start time) starts over as `starting`; a service
-    // seen for the first time continues from its stored health.
+    // Runs the pure rule for this result and remembers the new state. The state
+    // to continue from is, in order: the stored health for a service seen for
+    // the first time; `starting` for a new container (changed id or start
+    // time); the stored health again when the remembered health disagrees with
+    // the row, because the row is the truth once an observer reset it (a Docker
+    // start event, the post-deploy catch-up) or the container-gone path cleared
+    // it; otherwise the remembered state.
     private advance(event: ServiceProbeCompletedEvent, stored: string | null): ProbeState {
         const key = `${event.stackId}/${event.serviceName}`;
         const existing = this.entries.get(key);
@@ -221,6 +233,8 @@ export class ServiceHealthService {
             prev = seedProbeState(stored);
         } else if (isNewContainer(existing, event)) {
             prev = NEW_CONTAINER_STATE;
+        } else if (existing.probe.health !== stored) {
+            prev = seedProbeState(stored);
         } else {
             prev = existing.probe;
         }
