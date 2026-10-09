@@ -259,5 +259,32 @@ describe("container identity for probe-owned health (D-08, WR-01, WR-05)", () =>
                 expect.objectContaining({fromStatus: "starting", toStatus: "healthy", source: "http-probe"}),
             ]);
         });
+
+        it("ignores a late result for the replaced container and then accepts the new container's", async () => {
+            const {world, repo, stackStatusWrites} = givenRows([webRow("c-old", "unhealthy")]);
+            const service = new ServiceHealthService(repo as unknown as ServiceHealthServiceRepo, bus, {
+                inspectContainer: vi.fn(),
+            });
+            docker.listContainers.mockResolvedValue([container("c-new", "web")]);
+            docker.inspectContainer.mockResolvedValue({Id: "c-new", State: {Status: "running"}});
+
+            await catchUpOwning(repo, "web").catchUp(STACK_ID);
+            const writesAfterCatchUp = repo.updateServiceState.mock.calls.length;
+            const emitsAfterCatchUp = bus.emit.mock.calls.length;
+
+            for (let i = 0; i < 3; i++) {
+                await service.handleProbeCompleted(probeEvent("c-old", FAIL_503));
+            }
+
+            expect(repo.updateServiceState).toHaveBeenCalledTimes(writesAfterCatchUp);
+            expect(bus.emit).toHaveBeenCalledTimes(emitsAfterCatchUp);
+            expect(world.rows[0]).toMatchObject({containerId: "c-new", healthStatus: "starting"});
+            expect(stackStatusWrites).not.toContain("UNHEALTHY");
+
+            await service.handleProbeCompleted(probeEvent("c-new", OK_200));
+
+            expect(world.rows[0]).toMatchObject({containerId: "c-new", healthStatus: "healthy"});
+            expect(world.status).toBe("HEALTHY");
+        });
     });
 });

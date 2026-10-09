@@ -38,7 +38,7 @@ function createWorld(options: {
 } = {}) {
     const world = {
         status: options.status ?? "RUNNING",
-        rows: options.rows ?? [{serviceName: "web", containerId: "c-web", containerState: "running", healthStatus: null}],
+        rows: options.rows ?? [{serviceName: "web", containerId: "c1", containerState: "running", healthStatus: null}],
     };
     const repo = {
         findByComposeProject: vi.fn(async () => ({
@@ -46,9 +46,10 @@ function createWorld(options: {
             status: world.status,
             services: world.rows.map((row) => ({...row})),
         })),
-        updateServiceState: vi.fn(async (data: {serviceName: string; healthStatus: string | null}) => {
+        updateServiceState: vi.fn(async (data: {serviceName: string; containerId: string | null; healthStatus: string | null}) => {
             const row = world.rows.find((candidate) => candidate.serviceName === data.serviceName);
             if (row) {
+                row.containerId = data.containerId;
                 row.healthStatus = data.healthStatus;
             }
         }),
@@ -184,7 +185,7 @@ describe("ServiceHealthService.handleProbeCompleted", () => {
     });
 
     it("does not write or emit when the outcome leaves the health unchanged", async () => {
-        const {repo} = createWorld({rows: [{serviceName: "web", containerId: "c-web", containerState: "running", healthStatus: "healthy"}]});
+        const {repo} = createWorld({rows: [{serviceName: "web", containerId: "c1", containerState: "running", healthStatus: "healthy"}]});
         const {service, bus} = createService(repo);
 
         await service.handleProbeCompleted(probeEvent());
@@ -215,6 +216,8 @@ describe("ServiceHealthService.handleProbeCompleted", () => {
         const {repo, world} = createWorld();
         const {service} = createService(repo);
         await service.handleProbeCompleted(probeEvent());
+        // An observer recorded the new container before its first result arrived.
+        world.rows[0]!.containerId = "c2";
 
         await service.handleProbeCompleted(probeEvent({containerId: "c2", outcome: FAIL_503, containerStartedAt: startedAgo(1_000)}));
 
@@ -231,8 +234,66 @@ describe("ServiceHealthService.handleProbeCompleted", () => {
         expect(world.rows[0]?.healthStatus).toBe("healthy");
     });
 
+    it("drops a result for a container the row no longer describes (WR-01)", async () => {
+        const {repo, world} = createWorld({
+            rows: [{serviceName: "web", containerId: "c-new", containerState: "running", healthStatus: "starting"}],
+        });
+        const {service, bus} = createService(repo);
+
+        await service.handleProbeCompleted(probeEvent({containerId: "c-old", outcome: FAIL_503}));
+
+        expect(repo.updateServiceState).not.toHaveBeenCalled();
+        expect(repo.updateStackStatus).not.toHaveBeenCalled();
+        expect(bus.emit).not.toHaveBeenCalled();
+        expect(world.rows[0]?.healthStatus).toBe("starting");
+    });
+
+    it("drops a successful result for a replaced container instead of turning the new one healthy", async () => {
+        const {repo, world} = createWorld({
+            rows: [{serviceName: "web", containerId: "c-new", containerState: "running", healthStatus: "starting"}],
+        });
+        const {service, bus} = createService(repo);
+
+        await service.handleProbeCompleted(probeEvent({containerId: "c-old", outcome: OK_200}));
+
+        expect(repo.updateServiceState).not.toHaveBeenCalled();
+        expect(bus.emit).not.toHaveBeenCalled();
+        expect(world.rows[0]).toMatchObject({containerId: "c-new", healthStatus: "starting"});
+    });
+
+    it("drops a result when the row has no container id", async () => {
+        const {repo} = createWorld({
+            rows: [{serviceName: "web", containerId: null, containerState: "running", healthStatus: null}],
+        });
+        const {service, bus} = createService(repo);
+
+        await service.handleProbeCompleted(probeEvent());
+
+        expect(repo.updateServiceState).not.toHaveBeenCalled();
+        expect(bus.emit).not.toHaveBeenCalled();
+    });
+
+    it("continues from the row, not from remembered state, after an observer reset it on a same-id restart", async () => {
+        const {repo, world} = createWorld();
+        const {service} = createService(repo);
+        await service.handleProbeCompleted(probeEvent());
+        expect(world.rows[0]?.healthStatus).toBe("healthy");
+        repo.updateServiceState.mockClear();
+        // Docker's start event for the same container: an observer reset the row.
+        world.rows[0]!.healthStatus = "starting";
+
+        await service.handleProbeCompleted(probeEvent({containerStartedAt: null, outcome: FAIL_503}));
+
+        expect(repo.updateServiceState).not.toHaveBeenCalled();
+        expect(world.rows[0]?.healthStatus).toBe("starting");
+
+        await service.handleProbeCompleted(probeEvent());
+
+        expect(world.rows[0]?.healthStatus).toBe("healthy");
+    });
+
     it("continues from the stored health after a Docktor restart instead of resetting it", async () => {
-        const {repo} = createWorld({rows: [{serviceName: "web", containerId: "c-web", containerState: "running", healthStatus: "unhealthy"}]});
+        const {repo} = createWorld({rows: [{serviceName: "web", containerId: "c1", containerState: "running", healthStatus: "unhealthy"}]});
         const {service, bus} = createService(repo);
 
         await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
@@ -269,7 +330,7 @@ describe("ServiceHealthService.handleProbeCompleted", () => {
     it("derives the stack status from every service, not just the probed one", async () => {
         const {repo, world} = createWorld({
             rows: [
-                {serviceName: "web", containerId: "c-web", containerState: "running", healthStatus: null},
+                {serviceName: "web", containerId: "c1", containerState: "running", healthStatus: null},
                 {serviceName: "db", containerId: "c-db", containerState: "running", healthStatus: "unhealthy"},
             ],
             status: "UNHEALTHY",
@@ -284,8 +345,8 @@ describe("ServiceHealthService.handleProbeCompleted", () => {
     it("serialises results for one stack so the second sees the first's write", async () => {
         const {repo, world} = createWorld({
             rows: [
-                {serviceName: "web", containerId: "c-web", containerState: "running", healthStatus: null},
-                {serviceName: "db", containerId: "c-db", containerState: "running", healthStatus: null},
+                {serviceName: "web", containerId: "cw", containerState: "running", healthStatus: null},
+                {serviceName: "db", containerId: "cd", containerState: "running", healthStatus: null},
             ],
         });
         const {service} = createService(repo);
