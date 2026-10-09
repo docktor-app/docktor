@@ -23,3 +23,32 @@ export function isHealthTransition(
 ): boolean {
     return normalizeHealth(prev) !== normalizeHealth(next);
 }
+
+/**
+ * D-08. True only when a stored container id exists and differs from the
+ * observed one. A missing stored id (rows just recreated by a deploy, or a
+ * service never observed) says nothing about identity, so it never counts as
+ * a replacement.
+ */
+export function isReplacedContainer(
+    storedContainerId: string | null | undefined,
+    observedContainerId: string,
+): boolean {
+    return storedContainerId !== null && storedContainerId !== undefined && storedContainerId !== observedContainerId;
+}
+
+/**
+ * D-07/D-08. The health a Docker observer writes for a probe-owned service.
+ * The probe owns the value (D-07), so it is kept as stored, except when the
+ * observer sees a new or restarted container: that container has not been
+ * probed yet, so it starts as `starting` when running and as no health
+ * otherwise (D-08). The previous container's value is never carried over.
+ */
+export function probeOwnedHealth(
+    storedHealth: string | null | undefined,
+    observedState: string,
+    replaced: boolean,
+): string | null {
+    if (!replaced) return normalizeHealth(storedHealth);
+    return observedState === "running" ? "starting" : null;
+}
