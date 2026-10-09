@@ -566,7 +566,7 @@ Needs Phase 10's backend structure for the new health-probe job and Phase 11's U
   3. Each stack shows an uptime percentage and an incident list over a retention window (#24)
   4. Disk usage is viewable per stack and per volume, sortable, with a total (#27)
 
-**Plans:** 16/17 plans executed (3 gap-closure plans pending)
+**Plans:** 17/17 plans executed (3 gap-closure plans pending)
 
 Plans:
 **Wave 1**
@@ -602,7 +602,7 @@ Plans:
 - [x] 14-16-PLAN.md — Container identity (WR-01, WR-05, WR-11): results only for the current container, `starting` on a new or restarted container, probe-attributed 404 clear (#23, #24)
 
 **Gap closure, Wave 2** *(blocked on 14-15 and 14-16)*
-- [ ] 14-17-PLAN.md — Disk scan robustness (WR-03, WR-04, WR-09) and dispositions for all 18 review findings (#27)
+- [x] 14-17-PLAN.md — Disk scan robustness (WR-03, WR-04, WR-09) and dispositions for all 18 review findings (#27)
 
 ### Phase 15: Access Hardening
 
