@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 milestone: v0.1.0
 current_phase: 14
 current_phase_name: Health, Uptime and Disk Visibility
-current_plan: 14
-status: "Phases 1-9 all complete, tested, and reviewed. Product tracking moved to GitHub Issues (docktor-app/docktor): the vision doc (docs/vision.md scope) and all .planning/todos/pending/ items were triaged into 49 GitHub issues, native Issue Types adopted (Bug/Feature/Chore/Documentation/Task), and CLAUDE.md documents the process (including a project-specific override redirecting gsd-capture's add-todo to GitHub issues instead of .planning/todos/). User curated 23 issues (later 24, adding #15 UI Rework) into GitHub milestone 'v0.1.0 - First Release' (renamed from the working 'v1.0.0' label since this is the first release). ROADMAP.md Phases 10-16 now scope that milestone, sourced 1:1 from those issues (Requirements fields list GitHub issue numbers, not REQ-IDs — REQUIREMENTS.md is frozen at its already-complete v1.0 content and not being extended for new work). Per user request, Phase 10 (Backend Architecture Refactor, #16) and Phase 11 (UI Rework, #15) were resequenced to run BEFORE the feature phases that add new server/client code (12, 14, 15), so that new work lands on the reworked structure instead of needing rework afterward — both are independent of each other (separate server/client tracks) and both are intentionally open-ended, flagged as needing /gsd-discuss-phase before /gsd-plan-phase. Phase 13 (Update Checker Reliability — narrow bug fixes, not new architecture) carries low rework risk and can run anytime. Phase 10 (Backend Architecture Refactor) has since been merged into main (PR #67). Phase 11 progressed through context capture, UI-SPEC approval, and phase planning (13 plans across 5 waves, plan-checker blockers resolved), and Wave 1's tracer plan 11-01 is now complete: the Config tab merge (D-01/D-02/D-03) and the stack-detail-page decomposition to an 89-line orchestrator (CLAUDE.md Known Refactoring Target closed) both landed, with the StackConfigFiles/ConfigTab/OverviewTab/StackDetailHeader contracts and the PLAYWRIGHT_PORT parameterization ready for the remaining 12 plans to build on. Note: the original executing session for 11-01 was interrupted by a container restart between finishing Task 2 and writing its SUMMARY.md — both tasks' commits were already pushed and no work was lost; a follow-up session independently re-verified everything (unit suite, typecheck, full Playwright E2E including the parallel-port case) before writing the SUMMARY. Wave 2's 11-02 (ToneBadge/StatusDot status-indicator unification, D-08/D-09/D-10/D-11) is now complete: same container-restart pattern hit again (interrupted between finishing Task 3's edits and its first commit, with zero commits made), recovered the same way — full verification (all task `<verify>` commands, all acceptance-criteria greps, full client suite, tsc -b) before splitting into 3 retroactive task commits and writing the SUMMARY. Wave 2 completed with 11-03 (dark mode via next-themes), 11-04 (dashboard StatCard extraction) and 11-05 (server update-info enrichment on GET /api/stacks — same interruption-and-recovery pattern as 11-02). Wave 3 is now underway: 11-06 (unified activity timeline + flat Services section) and 11-07 (proxy/backup dialogs) landed cleanly; 11-08 (shared LogTerminal + backup detail rebuild) fixed Phase 10 UAT gap G-10-2 (backup-history polling loop) and was interrupted twice — once by a Claude usage-limit error before any edits existed (clean restart), once by a container restart after Task 3's RED commit but before its GREEN commit (recovered in place after independent re-verification). Remaining in wave 3: 11-09 (CodeMirror YAML editor, a checkpoint plan), 11-10 (unsaved-changes guard), 11-11 (settings.tsx split). 11-09's Task 1 blocking-human package-legitimacy checkpoint (four new client deps: @uiw/react-codemirror, yaml, @codemirror/lang-yaml, @codemirror/lint — the first two SUS-flagged by the automated gate on recency only) was presented to the developer on 2026-09-27T17:32:19Z and explicitly approved as-is, no replacements. Session paused here (weekly usage limit) before Task 2's install/build work began — client/package.json and yarn.lock are untouched, so the next execute-phase run for 11-09 should proceed straight to Task 2 without re-presenting the checkpoint, and must record this approval (developer, 2026-09-27T17:32:19Z, all four packages approved) in 11-09-SUMMARY.md per the plan's own instruction. Wave 3 completed with 11-09 (CodeMirror YAML editor) and 11-10 (unsaved-changes guard); Wave 4's 11-11 (settings.tsx split) then landed, reducing settings.tsx from 1125 to a 72-line orchestrator and closing that CLAUDE.md Known Refactoring Target. Wave 4's 11-12 (structured env editor, D-20/D-21/D-22/D-06) is now also complete: replaced the raw .env textarea with a lossless table/raw-mode EnvEditor on both the Config tab and Create Stack page. During TDD execution, a real line-duplication bug was found and fixed in the editor's re-serialization ref design (the plan's own suggested single-ref approach corrupts the document one keystroke at a time whenever a newly-added row passes through its empty-key state) — caught by the plan's own E2E acceptance criteria before merge, fixed with a stable-base/self-vs-external ref split, and covered by a new regression unit test. Remaining in wave 4/phase 11: 11-13 (phase closeout)."
-stopped_at: Completed 14-09-PLAN.md
-last_updated: "2026-10-08T14:24:12.913Z"
-state_head: f322bc0eaf8bfbe098b8e104e264b0243d32b6c2
+current_plan: 2
+status: "Phases 1-13 complete (v0.1.0 scope: ROADMAP Phases 10-16, sourced from GitHub issues in docktor-app/docktor; product tracking lives in GitHub Issues). Phase 14 (Health, Uptime and Disk Visibility): all 14 plans executed, code review done, verification found gaps (9/13 truths) — CR-01 probe Docker calls lack timeouts, WR-01/WR-05 probe results not tied to current container. Gap-closure plan (14-15) being created via /gsd-plan-phase 14 --gaps. Phases 15 (Access Hardening) and 16 (Release Readiness) not started."
+stopped_at: Completed 14-15-PLAN.md
+last_updated: "2026-10-09T06:25:57.620Z"
+state_head: afda14ea22396f20ca6c95abfa393036962d6598
 progress:
   total_phases: 17
   completed_phases: 9
-  total_plans: 146
-  completed_plans: 146
+  total_plans: 149
+  completed_plans: 147
 milestone_name: milestone
 ---
 
@@ -28,8 +28,8 @@ See: .planning/PROJECT.md (updated 2026-09-22)
 ## Current Position
 
 Phase: 14 (Health, Uptime and Disk Visibility) — EXECUTING
-Current Plan: 14
-Total Plans in Phase: 14
+Current Plan: 2
+Total Plans in Phase: 17
 
 ## Performance Metrics
 
@@ -182,6 +182,7 @@ Total Plans in Phase: 14
 | Phase 14 P10 | 22 min | 2 tasks | 16 files |
 | Phase 14 P13 | 22 min | 1 tasks | 9 files |
 | Phase 14 P09 | 18 min | 2 tasks | 18 files |
+| Phase 14 P15 | 13 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -447,6 +448,7 @@ Recent decisions affecting current work:
 - [Phase 14]: 14-13: a read failure or unparseable compose file keeps a stack's last good probes; a container-not-running clear is ignored if the container is running again by handling time
 - [Phase 14]: 14-09: ContainerStateCatchUp takes probeOwnership as an optional 4th ctor param defaulting to the shared registry so pre-existing 3-arg tests pass unmodified
 - [Phase 14]: 14-09: A network Docktor already holds (without the probe alias) is used without attach, ahead of <project>_default; a failed connect is dropped immediately so the next probe retries
+- [Phase 14]: 14-15: probe-path bounds are 10s per Docker call, timeout+50s per probe, 30s per start step, 5 min per tick; a deadline miss is a network-unreachable failed probe (D-02, D-08)
 
 ### Quick Tasks Completed
 
@@ -519,6 +521,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-10-08T14:24:11.351Z
-Stopped at: Completed 14-09-PLAN.md
+Last session: 2026-10-09T06:25:56.316Z
+Stopped at: Completed 14-15-PLAN.md
 Resume file: None
