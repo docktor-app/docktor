@@ -11,7 +11,8 @@
  * The directory names under `volumes/` are written by stack containers, so
  * they are untrusted. Only real directories are listed (a Dirent reports
  * `isDirectory() === false` for a symlink), so a link pointing into the host
- * mount is never followed.
+ * mount is never followed. The job also lstat-checks the `volumes` folder
+ * itself before listing it.
  *
  * `du` failures (RESEARCH Pitfall 8): exit 1 with an unreadable entry still
  * prints a total, which is used. A missing binary (Windows dev host) or a
@@ -38,16 +39,28 @@ export interface DiskUsageFsOps {
     lstat(path: string): Promise<{isDirectory(): boolean}>;
 }
 
+/**
+ * Per-stream output ceiling. du prints one stderr line per unreadable entry and
+ * its total only at the end, so node's 1 MiB default can kill it before the total.
+ */
+const DU_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
+
+const MAX_BUFFER_ERROR_CODE = "ERR_CHILD_PROCESS_STDIO_MAXBUFFER";
+
 const defaultRunner: CommandRunner = (file, args) =>
-    execFileAsync(file, [...args], {timeout: DU_TIMEOUT_MS});
+    execFileAsync(file, [...args], {timeout: DU_TIMEOUT_MS, maxBuffer: DU_MAX_BUFFER_BYTES});
 
 const defaultFsOps: DiskUsageFsOps = {
     readdir: (dir) => readdir(dir, {withFileTypes: true}),
     lstat: (path) => lstat(path),
 };
 
+function hasErrorCode(err: unknown, code: string): boolean {
+    return typeof err === "object" && err !== null && "code" in err && err.code === code;
+}
+
 function isMissingDirectory(err: unknown): boolean {
-    return typeof err === "object" && err !== null && "code" in err && err.code === "ENOENT";
+    return hasErrorCode(err, "ENOENT");
 }
 
 /** execFile rejections carry the child's stdout; anything else has none. */
@@ -92,6 +105,11 @@ export class DiskUsageScanner implements DiskUsageScannerPort {
             if (isMissingDirectory(err)) {
                 this.warnDuMissingOnce();
                 return null;
+            }
+            if (hasErrorCode(err, MAX_BUFFER_ERROR_CODE)) {
+                console.warn(
+                    `[DiskUsageScanner] du output for "${path}" exceeded the buffer; the stack keeps its previous figures`,
+                );
             }
             // Exit 1 with a printed total, or a killed run with none.
             return parseDuBytes(stdoutOfFailure(err));

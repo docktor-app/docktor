@@ -39,6 +39,7 @@ export class DiskUsageJob extends IntervalJob {
 
     private readonly store: DiskUsageJobStore | null
     private kickoffTimer: NodeJS.Timeout | null = null
+    private scanning = false
 
     constructor(
         store?: DiskUsageJobStore,
@@ -68,13 +69,13 @@ export class DiskUsageJob extends IntervalJob {
         super.stop()
     }
 
-    /** The post-boot scan. Never rejects: a failed first scan must not surface as an unhandled rejection. */
-    async kickoff(): Promise<void> {
-        try {
-            await this.run()
-        } catch (err) {
-            console.error("[DiskUsageJob] initial scan failed:", err)
-        }
+    /**
+     * The post-boot scan, through the guarded run so its outcome is logged and
+     * recorded on the job health reporter like a scheduled run (WR-09). Never
+     * rejects: a failed first scan must not surface as an unhandled rejection.
+     */
+    kickoff(): Promise<void> {
+        return this.runGuarded()
     }
 
     private async getStore(): Promise<DiskUsageJobStore> {
@@ -86,7 +87,26 @@ export class DiskUsageJob extends IntervalJob {
         }
     }
 
+    /**
+     * Never two scans at once (T-14-68): the cron run and the kickoff could
+     * otherwise race delete-then-create on the (stackId, name) unique key. A
+     * skipped run still counts as a run on the health reporter, because the job
+     * is alive and a scan is in progress.
+     */
     protected async run(): Promise<void> {
+        if (this.scanning) {
+            console.warn("[DiskUsageJob] a scan is already running; skipping this run")
+            return
+        }
+        this.scanning = true
+        try {
+            await this.scan()
+        } finally {
+            this.scanning = false
+        }
+    }
+
+    private async scan(): Promise<void> {
         const store = await this.getStore()
         const stackIds = await store.listStackIds()
         let measured = 0
@@ -134,8 +154,11 @@ export class DiskUsageJob extends IntervalJob {
     }
 
     private async measureVolumes(volumesDir: string): Promise<Array<{name: string; sizeBytes: number}> | null> {
-        // D-13 / RESEARCH Open Question 3: a missing folder means the stack holds
-        // no volume data, which is measured as 0 bytes, not "unmeasured".
+        // Pitfall 9 / WR-03: a container can replace `volumes` with a symlink, so
+        // the folder itself is lstat-checked and never followed. Like a missing
+        // one (D-13 / RESEARCH Open Question 3) it holds no volume data, which is
+        // measured as 0 bytes, not "unmeasured".
+        if (!(await this.scanner.isRealDirectory(volumesDir))) return []
         const names = await this.scanner.listVolumeDirectories(volumesDir)
         const volumes: Array<{name: string; sizeBytes: number}> = []
         for (const name of names ?? []) {

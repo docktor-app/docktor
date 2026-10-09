@@ -86,7 +86,13 @@ export abstract class IntervalJob implements Job {
         this.healthReporter?.recordError(this.name, error)
     }
 
-    private async runGuarded(): Promise<void> {
+    /**
+     * Runs `run()` with the failure handling and health reporting of a scheduled
+     * run; never rejects. A subclass that triggers an extra run outside the cron
+     * schedule (DiskUsageJob's post-boot kickoff) must go through it so the
+     * outcome is logged and reported like a scheduled run.
+     */
+    protected async runGuarded(): Promise<void> {
         try {
             await this.run()
             this.healthReporter?.recordRun(this.name)
