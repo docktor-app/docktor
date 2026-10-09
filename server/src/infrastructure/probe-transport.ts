@@ -4,7 +4,7 @@ import type {LookupFunction} from "node:net";
 import {hostname} from "node:os";
 import type Dockerode from "dockerode";
 import {healthProbeUrlSchema} from "@docktor/shared";
-import {isProbeSuccess, type ProbeOutcome} from "../domain/health-probe.js";
+import {isProbeSuccess, PROBE_DOCKER_CALL_TIMEOUT_MS, type ProbeOutcome} from "../domain/health-probe.js";
 import type {DockerodeClientPort} from "../application/ports/dockerode-client-port.js";
 import type {
     ProbeObservation,
@@ -12,6 +12,7 @@ import type {
     ProbeTransportPort,
 } from "../application/ports/probe-transport-port.js";
 import {isContainerized} from "../lib/stacks-dir.js";
+import {DeadlineExceededError, withDeadline} from "../lib/with-deadline.js";
 import {dockerodeClient} from "./dockerode-client.js";
 
 const COMPOSE_PROJECT_LABEL = "com.docker.compose.project";
@@ -111,6 +112,21 @@ function chooseNetwork(
     const preferred = project === undefined ? undefined : candidates.find((c) => c.name === `${project}_default`);
     const network = preferred ?? candidates[0];
     return network === undefined ? null : {network, attach: true};
+}
+
+// Every Docker call on the probe path goes through here, so none can hang a
+// probe for longer than PROBE_DOCKER_CALL_TIMEOUT_MS. A miss is logged once.
+async function bounded<T>(what: string, call: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    try {
+        return await withDeadline(what, PROBE_DOCKER_CALL_TIMEOUT_MS, call);
+    } catch (err) {
+        if (err instanceof DeadlineExceededError) {
+            console.warn(
+                `[ProbeTransport] Docker did not answer the ${what} within ${PROBE_DOCKER_CALL_TIMEOUT_MS / 1000}s; recording a failed probe`,
+            );
+        }
+        throw err;
+    }
 }
 
 function statusCodeOf(err: unknown): number | undefined {
@@ -334,9 +350,12 @@ export class ProbeTransport implements ProbeTransportPort {
 
         let info: Dockerode.ContainerInspectInfo;
         try {
-            info = await this.docker.inspectContainer(request.containerId);
-        } catch {
-            return {containerStartedAt: null, outcome: NO_ADDRESS};
+            info = await bounded(`inspect of container "${request.containerId}"`, () =>
+                this.docker.inspectContainer(request.containerId),
+            );
+        } catch (err) {
+            // Fail-closed (D-02, D-08): a daemon that does not answer is a failed probe.
+            return {containerStartedAt: null, outcome: err instanceof DeadlineExceededError ? NETWORK_UNREACHABLE : NO_ADDRESS};
         }
 
         const target = new URL(validation.data);

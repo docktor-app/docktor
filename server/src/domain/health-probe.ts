@@ -9,9 +9,23 @@
  *   D-08  three consecutive failures turn a service unhealthy; failures during
  *         the 60-second startup grace do not count, and one success makes it
  *         healthy
+ *
+ * Fail-closed bounds (D-02, D-06, D-08): a Docker call on the probe path that
+ * takes longer than PROBE_DOCKER_CALL_TIMEOUT_MS counts as a failed probe, and
+ * a whole probe that takes longer than its timeout plus
+ * PROBE_DEADLINE_MARGIN_MS does too, so a stalled daemon never stops probing.
  */
 
 export const PROBE_INTERVAL_MS = 30_000;
+/** Longest a single Docker Engine call (inspect, connect, disconnect) may take on the probe path. */
+export const PROBE_DOCKER_CALL_TIMEOUT_MS = 10_000;
+/**
+ * Allowance on top of a probe's own timeout for the bounded Docker steps around
+ * its request (target inspect, Docktor's own inspect, waiting for an in-flight
+ * detach, connect and disconnect: five at most), so the overall per-probe bound
+ * never pre-empts a probe the transport itself would still finish.
+ */
+export const PROBE_DEADLINE_MARGIN_MS = 5 * PROBE_DOCKER_CALL_TIMEOUT_MS;
 export const PROBE_FAILURE_THRESHOLD = 3;
 export const PROBE_STARTUP_GRACE_MS = 60_000;
 
