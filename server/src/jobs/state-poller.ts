@@ -6,7 +6,13 @@ import {probedServiceRegistry} from "../application/probed-service-registry.js"
 import {domainEventBus} from "../infrastructure/event-bus.js"
 import type {StackStatus} from "../generated/prisma/enums.js"
 import {deriveStackStatus, isTransitionalStatus} from "../domain/stack-state-derivation.js"
-import {isHealthTransition, normalizeHealth} from "../domain/service-health.js"
+import {
+    isHealthTransition,
+    isReplacedContainer,
+    normalizeHealth,
+    probeOwnedHealth,
+    type HealthSourceName,
+} from "../domain/service-health.js"
 import {WatcherJob} from "./job.js"
 
 // Narrows an unknown thrown value to one carrying a given HTTP status code
@@ -17,6 +23,7 @@ function hasStatusCode(err: unknown, statusCode: number): boolean {
 
 export interface ServiceState {
     serviceName: string
+    containerId?: string | null
     containerState?: string | null
     healthStatus?: string | null
 }
@@ -37,6 +44,10 @@ export interface UpdateServiceStateArgs {
 
 function storedHealthOf(services: ReadonlyArray<ServiceState>, serviceName: string): string | null {
     return normalizeHealth(services.find((s) => s.serviceName === serviceName)?.healthStatus)
+}
+
+function storedContainerIdOf(services: ReadonlyArray<ServiceState>, serviceName: string): string | null {
+    return services.find((s) => s.serviceName === serviceName)?.containerId ?? null
 }
 
 type ListedContainer = Awaited<ReturnType<DockerodeClientPort["listContainers"]>>[number]
@@ -204,7 +215,8 @@ export class StatePoller extends WatcherJob {
                     containerState,
                     healthStatus: null,
                 })
-                this.emitHealthTransition(stack.id, serviceName, stack.services, null)
+                // WR-11: the clear belongs to whoever owns the service's health.
+                this.emitHealthTransition(stack.id, serviceName, stack.services, null, this.healthSource(stack.id, serviceName))
                 const derivedStatus = deriveStackStatus(
                     stack.services.map((s) =>
                         s.serviceName === serviceName
@@ -228,10 +240,13 @@ export class StatePoller extends WatcherJob {
 
         const containerState = info.State.Status
         // D-07: a probe-owned service keeps its stored (probe) health; Docker's
-        // healthcheck value is neither written, derived from, nor recorded.
+        // healthcheck value is neither written nor derived from. D-08/WR-05:
+        // Docker emits `start` both for a new container and for a restart of
+        // the same one, the two cases where the container has not been probed
+        // yet, so a probe-owned service starts over as `starting`.
         const probeOwned = this.probeOwnership.isProbeOwned(stack.id, serviceName)
         const healthStatus = probeOwned
-            ? storedHealthOf(stack.services, serviceName)
+            ? probeOwnedHealth(storedHealthOf(stack.services, serviceName), containerState, action === "start")
             : (info.State.Health?.Status ?? null)
 
         console.log(`[StatePoller] Inspected: service=${serviceName}, state=${containerState}, health=${healthStatus}`)
@@ -245,7 +260,7 @@ export class StatePoller extends WatcherJob {
             healthStatus,
         })
 
-        if (!probeOwned) this.emitHealthTransition(stack.id, serviceName, stack.services, healthStatus)
+        this.emitHealthTransition(stack.id, serviceName, stack.services, healthStatus, this.healthSource(stack.id, serviceName))
 
         // Derive aggregate stack status
         const updatedServices = stack.services.map((s) => {
@@ -284,15 +299,18 @@ export class StatePoller extends WatcherJob {
     // Reads one container's real state and Docker health and persists them.
     // When inspect fails, the list summary's state and the *stored* health are
     // kept: a transient Docker error must not reset a HEALTHY/UNHEALTHY
-    // service to "no health" (RESEARCH Finding 4).
+    // service to "no health" (RESEARCH Finding 4). `singleContainer` is true
+    // when the service has exactly one container in the project.
     private async observeContainer(
         repo: StatePollerRepo,
         stack: StackWithServices,
         serviceName: string,
         container: ListedContainer,
+        singleContainer: boolean,
     ): Promise<ObservedContainer> {
         let containerState = container.State
-        let healthStatus = storedHealthOf(stack.services, serviceName)
+        const storedHealth = storedHealthOf(stack.services, serviceName)
+        let healthStatus = storedHealth
         // D-07: a probe-owned service keeps its stored (probe) health.
         const probeOwned = this.probeOwnership.isProbeOwned(stack.id, serviceName)
 
@@ -305,6 +323,15 @@ export class StatePoller extends WatcherJob {
             // reconcile() is reserved for failures that abort the project.
         }
 
+        // D-08/WR-05: a probe-owned service whose single container is a
+        // different one than last stored starts over as `starting`. A scaled
+        // service has no single container identity and keeps the stored value.
+        if (probeOwned) {
+            const replaced = singleContainer
+                && isReplacedContainer(storedContainerIdOf(stack.services, serviceName), container.Id)
+            healthStatus = probeOwnedHealth(storedHealth, containerState, replaced)
+        }
+
         await repo.updateServiceState({
             stackId: stack.id,
             serviceName,
@@ -312,9 +339,15 @@ export class StatePoller extends WatcherJob {
             containerState,
             healthStatus,
         })
-        if (!probeOwned) this.emitHealthTransition(stack.id, serviceName, stack.services, healthStatus)
+        this.emitHealthTransition(stack.id, serviceName, stack.services, healthStatus, this.healthSource(stack.id, serviceName))
 
         return {containerState, healthStatus}
+    }
+
+    // D-07: a transition of a probe-owned service's health is the probe's,
+    // whichever observer writes it (a reset on a new container, a cleared one).
+    private healthSource(stackId: string, serviceName: string): HealthSourceName {
+        return this.probeOwnership.isProbeOwned(stackId, serviceName) ? "http-probe" : "docker-healthcheck"
     }
 
     // Write-before-emit: the history row is appended by a subscriber, so call
@@ -325,6 +358,7 @@ export class StatePoller extends WatcherJob {
         serviceName: string,
         services: ReadonlyArray<ServiceState>,
         nextHealth: string | null,
+        source: HealthSourceName,
     ): void {
         const previous = services.find((s) => s.serviceName === serviceName)
         if (!previous || !isHealthTransition(previous.healthStatus, nextHealth)) return
@@ -334,7 +368,7 @@ export class StatePoller extends WatcherJob {
             serviceName,
             fromStatus: normalizeHealth(previous.healthStatus),
             toStatus: normalizeHealth(nextHealth),
-            source: "docker-healthcheck",
+            source,
         })
     }
 
@@ -367,12 +401,19 @@ export class StatePoller extends WatcherJob {
                 // Observe and write every container's real state and health.
                 // The first container seen for a service is the one the
                 // stack status is derived from.
+                const containerCounts = new Map<string, number>()
+                for (const container of projectContainers) {
+                    const svcName = container.Labels?.["com.docker.compose.service"]
+                    if (svcName) containerCounts.set(svcName, (containerCounts.get(svcName) ?? 0) + 1)
+                }
+
                 const observed = new Map<string, ObservedContainer>()
                 for (const container of projectContainers) {
                     const svcName = container.Labels?.["com.docker.compose.service"]
                     if (!svcName) continue
 
-                    const observation = await this.observeContainer(repo, stack, svcName, container)
+                    const singleContainer = containerCounts.get(svcName) === 1
+                    const observation = await this.observeContainer(repo, stack, svcName, container, singleContainer)
                     if (!observed.has(svcName)) observed.set(svcName, observation)
                 }
 
