@@ -115,17 +115,18 @@ function chooseNetwork(
 }
 
 // Every Docker call on the probe path goes through here, so none can hang a
-// probe for longer than PROBE_DOCKER_CALL_TIMEOUT_MS. A miss is logged once.
-async function bounded<T>(what: string, call: (signal: AbortSignal) => Promise<T>): Promise<T> {
-    try {
-        return await withDeadline(what, PROBE_DOCKER_CALL_TIMEOUT_MS, call);
-    } catch (err) {
-        if (err instanceof DeadlineExceededError) {
-            console.warn(
-                `[ProbeTransport] Docker did not answer the ${what} within ${PROBE_DOCKER_CALL_TIMEOUT_MS / 1000}s; recording a failed probe`,
-            );
-        }
-        throw err;
+// probe, an attachment or the sweep for longer than PROBE_DOCKER_CALL_TIMEOUT_MS.
+// The signal lets the adapter cancel the request itself once the deadline passes.
+function bounded<T>(what: string, call: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    return withDeadline(what, PROBE_DOCKER_CALL_TIMEOUT_MS, call);
+}
+
+// A daemon that did not answer is a failed probe (D-02, D-08); say so once.
+function warnIfUnanswered(err: unknown): void {
+    if (err instanceof DeadlineExceededError) {
+        console.warn(
+            `[ProbeTransport] Docker did not answer the ${err.what} within ${err.ms / 1000}s; recording a failed probe`,
+        );
     }
 }
 
@@ -152,6 +153,13 @@ interface Attachment {
  * network share a single attachment: connected when the first starts,
  * disconnected when the last finishes. A new attach waits for an in-flight
  * disconnect of the same network, so it cannot be torn down underneath it.
+ *
+ * Every Docker call is deadline-bounded, so neither a hung connect nor a hung
+ * disconnect can block later probes on a network for longer than the bound. A
+ * connect that succeeds only after its deadline leaves an alias-marked
+ * endpoint behind: the next probe's connect gets HTTP 403 (treated as
+ * attached) and that probe's release disconnects it. The startup sweep is the
+ * backstop (T-14-59).
  */
 class NetworkAttachments {
     private readonly active = new Map<string, Attachment>();
@@ -191,7 +199,9 @@ class NetworkAttachments {
     private async connect(networkId: string, selfId: string): Promise<void> {
         await this.detaching.get(networkId);
         try {
-            await this.docker.connectNetwork(networkId, selfId, [PROBE_ENDPOINT_ALIAS]);
+            await bounded(`connect to network "${networkId}"`, (signal) =>
+                this.docker.connectNetwork(networkId, selfId, [PROBE_ENDPOINT_ALIAS], signal),
+            );
         } catch (err) {
             if (!isAlreadyConnected(err)) throw err;
         }
@@ -217,7 +227,9 @@ class NetworkAttachments {
     // lets the startup sweep reclaim the attachment.
     private async disconnect(networkId: string, selfId: string): Promise<void> {
         try {
-            await this.docker.disconnectNetwork(networkId, selfId);
+            await bounded(`disconnect from network "${networkId}"`, (signal) =>
+                this.docker.disconnectNetwork(networkId, selfId, signal),
+            );
         } catch (err) {
             console.warn(`[ProbeTransport] failed to disconnect from network ${networkId}; the startup sweep will remove it:`, err);
         }
@@ -350,11 +362,11 @@ export class ProbeTransport implements ProbeTransportPort {
 
         let info: Dockerode.ContainerInspectInfo;
         try {
-            info = await bounded(`inspect of container "${request.containerId}"`, () =>
-                this.docker.inspectContainer(request.containerId),
+            info = await bounded(`inspect of container "${request.containerId}"`, (signal) =>
+                this.docker.inspectContainer(request.containerId, signal),
             );
         } catch (err) {
-            // Fail-closed (D-02, D-08): a daemon that does not answer is a failed probe.
+            warnIfUnanswered(err);
             return {containerStartedAt: null, outcome: err instanceof DeadlineExceededError ? NETWORK_UNREACHABLE : NO_ADDRESS};
         }
 
@@ -368,12 +380,17 @@ export class ProbeTransport implements ProbeTransportPort {
             const selfId = await this.self.containerId();
             if (selfId === null) return 0;
 
-            const info = await this.docker.inspectContainer(selfId);
+            const info = await bounded(`inspect of Docktor's own container "${selfId}"`, (signal) =>
+                this.docker.inspectContainer(selfId, signal),
+            );
             let removed = 0;
             for (const [name, endpoint] of Object.entries(info.NetworkSettings?.Networks ?? {})) {
                 if (!hasProbeAlias(endpoint) || !endpoint.NetworkID) continue;
                 try {
-                    await this.docker.disconnectNetwork(endpoint.NetworkID, selfId);
+                    const networkId = endpoint.NetworkID;
+                    await bounded(`disconnect from network "${name}"`, (signal) =>
+                        this.docker.disconnectNetwork(networkId, selfId, signal),
+                    );
                     removed++;
                 } catch (err) {
                     console.warn(`[ProbeTransport] could not remove the stale probe attachment to network "${name}":`, err);
@@ -403,8 +420,11 @@ export class ProbeTransport implements ProbeTransportPort {
 
         let selfInfo: Dockerode.ContainerInspectInfo;
         try {
-            selfInfo = await this.docker.inspectContainer(selfId);
-        } catch {
+            selfInfo = await bounded(`inspect of Docktor's own container "${selfId}"`, (signal) =>
+                this.docker.inspectContainer(selfId, signal),
+            );
+        } catch (err) {
+            warnIfUnanswered(err);
             return NETWORK_UNREACHABLE;
         }
 
@@ -420,7 +440,8 @@ export class ProbeTransport implements ProbeTransportPort {
         try {
             // `request` never rejects, so a rejection here is the connect failing.
             return await this.attachments.with(choice.network.networkId, selfId, () => request(choice.network.address));
-        } catch {
+        } catch (err) {
+            warnIfUnanswered(err);
             return NETWORK_UNREACHABLE;
         }
     }

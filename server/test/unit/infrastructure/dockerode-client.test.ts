@@ -85,6 +85,25 @@ describe("DockerodeClient", () => {
             expect(mockContainer.inspect).toHaveBeenCalledOnce();
             expect(result).toEqual(mockInspectData);
         });
+
+        it("forwards an abort signal as dockerode's abortSignal option", async () => {
+            const mockContainer = {inspect: vi.fn().mockResolvedValue({})};
+            mockDocker.getContainer.mockReturnValue(mockContainer);
+            const controller = new AbortController();
+
+            await client.inspectContainer("container-abc", controller.signal);
+
+            expect(mockContainer.inspect).toHaveBeenCalledExactlyOnceWith({abortSignal: controller.signal});
+        });
+
+        it("sends no abortSignal option without a signal", async () => {
+            const mockContainer = {inspect: vi.fn().mockResolvedValue({})};
+            mockDocker.getContainer.mockReturnValue(mockContainer);
+
+            await client.inspectContainer("container-abc");
+
+            expect(mockContainer.inspect).toHaveBeenCalledExactlyOnceWith(undefined);
+        });
     });
 
     describe("connectNetwork / disconnectNetwork (amended D-05)", () => {
@@ -109,6 +128,26 @@ describe("DockerodeClient", () => {
 
             expect(mockDocker.getNetwork).toHaveBeenCalledWith("n1");
             expect(network.disconnect).toHaveBeenCalledExactlyOnceWith({Container: "self1", Force: false});
+        });
+
+        it("forwards an abort signal to connect and disconnect as dockerode's abortSignal option", async () => {
+            const network = {connect: vi.fn().mockResolvedValue(undefined), disconnect: vi.fn().mockResolvedValue(undefined)};
+            mockDocker.getNetwork.mockReturnValue(network);
+            const controller = new AbortController();
+
+            await client.connectNetwork("n1", "self1", ["docktor-health-probe"], controller.signal);
+            await client.disconnectNetwork("n1", "self1", controller.signal);
+
+            expect(network.connect).toHaveBeenCalledExactlyOnceWith({
+                Container: "self1",
+                EndpointConfig: {Aliases: ["docktor-health-probe"]},
+                abortSignal: controller.signal,
+            });
+            expect(network.disconnect).toHaveBeenCalledExactlyOnceWith({
+                Container: "self1",
+                Force: false,
+                abortSignal: controller.signal,
+            });
         });
 
         it("lets the daemon's error through so the caller can classify it", async () => {

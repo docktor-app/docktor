@@ -27,23 +27,37 @@ export class DockerodeClient implements DockerodeClientPort {
         })
     }
 
-    async inspectContainer(containerId: string): Promise<Dockerode.ContainerInspectInfo> {
-        return this.docker.getContainer(containerId).inspect()
+    async inspectContainer(containerId: string, signal?: AbortSignal): Promise<Dockerode.ContainerInspectInfo> {
+        // Without a signal inspect() receives exactly the options it always did.
+        return this.docker.getContainer(containerId).inspect(signal ? {abortSignal: signal} : undefined)
     }
 
     async listContainers(all = true): Promise<Dockerode.ContainerInfo[]> {
         return this.docker.listContainers({all})
     }
 
-    async connectNetwork(networkId: string, containerId: string, aliases: readonly string[]): Promise<void> {
-        await this.docker.getNetwork(networkId).connect({
+    async connectNetwork(
+        networkId: string,
+        containerId: string,
+        aliases: readonly string[],
+        signal?: AbortSignal,
+    ): Promise<void> {
+        // @types/dockerode omits abortSignal here, but dockerode's Network.connect forwards it
+        // (lib/network.js) and docker-modem strips it before building the request body.
+        const options: Dockerode.NetworkConnectOptions & {abortSignal?: AbortSignal} = {
             Container: containerId,
             EndpointConfig: {Aliases: [...aliases]},
-        })
+            ...(signal && {abortSignal: signal}),
+        }
+        await this.docker.getNetwork(networkId).connect(options)
     }
 
-    async disconnectNetwork(networkId: string, containerId: string): Promise<void> {
-        await this.docker.getNetwork(networkId).disconnect({Container: containerId, Force: false})
+    async disconnectNetwork(networkId: string, containerId: string, signal?: AbortSignal): Promise<void> {
+        await this.docker.getNetwork(networkId).disconnect({
+            Container: containerId,
+            Force: false,
+            ...(signal && {abortSignal: signal}),
+        })
     }
 
     async getLogStream(containerId: string, tail = 100): Promise<NodeJS.ReadableStream> {

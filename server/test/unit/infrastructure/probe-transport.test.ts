@@ -134,7 +134,7 @@ describe("ProbeTransport (amended D-05, T-14-36)", () => {
 
         expect(result).toEqual({containerStartedAt: STARTED_AT, outcome: {ok: true, status: 200}});
         expect(seen).toEqual([{host: `localhost:${port}`, url: "/health"}]);
-        expect(docker.inspectContainer).toHaveBeenCalledWith("c1");
+        expect(docker.inspectContainer).toHaveBeenCalledWith("c1", expect.any(AbortSignal));
     });
 
     it("passes the query string through", async () => {
@@ -291,8 +291,8 @@ describe("ProbeTransport (amended D-05, T-14-36)", () => {
 
             expect(result).toEqual({containerStartedAt: STARTED_AT, outcome: {ok: true, status: 200}});
             expect(calls).toEqual(["connect", "request", "disconnect"]);
-            expect(docker.connectNetwork).toHaveBeenCalledWith("n1", SELF_ID, [PROBE_ENDPOINT_ALIAS]);
-            expect(docker.disconnectNetwork).toHaveBeenCalledWith("n1", SELF_ID);
+            expect(docker.connectNetwork).toHaveBeenCalledWith("n1", SELF_ID, [PROBE_ENDPOINT_ALIAS], expect.any(AbortSignal));
+            expect(docker.disconnectNetwork).toHaveBeenCalledWith("n1", SELF_ID, expect.any(AbortSignal));
         });
 
         it("uses a network Docktor already holds without any attach, even when the stack default network exists", async () => {
@@ -376,8 +376,8 @@ describe("ProbeTransport (amended D-05, T-14-36)", () => {
             await newTransport(preferred, SELF).probe(request);
             await newTransport(first, SELF).probe(request);
 
-            expect(preferred.connectNetwork).toHaveBeenCalledWith("n-app", SELF_ID, [PROBE_ENDPOINT_ALIAS]);
-            expect(first.connectNetwork).toHaveBeenCalledWith("n-second", SELF_ID, [PROBE_ENDPOINT_ALIAS]);
+            expect(preferred.connectNetwork).toHaveBeenCalledWith("n-app", SELF_ID, [PROBE_ENDPOINT_ALIAS], expect.any(AbortSignal));
+            expect(first.connectNetwork).toHaveBeenCalledWith("n-second", SELF_ID, [PROBE_ENDPOINT_ALIAS], expect.any(AbortSignal));
         });
 
         it("fails closed without a request or a detach when the connect fails", async () => {
@@ -424,7 +424,7 @@ describe("ProbeTransport (amended D-05, T-14-36)", () => {
             });
 
             expect(result.outcome).toEqual({ok: true, status: 200});
-            expect(docker.disconnectNetwork).toHaveBeenCalledWith("n1", SELF_ID);
+            expect(docker.disconnectNetwork).toHaveBeenCalledWith("n1", SELF_ID, expect.any(AbortSignal));
         });
 
         it("keeps the outcome and warns once, naming the network, when the detach fails", async () => {
@@ -488,7 +488,7 @@ describe("ProbeTransport (amended D-05, T-14-36)", () => {
             });
 
             expect(result.outcome).toEqual({ok: true, status: 200});
-            expect(docker.inspectContainer).toHaveBeenCalledExactlyOnceWith("c1");
+            expect(docker.inspectContainer).toHaveBeenCalledExactlyOnceWith("c1", expect.any(AbortSignal));
             expect(docker.connectNetwork).not.toHaveBeenCalled();
             expect(docker.disconnectNetwork).not.toHaveBeenCalled();
         });
@@ -508,8 +508,8 @@ describe("ProbeTransport (amended D-05, T-14-36)", () => {
             const removed = await newTransport(docker, SELF).sweepStaleAttachments();
 
             expect(removed).toBe(1);
-            expect(docker.inspectContainer).toHaveBeenCalledWith(SELF_ID);
-            expect(docker.disconnectNetwork).toHaveBeenCalledExactlyOnceWith("na", SELF_ID);
+            expect(docker.inspectContainer).toHaveBeenCalledWith(SELF_ID, expect.any(AbortSignal));
+            expect(docker.disconnectNetwork).toHaveBeenCalledExactlyOnceWith("na", SELF_ID, expect.any(AbortSignal));
         });
 
         it("makes no Docker call and resolves 0 when Docktor is not containerized", async () => {
