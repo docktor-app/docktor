@@ -2,16 +2,31 @@ import type {EventBusPort} from "../application/ports/event-bus-port.js"
 import type {ProbeObservation, ProbeTransportPort} from "../application/ports/probe-transport-port.js"
 import type {ProbeOwnershipWriter} from "../application/probed-service-registry.js"
 import type {DomainEventMap, ServiceProbeClearedEvent} from "../domain/events.js"
-import {PROBE_INTERVAL_MS, probeStaggerOffsetMs} from "../domain/health-probe.js"
+import {PROBE_DEADLINE_MARGIN_MS, PROBE_INTERVAL_MS, probeStaggerOffsetMs} from "../domain/health-probe.js"
 import {isTransitionalStatus} from "../domain/stack-state-derivation.js"
 import {domainEventBus} from "../infrastructure/event-bus.js"
 import type {HealthProbeSpec} from "../lib/compose-health-probe.js"
 import {parseHealthProbes} from "../lib/compose-health-probe.js"
+import {DeadlineExceededError, withDeadline} from "../lib/with-deadline.js"
 import type {Job, JobHealthReporter} from "./job.js"
 import {IntervalJob} from "./job.js"
 
 /** D-06: no more than this many probes are in flight at once (T-14-51). */
 export const PROBE_CONCURRENCY = 8
+
+/**
+ * Each start() pre-step (stale attachment sweep, ownership seeding) is bounded
+ * at this, so a stalled Docker daemon or database never blocks
+ * JobRegistry.startAll() or the server's listen() (RESEARCH Finding 7).
+ */
+export const START_STEP_TIMEOUT_MS = 30_000
+
+/**
+ * A tick still running after this no longer suppresses later ticks. Far above
+ * the longest tick the per-call and per-probe bounds allow, so it only fires on
+ * a hang outside Docker, such as the database.
+ */
+export const MAX_TICK_DURATION_MS = 5 * 60_000
 
 export interface ProbeJobService {
     serviceName: string
@@ -79,6 +94,13 @@ interface DueProbe {
  * probe block (valid or not), so StatePoller and the catch-up leave their
  * health to the probe. Nothing is probed at start.
  *
+ * Liveness (CR-01): nothing a Docker daemon does can stop probing. Every
+ * Docker call in the transport is bounded (PROBE_DOCKER_CALL_TIMEOUT_MS), each
+ * probe as a whole is bounded at its timeout plus PROBE_DEADLINE_MARGIN_MS and
+ * a miss is recorded as a failed probe (D-08), each start() pre-step is
+ * bounded at START_STEP_TIMEOUT_MS, and a tick still in flight after
+ * MAX_TICK_DURATION_MS is logged, reported and replaced by the next one.
+ *
  * The job does I/O and emits events; deciding what a result means and
  * persisting it belongs to ServiceHealthService (Phase 10 pattern).
  */
@@ -88,7 +110,9 @@ export class HealthProbeJob extends IntervalJob {
     // The first probes are staggered over the first 30 seconds anyway.
     protected readonly runImmediatelyOnStart = false
 
-    private inFlight = false
+    // The tick in progress, if any. An object so a stale tick that settles late
+    // can tell the marker is no longer its own and leave the newer tick's alone.
+    private inFlight: {startedAt: number} | null = null
     private readonly schedule = new Map<string, ScheduleEntry>()
     private readonly composeCache = new Map<string, ParsedCompose>()
 
@@ -107,7 +131,9 @@ export class HealthProbeJob extends IntervalJob {
 
     private async sweepStaleAttachments(): Promise<void> {
         try {
-            const removed = await this.deps.transport.sweepStaleAttachments()
+            const removed = await withDeadline("stale attachment sweep", START_STEP_TIMEOUT_MS, () =>
+                this.deps.transport.sweepStaleAttachments(),
+            )
             if (removed > 0) console.warn(`[HealthProbeJob] removed ${removed} stale probe network attachment(s)`)
         } catch (err) {
             console.error("[HealthProbeJob] stale attachment sweep failed:", err)
@@ -116,11 +142,13 @@ export class HealthProbeJob extends IntervalJob {
 
     private async refreshOwnership(): Promise<void> {
         try {
-            const stacks = await this.deps.store.listStacks()
-            for (const stack of stacks) {
-                this.deps.ownership.replaceStack(stack.id, (await this.probesFor(stack.id)).keys())
-            }
-            this.deps.ownership.retainStacks(stacks.map((stack) => stack.id))
+            await withDeadline("ownership refresh", START_STEP_TIMEOUT_MS, async () => {
+                const stacks = await this.deps.store.listStacks()
+                for (const stack of stacks) {
+                    this.deps.ownership.replaceStack(stack.id, (await this.probesFor(stack.id)).keys())
+                }
+                this.deps.ownership.retainStacks(stacks.map((stack) => stack.id))
+            })
         } catch (err) {
             console.error("[HealthProbeJob] ownership refresh failed:", err)
         }
@@ -129,13 +157,22 @@ export class HealthProbeJob extends IntervalJob {
     protected async run(): Promise<void> {
         // IntervalJob does not stop a run from overlapping the previous one, and
         // a probe can take up to its timeout, so a tick that starts while the
-        // last one is running is skipped.
-        if (this.inFlight) return
-        this.inFlight = true
+        // last one is running is skipped, until the watchdog gives up on it.
+        const now = this.deps.now()
+        if (this.inFlight !== null) {
+            if (now - this.inFlight.startedAt < MAX_TICK_DURATION_MS) return
+            console.error(
+                `[HealthProbeJob] watchdog: the previous tick has run for over ${MAX_TICK_DURATION_MS / 1000}s; starting a new tick`,
+            )
+            this.reportError(new DeadlineExceededError("probe tick", MAX_TICK_DURATION_MS))
+        }
+
+        const marker = {startedAt: now}
+        this.inFlight = marker
         try {
             await this.tick()
         } finally {
-            this.inFlight = false
+            if (this.inFlight === marker) this.inFlight = null
         }
     }
 
@@ -246,14 +283,25 @@ export class HealthProbeJob extends IntervalJob {
 
         let observation: ProbeObservation
         try {
-            observation = await this.deps.transport.probe({containerId, url: spec.url, timeoutMs: spec.timeoutMs})
+            observation = await withDeadline(`probe of "${key}"`, spec.timeoutMs + PROBE_DEADLINE_MARGIN_MS, () =>
+                this.deps.transport.probe({containerId, url: spec.url, timeoutMs: spec.timeoutMs}),
+            )
         } catch (err) {
-            // The port promises never to reject; this keeps a violation of that
-            // promise from aborting the probes of every service after this one.
-            console.error(`[HealthProbeJob] probe request failed for "${key}":`, err)
-            return
+            // The port promises never to reject and to answer in time. Either way
+            // no answer is a failed probe (D-08), never a skipped one, and the
+            // race guarantees exactly one result however late the transport is.
+            this.logProbeFailure(key, err)
+            observation = {containerStartedAt: null, outcome: {ok: false, reason: {kind: "network-unreachable"}}}
         }
         this.emitCompleted(stackId, serviceName, containerId, observation)
+    }
+
+    private logProbeFailure(key: string, err: unknown): void {
+        if (err instanceof DeadlineExceededError) {
+            console.warn(`[HealthProbeJob] probe of "${key}" did not finish within ${err.ms / 1000}s; recording a failed probe`)
+        } else {
+            console.error(`[HealthProbeJob] probe request failed for "${key}":`, err)
+        }
     }
 
     private emitCompleted(stackId: string, serviceName: string, containerId: string, observation: ProbeObservation): void {
