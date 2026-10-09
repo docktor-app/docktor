@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 milestone: v0.1.0
 current_phase: 14
 current_phase_name: Health, Uptime and Disk Visibility
-current_plan: 2
+current_plan: 3
 status: "Phases 1-13 complete (v0.1.0 scope: ROADMAP Phases 10-16, sourced from GitHub issues in docktor-app/docktor; product tracking lives in GitHub Issues). Phase 14 (Health, Uptime and Disk Visibility): all 14 plans executed, code review done, verification found gaps (9/13 truths) — CR-01 probe Docker calls lack timeouts, WR-01/WR-05 probe results not tied to current container. Gap-closure plan (14-15) being created via /gsd-plan-phase 14 --gaps. Phases 15 (Access Hardening) and 16 (Release Readiness) not started."
-stopped_at: Completed 14-15-PLAN.md
-last_updated: "2026-10-09T06:25:57.620Z"
-state_head: afda14ea22396f20ca6c95abfa393036962d6598
+stopped_at: Completed 14-16-PLAN.md
+last_updated: "2026-10-09T06:34:00.815Z"
+state_head: e9dc74d4450a766f37c06f8ba3f56c791061c1f6
 progress:
   total_phases: 17
   completed_phases: 9
   total_plans: 149
-  completed_plans: 147
+  completed_plans: 148
 milestone_name: milestone
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-22)
 ## Current Position
 
 Phase: 14 (Health, Uptime and Disk Visibility) — EXECUTING
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 17
 
 ## Performance Metrics
@@ -183,6 +183,7 @@ Total Plans in Phase: 17
 | Phase 14 P13 | 22 min | 1 tasks | 9 files |
 | Phase 14 P09 | 18 min | 2 tasks | 18 files |
 | Phase 14 P15 | 13 min | 3 tasks | 13 files |
+| Phase 14 P16 | 12 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -449,6 +450,9 @@ Recent decisions affecting current work:
 - [Phase 14]: 14-09: ContainerStateCatchUp takes probeOwnership as an optional 4th ctor param defaulting to the shared registry so pre-existing 3-arg tests pass unmodified
 - [Phase 14]: 14-09: A network Docktor already holds (without the probe alias) is used without attach, ahead of <project>_default; a failed connect is dropped immediately so the next probe retries
 - [Phase 14]: 14-15: probe-path bounds are 10s per Docker call, timeout+50s per probe, 30s per start step, 5 min per tick; a deadline miss is a network-unreachable failed probe (D-02, D-08)
+- [Phase 14]: 14-16: a probe result is applied only when row.containerId equals the event containerId; a null row id drops it (WR-01)
+- [Phase 14]: 14-16: Docker observers reset a probe-owned service on a new container to starting (null if not running); id-based reset only for single-container services, start event resets regardless of id (WR-05)
+- [Phase 14]: 14-16: ServiceHealthService continues from the Service row when remembered probe health disagrees with it; StatePoller attributes every health transition by ownership incl. the 404 clear (WR-11)
 
 ### Quick Tasks Completed
 
@@ -521,6 +525,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-10-09T06:25:56.316Z
-Stopped at: Completed 14-15-PLAN.md
+Last session: 2026-10-09T06:33:59.526Z
+Stopped at: Completed 14-16-PLAN.md
 Resume file: None
