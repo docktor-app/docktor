@@ -19,8 +19,13 @@ function createScanner(
     return {
         listVolumeDirectories: vi.fn(async (dir: string) => volumesByDir[dir] ?? null),
         measureBytes: vi.fn(async (p: string) => sizes[p] ?? null),
-        isRealDirectory: vi.fn(async (p: string) => realDirectories.includes(p)),
+        // A listed volumes folder exists as a real directory (fixture fidelity).
+        isRealDirectory: vi.fn(async (p: string) => realDirectories.includes(p) || volumesByDir[p] != null),
     }
+}
+
+function createReporter() {
+    return {recordRun: vi.fn(), recordError: vi.fn()}
 }
 
 function buildJob(store: ReturnType<typeof createStore>, scanner: ReturnType<typeof createScanner>): DiskUsageJob {
@@ -117,6 +122,72 @@ describe("DiskUsageJob (#27, D-13)", () => {
             expect(store.recordStackUsage).not.toHaveBeenCalled()
             expect(warn).toHaveBeenCalledWith(expect.stringContaining('"a"'))
             warn.mockRestore()
+        })
+    })
+
+    describe("symlinked volumes folder (Pitfall 9, WR-03, T-14-66)", () => {
+        it("never lists or sizes a volumes path that is not a real directory, and records 0 bytes with backups still measured", async () => {
+            const volumesDir = path.join("stacks", "a", "volumes")
+            const backupsDir = path.join("stacks", "a", "backups")
+            const store = createStore(["a"])
+            const scanner = createScanner(
+                {[volumesDir]: ["outside-secret"]},
+                {[path.join(volumesDir, "outside-secret")]: 999, [backupsDir]: 4096},
+                [backupsDir],
+            )
+            scanner.isRealDirectory.mockImplementation(async (p: string) => p === backupsDir)
+
+            await runOf(buildJob(store, scanner))
+
+            expect(scanner.isRealDirectory).toHaveBeenCalledWith(volumesDir)
+            expect(scanner.listVolumeDirectories).not.toHaveBeenCalled()
+            expect(scanner.measureBytes).not.toHaveBeenCalledWith(path.join(volumesDir, "outside-secret"))
+            expect(store.recordStackUsage).toHaveBeenCalledWith({
+                stackId: "a",
+                volumes: [],
+                volumeSizeBytes: 0,
+                backupSizeBytes: 4096,
+                measuredAt: NOW,
+            })
+        })
+    })
+
+    describe("in-flight guard (WR-09, T-14-68)", () => {
+        it("skips a second run while a scan is in flight, logs it, and scans again once the first finished", async () => {
+            const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined)
+            const log = vi.spyOn(console, "log").mockImplementation(() => undefined)
+            let release: (ids: string[]) => void = () => undefined
+            const pending = new Promise<string[]>((resolve) => {
+                release = resolve
+            })
+            const store = createStore(["a"])
+            store.listStackIds.mockReturnValueOnce(pending)
+            const job = buildJob(store, createScanner({}, {}))
+
+            const first = runOf(job)
+            await expect(runOf(job)).resolves.toBeUndefined()
+
+            expect(store.listStackIds).toHaveBeenCalledOnce()
+            expect(warn).toHaveBeenCalledWith(expect.stringContaining("already running"))
+
+            release(["a"])
+            await first
+            await runOf(job)
+
+            expect(store.listStackIds).toHaveBeenCalledTimes(2)
+            warn.mockRestore()
+            log.mockRestore()
+        })
+
+        it("clears the in-flight flag when a scan rejects, so the next run still scans", async () => {
+            const store = createStore(["a"])
+            store.listStackIds.mockRejectedValueOnce(new Error("db down"))
+            const job = buildJob(store, createScanner({}, {}))
+
+            await expect(runOf(job)).rejects.toThrow("db down")
+            await runOf(job)
+
+            expect(store.listStackIds).toHaveBeenCalledTimes(2)
         })
     })
 
@@ -226,16 +297,34 @@ describe("DiskUsageJob (#27, D-13)", () => {
             expect(store.listStackIds).not.toHaveBeenCalled()
         })
 
-        it("logs and swallows a failed initial scan", async () => {
+        it("logs and swallows a failed initial scan, reporting it like a scheduled run (WR-09)", async () => {
             const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined)
             const store = createStore(["a"])
-            store.listStackIds.mockRejectedValue(new Error("db down"))
+            const failure = new Error("db down")
+            store.listStackIds.mockRejectedValue(failure)
+            const reporter = createReporter()
             const job = buildJob(store, createScanner({}, {}))
+            job.setHealthReporter(reporter)
 
             await expect(job.kickoff()).resolves.toBeUndefined()
 
-            expect(errorSpy).toHaveBeenCalledWith("[DiskUsageJob] initial scan failed:", expect.any(Error))
+            expect(errorSpy).toHaveBeenCalledWith("[DiskUsageJob] run failed:", failure)
+            expect(reporter.recordError).toHaveBeenCalledWith("DiskUsageJob", failure)
+            expect(reporter.recordRun).not.toHaveBeenCalled()
             errorSpy.mockRestore()
+        })
+
+        it("records a successful kickoff scan on the job health reporter (WR-09)", async () => {
+            const log = vi.spyOn(console, "log").mockImplementation(() => undefined)
+            const reporter = createReporter()
+            const job = buildJob(createStore(["a"]), createScanner({}, {}))
+            job.setHealthReporter(reporter)
+
+            await job.kickoff()
+
+            expect(reporter.recordRun).toHaveBeenCalledWith("DiskUsageJob")
+            expect(reporter.recordError).not.toHaveBeenCalled()
+            log.mockRestore()
         })
     })
 

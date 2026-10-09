@@ -77,6 +77,33 @@ describe("DiskUsageScanner (#27, D-13)", () => {
             expect(await scanner.measureBytes("/p")).toBeNull();
         });
 
+        it("warns once with the path and the word buffer when du output overflows maxBuffer (WR-04, T-14-67)", async () => {
+            const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+            const runner = vi
+                .fn()
+                .mockRejectedValue(Object.assign(new Error("maxBuffer exceeded"), {code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER", stdout: ""}));
+            const scanner = new DiskUsageScanner(runner);
+
+            expect(await scanner.measureBytes("/s/a/volumes/noisy")).toBeNull();
+
+            expect(warn).toHaveBeenCalledOnce();
+            const message = String(warn.mock.calls[0]?.[0]);
+            expect(message).toContain("/s/a/volumes/noisy");
+            expect(message).toContain("buffer");
+            warn.mockRestore();
+        });
+
+        it("does not emit the overflow warning for an ordinary failure without output", async () => {
+            const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+            const runner = vi.fn().mockRejectedValue(Object.assign(new Error("killed"), {killed: true, stdout: ""}));
+            const scanner = new DiskUsageScanner(runner);
+
+            expect(await scanner.measureBytes("/p")).toBeNull();
+
+            expect(warn).not.toHaveBeenCalled();
+            warn.mockRestore();
+        });
+
         it("returns null when the runner rejects with something that is not an error object", async () => {
             const scanner = new DiskUsageScanner(vi.fn().mockRejectedValue("boom"));
 
