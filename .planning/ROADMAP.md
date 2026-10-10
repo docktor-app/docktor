@@ -622,11 +622,26 @@ Needs Phase 11's UI patterns for the 2FA enrollment flow. The rate-limiting/CSRF
   2. Auth endpoints (login, password reset, etc.) have rate limiting (#46)
   3. CSRF protection and session-cookie security defaults (httpOnly/sameSite/secure) are verified or closed on the existing better-auth integration (#46)
 
-**Plans:** 0 plans
+**Plans:** 6 plans
 
 Plans:
+**Wave 1**
 
-- [ ] TBD (run /gsd-plan-phase 15 to break down)
+- [ ] 15-01-PLAN.md — Server auth boundary: TwoFactor/RateLimit schema + migration [BLOCKING], DB-backed rate limiting keyed to an unforgeable client IP (TRUST_PROXY), twoFactor plugin with trust device and recovery codes, origin check forced on, reset/OTP endpoints closed (#45, #46)
+
+**Wave 2** *(blocked on 15-01; 15-02 and 15-03 run in parallel)*
+
+- [ ] 15-02-PLAN.md — Mandatory 2FA policy: instance-wide setting with self-lockout guard, forced-enrollment gate in requireAuth, /api/account/security API, other sessions revoked on 2FA changes, disable blocked while required (#45)
+- [ ] 15-03-PLAN.md — Login second step: TOTP / recovery code / trust-device checkbox, precise error copy, X-Retry-After rate-limit message (#45, #46)
+
+**Wave 3** *(15-04 blocked on 15-02; 15-05 blocked on 15-02 and 15-03; run in parallel)*
+
+- [ ] 15-04-PLAN.md — CSRF Origin guard for Fastify routes (tests first), Secure cookie from the https base URL, on-box 2FA reset CLI, operator/security docs, password-reset follow-up issue (#46, #45)
+- [ ] 15-05-PLAN.md — Account page + enrollment: shared security status store, 3-step enroll dialog with local QR (qrcode.react legitimacy checkpoint), recovery-code copy/download, user-menu entry (#45)
+
+**Wave 4** *(blocked on 15-05)*
+
+- [ ] 15-06-PLAN.md — Mandatory-2FA switch, forced-enrollment redirect and alert, regenerate/disable dialogs, Playwright 2FA journey (#45)
 
 ### Phase 16: Release Readiness for v0.1.0
 

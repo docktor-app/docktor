@@ -30,7 +30,27 @@ created: "2026-10-10"
 
 ## Per-Task Verification Map
 
-Populated by the planner from the map in `15-RESEARCH.md`; each task carries an `<automated>` command.
+Populated by the planner from the map in `15-RESEARCH.md`; each task carries an `<automated>` command (local, light) and, where integration or Playwright coverage applies, a `<ci_verify>` command that runs only in GitHub Actions (user rule: no integration suites or full builds on the VPS).
+
+| Plan / Task | Local `<automated>` | CI-only suites |
+|-------------|---------------------|----------------|
+| 15-01 T1 (tracer) | migration greps, `prisma validate` (placeholder DATABASE_URL), server unit: auth-config, auth, layering | `test/integration/auth-rate-limit.test.ts` |
+| 15-01 T2 | shared `account.test.ts`; server unit: helpers/totp, auth-config, auth, layering | `test/integration/two-factor.test.ts`, `auth-rate-limit.test.ts` |
+| 15-02 T1 (tracer) | shared `account.test.ts`; server unit: two-factor-policy, errors, auth-middleware, account-security-service, account-routes, repositories/index, layering | `account-security.test.ts`, `setup-wizard-flow.test.ts`, `stacks.test.ts` |
+| 15-02 T2 | server unit: two-factor-policy, auth, auth-config, layering | `two-factor-sessions.test.ts`, `two-factor.test.ts`, `account-security.test.ts` |
+| 15-03 T1 (tracer) | client unit: login-form, two-factor-step | Playwright `auth.spec.ts` (existing) |
+| 15-03 T2 | client unit: rate-limit, auth-errors, login-form, two-factor-step | — |
+| 15-04 T1 (tracer) | server unit: origin-guard, layering | `auth-csrf.test.ts` + every existing suite |
+| 15-04 T2 | server unit: auth-config, auth-cookie-config, auth; stale-claim grep | `auth-cookies.test.ts`, `auth-cookies-https.test.ts` |
+| 15-04 T3 | server unit: account-security-service, scripts/reset-two-factor, layering; docs greps | `two-factor-reset.test.ts`; human-check: reverse proxy + TRUST_PROXY |
+| 15-05 T1 (tracer) | client unit: account-api, use-account-security, account-page, enroll-dialog, recovery-codes-panel, nav-user | — |
+| 15-05 T2 | checkpoint (blocking-human package legitimacy, qrcode.react) | — |
+| 15-05 T3 | client unit: enroll-dialog, recovery-codes-panel; dependency grep | `yarn install --immutable`, build; human-check: real authenticator scan, dark-mode QR |
+| 15-06 T1 (tracer) | client unit: mandatory-two-factor-row, account-page, protected-route, api | full Playwright suite (default account-security stub) |
+| 15-06 T2 | client unit: regenerate-codes-dialog, disable-two-factor-dialog, account-page, enroll-dialog | — |
+| 15-06 T3 | `playwright test --list two-factor.spec.ts` | `two-factor.spec.ts` (chromium + mobile-chromium) |
+
+Typecheck (`yarn typecheck`) and `yarn build` run in CI for every plan.
 
 ## Wave 0 Requirements
 
