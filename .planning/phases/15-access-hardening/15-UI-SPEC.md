@@ -1,7 +1,8 @@
 ---
 phase: "15"
 slug: access-hardening
-status: draft
+status: approved
+reviewed_at: 2026-10-10
 shadcn_initialized: true
 preset: "shadcn new-york / baseColor neutral / cssVariables (components.json)"
 created: "2026-10-10"
