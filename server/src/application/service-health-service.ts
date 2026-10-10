@@ -64,6 +64,8 @@ interface ProbeEntry {
     containerId: string;
     startedAt: string | null;
     probe: ProbeState;
+    /** The remembered health has not reached the Service row (a failed read or write). */
+    unwritten: boolean;
 }
 
 const NEW_CONTAINER_STATE: ProbeState = {consecutiveFailures: 0, health: "starting"};
@@ -111,7 +113,25 @@ export class ServiceHealthService {
     }
 
     private async applyProbeResult(event: ServiceProbeCompletedEvent): Promise<void> {
+        const key = `${event.stackId}/${event.serviceName}`;
+        const remembered = this.entries.get(key);
+        // UAT G-14-1: during a Docker daemon stall the database read below can
+        // fail, and a result lost with it would never be counted. For a result
+        // that continues the same container the remembered state advances first,
+        // so a failed read still leaves the failure counted. After a successful
+        // read the entry is put back and the original rule runs from it, so
+        // nothing counts twice. A never-seen service needs the row to seed and a
+        // new container needs the row to confirm it, so neither advances early.
+        if (remembered !== undefined && !isNewContainer(remembered, event)) {
+            const early = this.nextEntry(remembered, event, remembered.probe);
+            this.entries.set(key, {
+                ...early,
+                unwritten: remembered.unwritten || early.probe.health !== remembered.probe.health,
+            });
+        }
+
         const stack = await this.repo.findByComposeProject(event.stackId);
+        this.restore(key, remembered);
         if (stack === null || isTransitionalStatus(stack.status)) {
             return;
         }
@@ -131,18 +151,22 @@ export class ServiceHealthService {
         }
 
         const stored = normalizeHealth(row.healthStatus);
-        const probe = this.advance(event, stored);
-        if (probe.health === stored) {
+        const entry = this.nextEntry(remembered, event, previousState(remembered, event, stored));
+        if (entry.probe.health === stored) {
+            this.entries.set(key, {...entry, unwritten: false});
             return;
         }
+        // A rejected write leaves the change flagged, so the next result applies it.
+        this.entries.set(key, {...entry, unwritten: true});
         await this.applyHealth(stack, row, {
             containerId: event.containerId,
             containerState: "running",
             previous: stored,
-            next: probe.health,
+            next: entry.probe.health,
             source: "http-probe",
-            message: describeProbeTransition(probe.health, event.outcome),
+            message: describeProbeTransition(entry.probe.health, event.outcome),
         });
+        this.entries.set(key, {...entry, unwritten: false});
     }
 
     /**
@@ -214,38 +238,30 @@ export class ServiceHealthService {
         }
     }
 
-    // Runs the pure rule for this result and remembers the new state. The state
-    // to continue from is, in order: the stored health for a service seen for
-    // the first time; `starting` for a new container (changed id or start
-    // time); the stored health again when the remembered health disagrees with
-    // the row, because the row is the truth once an observer reset it (a Docker
-    // start event, the post-deploy catch-up) or the container-gone path cleared
-    // it; otherwise the remembered state.
-    private advance(event: ServiceProbeCompletedEvent, stored: string | null): ProbeState {
-        const key = `${event.stackId}/${event.serviceName}`;
-        const existing = this.entries.get(key);
+    // Puts back what was remembered before the early advance of applyProbeResult.
+    private restore(key: string, remembered: ProbeEntry | undefined): void {
+        if (remembered === undefined) {
+            this.entries.delete(key);
+        } else {
+            this.entries.set(key, remembered);
+        }
+    }
+
+    // Runs the pure rule for this result from `prev` without remembering it.
+    private nextEntry(
+        existing: ProbeEntry | undefined,
+        event: ServiceProbeCompletedEvent,
+        prev: ProbeState,
+    ): ProbeEntry {
         // A null start time means the container could not be inspected for this
         // probe, which says nothing about whether it is a new container.
         const startedAt = event.containerStartedAt ?? existing?.startedAt ?? null;
-
-        let prev: ProbeState;
-        if (existing === undefined) {
-            prev = seedProbeState(stored);
-        } else if (isNewContainer(existing, event)) {
-            prev = NEW_CONTAINER_STATE;
-        } else if (existing.probe.health !== stored) {
-            prev = seedProbeState(stored);
-        } else {
-            prev = existing.probe;
-        }
-
         const parsedStart = startedAt === null ? Number.NaN : Date.parse(startedAt);
         const probe = evaluateProbe(prev, event.outcome, {
             startedAtMs: Number.isNaN(parsedStart) ? 0 : parsedStart,
             nowMs: this.now(),
         });
-        this.entries.set(key, {containerId: event.containerId, startedAt, probe});
-        return probe;
+        return {containerId: event.containerId, startedAt, probe, unwritten: false};
     }
 
     // Order matters: the row is written before either event, so a consumer
@@ -301,6 +317,30 @@ export class ServiceHealthService {
             }),
         });
     }
+}
+
+// The state to continue from, in order: the stored health for a service seen
+// for the first time; `starting` for a new container (changed id or start
+// time); the remembered state while its health has not reached the row; the
+// stored health again when the remembered health disagrees with the row,
+// because the row is the truth once an observer reset it (a Docker start
+// event, the post-deploy catch-up) or the container-gone path cleared it;
+// otherwise the remembered state.
+function previousState(
+    existing: ProbeEntry | undefined,
+    event: ServiceProbeCompletedEvent,
+    stored: string | null,
+): ProbeState {
+    if (existing === undefined) {
+        return seedProbeState(stored);
+    }
+    if (isNewContainer(existing, event)) {
+        return NEW_CONTAINER_STATE;
+    }
+    if (existing.unwritten || existing.probe.health === stored) {
+        return existing.probe;
+    }
+    return seedProbeState(stored);
 }
 
 function isNewContainer(existing: ProbeEntry, event: ServiceProbeCompletedEvent): boolean {

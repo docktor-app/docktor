@@ -379,6 +379,146 @@ describe("ServiceHealthService.handleProbeCompleted", () => {
     });
 });
 
+describe("ServiceHealthService.handleProbeCompleted with a failing database (UAT G-14-1)", () => {
+    let consoleError: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+        consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+        consoleError.mockRestore();
+    });
+
+    const DB_DOWN = new Error("db down");
+
+    /** A service that is healthy in memory and in its row. */
+    async function healthyService() {
+        const world = createWorld();
+        const harness = createService(world.repo);
+        await harness.service.handleProbeCompleted(probeEvent());
+        harness.bus.emit.mockClear();
+        world.repo.updateServiceState.mockClear();
+        return {...world, ...harness};
+    }
+
+    it("counts probe failures that arrive while the read fails and writes `unhealthy` once the database answers", async () => {
+        const {repo, world, service, bus} = await healthyService();
+
+        await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
+        repo.findByComposeProject.mockRejectedValueOnce(DB_DOWN);
+        await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
+        repo.findByComposeProject.mockRejectedValueOnce(DB_DOWN);
+        await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
+
+        expect(repo.updateServiceState).not.toHaveBeenCalled();
+        expect(bus.emit).not.toHaveBeenCalled();
+        expect(consoleError).toHaveBeenCalledTimes(2);
+
+        await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
+
+        expect(repo.updateServiceState).toHaveBeenCalledTimes(1);
+        expect(world.rows[0]?.healthStatus).toBe("unhealthy");
+        expect(emitted(bus, "service.health_changed")).toEqual([
+            {
+                stackId: STACK_ID,
+                serviceName: "web",
+                fromStatus: "healthy",
+                toStatus: "unhealthy",
+                source: "http-probe",
+                message: "Responded with HTTP 503 after 3 failed checks",
+            },
+        ]);
+    });
+
+    it("retries a health change whose write failed on the next result", async () => {
+        const {repo, world, service, bus} = await healthyService();
+        await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
+        await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
+        repo.updateServiceState.mockRejectedValueOnce(DB_DOWN);
+
+        await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
+
+        expect(bus.emit).not.toHaveBeenCalled();
+        expect(world.rows[0]?.healthStatus).toBe("healthy");
+
+        await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
+
+        expect(world.rows[0]?.healthStatus).toBe("unhealthy");
+        expect(emitted(bus, "service.health_changed")).toHaveLength(1);
+    });
+
+    it("lets a success cancel a health change the row never received", async () => {
+        const {repo, world, service, bus} = await healthyService();
+        await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
+        await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
+        repo.updateServiceState.mockRejectedValueOnce(DB_DOWN);
+        await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
+        repo.updateServiceState.mockClear();
+
+        await service.handleProbeCompleted(probeEvent({outcome: OK_200}));
+        await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
+
+        expect(repo.updateServiceState).not.toHaveBeenCalled();
+        expect(bus.emit).not.toHaveBeenCalled();
+        expect(world.rows[0]?.healthStatus).toBe("healthy");
+    });
+
+    it("does not count results dropped for a transitional stack", async () => {
+        const {repo, world, service, bus} = await healthyService();
+        world.status = "DEPLOYING";
+        await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
+        await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
+        world.status = "RUNNING";
+
+        await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
+        await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
+
+        expect(repo.updateServiceState).not.toHaveBeenCalled();
+        expect(bus.emit).not.toHaveBeenCalled();
+
+        await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
+
+        expect(world.rows[0]?.healthStatus).toBe("unhealthy");
+    });
+
+    it("does not let a late result for a replaced container disturb the new container's count", async () => {
+        const {repo, world, service} = await healthyService();
+        await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
+        await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
+        repo.updateServiceState.mockClear();
+
+        // A result taken from a container the row no longer describes.
+        await service.handleProbeCompleted(probeEvent({containerId: "c-old", outcome: OK_200}));
+
+        expect(repo.updateServiceState).not.toHaveBeenCalled();
+
+        await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
+
+        expect(world.rows[0]?.healthStatus).toBe("unhealthy");
+    });
+
+    it("drops and logs a never-seen service whose read fails, then seeds from the row on the next result", async () => {
+        const {repo, world} = createWorld({
+            rows: [{serviceName: "web", containerId: "c1", containerState: "running", healthStatus: "healthy"}],
+        });
+        const {service, bus} = createService(repo);
+        repo.findByComposeProject.mockRejectedValueOnce(DB_DOWN);
+
+        await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
+
+        expect(consoleError).toHaveBeenCalledTimes(1);
+
+        // Had the failed result been remembered, the third of these would be the fourth failure.
+        await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
+        await service.handleProbeCompleted(probeEvent({outcome: FAIL_503}));
+
+        expect(repo.updateServiceState).not.toHaveBeenCalled();
+        expect(bus.emit).not.toHaveBeenCalled();
+        expect(world.rows[0]?.healthStatus).toBe("healthy");
+    });
+});
+
 function clearedEvent(overrides: Partial<ServiceProbeClearedEvent> = {}): ServiceProbeClearedEvent {
     return {stackId: STACK_ID, serviceName: "web", reason: "probe-removed", ...overrides};
 }
