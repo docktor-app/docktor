@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 14-health-uptime-and-disk-visibility
 source: [14-VERIFICATION.md]
 started: 2026-10-09T09:10:00Z
