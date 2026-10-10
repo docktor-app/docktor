@@ -5,20 +5,34 @@ import type {DockerodeClientPort} from "../application/ports/dockerode-client-po
 // Vitest mocks Dockerode as a plain function (vi.fn()), not a class.
 // Using a factory wrapper lets tests inject the mock without `new`.
 // In production, Dockerode is called with `new` via its normal constructor path.
-function createDockerInstance(): Dockerode {
-    const Docker = Dockerode as unknown as (opts?: object) => Dockerode
-    return Docker() // Auto-detects socket path based on platform
+function createDockerInstance(options?: Dockerode.DockerOptions): Dockerode {
+    const Docker = Dockerode as unknown as (opts?: Dockerode.DockerOptions) => Dockerode
+    return Docker(options) // Auto-detects socket path based on platform
 }
 
+/**
+ * Socket timeout of request/response Docker calls. Three times the probe
+ * path's own 10 s bound and far above a healthy answer. It bounds calls that
+ * used to stay pending for as long as dockerd was frozen (StatePoller
+ * reconcile and catch-up, routes).
+ */
+export const DOCKER_REQUEST_TIMEOUT_MS = 30_000
+
 export class DockerodeClient implements DockerodeClientPort {
+    // Request/response calls: bounded by a socket timeout (UAT G-14-1b).
     private readonly docker: Dockerode
+    // The event and follow-logs streams. docker-modem's `timeout` is an
+    // idle-socket timeout that destroys the request, and these sockets are
+    // idle between events, so a timeout must never apply to them.
+    private readonly streamDocker: Dockerode
 
     constructor() {
-        this.docker = createDockerInstance()
+        this.docker = createDockerInstance({timeout: DOCKER_REQUEST_TIMEOUT_MS})
+        this.streamDocker = createDockerInstance()
     }
 
     async getEventStream(signal?: AbortSignal): Promise<NodeJS.ReadableStream> {
-        return (this.docker as any).getEvents({
+        return (this.streamDocker as any).getEvents({
             filters: {
                 type: ["container"],
                 event: ["start", "stop", "die", "kill", "health_status"],
@@ -61,7 +75,7 @@ export class DockerodeClient implements DockerodeClientPort {
     }
 
     async getLogStream(containerId: string, tail = 100): Promise<NodeJS.ReadableStream> {
-        return this.docker.getContainer(containerId).logs({
+        return this.streamDocker.getContainer(containerId).logs({
             stdout: true,
             stderr: true,
             follow: true,
