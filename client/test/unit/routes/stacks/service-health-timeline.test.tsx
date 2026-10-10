@@ -105,6 +105,68 @@ describe("ServiceHealthTimeline", () => {
         expect(container.querySelector(".break-words")).not.toBeInTheDocument();
     });
 
+    // jsdom performs no layout, so the row structure is guarded at class level here
+    // and measured in a real browser by test/integration/service-health.spec.ts (G-14-2).
+    describe("row structure", () => {
+        const message = "Responded with HTTP 503 ".repeat(9);
+
+        function renderRow() {
+            const {container} = renderTimeline({
+                events: [makeEvent({fromStatus: "healthy", toStatus: "unhealthy", source: "http-probe", message})],
+            });
+            const row = container.querySelector<HTMLElement>('[data-slot="health-event-row"]');
+            const header = container.querySelector<HTMLElement>('[data-slot="health-event-header"]');
+            return {container, row, header};
+        }
+
+        it("puts the dot, timestamp, transition and source badge in a wrapping header line", () => {
+            const {row, header} = renderRow();
+            expect(row).toBeInTheDocument();
+            expect(header).toBeInTheDocument();
+            expect(header).toHaveClass("flex", "flex-wrap", "items-center");
+            expect(row).toContainElement(header);
+
+            const children = [...(header?.children ?? [])];
+            expect(children[0]).toHaveAttribute("data-slot", "status-dot");
+            expect(children[1]).toHaveTextContent(new Date("2026-10-08T07:00:00Z").toLocaleString());
+            expect(children[2]).toHaveTextContent("healthy → unhealthy");
+            expect(children[3]).toHaveTextContent("HTTP probe");
+        });
+
+        it("never wraps the status transition", () => {
+            renderRow();
+            expect(screen.getByText("healthy → unhealthy")).toHaveClass("whitespace-nowrap");
+        });
+
+        it("renders the message on its own line after the header, outside it", () => {
+            const {row, header} = renderRow();
+            const messageEl = row?.querySelector<HTMLElement>(".break-words");
+            expect(messageEl).toBeInTheDocument();
+            expect(messageEl).toHaveTextContent(message.trim());
+            expect(messageEl).toHaveClass("min-w-0", "break-words", "wrap-anywhere");
+            expect(header).not.toContainElement(messageEl);
+            expect(header?.nextElementSibling).toBe(messageEl);
+        });
+
+        it("keeps the header and drops the message element when the message is null", () => {
+            const {container} = renderTimeline({events: [makeEvent({message: null})]});
+            expect(container.querySelector('[data-slot="health-event-header"]')).toBeInTheDocument();
+            expect(container.querySelector(".break-words")).not.toBeInTheDocument();
+        });
+
+        it("separates rows with a divider and pads them more on phones", () => {
+            const {container} = renderTimeline({
+                events: [makeEvent({id: "e2"}), makeEvent({id: "e1"})],
+            });
+            const rows = container.querySelectorAll<HTMLElement>('[data-slot="health-event-row"]');
+            expect(rows).toHaveLength(2);
+            expect(rows[0].parentElement).toHaveClass("divide-y");
+            for (const row of rows) {
+                expect(row).toHaveClass("py-3", "sm:py-2");
+            }
+        });
+    });
+
     it("renders the timestamp in the muted 12px style", () => {
         renderTimeline();
         const stamp = screen.getByText(new Date("2026-10-08T07:00:00Z").toLocaleString());

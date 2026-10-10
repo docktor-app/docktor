@@ -142,6 +142,79 @@ test.describe("Service health history (#23)", () => {
         expect(overflow.panelScroll).toBeLessThanOrEqual(overflow.panelClient);
     });
 
+    // G-14-2: jsdom performs no layout, so the transition wrapping beside a long
+    // message (flex-shrink squeeze) is only visible when measured in a browser.
+    test("the status transition stays on one line beside a 200-character message", async ({page}) => {
+        const longMessage = `${"Responded with HTTP 503 ".repeat(8).slice(0, 190)} after 3 failed checks`;
+        await mockStackPage(page, [
+            {...webHealthEvents[0], id: "evt-long", message: longMessage},
+            {...webHealthEvents[1], id: "evt-null"},
+        ]);
+
+        await page.goto("/stacks/my-app");
+        await page.getByRole("button", {name: "Show health history for web"}).click();
+        const panel = page.locator("#health-history-web");
+        const transition = panel.getByText("healthy → unhealthy", {exact: true});
+        const message = panel.getByText(longMessage);
+        await expect(transition).toBeVisible();
+        await expect(message).toBeVisible();
+
+        const transitionBox = await transition.boundingBox();
+        const messageBox = await message.boundingBox();
+        expect(transitionBox).not.toBeNull();
+        expect(messageBox).not.toBeNull();
+        expect(transitionBox!.height).toBeLessThan(28);
+        expect(messageBox!.y).toBeGreaterThanOrEqual(transitionBox!.y + transitionBox!.height);
+    });
+
+    test("at phone width the panel does not overflow and rows are visibly separated", async ({page}) => {
+        const longMessage = `${"Responded with HTTP 503 ".repeat(8).slice(0, 190)} after 3 failed checks`;
+        const unbroken = `http://localhost:8080/health?${"x".repeat(170)}`;
+        await page.setViewportSize({width: 412, height: 915});
+        await mockStackPage(page, [
+            {...webHealthEvents[0], id: "evt-long", message: longMessage},
+            {...webHealthEvents[0], id: "evt-unbroken", message: unbroken, createdAt: "2026-10-08T07:30:00Z"},
+            {...webHealthEvents[1], id: "evt-null"},
+        ]);
+
+        await page.goto("/stacks/my-app");
+        const toggle = page.getByRole("button", {name: "Show health history for web"});
+        await toggle.scrollIntoViewIfNeeded();
+        await toggle.click();
+        const panel = page.locator("#health-history-web");
+        await expect(panel.getByText(longMessage)).toBeVisible();
+
+        const layout = await page.evaluate(() => {
+            const viewport = document.querySelector<HTMLElement>(
+                '#health-history-web [data-slot="scroll-area-viewport"]',
+            );
+            const rows = [
+                ...document.querySelectorAll<HTMLElement>('#health-history-web [data-slot="health-event-row"]'),
+            ];
+            const gaps = rows.slice(1).map((row, index) => {
+                const previous = rows[index];
+                const previousLines = [...previous.children].map((child) => child.getBoundingClientRect().bottom);
+                const header = row.querySelector<HTMLElement>('[data-slot="health-event-header"]');
+                return (header?.getBoundingClientRect().top ?? 0) - Math.max(...previousLines);
+            });
+            return {
+                rowCount: rows.length,
+                gaps,
+                pageScroll: document.documentElement.scrollWidth,
+                pageClient: document.documentElement.clientWidth,
+                panelScroll: viewport?.scrollWidth ?? -1,
+                panelClient: viewport?.clientWidth ?? -2,
+            };
+        });
+        expect(layout.rowCount).toBe(3);
+        expect(layout.pageScroll).toBeLessThanOrEqual(layout.pageClient);
+        expect(layout.panelScroll).toBeLessThanOrEqual(layout.panelClient);
+        expect(layout.gaps).toHaveLength(2);
+        for (const gap of layout.gaps) {
+            expect(gap).toBeGreaterThanOrEqual(16);
+        }
+    });
+
     test("serves every service from one stack-wide fetch; opening panels sends no further request", async ({page}) => {
         const twoServiceStack = {
             ...mockStackDetail,

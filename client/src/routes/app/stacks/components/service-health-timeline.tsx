@@ -51,7 +51,7 @@ export function ServiceHealthTimeline({
                 </p>
             ) : (
                 <ScrollArea className="h-48">
-                    <div className="space-y-2 pr-3">
+                    <div className="divide-y pr-3">
                         {events.map((event) => (
                             <HealthEventRow key={event.id} event={event}/>
                         ))}
@@ -62,23 +62,28 @@ export function ServiceHealthTimeline({
     );
 }
 
-// Mirrors activity-timeline's TimelineRow: stacked on phone, one line from sm.
-// The message is rendered as React text only (T-14-10).
+// A wrapping header line (dot, timestamp, transition, source) with the message
+// on its own full-width line beneath it. The transition never wraps (G-14-2: a
+// long message sharing its line used to squeeze it to 2-3 lines), and rows are
+// divided with larger vertical padding on phones. The message is rendered as
+// React text only (T-14-10).
 function HealthEventRow({event}: Readonly<{event: ServiceHealthEvent}>) {
     return (
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-            <StatusDot tone={getHealthTone(event.toStatus)}/>
-            <span className="text-xs text-muted-foreground whitespace-nowrap">
-                {new Date(event.createdAt).toLocaleString()}
-            </span>
-            <span className="text-sm">
-                {formatHealthStatus(event.fromStatus, "from")} → {formatHealthStatus(event.toStatus, "to")}
-            </span>
-            <ToneBadge tone="neutral">{HEALTH_SOURCE_LABELS[event.source]}</ToneBadge>
-            {event.message !== null && (
-                <span className="min-w-0 break-words wrap-anywhere text-xs text-muted-foreground">
-                    {event.message}
+        <div data-slot="health-event-row" className="py-3 sm:py-2">
+            <div data-slot="health-event-header" className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <StatusDot tone={getHealthTone(event.toStatus)}/>
+                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    {new Date(event.createdAt).toLocaleString()}
                 </span>
+                <span className="text-sm whitespace-nowrap">
+                    {formatHealthStatus(event.fromStatus, "from")} → {formatHealthStatus(event.toStatus, "to")}
+                </span>
+                <ToneBadge tone="neutral">{HEALTH_SOURCE_LABELS[event.source]}</ToneBadge>
+            </div>
+            {event.message !== null && (
+                <p className="mt-1 min-w-0 break-words wrap-anywhere text-xs text-muted-foreground">
+                    {event.message}
+                </p>
             )}
         </div>
     );
