@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import {ServicesSection} from "../../../../src/routes/app/stacks/components/services-section";
 import {getServiceColor} from "@/lib/service-color";
 import type {Service} from "@/lib/stacks-api";
+import type {ServiceHealthEvent} from "@/lib/health-api";
 
 // jsdom has no ResizeObserver — Radix's Tooltip content (via
 // @radix-ui/react-use-size / positioning internals) requires one, same
@@ -42,9 +43,23 @@ function makeService(overrides: Partial<Service> = {}): Service {
     };
 }
 
+function makeHealthEvent(overrides: Partial<ServiceHealthEvent> = {}): ServiceHealthEvent {
+    return {
+        id: "evt-1",
+        serviceName: "web",
+        fromStatus: null,
+        toStatus: "healthy",
+        source: "docker-healthcheck",
+        message: null,
+        createdAt: "2026-10-08T07:00:00Z",
+        ...overrides,
+    };
+}
+
 function renderSection(overrides: Partial<React.ComponentProps<typeof ServicesSection>> = {}) {
     const onViewLogs = vi.fn();
     const onUpgraded = vi.fn();
+    const onRetryHealthEvents = vi.fn();
     const utils = render(
         <ServicesSection
             services={[makeService()]}
@@ -52,10 +67,14 @@ function renderSection(overrides: Partial<React.ComponentProps<typeof ServicesSe
             stackStatus="RUNNING"
             onViewLogs={onViewLogs}
             onUpgraded={onUpgraded}
+            healthEventsByService={new Map()}
+            healthEventsLoading={false}
+            healthEventsError={null}
+            onRetryHealthEvents={onRetryHealthEvents}
             {...overrides}
         />,
     );
-    return {...utils, onViewLogs, onUpgraded};
+    return {...utils, onViewLogs, onUpgraded, onRetryHealthEvents};
 }
 
 describe("ServicesSection", () => {
@@ -122,6 +141,10 @@ describe("ServicesSection", () => {
                 stackStatus="RUNNING"
                 onViewLogs={vi.fn()}
                 onUpgraded={vi.fn()}
+                healthEventsByService={new Map()}
+                healthEventsLoading={false}
+                healthEventsError={null}
+                onRetryHealthEvents={vi.fn()}
             />,
         );
         expect(screen.getByRole("button", {name: "Upgrade web"})).toBeInTheDocument();
@@ -161,5 +184,152 @@ describe("ServicesSection", () => {
         await user.click(screen.getByRole("button", {name: "View logs for web"}));
 
         expect(onViewLogs).toHaveBeenCalledWith("web");
+    });
+
+    describe("HTTP probe badge (UI-SPEC D)", () => {
+        it("shows 'HTTP probe' in the Status cell of a service with an http-probe event", () => {
+            renderSection({
+                healthEventsByService: new Map([["web", [makeHealthEvent({source: "http-probe"})]]]),
+            });
+            expect(screen.getByText("HTTP probe")).toHaveAttribute("data-tone", "neutral");
+            expect(screen.getByText("HTTP probe").closest("td")).toContainElement(screen.getByText("running"));
+        });
+
+        it("shows no probe badge on a service whose events are all docker-healthcheck, or that has none", () => {
+            renderSection({
+                services: [
+                    makeService({id: "svc-1", serviceName: "web"}),
+                    makeService({id: "svc-2", serviceName: "db"}),
+                ],
+                healthEventsByService: new Map([
+                    ["web", [makeHealthEvent({source: "docker-healthcheck"})]],
+                ]),
+            });
+            expect(screen.queryByText("HTTP probe")).not.toBeInTheDocument();
+        });
+
+        it("scopes the badge to the probed service only", () => {
+            renderSection({
+                services: [
+                    makeService({id: "svc-1", serviceName: "web"}),
+                    makeService({id: "svc-2", serviceName: "db"}),
+                ],
+                healthEventsByService: new Map([
+                    ["db", [makeHealthEvent({serviceName: "db", source: "http-probe"})]],
+                ]),
+            });
+            const badge = screen.getByText("HTTP probe");
+            expect(badge.closest("tr")).toHaveTextContent("db");
+            expect(badge.closest("tr")).not.toHaveTextContent("web");
+        });
+
+        it("renders the loading, error and empty states inside an opened panel", async () => {
+            const user = userEvent.setup();
+            const {rerender, onRetryHealthEvents} = renderSection({healthEventsLoading: true});
+            await user.click(screen.getByRole("button", {name: "Show health history for web"}));
+            expect(screen.getByRole("status", {name: "Loading health history"})).toBeInTheDocument();
+
+            rerender(
+                <ServicesSection
+                    services={[makeService()]}
+                    stackId="my-app"
+                    stackStatus="RUNNING"
+                    onViewLogs={vi.fn()}
+                    onUpgraded={vi.fn()}
+                    healthEventsByService={new Map()}
+                    healthEventsLoading={false}
+                    healthEventsError="boom"
+                    onRetryHealthEvents={onRetryHealthEvents}
+                />,
+            );
+            expect(screen.getByRole("alert")).toHaveTextContent("Couldn't load health history — boom. Try again.");
+            await user.click(screen.getByRole("button", {name: "Retry"}));
+            expect(onRetryHealthEvents).toHaveBeenCalledTimes(1);
+
+            rerender(
+                <ServicesSection
+                    services={[makeService()]}
+                    stackId="my-app"
+                    stackStatus="RUNNING"
+                    onViewLogs={vi.fn()}
+                    onUpgraded={vi.fn()}
+                    healthEventsByService={new Map()}
+                    healthEventsLoading={false}
+                    healthEventsError={null}
+                    onRetryHealthEvents={onRetryHealthEvents}
+                />,
+            );
+            expect(screen.getByText("No health changes recorded for this service yet.")).toBeInTheDocument();
+        });
+    });
+
+    describe("health history (D-12)", () => {
+        const webEvents = new Map([["web", [makeHealthEvent()]]]);
+
+        it("starts collapsed with an aria-expanded=false 'Show health history' button", () => {
+            renderSection({healthEventsByService: webEvents});
+            const button = screen.getByRole("button", {name: "Show health history for web"});
+            expect(button).toHaveAttribute("aria-expanded", "false");
+            expect(button).toHaveAttribute("aria-controls", "health-history-web");
+            expect(screen.queryByText("Health history")).not.toBeInTheDocument();
+        });
+
+        it("opens a panel row with the service's transitions and flips the button to 'Hide'", async () => {
+            const user = userEvent.setup();
+            renderSection({healthEventsByService: webEvents});
+
+            await user.click(screen.getByRole("button", {name: "Show health history for web"}));
+
+            expect(screen.getByText("Health history")).toBeInTheDocument();
+            expect(screen.getByText("unknown → healthy")).toBeInTheDocument();
+            const hide = screen.getByRole("button", {name: "Hide health history for web"});
+            expect(hide).toHaveAttribute("aria-expanded", "true");
+        });
+
+        it("renders the panel inside a full-width cell directly below its row", async () => {
+            const user = userEvent.setup();
+            const {container} = renderSection({healthEventsByService: webEvents});
+
+            await user.click(screen.getByRole("button", {name: "Show health history for web"}));
+
+            const panelCell = container.querySelector("#health-history-web")?.closest("td");
+            expect(panelCell).toHaveAttribute("colspan", "6");
+            expect(panelCell).toHaveClass("bg-muted/50");
+        });
+
+        it("removes the panel when the button is clicked again", async () => {
+            const user = userEvent.setup();
+            renderSection({healthEventsByService: webEvents});
+
+            await user.click(screen.getByRole("button", {name: "Show health history for web"}));
+            await user.click(screen.getByRole("button", {name: "Hide health history for web"}));
+
+            expect(screen.queryByText("Health history")).not.toBeInTheDocument();
+            expect(screen.getByRole("button", {name: "Show health history for web"})).toHaveAttribute(
+                "aria-expanded",
+                "false",
+            );
+        });
+
+        it("lets several services be open at once, each with only its own slice", async () => {
+            const user = userEvent.setup();
+            renderSection({
+                services: [
+                    makeService({id: "svc-1", serviceName: "web"}),
+                    makeService({id: "svc-2", serviceName: "db"}),
+                ],
+                healthEventsByService: new Map([
+                    ["web", [makeHealthEvent({id: "w1", serviceName: "web", toStatus: "healthy"})]],
+                    ["db", [makeHealthEvent({id: "d1", serviceName: "db", toStatus: "unhealthy", fromStatus: "healthy"})]],
+                ]),
+            });
+
+            await user.click(screen.getByRole("button", {name: "Show health history for web"}));
+            await user.click(screen.getByRole("button", {name: "Show health history for db"}));
+
+            expect(screen.getAllByText("Health history")).toHaveLength(2);
+            expect(screen.getByText("unknown → healthy")).toBeInTheDocument();
+            expect(screen.getByText("healthy → unhealthy")).toBeInTheDocument();
+        });
     });
 });

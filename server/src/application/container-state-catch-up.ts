@@ -1,17 +1,32 @@
 import type {StackStatus} from "../generated/prisma/enums.js";
+import {
+    isHealthTransition,
+    isReplacedContainer,
+    normalizeHealth,
+    probeOwnedHealth,
+    type HealthSourceName,
+} from "../domain/service-health.js";
 import {deriveStackStatus, isTransitionalStatus} from "../domain/stack-state-derivation.js";
 import type {DockerodeClientPort} from "./ports/dockerode-client-port.js";
 import type {EventBusPort} from "./ports/event-bus-port.js";
+import type {ProbeOwnershipPort} from "./ports/probe-ownership-port.js";
+import {probedServiceRegistry} from "./probed-service-registry.js";
 
 const COMPOSE_PROJECT_LABEL = "com.docker.compose.project";
 const COMPOSE_SERVICE_LABEL = "com.docker.compose.service";
+
+interface StoredService {
+    serviceName: string;
+    containerId: string | null;
+    healthStatus: string | null;
+}
 
 /** Narrow repository port: only what the catch-up reads and writes. */
 export interface ContainerStateCatchUpRepo {
     findByComposeProject(id: string): Promise<{
         id: string;
         status: string;
-        services: ReadonlyArray<{serviceName: string}>;
+        services: ReadonlyArray<StoredService>;
     } | null>;
 
     updateServiceState(data: {
@@ -55,6 +70,7 @@ export class ContainerStateCatchUp {
         private readonly docker: Pick<DockerodeClientPort, "listContainers" | "inspectContainer">,
         private readonly repo: ContainerStateCatchUpRepo,
         private readonly bus: Pick<EventBusPort, "emit">,
+        private readonly probeOwnership: ProbeOwnershipPort = probedServiceRegistry,
     ) {}
 
     async catchUp(stackId: string): Promise<void> {
@@ -77,8 +93,8 @@ export class ContainerStateCatchUp {
         );
 
         const observations: ServiceObservation[] = [];
-        for (const {serviceName} of stack.services) {
-            observations.push(await this.observe(serviceName, containers));
+        for (const service of stack.services) {
+            observations.push(await this.observe(stackId, service, containers));
         }
 
         // All writes complete before any event is emitted, so a failed write
@@ -92,6 +108,25 @@ export class ContainerStateCatchUp {
         // failure result, Deployment record and ERROR log entry are untouched.
         const stackStatus = deriveStackStatus(observations);
         const statusLog = await this.repo.updateStackStatus(stackId, stackStatus);
+
+        // Record each Docker-health transition seen here in the history, after
+        // every write above and before the per-service state events.
+        observations.forEach((observation, index) => {
+            const stored = stack.services[index]?.healthStatus;
+            if (!isHealthTransition(stored, observation.healthStatus)) return;
+            // D-07: a probe-owned service's health is the probe's, so only its
+            // D-08 reset (new container) changes here, attributed to the probe.
+            const source: HealthSourceName = this.probeOwnership.isProbeOwned(stackId, observation.serviceName)
+                ? "http-probe"
+                : "docker-healthcheck";
+            this.bus.emit("service.health_changed", {
+                stackId,
+                serviceName: observation.serviceName,
+                fromStatus: normalizeHealth(stored),
+                toStatus: normalizeHealth(observation.healthStatus),
+                source,
+            });
+        });
 
         observations.forEach((observation, index) => {
             this.bus.emit("stack.container_state_changed", {
@@ -116,15 +151,25 @@ export class ContainerStateCatchUp {
     }
 
     private async observe(
-        serviceName: string,
+        stackId: string,
+        service: StoredService,
         containers: ReadonlyArray<ListedContainer>,
     ): Promise<ServiceObservation> {
-        const match = containers.find((c) => c.Labels?.[COMPOSE_SERVICE_LABEL] === serviceName);
+        const {serviceName, healthStatus: storedHealth} = service;
+        const labelled = containers.filter((c) => c.Labels?.[COMPOSE_SERVICE_LABEL] === serviceName);
+        const match = labelled[0];
         // No container after the operation: report it exited rather than
         // inventing a state, matching reconcile's in-memory default.
         if (!match) {
             return {serviceName, containerId: null, containerState: "exited", healthStatus: null};
         }
+
+        // D-07: a probe-owned service keeps its stored (probe) health. D-08/WR-05:
+        // unless its single container is a different one than last stored, which
+        // starts over as `starting`. A scaled service has no single container
+        // identity, so it keeps the stored value.
+        const probeOwned = this.probeOwnership.isProbeOwned(stackId, serviceName);
+        const replaced = labelled.length === 1 && isReplacedContainer(service.containerId, match.Id);
 
         try {
             const info = await this.docker.inspectContainer(match.Id);
@@ -132,12 +177,23 @@ export class ContainerStateCatchUp {
                 serviceName,
                 containerId: match.Id,
                 containerState: info.State.Status,
-                healthStatus: info.State.Health?.Status ?? null,
+                healthStatus: probeOwned
+                    ? probeOwnedHealth(storedHealth, info.State.Status, replaced)
+                    : (info.State.Health?.Status ?? null),
             };
         } catch {
             // Container vanished between list and inspect (or inspect failed):
-            // fall back to the state the list call already reported.
-            return {serviceName, containerId: match.Id, containerState: match.State, healthStatus: null};
+            // fall back to the state the list call already reported and keep
+            // the stored health rather than resetting it to null (a probe-owned
+            // service on a new container still starts over, D-08).
+            return {
+                serviceName,
+                containerId: match.Id,
+                containerState: match.State,
+                healthStatus: probeOwned
+                    ? probeOwnedHealth(storedHealth, match.State, replaced)
+                    : normalizeHealth(storedHealth),
+            };
         }
     }
 }

@@ -1,0 +1,18 @@
+// Per-volume disk usage of a stack (#27, D-13).
+//
+// One row per real subdirectory of `<stack>/volumes/`, measured by the daily
+// DiskUsageJob with `du -sk` (allocated blocks, so sparse files and
+// filesystem overhead are included). The rows of a stack are replaced
+// wholesale on every scan, in one transaction together with the Stack totals,
+// so a volume removed from disk disappears from the list on the next scan.
+model StackVolumeUsage {
+  id      String @id @default(cuid())
+  stackId String
+  stack   Stack  @relation(fields: [stackId], references: [id], onDelete: Cascade)
+
+  name       String // subdirectory name under <stack>/volumes/
+  sizeBytes  BigInt
+  measuredAt DateTime
+
+  @@unique([stackId, name])
+}

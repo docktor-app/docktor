@@ -41,6 +41,12 @@ function createDeps() {
         stackEventRepo: {createEvent: vi.fn().mockResolvedValue(undefined)},
         notificationService: {notify: vi.fn().mockResolvedValue(undefined)},
         broadcaster: {publish: vi.fn()},
+        serviceHealthEventRepo: {record: vi.fn().mockResolvedValue(undefined)},
+        incidentTracker: {observeStackStatus: vi.fn().mockResolvedValue(undefined)},
+        probeResultHandler: {
+            handleProbeCompleted: vi.fn().mockResolvedValue(undefined),
+            handleProbeCleared: vi.fn().mockResolvedValue(undefined),
+        },
     }
 }
 
@@ -68,6 +74,38 @@ describe("registerDomainSubscribers", () => {
         )
 
         expect(firstAuditOrder).toBeLessThan(firstNotificationOrder)
+    })
+
+    it("registers the service-health history subscriber for service.health_changed", () => {
+        const {bus, subscriptions} = createRecordingBus()
+
+        registerDomainSubscribers(bus, createDeps())
+
+        expect(subscriptions.filter((s) => s.event === "service.health_changed")).toHaveLength(1)
+    })
+
+    it("registers the incident tracker for both stack status events, after the service-health history subscriber", () => {
+        const {bus, subscriptions} = createRecordingBus()
+
+        registerDomainSubscribers(bus, createDeps())
+
+        const healthOrder = subscriptions.find((s) => s.event === "service.health_changed")?.order as number
+        // The state-broadcast bridge also listens to these events; the two
+        // incident subscriptions come right before the two probe-result ones,
+        // which are the last registrations overall.
+        const incidentPair = subscriptions.slice(-4, -2)
+        expect(incidentPair.map((s) => s.event).sort()).toEqual(["stack.container_state_changed", "stack.status_changed"])
+        expect(Math.min(...incidentPair.map((s) => s.order))).toBeGreaterThan(healthOrder)
+    })
+
+    it("registers the probe-result handler for service.probe_completed and service.probe_cleared last", () => {
+        const {bus, subscriptions} = createRecordingBus()
+
+        registerDomainSubscribers(bus, createDeps())
+
+        expect(subscriptions.filter((s) => s.event === "service.probe_completed")).toHaveLength(1)
+        expect(subscriptions.filter((s) => s.event === "service.probe_cleared")).toHaveLength(1)
+        expect(subscriptions.slice(-2).map((s) => s.event)).toEqual(["service.probe_completed", "service.probe_cleared"])
     })
 
     it("returns a disposer that removes every underlying subscription", () => {

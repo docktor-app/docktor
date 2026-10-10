@@ -134,6 +134,25 @@ describe("IntervalJob", () => {
         expect(reporter.recordError).not.toHaveBeenCalled()
     })
 
+    it("forwards a reportError() call to the health reporter once, and is a no-op without a reporter", () => {
+        class ReportingJob extends TestIntervalJob {
+            fail(error: unknown): void {
+                this.reportError(error)
+            }
+        }
+        const job = new ReportingJob()
+        const error = new Error("stalled")
+
+        expect(() => job.fail(error)).not.toThrow()
+
+        const reporter = createMockReporter()
+        job.setHealthReporter(reporter)
+        job.fail(error)
+
+        expect(reporter.recordError).toHaveBeenCalledExactlyOnceWith("TestInterval", error)
+        expect(reporter.recordRun).not.toHaveBeenCalled()
+    })
+
     it("cancels the schedule and clears the handle on stop()", async () => {
         const task = createMockCronTask()
         mockSchedule.mockReturnValue(task as any)

@@ -565,4 +565,50 @@ describe("SettingsService", () => {
             });
         });
     });
+
+    describe("getHealthSettings / saveHealthSettings (#24, D-10)", () => {
+        afterEach(() => {
+            vi.restoreAllMocks();
+        });
+
+        it("defaults to 30 days when no key is stored", async () => {
+            mockRepo.getMany.mockResolvedValue({});
+
+            expect(await service.getHealthSettings()).toEqual({retentionDays: 30});
+            expect(mockRepo.getMany).toHaveBeenCalledWith(["health.retentionDays"]);
+        });
+
+        it("returns the stored retention", async () => {
+            mockRepo.getMany.mockResolvedValue({"health.retentionDays": "7"});
+
+            expect(await service.getHealthSettings()).toEqual({retentionDays: 7});
+        });
+
+        it.each(["abc", "0", "366", "1.5", ""])(
+            "falls back to 30 and warns for the invalid stored value %j",
+            async (raw) => {
+                const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+                mockRepo.getMany.mockResolvedValue({"health.retentionDays": raw});
+
+                expect(await service.getHealthSettings()).toEqual({retentionDays: 30});
+                expect(warn).toHaveBeenCalledTimes(1);
+                expect(String(warn.mock.calls[0]?.[0])).toContain("health.retentionDays");
+            },
+        );
+
+        it("propagates a failed repository read instead of coercing it to the default", async () => {
+            mockRepo.getMany.mockRejectedValue(new Error("db down"));
+
+            await expect(service.getHealthSettings()).rejects.toThrow("db down");
+        });
+
+        it("saveHealthSettings upserts the retention as a string", async () => {
+            mockRepo.upsert.mockResolvedValue(undefined);
+
+            await service.saveHealthSettings({retentionDays: 7});
+
+            expect(mockRepo.upsert).toHaveBeenCalledTimes(1);
+            expect(mockRepo.upsert).toHaveBeenCalledWith("health.retentionDays", "7");
+        });
+    });
 });

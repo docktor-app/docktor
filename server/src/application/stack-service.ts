@@ -103,6 +103,30 @@ export interface StackStateCatchUp {
     catchUp(stackId: string): Promise<void>;
 }
 
+interface StackSizeFields {
+    volumeSizeBytes: bigint | null;
+    backupSizeBytes: bigint | null;
+}
+
+export type StackSizeDto<T extends StackSizeFields> = Omit<T, keyof StackSizeFields> & {
+    volumeSizeBytes: number | null;
+    backupSizeBytes: number | null;
+};
+
+/**
+ * Prisma returns the disk usage columns as BigInt, which JSON.stringify
+ * cannot serialize (RESEARCH Finding 5). Once DiskUsageJob writes them, every
+ * raw Stack row handed to a route would turn into a 500, so StackService
+ * converts both fields to numbers (exact up to 2^53 bytes) at its boundary.
+ */
+export function toStackSizeDto<T extends StackSizeFields>(stack: T): StackSizeDto<T> {
+    return {
+        ...stack,
+        volumeSizeBytes: stack.volumeSizeBytes === null ? null : Number(stack.volumeSizeBytes),
+        backupSizeBytes: stack.backupSizeBytes === null ? null : Number(stack.backupSizeBytes),
+    };
+}
+
 export class StackService {
     constructor(
         private readonly repo: StackRepository,
@@ -154,14 +178,14 @@ export class StackService {
 
         const composeConfig = createComposeConfig(input.composeContent);
 
-        return this.repo.create({
+        return toStackSizeDto(await this.repo.create({
             id,
             displayName: input.displayName,
             description: input.description,
             hostPath,
             composeConfig,
             templatePin: options.templatePin,
-        });
+        }));
     }
 
     /**
@@ -182,11 +206,13 @@ export class StackService {
         const all = await this.repo.findAll();
         const {showInDashboard} = await this.settings.getProxySettings();
         const filtered = showInDashboard ? all : all.filter((s) => !s.isProtected);
-        return this.withServiceUpdateInfo(filtered);
+        return this.withServiceUpdateInfo(filtered.map((stack) => toStackSizeDto(stack)));
     }
 
+    // Also the BigInt boundary of getStackWithUpdateInfo(): it reads through
+    // here, so toStackSizeDto() covers the detail route too.
     async getStack(id: string) {
-        return this.repo.findByIdWithRelations(id);
+        return toStackSizeDto(await this.repo.findByIdWithRelations(id));
     }
 
     /**
@@ -436,7 +462,7 @@ export class StackService {
             });
         }
 
-        return this.repo.findByIdWithRelations(id);
+        return toStackSizeDto(await this.repo.findByIdWithRelations(id));
     }
 
     async deleteStack(id: string) {

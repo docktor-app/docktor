@@ -38,6 +38,72 @@ export const test = base.extend<{_coverage: void; _apiRouteGuard: void}>({
                 route.fulfill({status: 200, contentType: "text/event-stream", body: ""}),
             );
 
+            // RESEARCH Pitfall 7: every stack Overview visit now fetches the
+            // stack's service health events (useServiceHealthEvents). Default
+            // to an empty history so existing specs stay green; a spec that
+            // cares overrides this route in its own body.
+            await page.route("**/api/stacks/*/health-events**", (route) =>
+                route.fulfill({status: 200, contentType: "application/json", body: "[]"}),
+            );
+
+            // RESEARCH Pitfall 7: the Storage page (sidebar item on every
+            // authenticated page) fetches GET /api/storage. Default to nothing
+            // measured; storage.spec.ts overrides this route with real data.
+            await page.route("**/api/storage", (route) =>
+                route.fulfill({
+                    status: 200,
+                    contentType: "application/json",
+                    body: JSON.stringify({
+                        measuredAt: null,
+                        totals: {volumesBytes: null, backupsBytes: null, totalBytes: null},
+                        stacks: [],
+                        backups: [],
+                    }),
+                }),
+            );
+
+            // RESEARCH Pitfall 7: every stack Overview visit now fetches the
+            // stack's uptime (useStackUptime). Default to an empty summary;
+            // specs that assert on uptime override this route per test.
+            await page.route("**/api/stacks/*/uptime", (route) =>
+                route.fulfill({
+                    status: 200,
+                    contentType: "application/json",
+                    body: JSON.stringify({
+                        stackId: "stub",
+                        windowDays: 30,
+                        windowStart: "2026-01-01T00:00:00.000Z",
+                        since: null,
+                        percent: null,
+                        upMs: 0,
+                        downMs: 0,
+                        incidents: [],
+                    }),
+                }),
+            );
+
+            // RESEARCH Pitfall 7: the Dashboard and the Stacks page now fetch
+            // the batch uptime (useStackUptimes). Default to no stacks, so
+            // every cell reads an em dash; uptime-retention.spec.ts overrides.
+            await page.route("**/api/uptime/stacks", (route) =>
+                route.fulfill({
+                    status: 200,
+                    contentType: "application/json",
+                    body: JSON.stringify({windowDays: 30, stacks: []}),
+                }),
+            );
+
+            // RESEARCH Pitfall 7: every Settings visit renders the Health
+            // History retention card (GET /api/settings/health). Default to
+            // the 30-day window; uptime-retention.spec.ts overrides per test.
+            await page.route("**/api/settings/health", (route) =>
+                route.fulfill({
+                    status: 200,
+                    contentType: "application/json",
+                    body: JSON.stringify({retentionDays: 30}),
+                }),
+            );
+
             await use();
 
             if (unstubbed.length > 0) {

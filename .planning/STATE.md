@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 milestone: v0.1.0
-current_phase: 14
-current_phase_name: Health, Uptime and Disk Visibility
+current_phase: 15
+current_phase_name: Access Hardening
 current_plan: Not started
-status: "Phases 1-9 all complete, tested, and reviewed. Product tracking moved to GitHub Issues (docktor-app/docktor): the vision doc (docs/vision.md scope) and all .planning/todos/pending/ items were triaged into 49 GitHub issues, native Issue Types adopted (Bug/Feature/Chore/Documentation/Task), and CLAUDE.md documents the process (including a project-specific override redirecting gsd-capture's add-todo to GitHub issues instead of .planning/todos/). User curated 23 issues (later 24, adding #15 UI Rework) into GitHub milestone 'v0.1.0 - First Release' (renamed from the working 'v1.0.0' label since this is the first release). ROADMAP.md Phases 10-16 now scope that milestone, sourced 1:1 from those issues (Requirements fields list GitHub issue numbers, not REQ-IDs — REQUIREMENTS.md is frozen at its already-complete v1.0 content and not being extended for new work). Per user request, Phase 10 (Backend Architecture Refactor, #16) and Phase 11 (UI Rework, #15) were resequenced to run BEFORE the feature phases that add new server/client code (12, 14, 15), so that new work lands on the reworked structure instead of needing rework afterward — both are independent of each other (separate server/client tracks) and both are intentionally open-ended, flagged as needing /gsd-discuss-phase before /gsd-plan-phase. Phase 13 (Update Checker Reliability — narrow bug fixes, not new architecture) carries low rework risk and can run anytime. Phase 10 (Backend Architecture Refactor) has since been merged into main (PR #67). Phase 11 progressed through context capture, UI-SPEC approval, and phase planning (13 plans across 5 waves, plan-checker blockers resolved), and Wave 1's tracer plan 11-01 is now complete: the Config tab merge (D-01/D-02/D-03) and the stack-detail-page decomposition to an 89-line orchestrator (CLAUDE.md Known Refactoring Target closed) both landed, with the StackConfigFiles/ConfigTab/OverviewTab/StackDetailHeader contracts and the PLAYWRIGHT_PORT parameterization ready for the remaining 12 plans to build on. Note: the original executing session for 11-01 was interrupted by a container restart between finishing Task 2 and writing its SUMMARY.md — both tasks' commits were already pushed and no work was lost; a follow-up session independently re-verified everything (unit suite, typecheck, full Playwright E2E including the parallel-port case) before writing the SUMMARY. Wave 2's 11-02 (ToneBadge/StatusDot status-indicator unification, D-08/D-09/D-10/D-11) is now complete: same container-restart pattern hit again (interrupted between finishing Task 3's edits and its first commit, with zero commits made), recovered the same way — full verification (all task `<verify>` commands, all acceptance-criteria greps, full client suite, tsc -b) before splitting into 3 retroactive task commits and writing the SUMMARY. Wave 2 completed with 11-03 (dark mode via next-themes), 11-04 (dashboard StatCard extraction) and 11-05 (server update-info enrichment on GET /api/stacks — same interruption-and-recovery pattern as 11-02). Wave 3 is now underway: 11-06 (unified activity timeline + flat Services section) and 11-07 (proxy/backup dialogs) landed cleanly; 11-08 (shared LogTerminal + backup detail rebuild) fixed Phase 10 UAT gap G-10-2 (backup-history polling loop) and was interrupted twice — once by a Claude usage-limit error before any edits existed (clean restart), once by a container restart after Task 3's RED commit but before its GREEN commit (recovered in place after independent re-verification). Remaining in wave 3: 11-09 (CodeMirror YAML editor, a checkpoint plan), 11-10 (unsaved-changes guard), 11-11 (settings.tsx split). 11-09's Task 1 blocking-human package-legitimacy checkpoint (four new client deps: @uiw/react-codemirror, yaml, @codemirror/lang-yaml, @codemirror/lint — the first two SUS-flagged by the automated gate on recency only) was presented to the developer on 2026-09-27T17:32:19Z and explicitly approved as-is, no replacements. Session paused here (weekly usage limit) before Task 2's install/build work began — client/package.json and yarn.lock are untouched, so the next execute-phase run for 11-09 should proceed straight to Task 2 without re-presenting the checkpoint, and must record this approval (developer, 2026-09-27T17:32:19Z, all four packages approved) in 11-09-SUMMARY.md per the plan's own instruction. Wave 3 completed with 11-09 (CodeMirror YAML editor) and 11-10 (unsaved-changes guard); Wave 4's 11-11 (settings.tsx split) then landed, reducing settings.tsx from 1125 to a 72-line orchestrator and closing that CLAUDE.md Known Refactoring Target. Wave 4's 11-12 (structured env editor, D-20/D-21/D-22/D-06) is now also complete: replaced the raw .env textarea with a lossless table/raw-mode EnvEditor on both the Config tab and Create Stack page. During TDD execution, a real line-duplication bug was found and fixed in the editor's re-serialization ref design (the plan's own suggested single-ref approach corrupts the document one keystroke at a time whenever a newly-added row passes through its empty-key state) — caught by the plan's own E2E acceptance criteria before merge, fixed with a stable-base/self-vs-external ref split, and covered by a new regression unit test. Remaining in wave 4/phase 11: 11-13 (phase closeout)."
-stopped_at: Phase 13 complete, ready to plan Phase 14
-last_updated: "2026-10-07T08:45:02.154Z"
-state_head: 86cae193969947e694f3faeb0bf09a833991ad87
+status: "Phases 1-13 complete (v0.1.0 scope: ROADMAP Phases 10-16, sourced from GitHub issues in docktor-app/docktor; product tracking lives in GitHub Issues). Phase 14 (Health, Uptime and Disk Visibility): all 14 plans executed, code review done, verification found gaps (9/13 truths) — CR-01 probe Docker calls lack timeouts, WR-01/WR-05 probe results not tied to current container. Gap-closure plan (14-15) being created via /gsd-plan-phase 14 --gaps. Phases 15 (Access Hardening) and 16 (Release Readiness) not started."
+stopped_at: Phase 14 complete, ready to plan Phase 15
+last_updated: "2026-10-10T09:42:12.315Z"
+state_head: 74d61fa131e0d5efb82a41af3175bc8efcc3d4d7
 progress:
   total_phases: 17
   completed_phases: 9
-  total_plans: 132
-  completed_plans: 132
+  total_plans: 152
+  completed_plans: 152
   percent: 100
 milestone_name: milestone
 ---
@@ -24,19 +24,19 @@ milestone_name: milestone
 See: .planning/PROJECT.md (updated 2026-09-22)
 
 **Core value:** Users can deploy, monitor, and manage Docker Compose stacks through a browser UI without needing SSH or Docker CLI access.
-**Current focus:** Phase 13 — Update Checker Reliability
+**Current focus:** Phase 14 — Health, Uptime and Disk Visibility
 
 ## Current Position
 
-Phase: 14 — Health, Uptime and Disk Visibility
+Phase: 15 — Access Hardening
 Current Plan: Not started
-Total Plans in Phase: 3
+Total Plans in Phase: 20
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 106
+- Total plans completed: 126
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -54,6 +54,7 @@ Total Plans in Phase: 3
 | 10 | 17 | - | - |
 | 11 | 13 | - | - |
 | 13 | 3 | - | - |
+| 14 | 20 | - | - |
 
 **Recent Trend:**
 
@@ -169,6 +170,26 @@ Total Plans in Phase: 3
 | Phase 13 P01 | 15 min | 2 tasks | 14 files |
 | Phase 13 P02 | 13 min | 2 tasks | 9 files |
 | Phase 13 P03 | 5 min | 2 tasks | 7 files |
+| Phase 14 P01 | 7 min | 1 tasks | 24 files |
+| Phase 14 P02 | 9 min | 1 tasks | 23 files |
+| Phase 14 P03 | 19 min | 2 tasks | 14 files |
+| Phase 14 P08 | 19 min | 2 tasks | 9 files |
+| Phase 14 P11 | 10 min | 1 tasks | 4 files |
+| Phase 14 P04 | 10 min | 1 tasks | 18 files |
+| Phase 14 P05 | 18min | 2 tasks | 20 files |
+| Phase 14 P14 | 5 min | 1 tasks | 6 files |
+| Phase 14 P07 | 14 min | 2 tasks | 17 files |
+| Phase 14 P12 | 6 min | 2 tasks | 16 files |
+| Phase 14 P06 | 14 min | 1 tasks | 20 files |
+| Phase 14 P10 | 22 min | 2 tasks | 16 files |
+| Phase 14 P13 | 22 min | 1 tasks | 9 files |
+| Phase 14 P09 | 18 min | 2 tasks | 18 files |
+| Phase 14 P15 | 13 min | 3 tasks | 13 files |
+| Phase 14 P16 | 12 min | 3 tasks | 8 files |
+| Phase 14 P17 | 4 min | 2 tasks | 6 files |
+| Phase 14 P18 | 9 min | 2 tasks | 4 files |
+| Phase 14 P19 | 11 min | 3 tasks | 6 files |
+| Phase 14 P20 | 6 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -410,6 +431,42 @@ Recent decisions affecting current work:
 - [Phase 13]: 13-02: finishOperation also swallows a catch-up rejection so a misbehaving catch-up can never flip a successful deploy to ERROR
 - [Phase 13]: 13-02: StatePoller and ContainerStateCatchUp share one deriveStackStatus in domain/stack-state-derivation (D-09)
 - [Phase 13]: D-10/D-11: ImageUpdateCheckPruner (daily + startup) prunes ImageUpdateCheck rows outside the shared findTrackedImageRefs set; update-checker.ts has no Prisma access left
+- [Phase 14]: [14-01] ServiceHealthEvent keyed by (stackId, serviceName) with no FK to Service so deploys (replaceServices) cannot drop or orphan health history
+- [Phase 14]: [14-01] service.health_changed emitted only after the Service row write and only on a real normalized-health change for an existing Service row; migration generated via Branch B (migrate diff) and not applied to dev DB (WINDOWS.md)
+- [Phase 14]: 14-02: disk measurement covers exactly <stack>/volumes/*; a missing volumes folder is recorded as 0 bytes (measured), no Service.volumes fallback
+- [Phase 14]: 14-02: StackService converts BigInt disk sizes to numbers at its boundary (toStackSizeDto); per-volume sizes in a dedicated StackVolumeUsage model
+- [Phase 14]: 14-03: Retry on the health history panel refetches in initial mode (skeleton, error cleared); SSE container_state refetches stay background
+- [Phase 14]: 14-03: free text rendered inside a shadcn TableCell needs whitespace-normal plus wrap-anywhere, because TableCell is whitespace-nowrap and Radix ScrollArea sizes to max-content
+- [Phase 14]: 14-08: readHealthProbes treats a missing/empty services key as zero services (ok:true); only a non-map services, non-map root or a parse error disables the probe form
+- [Phase 14]: 14-08: probe form writes the compose buffer on blur or switch change only, and skips writes that match the buffer or lack a URL, so a blur never dirties the compose file
+- [Phase 14]: 14-08: shared healthProbeSchema is the single definition of the amended D-05 loopback host guard; 14-06 must re-apply it server-side
+- [Phase 14]: 14-11: one private emitHealthTransition in StatePoller serves handleEvent (inspect and 404) and reconcile; inspect failure keeps stored health (never null)
+- [Phase 14]: 14-04: StatusLog is not pruned (D-11 over RESEARCH A9); it gets a (stackId, createdAt) index instead and 14-12's pruner deletes only the Phase 14 history tables
+- [Phase 14]: 14-05: Storage page shows only the error alert and em-dash totals on a failed load, never 'No stacks to measure'
+- [Phase 14]: 14-05: volume expander aria-controls targets the first child row (storage-volumes-{stackId}); formatBytes renders null as an em dash
+- [Phase 14]: 14-14: <stack>/backups is sized only when lstat reports a real directory; any null measurement skips the stack so previous stored values are kept
+- [Phase 14]: 14-07: uptime percent truncates (never rounds up) with a 1e-9 epsilon so 99.9 stays 99.9 and only exactly 100 reads 100%
+- [Phase 14]: 14-07: uptime refetch signal is the SSE-driven stack.status prop compared against a ref; no extra SSE subscription and no polling
+- [Phase 14]: 14-12: StatusLog is not pruned (D-11 over RESEARCH A9); HealthHistoryPruner deletes only ServiceHealthEvent and resolved StackIncident rows
+- [Phase 14]: 14-12: StackIncident.open is a plain create serialised by withKeyedLock(incident:<stackId>), never an upsert on the NULL-distinct unique
+- [Phase 14]: 14-06: probe connects via explicit container address plus Host header (lookup alone is skipped for IP-literal hosts); probe results for non-running services are ignored; invalid x-docktor blocks stay unprobed until 14-13
+- [Phase 14]: 14-10: shorten-retention confirm button uses the secondary variant (UI-SPEC reserves accent for Save and forbids a destructive-styled button); Keep leaves the typed value in the field
+- [Phase 14]: 14-10: useStackUptimes refetches only on stack_status or statusLog-bearing container_state frames; failures degrade silently to em dashes
+- [Phase 14]: 14-13: a read failure or unparseable compose file keeps a stack's last good probes; a container-not-running clear is ignored if the container is running again by handling time
+- [Phase 14]: 14-09: ContainerStateCatchUp takes probeOwnership as an optional 4th ctor param defaulting to the shared registry so pre-existing 3-arg tests pass unmodified
+- [Phase 14]: 14-09: A network Docktor already holds (without the probe alias) is used without attach, ahead of <project>_default; a failed connect is dropped immediately so the next probe retries
+- [Phase 14]: 14-15: probe-path bounds are 10s per Docker call, timeout+50s per probe, 30s per start step, 5 min per tick; a deadline miss is a network-unreachable failed probe (D-02, D-08)
+- [Phase 14]: 14-16: a probe result is applied only when row.containerId equals the event containerId; a null row id drops it (WR-01)
+- [Phase 14]: 14-16: Docker observers reset a probe-owned service on a new container to starting (null if not running); id-based reset only for single-container services, start event resets regardless of id (WR-05)
+- [Phase 14]: 14-16: ServiceHealthService continues from the Service row when remembered probe health disagrees with it; StatePoller attributes every health transition by ownership incl. the 404 clear (WR-11)
+- [Phase 14]: 14-17: a skipped overlapping DiskUsageJob run resolves normally and counts as a run on the health reporter
+- [Phase 14]: 14-17: a symlinked <stack>/volumes folder is measured as 0 bytes with no rows, like a missing one
+- [Phase 14]: 14-17: 18 review findings dispositioned, 7 fixed and 11 deferred with reasons, none open
+- [Phase 14]: 14-18: HealthEventRow message is a block p under a flex-wrap header; transition whitespace-nowrap; rows divide-y with py-3 below sm (G-14-2)
+- [Phase 14]: 14-19: graceful shutdown order is probe job (5 s), app.close() (2.5 s), 9 s hard stop; compose and Dockerfile unchanged (no init: true or stop_grace_period) because a SIGTERM handler lets Node as PID 1 exit 0 in under 1 s
+- [Phase 14]: 14-19: a probe result arriving after the shutdown drain gave up is discarded, since the sweep detached its network and recording it would count a failure the service never had
+- [Phase 14]: 14-20 spec amendment: a daemon stall yields an unhealthy http-probe history entry after 3 consecutive failed probes (about 70-100 s), not for a single failed probe (D-08); replaces the UAT G-14-1 truth
+- [Phase 14]: 14-20: no logging change (log-pipe mechanism refuted); history outbox is in-memory only; pg pool max left at default with idle reaping off
 
 ### Quick Tasks Completed
 
@@ -482,6 +539,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-10-07T07:18:48.298Z
-Stopped at: Phase 13 complete, ready to plan Phase 14
+Last session: 2026-10-10T09:09:39.259Z
+Stopped at: Phase 14 complete, ready to plan Phase 15
 Resume file: None

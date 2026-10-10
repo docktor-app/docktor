@@ -1,0 +1,216 @@
+import {describe, expect, it, vi} from "vitest";
+import {render, screen} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import {ServiceHealthTimeline} from "../../../../src/routes/app/stacks/components/service-health-timeline";
+import type {ServiceHealthEvent} from "@/lib/health-api";
+
+// jsdom has no ResizeObserver; Radix's ScrollArea requires one.
+if (typeof globalThis.ResizeObserver === "undefined") {
+    globalThis.ResizeObserver = class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+    } as unknown as typeof ResizeObserver;
+}
+
+function makeEvent(overrides: Partial<ServiceHealthEvent> = {}): ServiceHealthEvent {
+    return {
+        id: "e1",
+        serviceName: "web",
+        fromStatus: null,
+        toStatus: "healthy",
+        source: "docker-healthcheck",
+        message: null,
+        createdAt: "2026-10-08T07:00:00Z",
+        ...overrides,
+    };
+}
+
+function renderTimeline(overrides: Partial<React.ComponentProps<typeof ServiceHealthTimeline>> = {}) {
+    return render(
+        <ServiceHealthTimeline
+            serviceName="web"
+            events={[makeEvent()]}
+            loading={false}
+            error={null}
+            onRetry={vi.fn()}
+            {...overrides}
+        />,
+    );
+}
+
+describe("ServiceHealthTimeline", () => {
+    it("renders the heading and an id the History button can point aria-controls at", () => {
+        const {container} = renderTimeline();
+        expect(screen.getByText("Health history")).toBeInTheDocument();
+        expect(container.querySelector("#health-history-web")).toBeInTheDocument();
+    });
+
+    it("renders from and to with unknown / cleared wording for null sides", () => {
+        renderTimeline({
+            events: [
+                makeEvent({id: "e2", fromStatus: "healthy", toStatus: null}),
+                makeEvent({id: "e1", fromStatus: null, toStatus: "healthy"}),
+            ],
+        });
+        expect(screen.getByText("healthy → cleared")).toBeInTheDocument();
+        expect(screen.getByText("unknown → healthy")).toBeInTheDocument();
+    });
+
+    it("tones the status dot by the destination status", () => {
+        const {container} = renderTimeline({
+            events: [
+                makeEvent({id: "e3", toStatus: "unhealthy"}),
+                makeEvent({id: "e2", toStatus: "starting"}),
+                makeEvent({id: "e1", toStatus: "healthy"}),
+            ],
+        });
+        const tones = [...container.querySelectorAll('[data-slot="status-dot"]')].map((dot) =>
+            dot.getAttribute("data-tone"),
+        );
+        expect(tones).toEqual(["red", "yellow", "green"]);
+        for (const dot of container.querySelectorAll('[data-slot="status-dot"]')) {
+            expect(dot).toHaveAttribute("data-pulse", "false");
+        }
+    });
+
+    it("labels an http-probe event with 'HTTP probe' and a docker event with 'Docker healthcheck'", () => {
+        renderTimeline({
+            events: [
+                makeEvent({id: "e2", source: "http-probe"}),
+                makeEvent({id: "e1", source: "docker-healthcheck"}),
+            ],
+        });
+        expect(screen.getByText("HTTP probe")).toHaveAttribute("data-tone", "neutral");
+        expect(screen.getByText("Docker healthcheck")).toHaveAttribute("data-tone", "neutral");
+    });
+
+    it("renders the message verbatim as text, never as HTML", () => {
+        const message = 'Responded with HTTP 503 <img src=x onerror="alert(1)"> after 3 failed checks';
+        const {container} = renderTimeline({events: [makeEvent({source: "http-probe", message})]});
+        expect(screen.getByText(message)).toBeInTheDocument();
+        expect(container.querySelector("img")).not.toBeInTheDocument();
+    });
+
+    it("resets inherited nowrap and lets a long message break, so it wraps inside the table cell it renders in", () => {
+        const message = "Responded with HTTP 503 ".repeat(9);
+        const {container} = renderTimeline({events: [makeEvent({source: "http-probe", message})]});
+        // TableCell is whitespace-nowrap; without this reset break-words is inert.
+        expect(container.querySelector("#health-history-web")).toHaveClass("whitespace-normal");
+        expect(container.querySelector(".break-words")).toHaveClass("min-w-0", "wrap-anywhere");
+    });
+
+    it("omits the message element when the message is null", () => {
+        const {container} = renderTimeline({events: [makeEvent({message: null})]});
+        expect(container.querySelector(".break-words")).not.toBeInTheDocument();
+    });
+
+    // jsdom performs no layout, so the row structure is guarded at class level here
+    // and measured in a real browser by test/integration/service-health.spec.ts (G-14-2).
+    describe("row structure", () => {
+        const message = "Responded with HTTP 503 ".repeat(9);
+
+        function renderRow() {
+            const {container} = renderTimeline({
+                events: [makeEvent({fromStatus: "healthy", toStatus: "unhealthy", source: "http-probe", message})],
+            });
+            const row = container.querySelector<HTMLElement>('[data-slot="health-event-row"]');
+            const header = container.querySelector<HTMLElement>('[data-slot="health-event-header"]');
+            return {container, row, header};
+        }
+
+        it("puts the dot, timestamp, transition and source badge in a wrapping header line", () => {
+            const {row, header} = renderRow();
+            expect(row).toBeInTheDocument();
+            expect(header).toBeInTheDocument();
+            expect(header).toHaveClass("flex", "flex-wrap", "items-center");
+            expect(row).toContainElement(header);
+
+            const children = [...(header?.children ?? [])];
+            expect(children[0]).toHaveAttribute("data-slot", "status-dot");
+            expect(children[1]).toHaveTextContent(new Date("2026-10-08T07:00:00Z").toLocaleString());
+            expect(children[2]).toHaveTextContent("healthy → unhealthy");
+            expect(children[3]).toHaveTextContent("HTTP probe");
+        });
+
+        it("never wraps the status transition", () => {
+            renderRow();
+            expect(screen.getByText("healthy → unhealthy")).toHaveClass("whitespace-nowrap");
+        });
+
+        it("renders the message on its own line after the header, outside it", () => {
+            const {row, header} = renderRow();
+            const messageEl = row?.querySelector<HTMLElement>(".break-words");
+            expect(messageEl).toBeInTheDocument();
+            expect(messageEl).toHaveTextContent(message.trim());
+            expect(messageEl).toHaveClass("min-w-0", "break-words", "wrap-anywhere");
+            expect(header).not.toContainElement(messageEl);
+            expect(header?.nextElementSibling).toBe(messageEl);
+        });
+
+        it("keeps the header and drops the message element when the message is null", () => {
+            const {container} = renderTimeline({events: [makeEvent({message: null})]});
+            expect(container.querySelector('[data-slot="health-event-header"]')).toBeInTheDocument();
+            expect(container.querySelector(".break-words")).not.toBeInTheDocument();
+        });
+
+        it("separates rows with a divider and pads them more on phones", () => {
+            const {container} = renderTimeline({
+                events: [makeEvent({id: "e2"}), makeEvent({id: "e1"})],
+            });
+            const rows = container.querySelectorAll<HTMLElement>('[data-slot="health-event-row"]');
+            expect(rows).toHaveLength(2);
+            expect(rows[0].parentElement).toHaveClass("divide-y");
+            for (const row of rows) {
+                expect(row).toHaveClass("py-3", "sm:py-2");
+            }
+        });
+    });
+
+    it("renders the timestamp in the muted 12px style", () => {
+        renderTimeline();
+        const stamp = screen.getByText(new Date("2026-10-08T07:00:00Z").toLocaleString());
+        expect(stamp).toHaveClass("text-xs", "text-muted-foreground");
+    });
+
+    describe("states", () => {
+        it("shows two skeleton lines and no rows while loading", () => {
+            const {container} = renderTimeline({loading: true});
+            expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(2);
+            expect(container.querySelector('[data-slot="status-dot"]')).not.toBeInTheDocument();
+            expect(screen.getByText("Health history")).toBeInTheDocument();
+        });
+
+        it("prefers the loading state over a stale error", () => {
+            const {container} = renderTimeline({loading: true, error: "boom"});
+            expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(2);
+            expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+        });
+
+        it("shows the error copy and a Retry button that calls onRetry once", async () => {
+            const user = userEvent.setup();
+            const onRetry = vi.fn();
+            renderTimeline({error: "boom", events: [], onRetry});
+
+            expect(screen.getByRole("alert")).toHaveTextContent("Couldn't load health history — boom. Try again.");
+
+            await user.click(screen.getByRole("button", {name: "Retry"}));
+            expect(onRetry).toHaveBeenCalledTimes(1);
+        });
+
+        it("shows the empty copy when there are no events", () => {
+            renderTimeline({events: []});
+            expect(screen.getByText("No health changes recorded for this service yet.")).toBeInTheDocument();
+            expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+        });
+
+        it("keeps the container id on every state so aria-controls always resolves", () => {
+            const {container, rerender} = renderTimeline({loading: true});
+            expect(container.querySelector("#health-history-web")).toBeInTheDocument();
+            rerender(
+                <ServiceHealthTimeline serviceName="web" events={[]} loading={false} error={null} onRetry={vi.fn()}/>,
+            );
+            expect(container.querySelector("#health-history-web")).toBeInTheDocument();
+        });
+    });
+});

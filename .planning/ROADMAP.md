@@ -26,7 +26,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 11: UI Rework** - Clean up the UI's component structure and visual design (shadcn patterns, less Card wrapping, tab-structure reconsideration, consolidated logs, consistent status indicators) before other phases add new UI on top of current patterns — scoped and planned (13 plans) ([#15](https://github.com/docktor-app/docktor/issues/15)) (completed 2026-10-01)
 - [x] **Phase 12: Compose Safety and Templates** - Diff-before-apply, dangerous-config warnings, port-conflict detection, and git-based stack templates ([#18](https://github.com/docktor-app/docktor/issues/18), [#19](https://github.com/docktor-app/docktor/issues/19), [#20](https://github.com/docktor-app/docktor/issues/20), [#21](https://github.com/docktor-app/docktor/issues/21))
 - [x] **Phase 13: Update Checker Reliability** - Fix misleading update badges, wrong upgrade-dialog messaging, slow post-deploy status, and stale database rows ([#29](https://github.com/docktor-app/docktor/issues/29), [#31](https://github.com/docktor-app/docktor/issues/31), [#32](https://github.com/docktor-app/docktor/issues/32), [#33](https://github.com/docktor-app/docktor/issues/33), [#34](https://github.com/docktor-app/docktor/issues/34)) (completed 2026-10-07)
-- [ ] **Phase 14: Health, Uptime and Disk Visibility** - HTTP health probes with history, per-stack uptime, and disk usage per stack/volume ([#23](https://github.com/docktor-app/docktor/issues/23), [#24](https://github.com/docktor-app/docktor/issues/24), [#27](https://github.com/docktor-app/docktor/issues/27))
+- [x] **Phase 14: Health, Uptime and Disk Visibility** - HTTP health probes with history, per-stack uptime, and disk usage per stack/volume ([#23](https://github.com/docktor-app/docktor/issues/23), [#24](https://github.com/docktor-app/docktor/issues/24), [#27](https://github.com/docktor-app/docktor/issues/27)) (completed 2026-10-10)
 - [ ] **Phase 15: Access Hardening** - TOTP 2FA and an auth-endpoint security audit (rate limiting, CSRF, cookies) ([#45](https://github.com/docktor-app/docktor/issues/45), [#46](https://github.com/docktor-app/docktor/issues/46))
 - [ ] **Phase 16: Release Readiness for v0.1.0** - Docs, demo instance, license decision, published images, hardened startup, community health files — closes the milestone ([#7](https://github.com/docktor-app/docktor/issues/7), [#11](https://github.com/docktor-app/docktor/issues/11), [#17](https://github.com/docktor-app/docktor/issues/17), [#42](https://github.com/docktor-app/docktor/issues/42), [#53](https://github.com/docktor-app/docktor/issues/53), [#54](https://github.com/docktor-app/docktor/issues/54), [#55](https://github.com/docktor-app/docktor/issues/55), [#57](https://github.com/docktor-app/docktor/issues/57))
 
@@ -566,11 +566,48 @@ Needs Phase 10's backend structure for the new health-probe job and Phase 11's U
   3. Each stack shows an uptime percentage and an incident list over a retention window (#24)
   4. Disk usage is viewable per stack and per volume, sortable, with a total (#27)
 
-**Plans:** 0 plans
+**Plans:** 20/20 plans complete (UAT gap-closure plans 14-18, 14-19, 14-20 done; live re-test pending via /gsd-verify-work 14)
 
 Plans:
+**Wave 1**
+- [x] 14-01-PLAN.md — Docker-health history: ServiceHealthEvent model keyed by (stackId, serviceName), `service.health_changed` from StatePoller.handleEvent + history subscriber, GET /api/stacks/:id/health-events (#23)
 
-- [ ] TBD (run /gsd-plan-phase 14 to break down)
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 14-02-PLAN.md — Disk usage server: daily non-blocking `du` job over `<stack>/volumes/*`, StackVolumeUsage rows, GET /api/storage with backups list and totals, BigInt DTO fix (#27)
+- [x] 14-03-PLAN.md — Health history client: per-service History panel on the Overview, `starting` presentation, `HTTP probe` badge (#23)
+- [x] 14-08-PLAN.md — Probe config: shared probe schema with localhost-only host guard, Config-tab HTTP Health Probes form writing `x-docktor.health-probe` through diff-confirm (#23)
+- [x] 14-11-PLAN.md — Stable health state: reconcile and the post-deploy catch-up read real Docker health instead of clobbering it, and record every observed transition (#23)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 14-04-PLAN.md — Uptime server read path: retention setting, StatusLog index, StatusLog-based uptime, incident list read, uptime endpoints (#24)
+- [x] 14-05-PLAN.md — Storage page: sortable per-stack table with expandable volumes, Backups section, totals, sidebar nav (#27)
+- [x] 14-14-PLAN.md — Local backups in the disk picture (`<stack>/backups`, symlink-safe) and `du` robustness: exit-1 tolerance, previous values kept on failure, per-stack isolation (#27)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 14-07-PLAN.md — Overview uptime: Uptime/Incidents/Disk StatCards and incident list (#24, #27)
+- [x] 14-12-PLAN.md — Incident tracking (one StackIncident per UNHEALTHY/ERROR episode, per-stack keyed lock) and the daily HealthHistoryPruner (#24)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 14-06-PLAN.md — HTTP probe engine: HealthProbeJob, node:http transport to the container IP, 3-failure/60s-grace evaluation, probe-driven status through existing events (#23)
+- [x] 14-10-PLAN.md — Stack-list Uptime column and Health History retention card (#24)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 14-13-PLAN.md — Probe lifecycle: `service.probe_cleared` on probe removal or container stop, fail-closed invalid blocks, 8-probe concurrency cap, real-bus NotificationWatcher preservation proof (#23)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [x] 14-09-PLAN.md — Probe ownership over StatePoller (D-07) and ephemeral network attach for reachability (amended D-05) (#23)
+
+**Gap closure, Wave 1** *(from 14-VERIFICATION.md gaps; 14-15 and 14-16 run in parallel)*
+- [x] 14-15-PLAN.md — Probe liveness (CR-01): deadline and abort on every probe-path Docker call, per-probe deadline, bounded start(), in-flight watchdog (#23)
+- [x] 14-16-PLAN.md — Container identity (WR-01, WR-05, WR-11): results only for the current container, `starting` on a new or restarted container, probe-attributed 404 clear (#23, #24)
+
+**Gap closure, Wave 2** *(blocked on 14-15 and 14-16)*
+- [x] 14-17-PLAN.md — Disk scan robustness (WR-03, WR-04, WR-09) and dispositions for all 18 review findings (#27)
+
+**UAT gap closure, Wave 1** *(from 14-UAT.md gaps G-14-1, G-14-1a, G-14-1b, G-14-2; 14-18, 14-19 and 14-20 run in parallel)*
+- [x] 14-18-PLAN.md — Health history row layout (G-14-2): transition never wraps, header line plus full-width message line, divided rows with larger phone padding, browser layout gate (#23)
+- [x] 14-19-PLAN.md — Graceful shutdown (G-14-1a): SIGTERM/SIGINT stops the probe job, drains in-flight probes, sweeps probe attachments, closes the app within bounded deadlines; Troubleshooting entry for the stuck start (#23)
+- [x] 14-20-PLAN.md — Stall survivability (G-14-1, G-14-1b): kept-alive bounded pg pool, probe failures counted across a failing DB read, history-write outbox, Dockerode request timeout; amended expectation: unhealthy entry after 3 consecutive failed probes (#23)
 
 ### Phase 15: Access Hardening
 

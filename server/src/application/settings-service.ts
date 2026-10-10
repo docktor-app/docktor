@@ -3,8 +3,8 @@ import {BadRequestError} from "../lib/errors.js"
 import {decrypt, encrypt} from "../lib/crypto.js"
 import type {SettingsRepository} from "../repositories/settings-repository.js"
 import type {SmtpConfig} from "./notification-service.js"
-import type {BackupSettingsInput, ComposeCheckSettings, ConfigurableComposeRuleId, RetentionPolicy} from "@docktor/shared"
-import {CONFIGURABLE_COMPOSE_RULE_IDS} from "@docktor/shared"
+import type {BackupSettingsInput, ComposeCheckSettings, ConfigurableComposeRuleId, HealthSettings, RetentionPolicy} from "@docktor/shared"
+import {CONFIGURABLE_COMPOSE_RULE_IDS, HEALTH_RETENTION_DEFAULT_DAYS, healthSettingsSchema} from "@docktor/shared"
 
 // Mirrors SETTING_KEYS from settings-repository — inlined to avoid loading db.ts at module level
 const SETTING_KEYS = {
@@ -26,6 +26,11 @@ const PROXY_SETTING_KEYS = {
 export const COMPOSE_CHECK_SETTING_KEYS = {
     SKIP_REVIEW: "diffConfirm.skip",
     checkEnabled: (id: ConfigurableComposeRuleId) => `composeChecks.${id}.enabled`,
+} as const
+
+// D-10: the global health history retention window, in days.
+export const HEALTH_SETTING_KEYS = {
+    RETENTION_DAYS: "health.retentionDays",
 } as const
 
 export interface GeneralSettings {
@@ -429,5 +434,31 @@ export class SettingsService {
                 this.repo.upsert(COMPOSE_CHECK_SETTING_KEYS.checkEnabled(id), String(data.checks[id])),
             ),
         )
+    }
+
+    /**
+     * D-10: the retention window. An absent key is the 30-day default; a
+     * stored value that fails the shared schema also yields the default, with
+     * a warning. A failed read propagates — never coerced into a default.
+     */
+    async getHealthSettings(): Promise<HealthSettings> {
+        const values = await this.repo.getMany([HEALTH_SETTING_KEYS.RETENTION_DAYS])
+        const raw = values[HEALTH_SETTING_KEYS.RETENTION_DAYS]
+        if (raw === undefined) {
+            return {retentionDays: HEALTH_RETENTION_DEFAULT_DAYS}
+        }
+
+        const parsed = healthSettingsSchema.safeParse({retentionDays: Number(raw)})
+        if (!parsed.success) {
+            console.warn(
+                `Invalid stored value for ${HEALTH_SETTING_KEYS.RETENTION_DAYS} (${JSON.stringify(raw)}); using ${HEALTH_RETENTION_DEFAULT_DAYS} days`,
+            )
+            return {retentionDays: HEALTH_RETENTION_DEFAULT_DAYS}
+        }
+        return parsed.data
+    }
+
+    async saveHealthSettings(data: HealthSettings): Promise<void> {
+        await this.repo.upsert(HEALTH_SETTING_KEYS.RETENTION_DAYS, String(data.retentionDays))
     }
 }

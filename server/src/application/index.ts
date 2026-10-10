@@ -12,6 +12,10 @@ import {
     userRepository,
     imageUpdateCheckRepository,
     templateRepository,
+    serviceHealthEventRepository,
+    stackDiskUsageRepository,
+    statusLogRepository,
+    stackIncidentRepository,
 } from "../repositories/index.js";
 import {StackService} from "./stack-service.js";
 import {ComposeReviewService} from "./compose-review-service.js";
@@ -26,6 +30,11 @@ import {CertificateService} from "./certificate-service.js";
 import {LogService, type LogServiceStackReadPort} from "./log-service.js";
 import {TemplateService} from "./template-service.js";
 import {TemplateUpdateService} from "./template-update-service.js";
+import {ServiceHealthHistoryService} from "./service-health-history-service.js";
+import {StorageService} from "./storage-service.js";
+import {UptimeService} from "./uptime-service.js";
+import {IncidentTracker} from "./incident-tracker.js";
+import {ServiceHealthService} from "./service-health-service.js";
 import {certificateFilesystem} from "../infrastructure/certificate-filesystem.js";
 import {stateEventBroadcaster} from "../lib/state-broadcaster.js";
 import {dockerodeClient} from "../infrastructure/dockerode-client.js";
@@ -41,6 +50,7 @@ import type {StackStatus} from "../generated/prisma/enums.js";
 import {domainEventBus} from "../infrastructure/event-bus.js";
 import {registerDomainSubscribers} from "./subscribers/register.js";
 import {ContainerStateCatchUp} from "./container-state-catch-up.js";
+import {probedServiceRegistry} from "./probed-service-registry.js";
 
 const repo = stackRepository;
 const fs = new StackFilesystem();
@@ -72,7 +82,7 @@ export const deployPreflightService = new DeployPreflightService(composeReviewSe
 // Issue #34: refreshes real container states right after a deploy-family
 // operation finishes, so open views do not wait for the 60s reconcile —
 // constructed before stackService since it is its 10th dependency.
-export const containerStateCatchUp = new ContainerStateCatchUp(dockerodeClient, repo, domainEventBus);
+export const containerStateCatchUp = new ContainerStateCatchUp(dockerodeClient, repo, domainEventBus, probedServiceRegistry);
 
 export const stackService = new StackService(repo, fs, docker, stackEventRepository, domainEventBus, settingsService, imageUpdateCheckRepository, composeReviewService, deployPreflightService, containerStateCatchUp);
 
@@ -101,14 +111,49 @@ export const notificationService = new NotificationService(
     smtpClient,
 );
 
-// D-15: registers all three subscriber categories (audit trail, plan 10-13;
-// notifications, plan 10-12; live-state bridge, plan 10-11) from one place
-// in the fixed, documented order subscribers/register.ts explains. Exported
-// so a test can tear it down.
+// #23/D-12: read side of the retained per-service health history — the
+// stack repository answers "does this stack exist", the event repository
+// serves the rows the history subscriber below writes.
+export const serviceHealthHistoryService = new ServiceHealthHistoryService(repo, serviceHealthEventRepository);
+
+// #27/D-15: read side of the disk usage figures DiskUsageJob stores — serves
+// GET /api/storage.
+export const storageService = new StorageService(stackDiskUsageRepository);
+
+// #24/D-09/D-10/D-16: read side of the per-stack uptime view — the uptime
+// percentage comes from StatusLog intervals over the global retention window
+// (settingsService), the incident list from StackIncident rows.
+export const uptimeService = new UptimeService(
+    {
+        exists: (id) => repo.exists(id),
+        listStackIds: async () => (await repo.findAll()).map((stack) => stack.id),
+    },
+    statusLogRepository,
+    stackIncidentRepository,
+    settingsService,
+);
+
+// #24/D-11: the write side of the incident list — one StackIncident row per
+// UNHEALTHY/ERROR episode, fed by the incident subscriber below.
+export const incidentTracker = new IncidentTracker(stackIncidentRepository);
+
+// #23/D-03/D-07: the only writer of probe-derived health — turns a finished
+// HTTP probe into Service.healthStatus, http-probe history and the re-derived
+// stack status, re-emitting the existing stack.container_state_changed event.
+export const serviceHealthService = new ServiceHealthService(repo, domainEventBus, dockerodeClient);
+
+// D-15: registers all subscriber categories (audit trail, plan 10-13;
+// notifications, plan 10-12; live-state bridge, plan 10-11; service health
+// history, #23; incident tracking, #24; probe results, #23) from one place in
+// the fixed, documented order subscribers/register.ts explains. Exported so a
+// test can tear it down.
 export const disposeDomainSubscribers = registerDomainSubscribers(domainEventBus, {
     stackEventRepo: stackEventRepository,
     notificationService,
     broadcaster: stateEventBroadcaster,
+    serviceHealthEventRepo: serviceHealthEventRepository,
+    incidentTracker,
+    probeResultHandler: serviceHealthService,
 });
 
 // Adapter: StackRepository -> BackupStackRepo interface

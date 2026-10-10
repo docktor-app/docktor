@@ -2,11 +2,18 @@ import {useState} from "react";
 import {Save} from "lucide-react";
 import {Button} from "@/components/ui/button";
 import {Separator} from "@/components/ui/separator";
-import {Section, SectionActions, SectionHeader, SectionTitle} from "@/components/common/layout/section";
+import {
+    Section,
+    SectionActions,
+    SectionDescription,
+    SectionHeader,
+    SectionTitle,
+} from "@/components/common/layout/section";
 import {ComposeEditor} from "@/components/domain/stack/compose-editor";
 import {EnvEditor} from "@/components/domain/stack/env-editor";
 import {DiffConfirmDialog, type ReviewSubject} from "@/components/domain/stack/diff-confirm-dialog";
 import type {StackConfigFiles} from "@/hooks/use-stack-config-files";
+import {HealthProbeForm} from "@/routes/app/stacks/components/health-probe-form";
 
 export interface ConfigTabProps {
     readonly files: StackConfigFiles;
@@ -14,7 +21,10 @@ export interface ConfigTabProps {
 }
 
 // D-02/D-03: the merged Compose+Environment tab — a single stacked column of
-// two flat Sections (UI-SPEC Discretion Decision 4), no Card, no nested Tabs.
+// flat Sections (UI-SPEC Discretion Decision 4), no Card, no nested Tabs.
+// Phase 14 adds HTTP Health Probes between Compose File and Environment
+// Variables: its edits land in the compose buffer, so the Compose File Save
+// (and its diff review) is the only save for them.
 // 11-09 gave Compose File a CodeMirror editor; 11-12 gives Environment
 // Variables a table/raw EnvEditor (D-20/D-21/D-22) — both behind this same
 // `files` prop. Issue #18/D-01/D-03: Save now routes through a diff review
@@ -55,6 +65,20 @@ export function ConfigTab({files, stackName}: Readonly<ConfigTabProps>) {
                     </SectionActions>
                 </SectionHeader>
                 <ComposeEditor value={files.composeContent} onChange={files.setComposeContent} />
+            </Section>
+
+            <Separator />
+
+            <Section>
+                <SectionHeader>
+                    <div className="space-y-1">
+                        <SectionTitle>HTTP Health Probes</SectionTitle>
+                        <SectionDescription>
+                            Check a service over HTTP when it has no Docker healthcheck, or to override the one it has.
+                        </SectionDescription>
+                    </div>
+                </SectionHeader>
+                <HealthProbeForm composeContent={files.composeContent} onChange={files.setComposeContent} />
             </Section>
 
             <Separator />

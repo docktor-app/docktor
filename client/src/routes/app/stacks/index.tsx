@@ -5,9 +5,11 @@ import {Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage} from "@/comp
 import {Page, PageActions, PageContent, PageHeader, PageTitle} from "@/components/common/layout/page";
 import {StackList} from "@/components/domain/stack/stack-list";
 import {useStacks} from "@/hooks/use-stacks";
+import {useStackUptimes} from "@/hooks/use-stack-uptimes";
 
 export default function StacksPage() {
     const {stacks, loading, error} = useStacks();
+    const uptimes = useStackUptimes();
 
     return (
         <Page>
@@ -46,7 +48,7 @@ export default function StacksPage() {
                     </div>
                 )}
 
-                <StackList stacks={stacks} loading={loading} />
+                <StackList stacks={stacks} loading={loading} uptimes={uptimes} />
             </PageContent>
         </Page>
     );

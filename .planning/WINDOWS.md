@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 12
+open_count: 22
 waived_count: 0
 fixed_count: 8
-total_count: 20
-last_updated: 2026-10-03T13:49:11.471Z
+total_count: 30
+last_updated: 2026-10-08T14:22:59.073Z
 ---
 
 # Broken Windows Ledger
@@ -35,6 +35,16 @@ last_updated: 2026-10-03T13:49:11.471Z
 | 18 | 12 | unrun-verify | client/test/integration/stacks.spec.ts |  | Two new Playwright tests (pre-deploy warnings banner with Blog-stack link, and no-banner for a stack with no deployWarnings field) were written per plan 12-08's <behavior>/<action> but deliberately NOT executed in this session per the orchestrator's resource_constraint (no Playwright/integration suites on this host to avoid resource contention). Unit-level coverage of the same rendering logic (deploy-warnings-alert.test.tsx, deploy-warnings.test.ts) passed. A developer/CI must run PLAYWRIGHT_PORT=5214 yarn workspace @docktor/client test:integration stacks.spec.ts to confirm these live. | open |  | 2026-10-03T07:53:17.965Z |  |
 | 19 | 12 | unrun-verify | client/test/integration/templates.spec.ts |  | New Playwright templates.spec.ts (tracer: browse -> single-variant Use Template -> prefilled create form -> checked create -> land on the stack; plus the multi-variant picker dialog, search-with-no-match empty state, and repo-sync-error Retry flows) was written per plan 12-09's <behavior>/<action> but deliberately NOT executed in this session per the orchestrator's resource_constraint (no Playwright/integration suites on this host to avoid resource contention). Unit-level coverage of the same logic (templates-api.test.ts, use-templates.test.ts, use-create-stack-source.test.ts, template-grid.test.tsx, template-variant-dialog.test.tsx, templates-page.test.tsx, create-stack-page.test.tsx — 31 tests) all pass, and tsc -b is clean. A developer/CI must run PLAYWRIGHT_PORT=5215 yarn workspace @docktor/client test:integration templates.spec.ts to confirm these live. | open |  | 2026-10-03T08:30:00.000Z |  |
 | 20 | 12 | unrun-verify | server/test/integration/templates.test.ts |  | New POST/GET /api/template-repos integration tests for plan 12-10 (201 on a well-formed https url, 400 for file://, ext::, -u payloads with no row created, 409 for an already-configured url, 401 without a cookie on both routes) were written per the plan's <behavior> but deliberately NOT executed in this session — the orchestrator's resource_constraint for this run forbids starting the testcontainers-based integration suite on this host. Unit-level TemplateService.listRepos/addRepo behavior is independently proven (19/19 passing). A developer/CI must run yarn workspace @docktor/server test:integration test/integration/templates.test.ts to confirm these live. | open |  | 2026-10-03T13:49:11.471Z |  |
+| 21 | 14 | unrun-verify | server/prisma/migrations/20261008073041_add_service_health_events/migration.sql |  | add_service_health_events migration generated via migrate diff (Branch B) but not applied to the dev database; the secret-read guard blocks commands naming the dev env file. syncDatabaseSchema() applies it at next boot. | open |  | 2026-10-08T07:35:14.437Z |  |
+| 22 | 14 | unrun-verify | server/prisma/migrations/20261008074500_add_stack_disk_usage/migration.sql |  | add_stack_disk_usage migration generated via migrate diff (Branch B) but not applied to the dev database; syncDatabaseSchema() applies it at next boot. | open |  | 2026-10-08T07:46:46.171Z |  |
+| 23 | 14 | unrun-verify | client/src/routes/app/stacks/components/service-health-timeline.tsx |  | 14-03 human-check not performed: eyeball the expanded health history in light and dark theme at Pixel 7 width (overflow measured by script; legibility and vertical stacking not visually reviewed) | open |  | 2026-10-08T08:08:04.656Z |  |
+| 24 | 14 | unrun-verify | client/src/routes/app/stacks/components/health-probe-form.tsx |  | 14-08 human-check (HTTP Health Probes section in light/dark at desktop and Pixel 7 width, long URL scroll, YAML-error swap) was reviewed from scripted Edge screenshots by the executor only, not by a person | open |  | 2026-10-08T08:31:20.996Z |  |
+| 25 | 14 | unrun-verify | client/test/integration/health-probe.spec.ts |  | 14-08 canonical Playwright command not run: browsers not installed, ran on system Edge; mobile-chromium project only matches mobile.spec.ts so phone width is emulated by setViewportSize on the chromium project | open |  | 2026-10-08T08:31:21.830Z |  |
+| 26 | 14 | unrun-verify | server/prisma/migrations/20261008084300_add_status_log_stack_created_index/migration.sql |  | 14-04 migration add_status_log_stack_created_index generated via migrate diff (Branch B) and not applied to the dev database; integration suite exercises the index through prisma db push, syncDatabaseSchema() applies it at next boot | open |  | 2026-10-08T08:51:58.272Z |  |
+| 27 | 14 | unrun-verify | client/src/routes/app/storage.tsx |  | 14-05 Task 2 human-check not performed by a person: Storage page in light and dark theme at desktop and Pixel 7 width (80+ char names truncate with title, no horizontal scroll, chevron rotation and reduced motion, Tab order). Overflow and truncation were measured by script at 412px in storage.spec.ts only | open |  | 2026-10-08T09:11:45.184Z |  |
+| 28 | 14 | unrun-verify | client/src/routes/app/stacks/components/incident-list.tsx |  | 14-07 Task 2 human-check not performed by a person: stack Overview in light and dark theme at desktop and Pixel 7 width with 30 incidents (one ongoing): tone contrast of uptime value and incident count, vertical scroll past 384px, horizontal scroll on the phone, StatCards collapsing to one column. Overflow and scroll were measured by script at 412px in uptime.spec.ts only | open |  | 2026-10-08T09:41:48.843Z |  |
+| 29 | 14 | unrun-verify | client/src/routes/app/settings/components/health-retention-card.tsx |  | 14-10 human-check not performed: Health History card and shorten-retention dialog in light/dark at desktop and Pixel 7 width, validation shown on blur | open |  | 2026-10-08T13:56:26.900Z |  |
+| 30 | 14 | unrun-verify | server/src/infrastructure/probe-transport.ts |  | 14-09 human-check not performed: live probe attach/detach, startup sweep and Delete Stack with active probes on a dedicated Docker host with a collision-proof project name | open |  | 2026-10-08T14:22:59.073Z |  |
 
 ````json
 [
@@ -283,6 +293,136 @@ last_updated: 2026-10-03T13:49:11.471Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-03T13:49:11.471Z",
+    "resolved_at": null,
+    "milestone": "v0.1.0"
+  },
+  {
+    "id": 21,
+    "kind": "unrun-verify",
+    "phase": "14",
+    "file": "server/prisma/migrations/20261008073041_add_service_health_events/migration.sql",
+    "line": null,
+    "description": "add_service_health_events migration generated via migrate diff (Branch B) but not applied to the dev database; the secret-read guard blocks commands naming the dev env file. syncDatabaseSchema() applies it at next boot.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-08T07:35:14.437Z",
+    "resolved_at": null,
+    "milestone": "v0.1.0"
+  },
+  {
+    "id": 22,
+    "kind": "unrun-verify",
+    "phase": "14",
+    "file": "server/prisma/migrations/20261008074500_add_stack_disk_usage/migration.sql",
+    "line": null,
+    "description": "add_stack_disk_usage migration generated via migrate diff (Branch B) but not applied to the dev database; syncDatabaseSchema() applies it at next boot.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-08T07:46:46.171Z",
+    "resolved_at": null,
+    "milestone": "v0.1.0"
+  },
+  {
+    "id": 23,
+    "kind": "unrun-verify",
+    "phase": "14",
+    "file": "client/src/routes/app/stacks/components/service-health-timeline.tsx",
+    "line": null,
+    "description": "14-03 human-check not performed: eyeball the expanded health history in light and dark theme at Pixel 7 width (overflow measured by script; legibility and vertical stacking not visually reviewed)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-08T08:08:04.656Z",
+    "resolved_at": null,
+    "milestone": "v0.1.0"
+  },
+  {
+    "id": 24,
+    "kind": "unrun-verify",
+    "phase": "14",
+    "file": "client/src/routes/app/stacks/components/health-probe-form.tsx",
+    "line": null,
+    "description": "14-08 human-check (HTTP Health Probes section in light/dark at desktop and Pixel 7 width, long URL scroll, YAML-error swap) was reviewed from scripted Edge screenshots by the executor only, not by a person",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-08T08:31:20.996Z",
+    "resolved_at": null,
+    "milestone": "v0.1.0"
+  },
+  {
+    "id": 25,
+    "kind": "unrun-verify",
+    "phase": "14",
+    "file": "client/test/integration/health-probe.spec.ts",
+    "line": null,
+    "description": "14-08 canonical Playwright command not run: browsers not installed, ran on system Edge; mobile-chromium project only matches mobile.spec.ts so phone width is emulated by setViewportSize on the chromium project",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-08T08:31:21.830Z",
+    "resolved_at": null,
+    "milestone": "v0.1.0"
+  },
+  {
+    "id": 26,
+    "kind": "unrun-verify",
+    "phase": "14",
+    "file": "server/prisma/migrations/20261008084300_add_status_log_stack_created_index/migration.sql",
+    "line": null,
+    "description": "14-04 migration add_status_log_stack_created_index generated via migrate diff (Branch B) and not applied to the dev database; integration suite exercises the index through prisma db push, syncDatabaseSchema() applies it at next boot",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-08T08:51:58.272Z",
+    "resolved_at": null,
+    "milestone": "v0.1.0"
+  },
+  {
+    "id": 27,
+    "kind": "unrun-verify",
+    "phase": "14",
+    "file": "client/src/routes/app/storage.tsx",
+    "line": null,
+    "description": "14-05 Task 2 human-check not performed by a person: Storage page in light and dark theme at desktop and Pixel 7 width (80+ char names truncate with title, no horizontal scroll, chevron rotation and reduced motion, Tab order). Overflow and truncation were measured by script at 412px in storage.spec.ts only",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-08T09:11:45.184Z",
+    "resolved_at": null,
+    "milestone": "v0.1.0"
+  },
+  {
+    "id": 28,
+    "kind": "unrun-verify",
+    "phase": "14",
+    "file": "client/src/routes/app/stacks/components/incident-list.tsx",
+    "line": null,
+    "description": "14-07 Task 2 human-check not performed by a person: stack Overview in light and dark theme at desktop and Pixel 7 width with 30 incidents (one ongoing): tone contrast of uptime value and incident count, vertical scroll past 384px, horizontal scroll on the phone, StatCards collapsing to one column. Overflow and scroll were measured by script at 412px in uptime.spec.ts only",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-08T09:41:48.843Z",
+    "resolved_at": null,
+    "milestone": "v0.1.0"
+  },
+  {
+    "id": 29,
+    "kind": "unrun-verify",
+    "phase": "14",
+    "file": "client/src/routes/app/settings/components/health-retention-card.tsx",
+    "line": null,
+    "description": "14-10 human-check not performed: Health History card and shorten-retention dialog in light/dark at desktop and Pixel 7 width, validation shown on blur",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-08T13:56:26.900Z",
+    "resolved_at": null,
+    "milestone": "v0.1.0"
+  },
+  {
+    "id": 30,
+    "kind": "unrun-verify",
+    "phase": "14",
+    "file": "server/src/infrastructure/probe-transport.ts",
+    "line": null,
+    "description": "14-09 human-check not performed: live probe attach/detach, startup sweep and Delete Stack with active probes on a dedicated Docker host with a collision-proof project name",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-08T14:22:59.073Z",
     "resolved_at": null,
     "milestone": "v0.1.0"
   }

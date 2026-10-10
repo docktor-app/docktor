@@ -1,5 +1,5 @@
 import {apiFetch} from "./api";
-import type {ComposeCheckSettings, GeneralSettings, GeneralSettingsUpdate} from "@docktor/shared";
+import type {ComposeCheckSettings, GeneralSettings, GeneralSettingsUpdate, HealthSettings} from "@docktor/shared";
 
 export type {GeneralSettings, GeneralSettingsUpdate};
 
@@ -23,6 +23,19 @@ export async function getComposeCheckSettings(): Promise<ComposeCheckSettings> {
 
 export async function saveComposeCheckSettings(data: ComposeCheckSettings): Promise<ComposeCheckSettings> {
     return apiFetch<ComposeCheckSettings>("/api/settings/compose-checks", {
+        method: "PUT",
+        body: JSON.stringify(data),
+    });
+}
+
+// D-10: the global health-history retention window (1-365 days, default 30) —
+// backed by GET/PUT /api/settings/health (14-04). PUT returns the saved value.
+export async function getHealthSettings(): Promise<HealthSettings> {
+    return apiFetch<HealthSettings>("/api/settings/health");
+}
+
+export async function saveHealthSettings(data: HealthSettings): Promise<HealthSettings> {
+    return apiFetch<HealthSettings>("/api/settings/health", {
         method: "PUT",
         body: JSON.stringify(data),
     });
