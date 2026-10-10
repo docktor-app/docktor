@@ -566,7 +566,7 @@ Needs Phase 10's backend structure for the new health-probe job and Phase 11's U
   3. Each stack shows an uptime percentage and an incident list over a retention window (#24)
   4. Disk usage is viewable per stack and per volume, sortable, with a total (#27)
 
-**Plans:** 19/20 plans executed (3 UAT gap-closure plans pending)
+**Plans:** 20/20 plans executed (UAT gap-closure plans 14-18, 14-19, 14-20 done; live re-test pending via /gsd-verify-work 14)
 
 Plans:
 **Wave 1**
@@ -607,7 +607,7 @@ Plans:
 **UAT gap closure, Wave 1** *(from 14-UAT.md gaps G-14-1, G-14-1a, G-14-1b, G-14-2; 14-18, 14-19 and 14-20 run in parallel)*
 - [x] 14-18-PLAN.md — Health history row layout (G-14-2): transition never wraps, header line plus full-width message line, divided rows with larger phone padding, browser layout gate (#23)
 - [x] 14-19-PLAN.md — Graceful shutdown (G-14-1a): SIGTERM/SIGINT stops the probe job, drains in-flight probes, sweeps probe attachments, closes the app within bounded deadlines; Troubleshooting entry for the stuck start (#23)
-- [ ] 14-20-PLAN.md — Stall survivability (G-14-1, G-14-1b): kept-alive bounded pg pool, probe failures counted across a failing DB read, history-write outbox, Dockerode request timeout; amended expectation: unhealthy entry after 3 consecutive failed probes (#23)
+- [x] 14-20-PLAN.md — Stall survivability (G-14-1, G-14-1b): kept-alive bounded pg pool, probe failures counted across a failing DB read, history-write outbox, Dockerode request timeout; amended expectation: unhealthy entry after 3 consecutive failed probes (#23)
 
 ### Phase 15: Access Hardening
 

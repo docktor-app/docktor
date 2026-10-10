@@ -5,14 +5,14 @@ current_phase: 14
 current_phase_name: Health, Uptime and Disk Visibility
 current_plan: 20
 status: "Phases 1-13 complete (v0.1.0 scope: ROADMAP Phases 10-16, sourced from GitHub issues in docktor-app/docktor; product tracking lives in GitHub Issues). Phase 14 (Health, Uptime and Disk Visibility): all 14 plans executed, code review done, verification found gaps (9/13 truths) — CR-01 probe Docker calls lack timeouts, WR-01/WR-05 probe results not tied to current container. Gap-closure plan (14-15) being created via /gsd-plan-phase 14 --gaps. Phases 15 (Access Hardening) and 16 (Release Readiness) not started."
-stopped_at: Completed 14-19-PLAN.md
-last_updated: "2026-10-10T09:02:34.732Z"
-state_head: e69e1fb3feb6b5cb16e76d1053d043c433987dda
+stopped_at: Completed 14-20-PLAN.md
+last_updated: "2026-10-10T09:09:40.795Z"
+state_head: 7a9e05aa7f18c64d661c91604ae9225b6af18fac
 progress:
   total_phases: 17
   completed_phases: 9
   total_plans: 152
-  completed_plans: 151
+  completed_plans: 152
 milestone_name: milestone
 ---
 
@@ -187,6 +187,7 @@ Total Plans in Phase: 20
 | Phase 14 P17 | 4 min | 2 tasks | 6 files |
 | Phase 14 P18 | 9 min | 2 tasks | 4 files |
 | Phase 14 P19 | 11 min | 3 tasks | 6 files |
+| Phase 14 P20 | 6 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -462,6 +463,8 @@ Recent decisions affecting current work:
 - [Phase 14]: 14-18: HealthEventRow message is a block p under a flex-wrap header; transition whitespace-nowrap; rows divide-y with py-3 below sm (G-14-2)
 - [Phase 14]: 14-19: graceful shutdown order is probe job (5 s), app.close() (2.5 s), 9 s hard stop; compose and Dockerfile unchanged (no init: true or stop_grace_period) because a SIGTERM handler lets Node as PID 1 exit 0 in under 1 s
 - [Phase 14]: 14-19: a probe result arriving after the shutdown drain gave up is discarded, since the sweep detached its network and recording it would count a failure the service never had
+- [Phase 14]: 14-20 spec amendment: a daemon stall yields an unhealthy http-probe history entry after 3 consecutive failed probes (about 70-100 s), not for a single failed probe (D-08); replaces the UAT G-14-1 truth
+- [Phase 14]: 14-20: no logging change (log-pipe mechanism refuted); history outbox is in-memory only; pg pool max left at default with idle reaping off
 
 ### Quick Tasks Completed
 
@@ -534,6 +537,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-10-10T09:02:33.334Z
-Stopped at: Completed 14-19-PLAN.md
+Last session: 2026-10-10T09:09:39.259Z
+Stopped at: Completed 14-20-PLAN.md
 Resume file: None
