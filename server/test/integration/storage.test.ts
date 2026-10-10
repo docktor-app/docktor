@@ -33,7 +33,9 @@ function fakeScanner(volumes: Record<string, number>, backupsBytes?: number): Di
         measureBytes: vi.fn(async (p: string) =>
             path.basename(p) === "backups" ? (backupsBytes ?? null) : (volumes[path.basename(p)] ?? null),
         ),
-        isRealDirectory: vi.fn(async (p: string) => backupsBytes !== undefined && path.basename(p) === "backups"),
+        isRealDirectory: vi.fn(async (p: string) =>
+            path.basename(p) === "backups" ? backupsBytes !== undefined : path.basename(p) === "volumes",
+        ),
     };
 }
 

@@ -202,7 +202,8 @@ describe("ProbeTransport (amended D-05, T-14-36)", () => {
         expect(result.outcome).toEqual({ok: false, reason: {kind: "refused"}});
     }, 10_000);
 
-    it("connects to the container address even when the URL host is an IP literal", async () => {
+    // macOS only configures 127.0.0.1 on loopback, so a server cannot bind the distinct 127.0.0.2 this needs.
+    it.skipIf(process.platform === "darwin")("connects to the container address even when the URL host is an IP literal", async () => {
         const {port, seen} = await startServer((_req, res) => res.writeHead(200).end(), "127.0.0.2");
         const info = inspectInfo({networks: {app_default: {IPAddress: "127.0.0.2"}}});
 
