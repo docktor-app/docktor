@@ -19,6 +19,8 @@ export interface RecordServiceHealthEventInput {
     toStatus: string | null
     source: HealthSourceName
     message?: string | null
+    /** Set for a write that was delayed, so the row keeps the time of the transition. */
+    createdAt?: Date
 }
 
 const SOURCE_TO_ENUM: Record<HealthSourceName, HealthSource> = {
@@ -46,6 +48,7 @@ export class ServiceHealthEventRepository {
                 toStatus: input.toStatus,
                 source: SOURCE_TO_ENUM[input.source],
                 message: input.message ?? null,
+                ...(input.createdAt !== undefined && {createdAt: input.createdAt}),
             },
         })
     }
