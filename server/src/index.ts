@@ -1,4 +1,6 @@
 import {buildApp} from "./app.js";
+import {healthProbeJob} from "./jobs/health-probe-job.js";
+import {installShutdownHandlers, SHUTDOWN_HARD_DEADLINE_MS} from "./lib/graceful-shutdown.js";
 import {assertStacksDirIsMounted, assertStacksDirMatchesHost, ensureStacksDir} from "./lib/stacks-dir.js";
 import {syncDatabaseSchema} from "./lib/schema-sync.js";
 
@@ -72,3 +74,22 @@ try {
     app.log.error(err);
     process.exit(1);
 }
+
+// Graceful shutdown (G-14-1a): Node is PID 1 in the image, so without this a
+// `docker stop` ends in SIGKILL and leaves the probe network attachment that
+// stops Docker from starting the container once that network is gone. Budget:
+// at most 7.5 s of bounded steps inside the 9 s hard stop inside Docker's
+// default 10 s stop grace. The probe job stops first and on its own, so a job
+// that hangs inside app.close() (stopJobs) can never prevent the detach.
+const PROBE_JOB_SHUTDOWN_TIMEOUT_MS = 5_000;
+const SERVER_CLOSE_TIMEOUT_MS = 2_500;
+
+installShutdownHandlers({
+    steps: [
+        {name: "health probe job", timeoutMs: PROBE_JOB_SHUTDOWN_TIMEOUT_MS, run: () => healthProbeJob.stop()},
+        {name: "server", timeoutMs: SERVER_CLOSE_TIMEOUT_MS, run: () => app.close()},
+    ],
+    hardDeadlineMs: SHUTDOWN_HARD_DEADLINE_MS,
+    exit: (code) => process.exit(code),
+    log: console,
+});

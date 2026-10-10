@@ -28,6 +28,12 @@ export const START_STEP_TIMEOUT_MS = 30_000
  */
 export const MAX_TICK_DURATION_MS = 5 * 60_000
 
+/** How long stop() waits for the tick in flight, so its probes can detach themselves. */
+export const SHUTDOWN_DRAIN_MS = 1_500
+
+/** Bounds the alias sweep stop() runs after the drain (G-14-1a). */
+export const SHUTDOWN_SWEEP_TIMEOUT_MS = 3_000
+
 export interface ProbeJobService {
     serviceName: string
     containerId: string | null
@@ -127,6 +133,26 @@ export class HealthProbeJob extends IntervalJob {
         await this.sweepStaleAttachments()
         await this.refreshOwnership()
         await super.start()
+    }
+
+    // A normal stop leaves no probe attachment on Docktor's own container:
+    // Docker saves a runtime network connect and re-attaches it on every start,
+    // and refuses to start the container once that network is gone (G-14-1a).
+    // The sweep removes every endpoint carrying the probe alias. It never rejects.
+    override async stop(): Promise<void> {
+        super.stop()
+        await this.detachProbeAttachments()
+    }
+
+    private async detachProbeAttachments(): Promise<void> {
+        try {
+            const removed = await withDeadline("shutdown attachment sweep", SHUTDOWN_SWEEP_TIMEOUT_MS, () =>
+                this.deps.transport.sweepStaleAttachments(),
+            )
+            if (removed > 0) console.warn(`[HealthProbeJob] detached ${removed} probe network attachment(s) on shutdown`)
+        } catch (err) {
+            console.error("[HealthProbeJob] shutdown attachment sweep failed:", err)
+        }
     }
 
     private async sweepStaleAttachments(): Promise<void> {
