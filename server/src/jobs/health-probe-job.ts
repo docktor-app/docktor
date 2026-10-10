@@ -118,7 +118,18 @@ export class HealthProbeJob extends IntervalJob {
 
     // The tick in progress, if any. An object so a stale tick that settles late
     // can tell the marker is no longer its own and leave the newer tick's alone.
-    private inFlight: {startedAt: number} | null = null
+    // `settled` resolves, and never rejects, when the tick ends, so stop() can
+    // wait for it.
+    private inFlight: {startedAt: number; settled: Promise<void>} | null = null
+    // Set once stop() begins: later ticks return at once, and a tick still
+    // working through its queue starts no further probe.
+    private stopping = false
+    // Set once stop() has given up on the tick in flight, just before the sweep.
+    // The sweep then disconnects the network under any probe still running, so
+    // its failure is an artefact of shutdown, not of the service (D-08 counts
+    // only real failed probes).
+    private discardResults = false
+    private windDown: Promise<void> | null = null
     private readonly schedule = new Map<string, ScheduleEntry>()
     private readonly composeCache = new Map<string, ParsedCompose>()
 
@@ -130,6 +141,10 @@ export class HealthProbeJob extends IntervalJob {
     // removed (amended D-05), and ownership is seeded so it is known before
     // StatePoller's first 60-second reconcile (D-07).
     override async start(): Promise<void> {
+        // A stopped job can be started again (a registry restart, tests).
+        this.stopping = false
+        this.discardResults = false
+        this.windDown = null
         await this.sweepStaleAttachments()
         await this.refreshOwnership()
         await super.start()
@@ -138,10 +153,32 @@ export class HealthProbeJob extends IntervalJob {
     // A normal stop leaves no probe attachment on Docktor's own container:
     // Docker saves a runtime network connect and re-attaches it on every start,
     // and refuses to start the container once that network is gone (G-14-1a).
-    // The sweep removes every endpoint carrying the probe alias. It never rejects.
-    override async stop(): Promise<void> {
+    // Probes mid-request get a short drain to finish and detach themselves, then
+    // the sweep removes every endpoint carrying the probe alias. Idempotent (a
+    // second call returns the same wind-down) and never rejects.
+    override stop(): Promise<void> {
+        this.windDown ??= this.windDownNow()
+        return this.windDown
+    }
+
+    private async windDownNow(): Promise<void> {
+        this.stopping = true
         super.stop()
+        await this.drainInFlight()
+        this.discardResults = true
         await this.detachProbeAttachments()
+    }
+
+    // Results that arrive during the drain are delivered normally (the database
+    // is still up). Giving up is normal: the sweep below does the detaching.
+    private async drainInFlight(): Promise<void> {
+        const pending = this.inFlight
+        if (pending === null) return
+        try {
+            await withDeadline("probe tick drain", SHUTDOWN_DRAIN_MS, () => pending.settled)
+        } catch (err) {
+            console.warn(`[HealthProbeJob] probes still running after ${SHUTDOWN_DRAIN_MS}ms; detaching anyway`, err)
+        }
     }
 
     private async detachProbeAttachments(): Promise<void> {
@@ -181,6 +218,9 @@ export class HealthProbeJob extends IntervalJob {
     }
 
     protected async run(): Promise<void> {
+        // A cron callback already queued when stop() began.
+        if (this.stopping) return
+
         // IntervalJob does not stop a run from overlapping the previous one, and
         // a probe can take up to its timeout, so a tick that starts while the
         // last one is running is skipped, until the watchdog gives up on it.
@@ -193,12 +233,17 @@ export class HealthProbeJob extends IntervalJob {
             this.reportError(new DeadlineExceededError("probe tick", MAX_TICK_DURATION_MS))
         }
 
-        const marker = {startedAt: now}
+        let markSettled: () => void = () => undefined
+        const settled = new Promise<void>((resolve) => {
+            markSettled = resolve
+        })
+        const marker = {startedAt: now, settled}
         this.inFlight = marker
         try {
             await this.tick()
         } finally {
             if (this.inFlight === marker) this.inFlight = null
+            markSettled()
         }
     }
 
@@ -289,7 +334,7 @@ export class HealthProbeJob extends IntervalJob {
     private async runDue(due: ReadonlyArray<DueProbe>): Promise<void> {
         let next = 0
         const worker = async (): Promise<void> => {
-            for (let probe = due[next++]; probe !== undefined; probe = due[next++]) {
+            for (let probe = due[next++]; probe !== undefined && !this.stopping; probe = due[next++]) {
                 await this.probeService(probe)
             }
         }
@@ -319,6 +364,7 @@ export class HealthProbeJob extends IntervalJob {
             this.logProbeFailure(key, err)
             observation = {containerStartedAt: null, outcome: {ok: false, reason: {kind: "network-unreachable"}}}
         }
+        if (this.discardResults) return
         this.emitCompleted(stackId, serviceName, containerId, observation)
     }
 

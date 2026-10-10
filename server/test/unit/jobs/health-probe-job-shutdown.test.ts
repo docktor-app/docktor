@@ -2,10 +2,12 @@ import {EventEmitter} from "node:events"
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest"
 import {
     HealthProbeJob,
+    SHUTDOWN_DRAIN_MS,
     SHUTDOWN_SWEEP_TIMEOUT_MS,
     type ProbeJobStack,
 } from "../../../src/jobs/health-probe-job.js"
 import type {ProbeObservation} from "../../../src/application/ports/probe-transport-port.js"
+import {PROBE_INTERVAL_MS, probeStaggerOffsetMs} from "../../../src/domain/health-probe.js"
 import {installShutdownHandlers, SHUTDOWN_HARD_DEADLINE_MS} from "../../../src/lib/graceful-shutdown.js"
 
 const T0 = 1_700_000_000_000
@@ -21,9 +23,17 @@ function runningStack(): ProbeJobStack {
     }
 }
 
-function createJob(sweep: () => Promise<number> = async () => 1) {
+function deferredObservation() {
+    let resolve: (observation: ProbeObservation) => void = () => undefined
+    const promise = new Promise<ProbeObservation>((res) => {
+        resolve = res
+    })
+    return {promise, resolve}
+}
+
+function createJob(sweep: () => Promise<number> = async () => 1, stacks: ProbeJobStack[] = [runningStack()]) {
     const clock = {now: T0}
-    const store = {listStacks: vi.fn(async () => [runningStack()])}
+    const store = {listStacks: vi.fn(async () => stacks)}
     const transport = {
         probe: vi.fn(async () => OBSERVATION),
         sweepStaleAttachments: vi.fn(sweep),
@@ -93,6 +103,162 @@ describe("HealthProbeJob shutdown (G-14-1a)", () => {
 
             expect(resolved).toBe(true)
             expect(consoleError).toHaveBeenCalledOnce()
+        })
+    })
+
+    describe("stop(): drain, discard and idempotence", () => {
+        // Schedules the service on a first tick, then starts its probe on a second one.
+        async function startProbe(ctx: ReturnType<typeof createJob>): Promise<{running: Promise<void>}> {
+            await ctx.tick()
+            ctx.clock.now = T0 + probeStaggerOffsetMs("app/web")
+            const running = ctx.tick()
+            await vi.advanceTimersByTimeAsync(0)
+            expect(ctx.transport.probe).toHaveBeenCalledOnce()
+            return {running}
+        }
+
+        it("sweeps only after the tick in flight has settled, and delivers that probe's result", async () => {
+            const order: string[] = []
+            const ctx = createJob(async () => {
+                order.push("sweep")
+                return 1
+            })
+            ctx.bus.emit.mockImplementation(() => {
+                order.push("emit")
+            })
+            ctx.transport.probe.mockImplementation(
+                () => new Promise<ProbeObservation>((resolve) => setTimeout(() => resolve(OBSERVATION), 500)),
+            )
+            const {running} = await startProbe(ctx)
+
+            const stopped = ctx.job.stop()
+            await vi.advanceTimersByTimeAsync(499)
+            expect(ctx.transport.sweepStaleAttachments).not.toHaveBeenCalled()
+            await vi.advanceTimersByTimeAsync(1)
+            await Promise.all([running, stopped])
+
+            expect(order).toEqual(["emit", "sweep"])
+            expect(ctx.bus.emit).toHaveBeenCalledExactlyOnceWith("service.probe_completed", {
+                stackId: "app",
+                serviceName: "web",
+                containerId: "c1",
+                containerStartedAt: OBSERVATION.containerStartedAt,
+                outcome: OBSERVATION.outcome,
+            })
+        })
+
+        it("gives up on a probe that never settles at SHUTDOWN_DRAIN_MS, sweeps, and discards its late result", async () => {
+            const late = deferredObservation()
+            const ctx = createJob()
+            ctx.transport.probe.mockImplementation(() => late.promise)
+            const {running} = await startProbe(ctx)
+
+            const stopped = ctx.job.stop()
+            await vi.advanceTimersByTimeAsync(SHUTDOWN_DRAIN_MS - 1)
+            expect(ctx.transport.sweepStaleAttachments).not.toHaveBeenCalled()
+            await vi.advanceTimersByTimeAsync(1)
+            await stopped
+            expect(ctx.transport.sweepStaleAttachments).toHaveBeenCalledOnce()
+
+            // The sweep just detached its network, so this failure is an artefact of shutdown.
+            late.resolve({containerStartedAt: null, outcome: {ok: false, reason: {kind: "network-unreachable"}}})
+            await running
+
+            expect(ctx.bus.emit).not.toHaveBeenCalled()
+        })
+
+        it("starts no queued probe once stop() has begun", async () => {
+            const late = deferredObservation()
+            const stacks = Array.from(
+                {length: 9},
+                (_unused, index): ProbeJobStack => ({
+                    id: `app${index}`,
+                    status: "RUNNING",
+                    services: [{serviceName: "web", containerId: `c${index}`, containerState: "running"}],
+                }),
+            )
+            const ctx = createJob(async () => 0, stacks)
+            ctx.transport.probe.mockImplementation(() => late.promise)
+
+            await ctx.tick()
+            ctx.clock.now = T0 + PROBE_INTERVAL_MS
+            const running = ctx.tick()
+            await vi.advanceTimersByTimeAsync(0)
+            expect(ctx.transport.probe).toHaveBeenCalledTimes(8)
+
+            const stopped = ctx.job.stop()
+            await vi.advanceTimersByTimeAsync(SHUTDOWN_DRAIN_MS)
+            await stopped
+            late.resolve(OBSERVATION)
+            await running
+
+            expect(ctx.transport.probe).toHaveBeenCalledTimes(8)
+        })
+
+        it("ignores a tick that starts after stop() without listing stacks", async () => {
+            const ctx = createJob()
+            await ctx.job.stop()
+            ctx.store.listStacks.mockClear()
+
+            await ctx.tick()
+
+            expect(ctx.store.listStacks).not.toHaveBeenCalled()
+        })
+
+        it("returns the same wind-down for a second stop(): the sweep runs once and both calls resolve", async () => {
+            const ctx = createJob()
+
+            const first = ctx.job.stop()
+            const second = ctx.job.stop()
+            await Promise.all([first, second])
+
+            expect(second).toBe(first)
+            expect(ctx.transport.sweepStaleAttachments).toHaveBeenCalledOnce()
+        })
+
+        it("re-arms the job on start() after stop(): a tick probes again", async () => {
+            const ctx = createJob()
+            await ctx.job.stop()
+
+            await ctx.job.start()
+            try {
+                await ctx.tick()
+                ctx.clock.now = T0 + probeStaggerOffsetMs("app/web")
+                await ctx.tick()
+
+                expect(ctx.transport.probe).toHaveBeenCalledOnce()
+                expect(ctx.bus.emit).toHaveBeenCalledWith(
+                    "service.probe_completed",
+                    expect.objectContaining({containerId: "c1"}),
+                )
+            } finally {
+                await ctx.job.stop()
+            }
+        })
+
+        it("delivers results again after a start() that follows a stop() that gave up on a probe", async () => {
+            const late = deferredObservation()
+            const ctx = createJob()
+            ctx.transport.probe.mockImplementationOnce(() => late.promise)
+            const {running} = await startProbe(ctx)
+            const stopped = ctx.job.stop()
+            await vi.advanceTimersByTimeAsync(SHUTDOWN_DRAIN_MS)
+            await stopped
+            late.resolve(OBSERVATION)
+            await running
+
+            await ctx.job.start()
+            try {
+                ctx.clock.now += PROBE_INTERVAL_MS
+                await ctx.tick()
+
+                expect(ctx.bus.emit).toHaveBeenCalledExactlyOnceWith(
+                    "service.probe_completed",
+                    expect.objectContaining({containerId: "c1"}),
+                )
+            } finally {
+                await ctx.job.stop()
+            }
         })
     })
 
