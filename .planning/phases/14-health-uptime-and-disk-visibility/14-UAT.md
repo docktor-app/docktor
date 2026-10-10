@@ -1,9 +1,9 @@
 ---
-status: diagnosed
+status: complete
 phase: 14-health-uptime-and-disk-visibility
 source: [14-VERIFICATION.md]
 started: 2026-10-09T09:10:00Z
-updated: 2026-10-10T07:29:08.977Z
+updated: 2026-10-10T09:25:31.447Z
 ---
 
 ## Current Test
@@ -57,7 +57,9 @@ blocked: 0
 
 - gap_id: G-14-1
   truth: "A daemon stalled long enough for 3 consecutive failed probes (~70-100s) yields an unhealthy history entry and probing resumes on recovery (amended per 14-20)"
-  status: failed
+  status: resolved
+  resolved_by: 14-20-PLAN
+  resolved_at: 2026-10-10
   reason: "User reported: detection and recovery pass; no history entry recorded (DB writes fail while dockerd is frozen: docktor-db unresolvable, EAI_AGAIN)"
   severity: major
   test: 1
@@ -77,7 +79,9 @@ blocked: 0
   debug_session: ".planning/debug/g-14-1-stalled-dockerd-no-health-history.md"
 - gap_id: G-14-1a
   truth: "Docktor restarts cleanly after stopping while attached to a probe network that is subsequently removed (startup sweep gets to run)"
-  status: failed
+  status: resolved
+  resolved_by: 14-19-PLAN
+  resolved_at: 2026-10-10
   reason: "User reported: Docker refuses to start the container (network test-network not found); sweep never runs; restart: unless-stopped doesn't help"
   severity: major
   test: 1
@@ -98,7 +102,9 @@ blocked: 0
   debug_session: ".planning/debug/probe-attach-blocks-restart.md"
 - gap_id: G-14-1b
   truth: "A frozen dockerd does not block Docktor beyond the 10s Docker-call deadlines"
-  status: failed
+  status: resolved
+  resolved_by: 14-20-PLAN
+  resolved_at: 2026-10-10
   reason: "User reported (unconfirmed): Node writes logs to the container's log pipe synchronously; once the pipe fills, Docktor blocks, defeating the 10s limits"
   severity: major
   test: 1
@@ -115,7 +121,9 @@ blocked: 0
   debug_session: ".planning/debug/g-14-1-stalled-dockerd-no-health-history.md"
 - gap_id: G-14-2
   truth: "Health history message wraps inside the h-48 ScrollArea without horizontal overflow, with the status transition intact and readable rows"
-  status: failed
+  status: resolved
+  resolved_by: 14-18-PLAN
+  resolved_at: 2026-10-10
   reason: "User reported: it wraps, but also the healthy->unhealthy is wrapped. For mobile, add some spaces between the rows. the rest looks good."
   severity: minor
   test: 2
