@@ -56,7 +56,7 @@ blocked: 0
 ## Gaps
 
 - gap_id: G-14-1
-  truth: "A daemon stalled >10s yields a recorded network-unreachable probe and probing resumes on recovery"
+  truth: "A daemon stalled long enough for 3 consecutive failed probes (~70-100s) yields an unhealthy history entry and probing resumes on recovery (amended per 14-20)"
   status: failed
   reason: "User reported: detection and recovery pass; no history entry recorded (DB writes fail while dockerd is frozen: docktor-db unresolvable, EAI_AGAIN)"
   severity: major
