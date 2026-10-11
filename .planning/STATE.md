@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 milestone: v0.1.0
 current_phase: 16
 current_phase_name: Release Readiness for v0.1.0
-current_plan: 3
+current_plan: 4
 status: "Phases 1-13 complete (v0.1.0 scope: ROADMAP Phases 10-16, sourced from GitHub issues in docktor-app/docktor; product tracking lives in GitHub Issues). Phase 14 (Health, Uptime and Disk Visibility): all 14 plans executed, code review done, verification found gaps (9/13 truths) — CR-01 probe Docker calls lack timeouts, WR-01/WR-05 probe results not tied to current container. Gap-closure plan (14-15) being created via /gsd-plan-phase 14 --gaps. Phases 15 (Access Hardening) and 16 (Release Readiness) not started."
-stopped_at: Completed 16-02-PLAN.md
-last_updated: "2026-10-11T21:08:36.703Z"
-state_head: 1475f434ae413bf92e33e7ee256e354a8ed8c527
+stopped_at: "Completed 16-04-PLAN.md (status partial: action SHA pins pending)"
+last_updated: "2026-10-11T21:12:21.628Z"
+state_head: 177bab0e91a7070cd20988a4a47053aa56f7d15d
 progress:
   total_phases: 17
   completed_phases: 9
   total_plans: 166
-  completed_plans: 157
+  completed_plans: 158
 milestone_name: milestone
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-22)
 ## Current Position
 
 Phase: 16 (Release Readiness for v0.1.0) — EXECUTING
-Current Plan: 3
+Current Plan: 4
 Total Plans in Phase: 10
 
 ## Performance Metrics
@@ -191,6 +191,7 @@ Total Plans in Phase: 10
 | Phase 14 P20 | 6 min | 3 tasks | 13 files |
 | Phase 16 P01 | 9min | 2 tasks | 15 files |
 | Phase 16 P02 | 15min | 3 tasks | 11 files |
+| Phase 16 P04 | 14 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -471,6 +472,7 @@ Recent decisions affecting current work:
 - [Phase 16]: [Phase 16-01]: Blocking env set stays exactly D-10; malformed-but-present DATABASE_URL/BETTER_AUTH_URL only warn
 - [Phase 16]: [Phase 16-01]: index.ts loads app.js via dynamic import after the env check; layering test walks static imports to keep lib/auth.ts unreachable
 - [Phase 16]: [Phase 16-02]: MIT license confirmed (Copyright (c) 2026 Docktor contributors, no CLA/DCO); docs links use interim GitHub style (DOCS_BASE_URL https://github.com/docktor-app/docks/blob/main); security/CoC contact info@docktor.app; quickstart ref v0.1.0
+- [Phase 16]: 16-04: publish gate is reusable workflow_call (call-suppress-zero); bare major tag suppressed while major is 0; latest only on non-prerelease v* tags
 
 ### Quick Tasks Completed
 
@@ -530,7 +532,8 @@ Recent decisions affecting current work:
 - [Phase 09, live UAT 2026-09-19] Also found and fixed: `server/src/lib/auth.ts`'s `trustedOrigins` never read the Settings/wizard "Base URL" field, so setting it through the setup wizard silently did nothing — users following the documented setup flow hit an unexplained "Invalid origin" login failure on a real deployment. Fixed in commit a5bfeaf to merge BETTER_AUTH_URL (env) and the Settings baseUrl (DB) dynamically, per-request, no restart required. Unit tested (server/test/unit/lib/auth.test.ts).
 - [Phase 09, live UAT 2026-09-19] Also found: `.env.example` never documents `POSTGRES_PASSWORD` even though `docker-compose.yml`'s own comment says to set it there and the `db` container refuses to boot without it — not yet filed as a todo or fixed; worth a follow-up.
 - [Phase 12-09] New Playwright templates.spec.ts (tracer + multi-variant dialog + no-match search + repo-sync-error/Retry) was written per plan but not executed in this session per the orchestrator's resource_constraint (no Playwright/integration suites on this host). All unit `<verify>` commands and tsc -b ran clean (31/31 tests). Tracked as WINDOWS.md entry #19 — a developer/CI must run PLAYWRIGHT_PORT=5215 yarn workspace @docktor/client test:integration templates.spec.ts to confirm these live.
-- [Phase 08-03] yarn workspace @docktor/client test:unit showed 5 unrelated test files (proxy-tab.test.tsx, certificates-card.test.tsx, service-upgrade-dialog.test.tsx, stack-actions.test.tsx, stack-detail-page.test.tsx) timing out at 15000ms under severe host contention (uptime load avg 86, swap exhausted) — same pre-existing flake class as Phase 06-05/08-01; none touch this plans scope; this plans own two test files pass 28/28 in isolation. A human should re-confirm the full suite on an unloaded host.
+- [Phase 08-03] yarn workspace @docktor/client test:unit showed 5 unrelated test files (proxy-tab.test.tsx, certificates-card.test.tsx, service-upgrade-dialog.test.tsx, stack-actions.test.tsx, stack-detail-page.test.tsx) timing out at 15000ms under severe host contention (uptime load avg 86, swap exhausted) — same pre-existing flake class as Phase 06-05/08-01; touch this plans scope; this plans own two test files pass 28/28 in isolation. A human should re-confirm the full suite on an unloaded host.
+- 16-04: GitHub Actions in publish.yml/ci.yml are on major tags (PIN-PENDING); resolve full commit SHAs before the 16-09 release candidate (gh api was denied in-session)
 
 ### Roadmap Evolution
 
@@ -543,6 +546,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-10-11T21:08:36.213Z
-Stopped at: Completed 16-02-PLAN.md
+Last session: 2026-10-11T21:12:21.058Z
+Stopped at: Completed 16-04-PLAN.md (status partial: action SHA pins pending)
 Resume file: None
