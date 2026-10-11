@@ -42,10 +42,12 @@ export default defineConfig({
             // device descriptor (only Chromium browsers are installed in
             // this environment) and this project matches mobile.spec.ts
             // exclusively, so the existing desktop suite's runtime and
-            // assertions are unchanged.
+            // assertions are unchanged. two-factor.spec.ts also runs here for
+            // its phone-width dialog backstop (Phase 15, UI-SPEC); the spec
+            // skips its desktop journeys on a mobile device.
             name: "mobile-chromium",
             use: {...devices["Pixel 7"]},
-            testMatch: /mobile\.spec\.ts/,
+            testMatch: /(mobile|two-factor)\.spec\.ts/,
         },
     ],
     webServer: {
