@@ -1,7 +1,19 @@
 import {apiFetch} from "./api";
-import type {ComposeCheckSettings, GeneralSettings, GeneralSettingsUpdate, HealthSettings} from "@docktor/shared";
+import type {
+    ComposeCheckSettings,
+    EnvironmentReport,
+    GeneralSettings,
+    GeneralSettingsUpdate,
+    HealthSettings,
+} from "@docktor/shared";
 
 export type {GeneralSettings, GeneralSettingsUpdate};
+
+// #7/D-13: the boot-time environment warnings, computed once by the server and
+// served by GET /api/settings/environment (server/src/routes/settings.ts).
+export async function getEnvironmentReport(): Promise<EnvironmentReport> {
+    return apiFetch<EnvironmentReport>("/api/settings/environment");
+}
 
 export async function getGeneralSettings(): Promise<GeneralSettings> {
     return apiFetch<GeneralSettings>("/api/settings/general");

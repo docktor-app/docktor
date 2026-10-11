@@ -115,6 +115,17 @@ export const test = base.extend<{_coverage: void; _apiRouteGuard: void}>({
                 }),
             );
 
+            // RESEARCH Pitfall 4 (16-03): AppLayout fetches the environment warnings
+            // on every authenticated page; default to none. environment-banner.spec.ts
+            // overrides it.
+            await page.route("**/api/settings/environment", (route) =>
+                route.fulfill({
+                    status: 200,
+                    contentType: "application/json",
+                    body: JSON.stringify({warnings: []}),
+                }),
+            );
+
             await use();
 
             if (unstubbed.length > 0) {
