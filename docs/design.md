@@ -28,7 +28,7 @@ v0.1.0 ships these feature areas:
 - **Templates** — create a stack from templates read out of git repositories (see [Templates](#templates)).
 - **Live status and logs** — event-driven container state with a reconciliation poll, per-service SSE log streaming.
 - **Update checks** — registry polling for newer image versions with per-service upgrade.
-- **Backups and restore** — restic repositories (local, SFTP, S3), per-stack schedules and retention, snapshot restore.
+- **Backups and restore** — per-stack local restic repositories (SFTP and S3 settings exist but are not used as a destination in v0.1.0), per-stack schedules and retention, snapshot restore.
 - **Proxy and TLS** — a Docktor-managed `nginx-proxy` + `acme-companion` stack, per-service domains, Let's Encrypt or
   uploaded certificates.
 - **Brownfield import** — scan the host for existing compose projects, adopt them in place or migrate them fully.
@@ -797,8 +797,8 @@ Each trigger type can be individually enabled or disabled in Settings (`notify.s
 **What gets backed up:** The entire stack directory (`docker-compose.yml`, `.env`, `volumes/`), excluding `logs/` and
 `backups/`. Absolute-path volumes outside the stack are not included (flagged at edit time by the compose checks).
 
-**Engine:** Restic — encrypted, deduplicated, versioned snapshots. Targets: local directory, SFTP, S3-compatible
-storage. Snapshot metadata stored in the database. The restic binary is pinned and checksum-verified in the image.
+**Engine:** Restic — encrypted, deduplicated, versioned snapshots. Target in v0.1.0: a per-stack local directory (SFTP and S3-compatible settings exist but are not yet used as a destination)
+Snapshot metadata stored in the database. The restic binary is pinned and checksum-verified in the image.
 
 **Consistency:** Backups run against the live stack without stopping it. Each stack can define an optional shell pre-hook
 and post-hook, run from the stack directory, for application-aware backups (e.g., `pg_dump` before backup).

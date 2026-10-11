@@ -12,7 +12,7 @@ Docktor is a browser UI to deploy, update, monitor and back up Docker Compose ap
 - **Templates**: start Nextcloud, Vaultwarden, Gitea and other apps from a ready-made template.
 - **Live status and logs**: container state and service logs stream into the page as they change.
 - **Update checks**: Docktor watches the registries for newer image tags and upgrades a service when you ask.
-- **Backups with restic**: scheduled and manual backups to a local, SFTP or S3 repository, with restore.
+- **Backups with restic**: scheduled and manual backups into a per-stack local repository, with restore.
 - **Proxy and TLS**: assign domains to services, with automatic Let's Encrypt certificates or your own.
 - **Health, uptime and storage**: HTTP health probes with uptime and incidents, and disk usage per stack.
 - **Account security**: two-factor authentication, recovery codes and sign-in rate limiting.
