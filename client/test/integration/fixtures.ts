@@ -104,6 +104,17 @@ export const test = base.extend<{_coverage: void; _apiRouteGuard: void}>({
                 }),
             );
 
+            // D-01: ProtectedRoute fetches the account security status for every signed-in
+            // visit (forced-enrollment redirect). Default to "not required" so existing specs
+            // stay green; two-factor.spec.ts overrides this route per test.
+            await page.route("**/api/account/security", (route) =>
+                route.fulfill({
+                    status: 200,
+                    contentType: "application/json",
+                    body: JSON.stringify({twoFactorEnabled: false, mandatory: false, enrollmentRequired: false}),
+                }),
+            );
+
             await use();
 
             if (unstubbed.length > 0) {

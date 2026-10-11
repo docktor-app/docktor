@@ -73,8 +73,17 @@ async function mockBackupDefaults(page: Page) {
     );
 }
 
-/** POST /api/setup/step1 + the better-auth sign-in call triggered by auto-login. */
-async function mockStep1(page: Page) {
+/**
+ * POST /api/setup/step1 + the better-auth sign-in call triggered by auto-login, plus the
+ * GET /api/auth/get-session the auto-login now awaits to refresh the session store (G-15-14).
+ * Returns a getter for the number of get-session requests seen so far.
+ */
+async function mockStep1(page: Page): Promise<() => number> {
+    let getSessionRequests = 0;
+    await page.route("**/api/auth/get-session", (route) => {
+        getSessionRequests += 1;
+        return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(mockAuthSession)});
+    });
     await page.route("**/api/setup/step1", (route) =>
         route.fulfill({
             status: 200,
@@ -85,6 +94,7 @@ async function mockStep1(page: Page) {
     await page.route("**/api/auth/sign-in/email", (route) =>
         route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(mockAuthSession)}),
     );
+    return () => getSessionRequests;
 }
 
 async function mockStep2(page: Page) {
@@ -186,7 +196,7 @@ test.describe("Setup Wizard", () => {
         test("should create admin account and auto-login on step 1 submit", async ({page}) => {
             // WIZ-02: Account creation
             await mockSetupIncomplete(page);
-            await mockStep1(page);
+            const getSessionRequests = await mockStep1(page);
             await page.goto("/setup");
 
             await page.getByLabel(/email/i).fill("admin@example.com");
@@ -194,6 +204,7 @@ test.describe("Setup Wizard", () => {
             await page.getByRole("button", {name: "Next"}).click();
 
             await expect(page.getByRole("button", {name: /step 2: settings/i})).toHaveAttribute("aria-current", "step");
+            expect(getSessionRequests()).toBeGreaterThan(0);
             await expect(page.getByText("Account created successfully")).toBeVisible();
         });
 

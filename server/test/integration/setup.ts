@@ -1,5 +1,7 @@
 import {PostgreSqlContainer, type StartedPostgreSqlContainer} from "@testcontainers/postgresql";
 import {execFileSync} from "node:child_process";
+import {randomUUID} from "node:crypto";
+import {hashPassword} from "better-auth/crypto";
 import {buildApp} from "../../src/app.js";
 import type {FastifyInstance} from "fastify";
 import path from "node:path";
@@ -7,6 +9,18 @@ import {fileURLToPath} from "node:url";
 import {PrismaPg} from "@prisma/adapter-pg";
 import {PrismaClient} from "../../src/generated/prisma/client.js";
 import {resolvePrismaCliEntrypoint} from "../../src/lib/prisma-cli.js";
+import {buildTrustedOrigins} from "../../src/lib/auth.js";
+import {totpFromUri} from "../helpers/totp.js";
+
+type InjectResponse = Awaited<ReturnType<FastifyInstance["inject"]>>;
+
+/** The origin better-auth trusts in tests; cookie-bearing /api/auth requests must carry it. */
+export const TEST_ORIGIN = buildTrustedOrigins(process.env.BETTER_AUTH_URL, null)[0];
+
+/** Cookie names better-auth 1.4.18 uses over plain http (no `__Secure-` prefix). */
+export const SESSION_COOKIE_NAME = "better-auth.session_token";
+export const TWO_FACTOR_COOKIE_NAME = "better-auth.two_factor";
+export const TRUST_DEVICE_COOKIE_NAME = "better-auth.trust_device";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const prismaConfigPath = path.resolve(__dirname, "../../prisma/prisma.config.ts");
@@ -132,10 +146,12 @@ export async function cleanDatabase(): Promise<void> {
     await p.account.deleteMany();
     await p.verification.deleteMany();
     await p.setting.deleteMany();
+    await p.twoFactor.deleteMany();
+    await p.rateLimit.deleteMany();
     await p.user.deleteMany();
 }
 
-export async function createTestUser(): Promise<{cookie: string}> {
+export async function createTestUser(): Promise<{cookie: string; email: string; password: string}> {
     const email = `test-${Date.now()}@example.com`;
     const password = "TestPassword123!";
 
@@ -151,16 +167,104 @@ export async function createTestUser(): Promise<{cookie: string}> {
     });
 
     // Extract session cookie from the sign-up response
-    const setCookieHeaders = signupRes.headers["set-cookie"];
-    const cookies = Array.isArray(setCookieHeaders) ? setCookieHeaders : [setCookieHeaders];
-    const sessionCookie = cookies
-        .filter(Boolean)
-        .map((c) => c!.split(";")[0])
-        .find((c) => c.startsWith("better-auth.session_token="));
+    const sessionCookie = extractCookie(signupRes, SESSION_COOKIE_NAME);
 
     if (!sessionCookie) {
         throw new Error(`Failed to create test user (status: ${signupRes.statusCode}): ${signupRes.body}`);
     }
 
-    return {cookie: sessionCookie};
+    return {cookie: sessionCookie, email, password};
+}
+
+/**
+ * Inserts a second user with a credential account directly through Prisma:
+ * self-registration is blocked once a user exists, so sign-up cannot create
+ * one. Test-only; production code never writes users or password hashes this
+ * way. Sign in with `signIn(email, password)` afterwards.
+ */
+export async function createAdditionalUser(email: string, password: string): Promise<{id: string}> {
+    const id = randomUUID();
+    const p = getPrisma();
+    await p.user.create({data: {id, name: email.split("@")[0], email, emailVerified: false}});
+    await p.account.create({
+        data: {
+            id: randomUUID(),
+            accountId: id,
+            providerId: "credential",
+            userId: id,
+            password: await hashPassword(password),
+        },
+    });
+    return {id};
+}
+
+/** Every raw `Set-Cookie` header value of a response (attributes included). */
+export function getSetCookies(res: Pick<InjectResponse, "headers">): string[] {
+    const raw = res.headers["set-cookie"];
+    if (Array.isArray(raw)) return raw;
+    return raw ? [raw] : [];
+}
+
+/**
+ * Returns the `name=value` pair a response set for the cookie `name`, or null
+ * when it did not set it or cleared it (empty value). When the same cookie
+ * appears more than once the last one wins, as in a browser.
+ */
+export function extractCookie(res: Pick<InjectResponse, "headers">, name: string): string | null {
+    let found: string | null = null;
+    for (const entry of getSetCookies(res)) {
+        const pair = entry.split(";")[0];
+        if (pair.startsWith(`${name}=`)) found = pair;
+    }
+    return found === null || found === `${name}=` ? null : found;
+}
+
+/** POST /api/auth/sign-in/email as a browser on the trusted origin would. */
+export function signIn(email: string, password: string, extraCookies: string[] = []): Promise<InjectResponse> {
+    return app.inject({
+        method: "POST",
+        url: "/api/auth/sign-in/email",
+        headers: {
+            origin: TEST_ORIGIN,
+            ...(extraCookies.length > 0 ? {cookie: extraCookies.join("; ")} : {}),
+        },
+        payload: {email, password},
+    });
+}
+
+/**
+ * Enrolls the signed-in user in TOTP the way the Account page does: enable
+ * with the password, then confirm with the first code. Follows the re-issued
+ * session cookie (the confirming verify-totp swaps the session). Never log
+ * the returned URI or recovery codes.
+ */
+export async function enrollTwoFactor(
+    cookie: string,
+    password: string,
+): Promise<{cookie: string; totpURI: string; backupCodes: string[]}> {
+    const headers = {origin: TEST_ORIGIN};
+
+    const enableRes = await app.inject({
+        method: "POST",
+        url: "/api/auth/two-factor/enable",
+        headers: {...headers, cookie},
+        payload: {password},
+    });
+    if (enableRes.statusCode !== 200) {
+        throw new Error(`enrollTwoFactor(): enable failed with status ${enableRes.statusCode}`);
+    }
+    const {totpURI, backupCodes} = enableRes.json<{totpURI: string; backupCodes: string[]}>();
+    const afterEnable = extractCookie(enableRes, SESSION_COOKIE_NAME) ?? cookie;
+
+    const verifyRes = await app.inject({
+        method: "POST",
+        url: "/api/auth/two-factor/verify-totp",
+        headers: {...headers, cookie: afterEnable},
+        payload: {code: totpFromUri(totpURI)},
+    });
+    if (verifyRes.statusCode !== 200) {
+        throw new Error(`enrollTwoFactor(): verify-totp failed with status ${verifyRes.statusCode}`);
+    }
+
+    return {cookie: extractCookie(verifyRes, SESSION_COOKIE_NAME) ?? afterEnable, totpURI, backupCodes};
 }

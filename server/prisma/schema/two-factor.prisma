@@ -1,0 +1,11 @@
+// Issue #45: TOTP two-factor authentication. The shape mirrors the table that
+// better-auth's twoFactor plugin reads and writes through its Prisma adapter.
+// `secret` and `backupCodes` hold ciphertext encrypted with BETTER_AUTH_SECRET
+// (rotating that secret invalidates every enrolled factor).
+model TwoFactor {
+  id          String @id
+  secret      String
+  backupCodes String
+  userId      String @unique
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

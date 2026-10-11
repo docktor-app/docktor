@@ -39,6 +39,14 @@ async function mockBackupDefaults(page: Page) {
     );
 }
 
+/** Everything the Dashboard requests on load (stacks list plus the backup-defaults call). */
+async function mockDashboardData(page: Page) {
+    await page.route("**/api/stacks", (route) =>
+        route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify([])}),
+    );
+    await mockBackupDefaults(page);
+}
+
 test.describe("Authentication", () => {
     test.beforeEach(async ({page}) => {
         await mockSetupComplete(page);
@@ -99,7 +107,7 @@ test.describe("Authentication", () => {
     });
 
     test("login with valid credentials redirects to dashboard", async ({page}) => {
-        await mockBackupDefaults(page);
+        await mockDashboardData(page);
         let hasSession = false;
 
         await page.route("**/api/auth/get-session", (route) => {
@@ -130,6 +138,44 @@ test.describe("Authentication", () => {
         await page.getByRole("button", {name: /sign in/i}).click();
 
         await expect(page).toHaveURL("/", {timeout: 10_000});
+    });
+
+    test("signs in once from a signed-out visit to / and stays on the dashboard (G-15-14)", async ({page}) => {
+        await mockDashboardData(page);
+        let hasSession = false;
+        let signInCalls = 0;
+
+        await page.route("**/api/auth/get-session", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify(hasSession ? mockSession : null),
+            }),
+        );
+        await page.route("**/api/auth/sign-in/email", (route) => {
+            signInCalls += 1;
+            hasSession = true;
+            return route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({user: mockUser, session: {id: "sess-1", userId: "1"}}),
+            });
+        });
+
+        // The signed-out visit to / primes the stale signed-out session store that
+        // the /login-first journeys never created.
+        await page.goto("/");
+        await expect(page).toHaveURL(/\/login$/);
+        await expect(page.getByText("Sign in to Docktor")).toBeVisible();
+
+        await page.getByLabel(/email/i).fill("test@example.com");
+        await page.getByLabel(/password/i).fill("TestPassword123!");
+        await page.getByRole("button", {name: /sign in/i}).click();
+
+        await expect(page.getByRole("heading", {name: "Dashboard", level: 1})).toBeVisible({timeout: 10_000});
+        await expect(page).toHaveURL("/");
+        await expect(page.getByText("Sign in to Docktor")).toHaveCount(0);
+        expect(signInCalls).toBe(1);
     });
 
     test("login with invalid credentials shows error", async ({page}) => {

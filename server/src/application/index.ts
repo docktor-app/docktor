@@ -16,12 +16,14 @@ import {
     stackDiskUsageRepository,
     statusLogRepository,
     stackIncidentRepository,
+    accountSecurityRepository,
 } from "../repositories/index.js";
 import {StackService} from "./stack-service.js";
 import {ComposeReviewService} from "./compose-review-service.js";
 import {PortConflictService} from "./port-conflict-service.js";
 import {DeployPreflightService} from "./deploy-preflight-service.js";
 import {SettingsService} from "./settings-service.js";
+import {AccountSecurityService} from "./account-security-service.js";
 import {NotificationService} from "./notification-service.js";
 import {ResticExecutor} from "../infrastructure/restic-executor.js";
 import {BackupService} from "./backup-service.js";
@@ -58,6 +60,10 @@ const docker = new DockerExecutor();
 
 export {settingsRepository};
 export const settingsService = new SettingsService(settingsRepository);
+
+// #45/D-02/D-03: the instance-wide two-factor requirement and the per-user
+// status behind /api/account/security.
+export const accountSecurityService = new AccountSecurityService(settingsRepository, accountSecurityRepository);
 
 // Issue #18/D-01: constructed before stackService since it's one of
 // stackService's constructor dependencies (the pre-write confirmation

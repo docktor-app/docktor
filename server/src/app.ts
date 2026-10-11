@@ -19,11 +19,18 @@ import certificateRoutes from "./routes/certificates.js";
 import templateRoutes from "./routes/templates.js";
 import healthRoutes from "./routes/health.js";
 import storageRoutes from "./routes/storage.js";
+import accountRoutes from "./routes/account.js";
 import {AppError} from "./lib/errors.js";
+import {parseTrustProxy} from "./lib/auth-config.js";
+import {resolveTrustedOrigins} from "./lib/auth.js";
+import {createOriginGuard} from "./lib/origin-guard.js";
 import {startJobs, stopJobs} from "./jobs/index.js";
 import {prisma} from "./lib/db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// The Vite dev server; the only cross-origin caller in development, for CORS and the Origin guard.
+const DEV_CLIENT_ORIGIN = "http://localhost:5173";
 
 // WR-01: shape of a single validation issue attached to FastifyError by
 // fastify-type-provider-zod (Zod-style `path`) or ajv (`instancePath`).
@@ -53,17 +60,29 @@ export async function buildApp() {
     const app = Fastify({
         logger: envToLogger[env] ?? true,
         disableRequestLogging: true,
+        // D-13: default off, so request.ip is the socket address and a forged
+        // X-Forwarded-For cannot pick a rate-limit bucket. Operators behind a
+        // reverse proxy opt in with TRUST_PROXY (hop count 1 for one proxy).
+        trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
     }).withTypeProvider<ZodTypeProvider>();
 
     app.setValidatorCompiler(validatorCompiler);
     app.setSerializerCompiler(serializerCompiler);
 
     await app.register(fastifyCors, {
-        origin: env === "development" ? "http://localhost:5173" : false,
+        origin: env === "development" ? DEV_CLIENT_ORIGIN : false,
         credentials: true,
     });
 
     await app.register(fastifyCookie);
+
+    // #46/D-14: refuse cross-origin state changes before any route, auth or
+    // first-run code runs (registered first so a rejected request does no DB
+    // work beyond the trusted-origin lookup).
+    app.addHook("onRequest", createOriginGuard({
+        resolveTrustedOrigins,
+        extraTrustedOrigins: env === "development" ? [DEV_CLIENT_ORIGIN] : [],
+    }));
 
     // First-run detection: redirect to setup wizard if no users exist
     app.addHook("onRequest", async (request, reply) => {
@@ -95,7 +114,9 @@ export async function buildApp() {
     // Global error handler for AppError subclasses
     app.setErrorHandler((error: FastifyError | AppError, _request, reply) => {
         if (error instanceof AppError) {
-            return reply.status(error.statusCode).send({error: error.message});
+            return reply
+                .status(error.statusCode)
+                .send(error.code === undefined ? {error: error.message} : {error: error.message, code: error.code});
         }
         // Zod validation errors (from type-provider-zod validator compiler)
         if (error.statusCode === 400 && "validation" in error) {
@@ -137,6 +158,7 @@ export async function buildApp() {
     await app.register(templateRoutes);
     await app.register(healthRoutes);
     await app.register(storageRoutes);
+    await app.register(accountRoutes);
 
     // Jobs: start/stop with server lifecycle (skipped in test environment)
     if (process.env.NODE_ENV !== "test") {

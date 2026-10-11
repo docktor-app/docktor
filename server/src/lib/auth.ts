@@ -1,14 +1,27 @@
 import {betterAuth} from "better-auth";
 import {prismaAdapter} from "better-auth/adapters/prisma";
 import {APIError, createAuthMiddleware} from "better-auth/api";
+import {twoFactor} from "better-auth/plugins";
 import {prisma} from "./db.js";
+import {
+    buildRateLimitConfig,
+    CLIENT_IP_HEADER,
+    resolveUseSecureCookies,
+    TWO_FACTOR_DISABLED_PATHS,
+    TWO_FACTOR_TRUST_DEVICE_MAX_AGE_SECONDS,
+} from "./auth-config.js";
+import {AccountSecurityRepository} from "../repositories/account-security-repository.js";
 import {SettingsRepository, SETTING_KEYS} from "../repositories/settings-repository.js";
+import {createTwoFactorAfterHook, createTwoFactorBeforeHook} from "./two-factor-hooks.js";
+import {parseMandatoryFlag, REQUIRE_TWO_FACTOR_SETTING_KEY} from "../domain/two-factor-policy.js";
 
 // A local instance, not the application/index.ts singleton — that module
 // eventually imports this file (via onboarding-service.ts), so importing it
 // here would be circular. SettingsRepository is a stateless wrapper around
 // the shared `prisma` client, so a second instance is harmless.
 const settingsRepository = new SettingsRepository();
+// Same reasoning for the trust-device purge used by the two-factor hooks.
+const accountSecurityRepository = new AccountSecurityRepository();
 
 const DEFAULT_TRUSTED_ORIGIN = "http://localhost:5173";
 
@@ -43,6 +56,21 @@ export async function resolveTrustedOrigins(): Promise<string[]> {
     return buildTrustedOrigins(process.env.BETTER_AUTH_URL, settingBaseUrl);
 }
 
+/**
+ * D-03: whether the instance requires two-factor for every user. Read on every
+ * gated request (no cache). Errors are NOT swallowed, unlike
+ * resolveTrustedOrigins: the enrollment gate must fail closed.
+ */
+export async function isTwoFactorMandatory(): Promise<boolean> {
+    return parseMandatoryFlag(await settingsRepository.get(REQUIRE_TWO_FACTOR_SETTING_KEY));
+}
+
+const twoFactorHookDeps = {
+    isMandatory: isTwoFactorMandatory,
+    deleteTrustDeviceRecords: (userId: string): Promise<number> => accountSecurityRepository.deleteTrustDeviceRecords(userId),
+};
+const twoFactorBeforeHook = createTwoFactorBeforeHook(twoFactorHookDeps);
+
 export const auth = betterAuth({
     database: prismaAdapter(prisma, {
         provider: "postgresql",
@@ -54,6 +82,36 @@ export const auth = betterAuth({
     emailAndPassword: {
         enabled: true,
     },
+    // #45: TOTP second factor with single-use recovery codes. Only the TOTP
+    // and recovery-code paths are used; the OTP endpoints are closed below.
+    plugins: [
+        twoFactor({
+            issuer: "Docktor",
+            trustDeviceMaxAge: TWO_FACTOR_TRUST_DEVICE_MAX_AGE_SECONDS,
+        }),
+    ],
+    disabledPaths: [...TWO_FACTOR_DISABLED_PATHS],
+    // NOTE: `session.cookieCache` is deliberately not configured and must stay
+    // off (GHSA-xg6x-h9c9-2m83): with it on, a revoked session would keep
+    // working until the cached cookie expired, which would defeat session
+    // revocation on 2FA changes.
+
+    // D-11/D-12: database-backed limiter, 5 attempts per 15 minutes on sign-in.
+    rateLimit: buildRateLimitConfig(),
+    advanced: {
+        // better-auth reads the client IP only from headers and skips rate
+        // limiting entirely when none is valid. Docktor therefore stamps a
+        // private header from Fastify's request.ip (routes/auth.ts) and tells
+        // better-auth to trust only that one.
+        ipAddress: {ipAddressHeaders: [CLIENT_IP_HEADER]},
+        // Explicit false: better-auth switches its origin check off under
+        // NODE_ENV=test unless told otherwise, which would make CSRF tests
+        // pass vacuously. Production behaviour is unchanged.
+        disableOriginCheck: false,
+        // D-15: Secure exactly when the configured base URL is https, never
+        // from NODE_ENV (see resolveUseSecureCookies).
+        useSecureCookies: resolveUseSecureCookies(process.env.BETTER_AUTH_URL),
+    },
     hooks: {
         // T-05-09/CR-01: self-registration via better-auth's own
         // sign-up-email endpoint must be blocked once at least one user
@@ -63,15 +121,25 @@ export const auth = betterAuth({
         // when the instance is empty. Scoped to this single path via
         // `ctx.path` so login/session/every other auth route is
         // unaffected.
+        //
+        // #45/D-10: the same hook then runs the two-factor guards (enable
+        // twice, disable while the requirement is on) and records the caller
+        // for the after hook, which signs out their other devices.
         before: createAuthMiddleware(async (ctx) => {
-            if (ctx.path !== "/sign-up/email") return;
-
-            const userCount = await prisma.user.count();
-            if (userCount > 0) {
-                throw new APIError("FORBIDDEN", {
-                    message: "Self-registration is disabled; setup has already been completed",
-                });
+            if (ctx.path === "/sign-up/email") {
+                const userCount = await prisma.user.count();
+                if (userCount > 0) {
+                    throw new APIError("FORBIDDEN", {
+                        message: "Self-registration is disabled; setup has already been completed",
+                    });
+                }
             }
+            await twoFactorBeforeHook(ctx);
         }),
+        after: createAuthMiddleware(createTwoFactorAfterHook(twoFactorHookDeps)),
     },
 });
+
+/** The signed-in user as better-auth returns it, including `twoFactorEnabled`. */
+export type AuthUser = typeof auth.$Infer.Session.user;
+export type AuthSession = typeof auth.$Infer.Session.session;

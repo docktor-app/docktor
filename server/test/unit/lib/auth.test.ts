@@ -1,5 +1,7 @@
 import {describe, expect, it} from "vitest";
-import {buildTrustedOrigins} from "../../../src/lib/auth.js";
+import type {BetterAuthOptions} from "better-auth";
+import {auth, buildTrustedOrigins} from "../../../src/lib/auth.js";
+import {CLIENT_IP_HEADER, TWO_FACTOR_DISABLED_PATHS} from "../../../src/lib/auth-config.js";
 
 describe("buildTrustedOrigins", () => {
     it("includes only the env URL when the Settings baseUrl is unset", () => {
@@ -31,5 +33,34 @@ describe("buildTrustedOrigins", () => {
 
     it("treats an empty-string Settings baseUrl as unset", () => {
         expect(buildTrustedOrigins("https://env.example.com", "")).toEqual(["https://env.example.com"]);
+    });
+});
+
+describe("auth rate limiting configuration (#46)", () => {
+    it("reads the client IP only from the private header Docktor stamps", () => {
+        expect(auth.options.advanced?.ipAddress?.ipAddressHeaders).toEqual([CLIENT_IP_HEADER]);
+    });
+
+    it("persists limiter counters in the database", () => {
+        expect(auth.options.rateLimit?.storage).toBe("database");
+    });
+});
+
+describe("auth two-factor configuration (#45)", () => {
+    it("registers the twoFactor plugin", () => {
+        expect(auth.options.plugins?.some((plugin) => plugin.id === "two-factor")).toBe(true);
+    });
+
+    it("keeps the origin check on in every environment, including NODE_ENV=test", () => {
+        expect(auth.options.advanced?.disableOriginCheck).toBe(false);
+    });
+
+    it("keeps the session cookie cache off so revoked sessions stop working immediately", () => {
+        const options: BetterAuthOptions = auth.options;
+        expect(options.session?.cookieCache?.enabled).not.toBe(true);
+    });
+
+    it("closes the endpoints Docktor does not support", () => {
+        expect(auth.options.disabledPaths).toEqual(expect.arrayContaining([...TWO_FACTOR_DISABLED_PATHS]));
     });
 });

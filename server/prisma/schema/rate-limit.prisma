@@ -1,0 +1,10 @@
+// Issue #46 / D-11: persistent counters for better-auth's rate limiter
+// (storage "database"), so a server restart cannot reset an attacker's budget.
+// `key` is the client IP plus the auth path; `lastRequest` is epoch milliseconds,
+// hence BigInt.
+model RateLimit {
+  id          String @id
+  key         String @unique
+  count       Int
+  lastRequest BigInt
+}

@@ -775,9 +775,10 @@ future project.
 |------------------------------|---------------------------------------------------------------------------------------------------|
 | Docker socket access         | Required for operation. Equivalent to root. Documented clearly in install guide.                  |
 | Host filesystem (brownfield) | Mounted read-only (`/:/host:ro`). Restrictive alternative: mount only specific scan paths.        |
-| Auth                         | Session-based auth via better-auth. Single user for MVP.                                          |
+| Auth                         | Session auth via better-auth. Optional or instance-wide mandatory TOTP 2FA with recovery codes. Database-backed rate limiting on auth endpoints. HttpOnly, SameSite=Lax cookies, Secure on https. |
 | HTTPS for UI                 | Docktor's own UI served behind the same Nginx/NPM proxy with TLS.                                |
-| CSRF                         | Fastify CSRF plugin enabled by default.                                                           |
+| CSRF                         | better-auth's origin check on `/api/auth/*`; Docktor's own Origin check on every other state-changing `/api` request (`server/src/lib/origin-guard.ts`); SameSite=Lax cookies; CORS off in production. No token layer. |
+| Password reset               | Not available; reset endpoints are disabled. Lost 2FA is reset on the server (`docs/deployment.md`). Email reset is tracked in [#79](https://github.com/docktor-app/docktor/issues/79). |
 | Secrets on disk              | `.env` files with `chmod 600`. Not stored in DB.                                                  |
 | Secrets in DB                | SMTP password, restic password, registry tokens stored AES-encrypted in Settings/Registry models. |
 | Secrets in backups           | Restic encryption at rest.                                                                        |

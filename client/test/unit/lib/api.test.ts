@@ -1,5 +1,5 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
-import {ApiError, apiFetch} from "../../../src/lib/api";
+import {ApiError, apiFetch, ENROLLMENT_REQUIRED_EVENT} from "../../../src/lib/api";
 
 const originalFetch = globalThis.fetch;
 
@@ -171,5 +171,69 @@ describe("apiFetch", () => {
         });
 
         await expect(apiFetch("/api/test")).rejects.toThrow("Request failed with status 500");
+    });
+
+    describe("two-factor enrollment signal", () => {
+        const listener = vi.fn();
+
+        async function failedRequest(): Promise<ApiError> {
+            try {
+                await apiFetch("/api/test");
+            } catch (err: unknown) {
+                if (err instanceof ApiError) {
+                    return err;
+                }
+            }
+            throw new Error("expected apiFetch to reject with an ApiError");
+        }
+
+        beforeEach(() => {
+            listener.mockReset();
+            // The suite replaces globalThis.location; the event target must stay a real one.
+            globalThis.addEventListener(ENROLLMENT_REQUIRED_EVENT, listener);
+        });
+
+        afterEach(() => {
+            globalThis.removeEventListener(ENROLLMENT_REQUIRED_EVENT, listener);
+        });
+
+        it("dispatches ENROLLMENT_REQUIRED_EVENT once and keeps the code on a 403 TWO_FACTOR_ENROLLMENT_REQUIRED", async () => {
+            mockFetch({
+                ok: false,
+                status: 403,
+                json: () => Promise.resolve({error: "x", code: "TWO_FACTOR_ENROLLMENT_REQUIRED"}),
+            });
+
+            const error = await failedRequest();
+
+            expect(error.code).toBe("TWO_FACTOR_ENROLLMENT_REQUIRED");
+            expect(error.status).toBe(403);
+            expect(listener).toHaveBeenCalledTimes(1);
+        });
+
+        it("dispatches nothing for a 403 with another code", async () => {
+            mockFetch({
+                ok: false,
+                status: 403,
+                json: () => Promise.resolve({error: "x", code: "TWO_FACTOR_NOT_ENABLED"}),
+            });
+
+            const error = await failedRequest();
+
+            expect(error.code).toBe("TWO_FACTOR_NOT_ENABLED");
+            expect(listener).not.toHaveBeenCalled();
+        });
+
+        it("dispatches nothing for a non-403 response even if it carries the code", async () => {
+            mockFetch({
+                ok: false,
+                status: 401,
+                json: () => Promise.resolve({error: "x", code: "TWO_FACTOR_ENROLLMENT_REQUIRED"}),
+            });
+
+            await failedRequest();
+
+            expect(listener).not.toHaveBeenCalled();
+        });
     });
 });
