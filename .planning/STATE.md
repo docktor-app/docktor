@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 milestone: v0.1.0
 current_phase: 16
 current_phase_name: Release Readiness for v0.1.0
-current_plan: 4
+current_plan: 5
 status: "Phases 1-13 complete (v0.1.0 scope: ROADMAP Phases 10-16, sourced from GitHub issues in docktor-app/docktor; product tracking lives in GitHub Issues). Phase 14 (Health, Uptime and Disk Visibility): all 14 plans executed, code review done, verification found gaps (9/13 truths) — CR-01 probe Docker calls lack timeouts, WR-01/WR-05 probe results not tied to current container. Gap-closure plan (14-15) being created via /gsd-plan-phase 14 --gaps. Phases 15 (Access Hardening) and 16 (Release Readiness) not started."
-stopped_at: "Completed 16-04-PLAN.md (status partial: action SHA pins pending)"
-last_updated: "2026-10-11T21:12:21.628Z"
-state_head: 177bab0e91a7070cd20988a4a47053aa56f7d15d
+stopped_at: Completed 16-03-PLAN.md
+last_updated: "2026-10-11T21:18:31.619Z"
+state_head: 99ce3eb6f3df81a72766b6caa641af1a843a6a79
 progress:
   total_phases: 17
   completed_phases: 9
   total_plans: 166
-  completed_plans: 158
+  completed_plans: 159
 milestone_name: milestone
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-22)
 ## Current Position
 
 Phase: 16 (Release Readiness for v0.1.0) — EXECUTING
-Current Plan: 4
+Current Plan: 5
 Total Plans in Phase: 10
 
 ## Performance Metrics
@@ -192,6 +192,7 @@ Total Plans in Phase: 10
 | Phase 16 P01 | 9min | 2 tasks | 15 files |
 | Phase 16 P02 | 15min | 3 tasks | 11 files |
 | Phase 16 P04 | 14 min | 3 tasks | 5 files |
+| Phase 16 P03 | 5 min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -473,6 +474,7 @@ Recent decisions affecting current work:
 - [Phase 16]: [Phase 16-01]: index.ts loads app.js via dynamic import after the env check; layering test walks static imports to keep lib/auth.ts unreachable
 - [Phase 16]: [Phase 16-02]: MIT license confirmed (Copyright (c) 2026 Docktor contributors, no CLA/DCO); docs links use interim GitHub style (DOCS_BASE_URL https://github.com/docktor-app/docks/blob/main); security/CoC contact info@docktor.app; quickstart ref v0.1.0
 - [Phase 16]: 16-04: publish gate is reusable workflow_call (call-suppress-zero); bare major tag suppressed while major is 0; latest only on non-prerelease v* tags
+- [Phase 16]: 16-03: environment banner lives in AppLayout above the Outlet; dismissal is per-browser localStorage keyed code:variable with stale-key pruning
 
 ### Quick Tasks Completed
 
@@ -546,6 +548,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-10-11T21:12:21.058Z
-Stopped at: Completed 16-04-PLAN.md (status partial: action SHA pins pending)
+Last session: 2026-10-11T21:18:31.134Z
+Stopped at: Completed 16-03-PLAN.md
 Resume file: None
