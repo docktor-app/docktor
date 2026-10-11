@@ -1,6 +1,8 @@
 import {useState} from "react";
 import {useForm} from "react-hook-form";
 import {standardSchemaResolver} from "@hookform/resolvers/standard-schema";
+import {Copy} from "lucide-react";
+import {QRCodeSVG} from "qrcode.react";
 import {toast} from "sonner";
 import {
     PasswordConfirmInput,
@@ -11,6 +13,8 @@ import {
 
 import {twoFactor} from "@/lib/auth-client";
 import {classifyAuthError} from "@/lib/auth-errors";
+import {copyToClipboard} from "@/lib/clipboard";
+import {formatRetryAfter, readRetryAfterSeconds} from "@/lib/rate-limit";
 import {RecoveryCodesPanel} from "@/components/domain/auth/recovery-codes-panel";
 import {Button} from "@/components/ui/button";
 import {
@@ -50,6 +54,23 @@ function parseSetupKey(totpURI: string): string | null {
     } catch {
         return null;
     }
+}
+
+interface FetchErrorContext {
+    response: Pick<Response, "headers">;
+}
+
+/** Captures X-Retry-After from a failed better-auth call so a 429 can name the wait. */
+function createRetryAfterProbe() {
+    let seconds: number | null = null;
+    return {
+        fetchOptions: {
+            onError: (context: FetchErrorContext): void => {
+                seconds = readRetryAfterSeconds(context.response.headers);
+            },
+        },
+        message: (): string => formatRetryAfter(seconds),
+    };
 }
 
 function ErrorBanner({message}: Readonly<{ message: string }>): React.JSX.Element | null {
@@ -95,17 +116,24 @@ function PasswordStep({onEnabled, onCancel}: Readonly<PasswordStepProps>): React
 
     async function onSubmit({password}: PasswordConfirmInput): Promise<void> {
         setError("");
-        const {data, error: enableError} = await twoFactor.enable({password});
+        const probe = createRetryAfterProbe();
+        const {data, error: enableError} = await twoFactor.enable({password, fetchOptions: probe.fetchOptions});
 
         if (!enableError && data) {
             onEnabled({totpURI: data.totpURI, backupCodes: data.backupCodes});
             return;
         }
-        if (classifyAuthError(enableError) === "invalid-password") {
-            form.setError("password", {message: "Incorrect password."});
-            return;
+        switch (classifyAuthError(enableError)) {
+            case "rate-limited":
+                // The typed password is kept; nothing retries on its own.
+                setError(probe.message());
+                break;
+            case "invalid-password":
+                form.setError("password", {message: "Incorrect password."});
+                break;
+            default:
+                setError("Something went wrong. Try again.");
         }
-        setError("Something went wrong. Try again.");
     }
 
     return (
@@ -170,6 +198,26 @@ function CodesStep({codes, onContinue, onCancel}: Readonly<CodesStepProps>): Rea
     );
 }
 
+function SetupKey({setupKey}: Readonly<{ setupKey: string }>): React.JSX.Element {
+    return (
+        <div className="w-full space-y-2">
+            <p className="text-xs text-muted-foreground">Can't scan? Enter this key instead</p>
+            <div className="flex items-start gap-2">
+                <p className="min-w-0 flex-1 rounded-md bg-muted p-2 font-mono text-sm break-all">{setupKey}</p>
+                <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    aria-label="Copy setup key"
+                    onClick={() => void copyToClipboard(setupKey)}
+                >
+                    <Copy/>
+                </Button>
+            </div>
+        </div>
+    );
+}
+
 interface VerifyStepProps {
     totpURI: string;
 
@@ -189,20 +237,27 @@ function VerifyStep({totpURI, onVerified, onCancel}: Readonly<VerifyStepProps>):
 
     async function onSubmit({code}: TotpCodeInput): Promise<void> {
         setError("");
-        const {error: verifyError} = await twoFactor.verifyTotp({code});
+        const probe = createRetryAfterProbe();
+        const {error: verifyError} = await twoFactor.verifyTotp({code, fetchOptions: probe.fetchOptions});
 
         if (!verifyError) {
             toast.success("Two-factor authentication is on. Your other devices were signed out.");
             onVerified();
             return;
         }
-        if (classifyAuthError(verifyError) === "invalid-code") {
-            setError("That code didn't work. Check your authenticator app and try again.");
-            form.setValue("code", "");
-            form.setFocus("code");
-            return;
+        switch (classifyAuthError(verifyError)) {
+            case "rate-limited":
+                // The typed code is kept so it can be retried after the wait.
+                setError(probe.message());
+                break;
+            case "invalid-code":
+                setError("That code didn't work. Check your authenticator app and try again.");
+                form.setValue("code", "");
+                form.setFocus("code");
+                break;
+            default:
+                setError("Something went wrong. Try again.");
         }
-        setError("Something went wrong. Try again.");
     }
 
     return (
@@ -210,12 +265,21 @@ function VerifyStep({totpURI, onVerified, onCancel}: Readonly<VerifyStepProps>):
             <StepHeader title="Scan the QR code" step={3}>
                 Scan this code with your authenticator app, then enter the 6-digit code it shows.
             </StepHeader>
-            {setupKey && (
-                <div className="space-y-2">
-                    <p className="text-xs text-muted-foreground">Can't scan? Enter this key instead</p>
-                    <p className="rounded-md bg-muted p-2 font-mono text-sm break-all">{setupKey}</p>
+            {/* Rendered locally; the secret never leaves the browser (T-15-32). The white
+                padded box keeps the quiet zone scannable in dark mode. */}
+            <div className="flex flex-col items-center gap-8">
+                <div className="rounded-md bg-white p-2">
+                    <QRCodeSVG
+                        value={totpURI}
+                        size={176}
+                        level="M"
+                        marginSize={0}
+                        role="img"
+                        aria-label="QR code for your authenticator app"
+                    />
                 </div>
-            )}
+                {setupKey && <SetupKey setupKey={setupKey}/>}
+            </div>
             <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                     <ErrorBanner message={error}/>

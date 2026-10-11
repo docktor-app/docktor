@@ -27,6 +27,24 @@ vi.mock("sonner", () => ({
     toast: {success: vi.fn(), error: vi.fn()},
 }));
 
+// Capture the props the dialog hands to the QR renderer.
+const {qrProps} = vi.hoisted(() => ({qrProps: [] as Array<Record<string, unknown>>}));
+vi.mock("qrcode.react", () => ({
+    QRCodeSVG: (props: Record<string, unknown>) => {
+        qrProps.push(props);
+        return <svg role="img" aria-label={String(props["aria-label"])} data-testid="qr"/>;
+    },
+}));
+
+// Make a better-auth call fail the way a 429 does: the fetch onError hook sees the headers.
+function failWith429(mock: typeof enable, retryAfter: string | null) {
+    mock.mockImplementation(async (options: { fetchOptions?: { onError?: (context: unknown) => void } }) => {
+        const headers = new Headers(retryAfter ? {"X-Retry-After": retryAfter} : {});
+        options.fetchOptions?.onError?.({response: {headers}});
+        return {data: null, error: {status: 429, message: "Too many requests"}};
+    });
+}
+
 const SECRET = "JBSWY3DPEHPK3PXP";
 const TOTP_URI = `otpauth://totp/Docktor:a?secret=${SECRET}&issuer=Docktor`;
 const CODES = Array.from({length: 10}, (_, index) => `code${index}-abcde`);
@@ -60,6 +78,91 @@ describe("EnrollDialog", () => {
         enable.mockReset().mockResolvedValue({data: {totpURI: TOTP_URI, backupCodes: CODES}, error: null});
         verifyTotp.mockReset().mockResolvedValue({data: {}, error: null});
         vi.mocked(toast.success).mockReset();
+        vi.mocked(toast.error).mockReset();
+        qrProps.length = 0;
+    });
+
+    describe("QR code, rate limits and small screens", () => {
+        it("renders the QR code locally from the totpURI at 176px, level M, in a white padded box", async () => {
+            const user = userEvent.setup();
+            renderDialog();
+            await reachStep3(user);
+
+            const qr = screen.getByRole("img", {name: "QR code for your authenticator app"});
+            expect(qr).toBeInTheDocument();
+            expect(qrProps.at(-1)).toMatchObject({value: TOTP_URI, size: 176, level: "M"});
+            expect(qr.parentElement).toHaveClass("bg-white", "p-2");
+        });
+
+        it("copies the setup key with the Copy setup key button", async () => {
+            const user = userEvent.setup();
+            const writeText = vi.fn().mockResolvedValue(undefined);
+            renderDialog();
+            await reachStep3(user);
+            Object.defineProperty(navigator, "clipboard", {value: {writeText}, configurable: true});
+
+            await user.click(screen.getByRole("button", {name: "Copy setup key"}));
+
+            expect(writeText).toHaveBeenCalledWith(SECRET);
+        });
+
+        it("toasts a copy failure when the clipboard API is missing", async () => {
+            const user = userEvent.setup();
+            renderDialog();
+            await reachStep3(user);
+            Object.defineProperty(navigator, "clipboard", {value: undefined, configurable: true});
+
+            await user.click(screen.getByRole("button", {name: "Copy setup key"}));
+
+            expect(toast.error).toHaveBeenCalledWith("Couldn't copy. Select the codes and copy them manually.");
+        });
+
+        it("names the wait on a 429 at the password step, keeps the dialog open and the typed password", async () => {
+            const user = userEvent.setup();
+            failWith429(enable, "180");
+            const {onOpenChange} = renderDialog();
+
+            await submitPassword(user, "hunter2hunter2");
+
+            expect(await screen.findByRole("alert")).toHaveTextContent("Too many attempts. Try again in 3 minutes.");
+            expect(screen.getByLabelText("Password")).toHaveValue("hunter2hunter2");
+            expect(onOpenChange).not.toHaveBeenCalled();
+        });
+
+        it("falls back to the generic wait message when X-Retry-After is missing", async () => {
+            const user = userEvent.setup();
+            failWith429(enable, null);
+            renderDialog();
+
+            await submitPassword(user);
+
+            expect(await screen.findByRole("alert")).toHaveTextContent("Too many attempts. Try again in a few minutes.");
+        });
+
+        it("names the wait on a 429 at the verify step and keeps the typed code", async () => {
+            const user = userEvent.setup();
+            failWith429(verifyTotp, "180");
+            const {onOpenChange, onEnrolled} = renderDialog();
+            await reachStep3(user);
+
+            await user.type(screen.getByLabelText("Authentication code"), "123456");
+            await user.click(screen.getByRole("button", {name: "Verify and enable"}));
+
+            expect(await screen.findByRole("alert")).toHaveTextContent("Too many attempts. Try again in 3 minutes.");
+            expect(screen.getByLabelText("Authentication code")).toHaveValue("123456");
+            expect(onOpenChange).not.toHaveBeenCalled();
+            expect(onEnrolled).not.toHaveBeenCalled();
+        });
+
+        it("scrolls inside the viewport and stacks full-width footer buttons on small screens", async () => {
+            const user = userEvent.setup();
+            renderDialog();
+            await reachStep3(user);
+
+            expect(screen.getByRole("dialog")).toHaveClass("max-h-[90vh]", "overflow-y-auto");
+            expect(screen.getByRole("button", {name: "Verify and enable"})).toHaveClass("w-full", "sm:w-auto");
+            expect(screen.getByRole("button", {name: "Cancel setup"})).toHaveClass("w-full", "sm:w-auto");
+        });
     });
 
     describe("step 1 (password)", () => {
@@ -109,7 +212,7 @@ describe("EnrollDialog", () => {
 
             await submitPassword(user);
 
-            expect(enable).toHaveBeenCalledWith({password: "hunter2hunter2"});
+            expect(enable).toHaveBeenCalledWith(expect.objectContaining({password: "hunter2hunter2"}));
             expect(await screen.findByText("Save your recovery codes")).toBeInTheDocument();
             expect(screen.getByText("Step 2 of 3")).toBeInTheDocument();
         });
@@ -187,7 +290,7 @@ describe("EnrollDialog", () => {
             await user.click(screen.getByRole("button", {name: "Verify and enable"}));
 
             await waitFor(() => expect(onEnrolled).toHaveBeenCalledTimes(1));
-            expect(verifyTotp).toHaveBeenCalledWith({code: "123456"});
+            expect(verifyTotp).toHaveBeenCalledWith(expect.objectContaining({code: "123456"}));
             expect(toast.success).toHaveBeenCalledWith(
                 "Two-factor authentication is on. Your other devices were signed out.",
             );
