@@ -3,16 +3,16 @@ status: testing
 phase: 15-access-hardening
 source: 15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md
 started: 2026-10-11T12:27:56Z
-updated: 2026-10-11T13:31:53Z
+updated: 2026-10-11T13:33:41Z
 ---
 
 ## Current Test
 <!-- OVERWRITE each test - shows where we are -->
 
-number: 2
-name: Sign-in Rate Limiting
+number: 3
+name: Enroll in Two-Factor from the Account Page
 expected: |
-  Entering a wrong password 5 times shows the normal "invalid credentials" error. The 6th attempt is refused with a message such as "Too many attempts, try again in N minutes" (based on X-Retry-After), the Sign in button stays enabled, and changing the X-Forwarded-For header does not reset the counter.
+  User menu has an "Account" item. On /account, "Set up two-factor authentication" opens a 3-step dialog: password, then a QR code (issuer "Docktor", your email) with a "Copy setup key" button, then a 6-digit code check. After verifying, 10 recovery codes appear with Copy codes and Download .txt; Continue is only available after ticking "I have saved". Afterwards the page shows an "Enabled" pill. The QR is readable in light and dark theme.
 awaiting: user response
 
 ## Tests
@@ -23,7 +23,7 @@ result: pass
 
 ### 2. Sign-in Rate Limiting
 expected: Entering a wrong password 5 times shows the normal "invalid credentials" error. The 6th attempt is refused with a message such as "Too many attempts, try again in N minutes" (based on X-Retry-After), the Sign in button stays enabled, and changing the X-Forwarded-For header does not reset the counter.
-result: [pending]
+result: pass
 
 ### 3. Enroll in Two-Factor from the Account Page
 expected: User menu has an "Account" item. On /account, "Set up two-factor authentication" opens a 3-step dialog: password, then a QR code (issuer "Docktor", your email) with a "Copy setup key" button, then a 6-digit code check. After verifying, 10 recovery codes appear with Copy codes and Download .txt; Continue is only available after ticking "I have saved". Afterwards the page shows an "Enabled" pill. The QR is readable in light and dark theme.
@@ -69,15 +69,28 @@ result: [pending]
 expected: At phone width (~412 px) the enrollment dialog (QR step and recovery-codes step) scrolls within the viewport, footer buttons stack full width, and nothing overflows horizontally.
 result: [pending]
 
+### 14. Single Login After Startup (reported during test 2)
+expected: After starting the app and signing in once, the user lands in the app and stays signed in; no second login prompt appears.
+result: issue
+reported: "I have experienced after the startup, I had to login twice. I was directly redirected to the login page again. I dont know if this is a caching issue, but I think this should be fixed"
+severity: major
+
 ## Summary
 
-total: 13
-passed: 1
-issues: 0
-pending: 12
+total: 14
+passed: 2
+issues: 1
+pending: 11
 skipped: 0
 blocked: 0
 
 ## Gaps
 
-[none yet]
+- gap_id: G-15-14
+  truth: "After startup, a single sign-in lands the user in the app and keeps them signed in"
+  status: failed
+  reason: "User reported: I have experienced after the startup, I had to login twice. I was directly redirected to the login page again. I dont know if this is a caching issue, but I think this should be fixed"
+  severity: major
+  test: 14
+  artifacts: []  # Filled by diagnosis
+  missing: []    # Filled by diagnosis
