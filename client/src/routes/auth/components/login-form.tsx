@@ -4,6 +4,8 @@ import {useForm} from "react-hook-form";
 import {standardSchemaResolver} from "@hookform/resolvers/standard-schema";
 import {LoginInput, loginSchema} from "@docktor/shared";
 import {signIn} from "@/lib/auth-client";
+import {classifyAuthError} from "@/lib/auth-errors";
+import {formatRetryAfter, readRetryAfterSeconds} from "@/lib/rate-limit";
 import {TwoFactorStep} from "@/routes/auth/components/two-factor-step";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
@@ -36,13 +38,23 @@ export function LoginForm(): React.JSX.Element {
         setError("");
         setLoading(true);
 
+        let retryAfter: number | null = null;
         const {data, error: signInError} = await signIn.email({
             email: values.email,
             password: values.password,
+            fetchOptions: {
+                onError: (context) => {
+                    retryAfter = readRetryAfterSeconds(context.response.headers);
+                },
+            },
         });
 
         if (signInError) {
-            setError(signInError.message ?? "Sign in failed");
+            setError(
+                classifyAuthError(signInError) === "rate-limited"
+                    ? formatRetryAfter(retryAfter)
+                    : (signInError.message ?? "Sign in failed"),
+            );
             setLoading(false);
             return;
         }
@@ -62,8 +74,14 @@ export function LoginForm(): React.JSX.Element {
         return (
             <TwoFactorStep
                 onSuccess={() => navigate("/")}
-                onBack={() => setStep("password")}
-                onExpired={() => setStep("password")}
+                onBack={() => {
+                    setError("");
+                    setStep("password");
+                }}
+                onExpired={() => {
+                    setError("Your sign-in timed out. Sign in again.");
+                    setStep("password");
+                }}
             />
         );
     }
@@ -78,7 +96,7 @@ export function LoginForm(): React.JSX.Element {
             </CardHeader>
             <CardContent>
                 {error && (
-                    <div className="mb-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                    <div role="alert" className="mb-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
                         {error}
                     </div>
                 )}

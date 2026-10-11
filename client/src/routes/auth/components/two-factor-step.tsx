@@ -1,8 +1,15 @@
 import {useState} from "react";
-import {useForm} from "react-hook-form";
+import {useForm, UseFormReturn} from "react-hook-form";
 import {standardSchemaResolver} from "@hookform/resolvers/standard-schema";
-import {TotpChallengeInput, totpChallengeSchema} from "@docktor/shared";
+import {
+    RecoveryChallengeInput,
+    recoveryChallengeSchema,
+    TotpChallengeInput,
+    totpChallengeSchema,
+} from "@docktor/shared";
 import {twoFactor} from "@/lib/auth-client";
+import {AuthErrorLike, classifyAuthError} from "@/lib/auth-errors";
+import {formatRetryAfter, readRetryAfterSeconds} from "@/lib/rate-limit";
 import {Button} from "@/components/ui/button";
 import {Checkbox} from "@/components/ui/checkbox";
 import {Input} from "@/components/ui/input";
@@ -25,37 +32,207 @@ export interface TwoFactorStepProps {
     onExpired(): void;
 }
 
-export function TwoFactorStep({onSuccess, onBack}: Readonly<TwoFactorStepProps>): React.JSX.Element {
+type Mode = "totp" | "recovery";
+
+// Both challenge forms share the {code, trustDevice} shape, so one input type serves both.
+type ChallengeForm = UseFormReturn<TotpChallengeInput>;
+
+interface FetchErrorContext {
+    response: Pick<Response, "headers">;
+}
+
+interface VerifyFetchOptions {
+    onError: (context: FetchErrorContext) => void;
+}
+
+interface VerifyResult {
+    error: AuthErrorLike | null;
+}
+
+interface ModeCopy {
+    description: string;
+    label: string;
+    placeholder: string;
+    invalid: string;
+    switchLabel: string;
+    verify: (values: TotpChallengeInput, fetchOptions: VerifyFetchOptions) => Promise<VerifyResult>;
+}
+
+const MODE_COPY: Record<Mode, ModeCopy> = {
+    totp: {
+        description: "Enter the 6-digit code from your authenticator app.",
+        label: "Authentication code",
+        placeholder: "000000",
+        invalid: "That code didn't work. Check your authenticator app and try again.",
+        switchLabel: "Use a recovery code",
+        verify: (values, fetchOptions) => twoFactor.verifyTotp({...values, fetchOptions}),
+    },
+    recovery: {
+        description: "Enter one of your recovery codes. Each code works once.",
+        label: "Recovery code",
+        placeholder: "xxxxx-xxxxx",
+        invalid: "That recovery code isn't valid or was already used.",
+        switchLabel: "Use authenticator app instead",
+        verify: (values, fetchOptions) => twoFactor.verifyBackupCode({...values, fetchOptions}),
+    },
+};
+
+interface CodeInputProps {
+    mode: Mode;
+    value: string;
+    onChange: (value: string) => void;
+    onBlur: () => void;
+    name: string;
+    ref: React.Ref<HTMLInputElement>;
+}
+
+function CodeInput({mode, onChange, ...field}: Readonly<CodeInputProps>): React.JSX.Element {
+    const copy = MODE_COPY[mode];
+
+    if (mode === "totp") {
+        return (
+            <Input
+                {...field}
+                onChange={(event) => onChange(event.target.value.replace(/\D/g, ""))}
+                placeholder={copy.placeholder}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                spellCheck={false}
+                maxLength={6}
+                autoFocus
+                className="text-center font-mono text-lg tracking-widest"
+            />
+        );
+    }
+
+    return (
+        <Input
+            {...field}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder={copy.placeholder}
+            autoComplete="off"
+            spellCheck={false}
+            autoFocus
+            className="font-mono"
+        />
+    );
+}
+
+interface ChallengeFieldsProps {
+    form: ChallengeForm;
+    mode: Mode;
+    onSubmit: (values: TotpChallengeInput) => Promise<void>;
+}
+
+function ChallengeFields({form, mode, onSubmit}: Readonly<ChallengeFieldsProps>): React.JSX.Element {
+    const pending = form.formState.isSubmitting;
+
+    return (
+        <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <FormField
+                    control={form.control}
+                    name="code"
+                    render={({field}) => (
+                        <FormItem>
+                            <FormLabel>{MODE_COPY[mode].label}</FormLabel>
+                            <FormControl>
+                                <CodeInput mode={mode} {...field}/>
+                            </FormControl>
+                            <FormMessage/>
+                        </FormItem>
+                    )}
+                />
+
+                <FormField
+                    control={form.control}
+                    name="trustDevice"
+                    render={({field}) => (
+                        <FormItem>
+                            <div className="flex items-center gap-2">
+                                <FormControl>
+                                    <Checkbox
+                                        checked={field.value}
+                                        onCheckedChange={(checked) => field.onChange(checked === true)}
+                                    />
+                                </FormControl>
+                                <FormLabel>Trust this device for 30 days</FormLabel>
+                            </div>
+                            <FormDescription>
+                                You won't be asked for a code on this browser.
+                            </FormDescription>
+                        </FormItem>
+                    )}
+                />
+
+                <Button type="submit" className="w-full" disabled={pending}>
+                    {pending ? "Verifying..." : "Verify"}
+                </Button>
+            </form>
+        </Form>
+    );
+}
+
+export function TwoFactorStep({onSuccess, onBack, onExpired}: Readonly<TwoFactorStepProps>): React.JSX.Element {
+    const [mode, setMode] = useState<Mode>("totp");
     const [error, setError] = useState("");
 
-    const form = useForm<TotpChallengeInput>({
+    const totpForm = useForm<TotpChallengeInput>({
         resolver: standardSchemaResolver(totpChallengeSchema),
         defaultValues: {code: "", trustDevice: false},
     });
+    const recoveryForm = useForm<RecoveryChallengeInput>({
+        resolver: standardSchemaResolver(recoveryChallengeSchema),
+        defaultValues: {code: "", trustDevice: false},
+    });
+    const forms: Record<Mode, ChallengeForm> = {totp: totpForm, recovery: recoveryForm};
+
+    function switchMode(next: Mode): void {
+        // The trust choice survives the switch; a typed code does not.
+        forms[next].setValue("trustDevice", forms[mode].getValues("trustDevice"));
+        forms[next].setValue("code", "");
+        setError("");
+        setMode(next);
+    }
 
     async function onSubmit(values: TotpChallengeInput): Promise<void> {
         setError("");
 
-        const {error: verifyError} = await twoFactor.verifyTotp({
-            code: values.code,
-            trustDevice: values.trustDevice,
+        let retryAfter: number | null = null;
+        const {error: verifyError} = await MODE_COPY[mode].verify(values, {
+            onError: (context) => {
+                retryAfter = readRetryAfterSeconds(context.response.headers);
+            },
         });
 
-        if (verifyError) {
-            setError(verifyError.message ?? "Verification failed");
+        if (!verifyError) {
+            onSuccess();
             return;
         }
 
-        onSuccess();
+        switch (classifyAuthError(verifyError)) {
+            case "rate-limited":
+                // Nothing retries on its own and the typed code is kept for after the wait.
+                setError(formatRetryAfter(retryAfter));
+                break;
+            case "invalid-code":
+                setError(MODE_COPY[mode].invalid);
+                forms[mode].setValue("code", "");
+                forms[mode].setFocus("code");
+                break;
+            case "expired":
+                onExpired();
+                break;
+            default:
+                setError("Something went wrong. Try again.");
+        }
     }
 
     return (
         <Card className="w-full max-w-sm">
             <CardHeader className="text-center">
                 <CardTitle className="text-2xl">Two-factor authentication</CardTitle>
-                <CardDescription>
-                    Enter the 6-digit code from your authenticator app.
-                </CardDescription>
+                <CardDescription>{MODE_COPY[mode].description}</CardDescription>
             </CardHeader>
             <CardContent>
                 {error && (
@@ -64,62 +241,29 @@ export function TwoFactorStep({onSuccess, onBack}: Readonly<TwoFactorStepProps>)
                     </div>
                 )}
 
-                <Form {...form}>
-                    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                        <FormField
-                            control={form.control}
-                            name="code"
-                            render={({field}) => (
-                                <FormItem>
-                                    <FormLabel>Authentication code</FormLabel>
-                                    <FormControl>
-                                        <Input
-                                            {...field}
-                                            onChange={(event) => field.onChange(event.target.value.replace(/\D/g, ""))}
-                                            placeholder="000000"
-                                            inputMode="numeric"
-                                            autoComplete="one-time-code"
-                                            spellCheck={false}
-                                            maxLength={6}
-                                            autoFocus
-                                            className="text-center font-mono text-lg tracking-widest"
-                                        />
-                                    </FormControl>
-                                    <FormMessage/>
-                                </FormItem>
-                            )}
-                        />
+                <ChallengeFields key={mode} form={forms[mode]} mode={mode} onSubmit={onSubmit}/>
 
-                        <FormField
-                            control={form.control}
-                            name="trustDevice"
-                            render={({field}) => (
-                                <FormItem>
-                                    <div className="flex items-center gap-2">
-                                        <FormControl>
-                                            <Checkbox
-                                                checked={field.value}
-                                                onCheckedChange={(checked) => field.onChange(checked === true)}
-                                            />
-                                        </FormControl>
-                                        <FormLabel>Trust this device for 30 days</FormLabel>
-                                    </div>
-                                    <FormDescription>
-                                        You won't be asked for a code on this browser.
-                                    </FormDescription>
-                                </FormItem>
-                            )}
-                        />
+                <div className="mt-2 flex flex-col gap-2">
+                    <Button
+                        type="button"
+                        variant="link"
+                        className="w-full"
+                        onClick={() => switchMode(mode === "totp" ? "recovery" : "totp")}
+                    >
+                        {MODE_COPY[mode].switchLabel}
+                    </Button>
+                    <Button type="button" variant="link" className="w-full" onClick={onBack}>
+                        Back to sign in
+                    </Button>
+                </div>
 
-                        <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
-                            {form.formState.isSubmitting ? "Verifying..." : "Verify"}
-                        </Button>
-                    </form>
-                </Form>
-
-                <Button type="button" variant="link" className="mt-2 w-full" onClick={onBack}>
-                    Back to sign in
-                </Button>
+                {mode === "recovery" && (
+                    <p className="mt-4 text-sm text-muted-foreground">
+                        Lost your device and your recovery codes? Ask whoever runs this server to reset
+                        two-factor authentication. See Resetting two-factor authentication in the
+                        deployment docs (docs/deployment.md).
+                    </p>
+                )}
             </CardContent>
         </Card>
     );

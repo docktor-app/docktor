@@ -137,5 +137,48 @@ describe("LoginForm", () => {
             expect(screen.getByLabelText(/email/i)).toHaveValue("");
             expect(screen.getByLabelText(/password/i)).toHaveValue("");
         });
+
+        it("returns to the password step with a banner when the pending sign-in expired", async () => {
+            verifyTotp.mockResolvedValue({data: null, error: {status: 401, message: "Invalid two factor cookie"}});
+            const user = userEvent.setup();
+            renderLoginForm();
+
+            await submitCredentials(user);
+            await user.type(await screen.findByLabelText("Authentication code"), "123456");
+            await user.click(screen.getByRole("button", {name: "Verify"}));
+
+            expect(await screen.findByText("Sign in to Docktor")).toBeInTheDocument();
+            expect(screen.getByRole("alert")).toHaveTextContent("Your sign-in timed out. Sign in again.");
+            expect(screen.getByLabelText(/password/i)).toHaveValue("");
+            expect(navigate).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("password step errors", () => {
+        it("shows the wait time from X-Retry-After on a 429 and keeps Sign in enabled", async () => {
+            signInEmail.mockImplementation(async (args: {
+                fetchOptions?: { onError?: (context: { response: { headers: Headers } }) => void };
+            }) => {
+                args.fetchOptions?.onError?.({response: {headers: new Headers({"X-Retry-After": "600"})}});
+                return {data: null, error: {status: 429, message: "Too many requests"}};
+            });
+            const user = userEvent.setup();
+            renderLoginForm();
+
+            await submitCredentials(user);
+
+            expect(await screen.findByRole("alert")).toHaveTextContent("Too many attempts. Try again in 10 minutes.");
+            expect(screen.getByRole("button", {name: /sign in/i})).toBeEnabled();
+        });
+
+        it("keeps the server message for other failures", async () => {
+            signInEmail.mockResolvedValue({data: null, error: {status: 401, message: "Invalid email or password"}});
+            const user = userEvent.setup();
+            renderLoginForm();
+
+            await submitCredentials(user);
+
+            expect(await screen.findByRole("alert")).toHaveTextContent("Invalid email or password");
+        });
     });
 });

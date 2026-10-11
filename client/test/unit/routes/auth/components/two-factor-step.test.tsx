@@ -111,3 +111,180 @@ describe("TwoFactorStep (authenticator code)", () => {
         expect(onBack).toHaveBeenCalledTimes(1);
     });
 });
+
+interface FakeFetchOptions {
+    fetchOptions?: { onError?: (context: { response: { headers: Headers } }) => void };
+}
+
+/** Mimics better-fetch: the onError callback fires with the response before the call resolves. */
+function failWith(error: { status: number; message?: string }, headers: Record<string, string> = {}) {
+    return async (args: FakeFetchOptions) => {
+        args.fetchOptions?.onError?.({response: {headers: new Headers(headers)}});
+        return {data: null, error};
+    };
+}
+
+async function submitTotp(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> {
+    const input = screen.getByLabelText("Authentication code");
+    await user.type(input, "123456");
+    await user.click(screen.getByRole("button", {name: "Verify"}));
+    return input;
+}
+
+describe("TwoFactorStep (errors)", () => {
+    beforeEach(() => {
+        verifyTotp.mockReset();
+        verifyBackupCode.mockReset();
+    });
+
+    it("explains an invalid authenticator code and clears the input", async () => {
+        verifyTotp.mockImplementation(failWith({status: 401, message: "Invalid code"}));
+        const user = userEvent.setup();
+        renderStep();
+
+        const input = await submitTotp(user);
+
+        expect(await screen.findByRole("alert")).toHaveTextContent(
+            "That code didn't work. Check your authenticator app and try again.",
+        );
+        expect(input).toHaveValue("");
+    });
+
+    it("shows the wait time from X-Retry-After on a 429 and keeps the typed code", async () => {
+        verifyTotp.mockImplementation(failWith({status: 429, message: "Too many requests"}, {"X-Retry-After": "30"}));
+        const user = userEvent.setup();
+        renderStep();
+
+        const input = await submitTotp(user);
+
+        expect(await screen.findByRole("alert")).toHaveTextContent("Too many attempts. Try again in 1 minute.");
+        expect(input).toHaveValue("123456");
+        expect(verifyTotp).toHaveBeenCalledTimes(1);
+    });
+
+    it("falls back to the generic 429 message without the header", async () => {
+        verifyTotp.mockImplementation(failWith({status: 429}));
+        const user = userEvent.setup();
+        renderStep();
+
+        await submitTotp(user);
+
+        expect(await screen.findByRole("alert")).toHaveTextContent("Too many attempts. Try again in a few minutes.");
+    });
+
+    it("calls onExpired when the pending sign-in cookie is gone", async () => {
+        verifyTotp.mockImplementation(failWith({status: 401, message: "Invalid two factor cookie"}));
+        const user = userEvent.setup();
+        const {onExpired, onSuccess} = renderStep();
+
+        await submitTotp(user);
+
+        await waitFor(() => expect(onExpired).toHaveBeenCalledTimes(1));
+        expect(onSuccess).not.toHaveBeenCalled();
+    });
+
+    it("shows a generic message for an unexpected failure", async () => {
+        verifyTotp.mockImplementation(failWith({status: 500}));
+        const user = userEvent.setup();
+        renderStep();
+
+        await submitTotp(user);
+
+        expect(await screen.findByRole("alert")).toHaveTextContent("Something went wrong. Try again.");
+    });
+});
+
+describe("TwoFactorStep (recovery code)", () => {
+    beforeEach(() => {
+        verifyTotp.mockReset().mockResolvedValue({data: {}, error: null});
+        verifyBackupCode.mockReset().mockResolvedValue({data: {}, error: null});
+    });
+
+    async function openRecoveryMode(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> {
+        await user.click(screen.getByRole("button", {name: "Use a recovery code"}));
+        return screen.findByLabelText("Recovery code");
+    }
+
+    it("switches to a focused recovery input with its own copy and attributes", async () => {
+        const user = userEvent.setup();
+        renderStep();
+
+        const input = await openRecoveryMode(user);
+
+        expect(screen.getByText("Enter one of your recovery codes. Each code works once.")).toBeInTheDocument();
+        expect(input).toHaveAttribute("placeholder", "xxxxx-xxxxx");
+        expect(input).toHaveAttribute("autocomplete", "off");
+        expect(input).toHaveAttribute("spellcheck", "false");
+        expect(input).toHaveFocus();
+    });
+
+    it("shows the lost-everything hint only in recovery mode", async () => {
+        const user = userEvent.setup();
+        renderStep();
+
+        expect(screen.queryByText(/docs\/deployment\.md/)).not.toBeInTheDocument();
+        await openRecoveryMode(user);
+        expect(screen.getByText(/docs\/deployment\.md/)).toBeInTheDocument();
+
+        await user.click(screen.getByRole("button", {name: "Use authenticator app instead"}));
+        expect(await screen.findByLabelText("Authentication code")).toBeInTheDocument();
+        expect(screen.queryByText(/docs\/deployment\.md/)).not.toBeInTheDocument();
+    });
+
+    it("trims the code, keeps its case and carries the trust choice over", async () => {
+        const user = userEvent.setup();
+        const {onSuccess} = renderStep();
+
+        await user.click(screen.getByRole("checkbox", {name: "Trust this device for 30 days"}));
+        const input = await openRecoveryMode(user);
+        expect(screen.getByRole("checkbox", {name: "Trust this device for 30 days"})).toBeChecked();
+
+        await user.type(input, " ab12C-d34Ef ");
+        await user.click(screen.getByRole("button", {name: "Verify"}));
+
+        await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+        expect(verifyBackupCode).toHaveBeenCalledWith(
+            expect.objectContaining({code: "ab12C-d34Ef", trustDevice: true}),
+        );
+        expect(verifyTotp).not.toHaveBeenCalled();
+    });
+
+    it("requires a recovery code", async () => {
+        const user = userEvent.setup();
+        renderStep();
+
+        await openRecoveryMode(user);
+        await user.click(screen.getByRole("button", {name: "Verify"}));
+
+        expect(await screen.findByText("Enter a recovery code.")).toBeInTheDocument();
+        expect(verifyBackupCode).not.toHaveBeenCalled();
+    });
+
+    it("explains an invalid or already used recovery code", async () => {
+        verifyBackupCode.mockImplementation(failWith({status: 401, message: "Invalid backup code"}));
+        const user = userEvent.setup();
+        renderStep();
+
+        const input = await openRecoveryMode(user);
+        await user.type(input, "aaaaa-bbbbb");
+        await user.click(screen.getByRole("button", {name: "Verify"}));
+
+        expect(await screen.findByRole("alert")).toHaveTextContent(
+            "That recovery code isn't valid or was already used.",
+        );
+        expect(input).toHaveValue("");
+    });
+
+    it("shows the rate-limit message in recovery mode and keeps the code", async () => {
+        verifyBackupCode.mockImplementation(failWith({status: 429}, {"X-Retry-After": "600"}));
+        const user = userEvent.setup();
+        renderStep();
+
+        const input = await openRecoveryMode(user);
+        await user.type(input, "aaaaa-bbbbb");
+        await user.click(screen.getByRole("button", {name: "Verify"}));
+
+        expect(await screen.findByRole("alert")).toHaveTextContent("Too many attempts. Try again in 10 minutes.");
+        expect(input).toHaveValue("aaaaa-bbbbb");
+    });
+});
