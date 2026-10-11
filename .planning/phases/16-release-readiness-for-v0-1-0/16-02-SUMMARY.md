@@ -47,7 +47,7 @@ key-files:
 key-decisions:
   - "MIT with 'Copyright (c) 2026 Docktor contributors' and no CLA/DCO confirmed by the user for docktor and docks (D-01/D-02)"
   - "Docs links use the interim GitHub style (DOCS_LINK_STYLE=github); every docs link must be rewritten once a site is hosted"
-  - "info@docktor.app is the published security fallback and CoC enforcement contact"
+  - "info@docktor.dev is the published security fallback and CoC enforcement contact"
   - "The chooser's 'Read the documentation' link points at guide/introduction.md, the fixed first docs page, because no index page path is fixed for the whole phase"
 
 patterns-established:
@@ -106,7 +106,7 @@ Task 1 (checkpoint:decision, blocking-human) was answered by the user in-session
 | License | MIT confirmed for docktor-app/docktor and docktor-app/docks, "Copyright (c) 2026 Docktor contributors", no CLA/DCO (option "github" for docs) |
 | DOCS_LINK_STYLE | github - interim links `https://github.com/docktor-app/docks/blob/main/{path}.md` |
 | DOCS_BASE_URL | `https://github.com/docktor-app/docks/blob/main` |
-| CONTACT_EMAIL | info@docktor.app (user-supplied; published as the security fallback and the CoC enforcement contact) |
+| CONTACT_EMAIL | info@docktor.dev (user-supplied; published as the security fallback and the CoC enforcement contact) |
 | QUICKSTART_REF | v0.1.0 (default; fetch docker-compose.yml/.env.example from the v0.1.0 tag) |
 
 With DOCS_LINK_STYLE=github a docs page at site path `/security` is `https://github.com/docktor-app/docks/blob/main/security.md`, and `/guide/get-started` is `.../guide/get-started.md`.

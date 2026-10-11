@@ -15,7 +15,7 @@ Please do not open a public issue, discussion or pull request for a security pro
 Use GitHub private vulnerability reporting:
 <https://github.com/docktor-app/docktor/security/advisories/new>
 
-If you cannot use GitHub, email <info@docktor.app> instead.
+If you cannot use GitHub, email <info@docktor.dev> instead.
 
 Please include:
 
