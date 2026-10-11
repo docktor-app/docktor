@@ -4,7 +4,7 @@ import {requireSession} from "../lib/auth-middleware.js";
 import {accountSecurityService} from "../application/index.js";
 
 const accountRoutes: FastifyPluginAsyncZod = async (app) => {
-    // requireSession, not requireAuth: the enrollment-gated preHandler would
+    // Authentication only, not the enrollment-gated preHandler, which would
     // answer 403 to a user who still owes two-factor, who must be able to
     // reach these endpoints to enroll (15-RESEARCH Pitfall 11).
     app.addHook("onRequest", requireSession);
