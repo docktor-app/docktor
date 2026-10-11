@@ -107,7 +107,7 @@ test.describe("Authentication", () => {
     });
 
     test("login with valid credentials redirects to dashboard", async ({page}) => {
-        await mockBackupDefaults(page);
+        await mockDashboardData(page);
         let hasSession = false;
 
         await page.route("**/api/auth/get-session", (route) => {
