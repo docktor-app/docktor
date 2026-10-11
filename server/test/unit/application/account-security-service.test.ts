@@ -1,6 +1,6 @@
 import {describe, expect, it, vi} from "vitest";
 import {AccountSecurityService} from "../../../src/application/account-security-service.js";
-import {ForbiddenError} from "../../../src/lib/errors.js";
+import {ForbiddenError, NotFoundError} from "../../../src/lib/errors.js";
 
 function buildService({twoFactorEnabled, setting}: {twoFactorEnabled: boolean; setting: string | null}) {
     let stored = setting;
@@ -10,7 +10,11 @@ function buildService({twoFactorEnabled, setting}: {twoFactorEnabled: boolean; s
             stored = value;
         }),
     };
-    const accounts = {isTwoFactorEnabled: vi.fn(async () => twoFactorEnabled)};
+    const accounts = {
+        isTwoFactorEnabled: vi.fn(async () => twoFactorEnabled),
+        findUserIdByEmail: vi.fn(async (email: string): Promise<string | null> => (email === "admin@example.com" ? "u-admin" : null)),
+        resetTwoFactor: vi.fn(async (_userId: string): Promise<void> => undefined),
+    };
     return {service: new AccountSecurityService(settings, accounts), settings, accounts};
 }
 
@@ -77,5 +81,27 @@ describe("AccountSecurityService.setMandatory", () => {
 
         expect(settings.upsert).toHaveBeenCalledWith("auth.requireTwoFactor", "false");
         expect(status.mandatory).toBe(false);
+    });
+});
+
+describe("AccountSecurityService.resetTwoFactor (D-09)", () => {
+    it("looks the user up by trimmed, lower-cased email and resets exactly once", async () => {
+        const {service, accounts} = buildService({twoFactorEnabled: true, setting: null});
+
+        await expect(service.resetTwoFactor("Admin@Example.com ")).resolves.toEqual({userId: "u-admin"});
+
+        expect(accounts.findUserIdByEmail).toHaveBeenCalledWith("admin@example.com");
+        expect(accounts.resetTwoFactor).toHaveBeenCalledTimes(1);
+        expect(accounts.resetTwoFactor).toHaveBeenCalledWith("u-admin");
+    });
+
+    it("rejects with NotFoundError for an unknown email and resets nothing", async () => {
+        const {service, accounts} = buildService({twoFactorEnabled: true, setting: null});
+
+        const failure = await service.resetTwoFactor("nobody@example.com").catch((error: unknown) => error);
+
+        expect(failure).toBeInstanceOf(NotFoundError);
+        expect(failure).toMatchObject({message: 'No user with email "nobody@example.com"'});
+        expect(accounts.resetTwoFactor).not.toHaveBeenCalled();
     });
 });

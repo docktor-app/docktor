@@ -62,6 +62,7 @@ const applicationFilesExcludingPorts = listTsFilesRecursive(APPLICATION_DIR).fil
 
 const domainFiles = listTsFilesRecursive(DOMAIN_DIR);
 const routeFiles = listTsFilesRecursive(ROUTES_DIR);
+const scriptFiles = listTsFilesRecursive(path.join(SRC_ROOT, "scripts"));
 
 const RULES: LayeringRule[] = [
     {
@@ -101,6 +102,17 @@ const RULES: LayeringRule[] = [
             {label: "infrastructure/", pattern: /["'][^"']*\/infrastructure\/[^"']*["']/},
             {label: "jobs/", pattern: /["'][^"']*\/jobs\/[^"']*["']/},
             {label: "lib/db.js", pattern: /["'][^"']*\blib\/db\.js["']/},
+        ],
+    },
+    {
+        // D-09: on-box CLIs are composition roots that reach data only through
+        // the repositories barrel, never the database client or Prisma itself.
+        describeName: "scripts never import the database client or the generated Prisma client (D-09, 15-04)",
+        files: scriptFiles,
+        itName: (file) => `${relative(file)} has no top-level import of lib/db.js or generated/prisma`,
+        forbidden: [
+            {label: "lib/db.js", pattern: /["'][^"']*\blib\/db\.js["']/},
+            {label: "generated/prisma", pattern: /["'][^"']*\bgenerated\/prisma[^"']*["']/},
         ],
     },
 ];

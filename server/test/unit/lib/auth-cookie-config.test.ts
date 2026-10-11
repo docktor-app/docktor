@@ -13,7 +13,9 @@ async function importFreshAuth(env: Record<string, string | undefined>) {
     return (await import("../../../src/lib/auth.js")).auth;
 }
 
-describe("auth session cookie configuration (D-15)", () => {
+// Each case re-imports better-auth from scratch, which is slow when the whole
+// unit suite runs in parallel, so the default 5 s test timeout is too tight.
+describe("auth session cookie configuration (D-15)", {timeout: 30_000}, () => {
     afterEach(() => {
         vi.unstubAllEnvs();
         vi.resetModules();

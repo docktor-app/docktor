@@ -130,8 +130,9 @@ Every variable the server reads (`server/src`), matching `.env.example` exactly.
 | `POSTGRES_PASSWORD` | **Required** | — (no shipped default) | Not read by the server itself — consumed by `docker-compose.yml`'s `db` service via `env_file: .env`. Must match the password embedded in `DATABASE_URL`. Not in `.env.example`; add it yourself. If unset, Postgres refuses to start rather than falling back to a guessable default. |
 | `DOCKTOR_DB_AUTO_MIGRATE` | Optional | `true` | Applies pending Prisma migrations automatically at container startup, and auto-baselines an upgrading install's pre-migration schema into migration history. See [Database schema](#database-schema). |
 | `DOCKTOR_DB_AUTO_PUSH` | Optional | `true` | Deprecated alias for `DOCKTOR_DB_AUTO_MIGRATE` above, honoured only when the new variable is unset. Kept so an existing install's opt-out survives the upgrade — set `DOCKTOR_DB_AUTO_MIGRATE` for new deployments. |
-| `BETTER_AUTH_SECRET` | **Required** | — | Session-signing secret. The server crashes at boot with an unhelpful `BetterAuthError` if this is missing — see Troubleshooting #1. |
+| `BETTER_AUTH_SECRET` | **Required** | — | Session-signing secret. The server crashes at boot with an unhelpful `BetterAuthError` if this is missing — see Troubleshooting #1. It also encrypts every enrolled two-factor secret and recovery code, so rotating it makes all enrolled authenticators unusable — see [Sign-in protection](#sign-in-protection). |
 | `BETTER_AUTH_URL` | **Required** for real use | dev-only fallback (`http://localhost:5173`) | The externally-reachable URL of this instance. Feeds both `baseURL` and `trustedOrigins`. Wrong value → "invalid origin" login failure, not a crash — see Troubleshooting #4. |
+| `TRUST_PROXY` | Optional | unset (trust no proxy headers) | Tells Docktor how many reverse proxies sit in front of it so it can see each user's real IP, which the sign-in rate limit counts per client. A hop count such as `1` (one proxy) is recommended; `true` or a comma-separated IP/CIDR list also work. Leave unset when users connect directly. See [Sign-in protection](#sign-in-protection). |
 | `ENCRYPTION_KEY` | **Required** | — | Encrypts SMTP passwords, SFTP keys, S3 secrets, and the restic repository password at rest. Must be exactly 64 hex characters (32 bytes) or every encrypt/decrypt call throws. |
 | `DOCKTOR_STACKS_DIR` | Required (has a working default) | `/opt/docktor/stacks` (image default) | Container-side path where managed stacks live. See [Stacks directory path](#stacks-directory-path-read-this-before-your-first-deploy) — **must exactly match `DOCKTOR_STACKS_HOST_DIR`.** |
 | `DOCKTOR_STACKS_HOST_DIR` | Required (has a working default) | `/opt/docktor/stacks` (compose default) | Host-side path of the same directory. Drives both sides of the `docker-compose.yml` stacks volume. |
@@ -141,6 +142,85 @@ Every variable the server reads (`server/src`), matching `.env.example` exactly.
 | `RESTIC_BINARY` | Optional | `restic` (resolved via PATH) | Path to the restic binary. The image installs a pinned, checksum-verified release at `/usr/local/bin/restic`, already on PATH. |
 | `DOCKTOR_DEFAULT_TEMPLATE_REPO_URL` | Optional | `https://github.com/docktor-app/templates` | The built-in template source (Issue #19). Docktor contacts this git remote on first template browse and periodically thereafter. Set to an empty string to disable the built-in template source entirely — e.g. for air-gapped installs. See [docs/templates.md](./templates.md) for the repository authoring format. |
 | `DOCKTOR_TEMPLATE_CACHE_DIR` | Optional | `<os tmpdir>/docktor-template-cache` | Disposable local clone cache for synced template repositories — the parsed template index lives in the database, so a lost/cleared cache is simply re-cloned on the next sync. |
+
+## Sign-in protection
+
+**Rate limits.** Sign-in, two-factor code entry and the password-confirmed
+account actions (enabling or disabling two-factor, regenerating recovery
+codes, changing the password) allow 5 attempts per 15 minutes per client IP.
+Every other auth request allows 100 per minute. Limits are counted per IP and
+path, not per account, and successful attempts count too. The counters live in
+the database, so restarting Docktor does not reset them. Over the limit, the
+sign-in page shows "Too many attempts. Try again in N minutes."
+
+**`TRUST_PROXY`.** By default Docktor trusts no proxy headers, so the client IP
+is the address of whoever connected to it. Behind a reverse proxy (Traefik,
+nginx, Nginx Proxy Manager) that address is the proxy's, so every user shares one
+rate-limit bucket and a single attacker can lock everyone out of sign-in for 15
+minutes. Set `TRUST_PROXY=1` (the number of proxies in front of Docktor,
+normally 1) so Docktor reads the real client from `X-Forwarded-For`. `true`
+trusts every hop, which lets a client choose its own IP whenever the proxy
+appends to `X-Forwarded-For` instead of overwriting it; prefer the hop count or
+a list of proxy IPs/CIDRs. Leave it unset when users connect to Docktor
+directly. Whether Docker's published ports keep the client IP depends on the
+host; check that sign-in failures from two machines do not share a limit.
+
+**Cookies.** Session cookies are HttpOnly and SameSite=Lax. They are Secure
+exactly when `BETTER_AUTH_URL` starts with `https://` (their names then carry
+the `__Secure-` prefix); `NODE_ENV` plays no part, so a plain-http LAN install
+keeps its session. Changing the scheme renames the cookie, so everyone signs in
+again. The Base URL in Settings does not change the Secure flag, because the
+cookie options are read once at start-up.
+
+**Cross-site requests.** State-changing requests (POST, PUT, PATCH, DELETE)
+from another origin are refused with 403 "Cross-origin request blocked", also
+when the other origin is a different port on the same host. Docktor trusts
+`BETTER_AUTH_URL`, the Base URL in Settings and the address the request itself
+arrived on, so `BETTER_AUTH_URL` must be the URL users actually open. Scripts
+that send no `Origin` header (curl) are not affected.
+
+**Two-factor authentication.** Authenticator codes are accepted for about 30
+seconds either side of the current time, and there is no replay store, so a code
+can be reused within that window. Rotating `BETTER_AUTH_SECRET` makes every
+enrolled authenticator and recovery code unusable; reset two-factor for each
+user afterwards (see [Resetting two-factor authentication](#resetting-two-factor-authentication))
+and have them enrol again. Password reset by email is not available: the reset
+endpoints are disabled until it is built (tracked in
+[#79](https://github.com/docktor-app/docktor/issues/79)).
+
+## Resetting two-factor authentication
+
+Use this when a user has lost both their authenticator and their recovery
+codes. It needs shell access to the host, which is the authorisation: there is
+no web page, no email flow, and you can only name the account by its email.
+
+```bash
+docker compose exec docktor node dist/server/scripts/reset-two-factor.js <email>
+```
+
+In one transaction it deletes the user's two-factor secret and recovery codes,
+turns two-factor off for the account, signs the user out of every session, and
+forgets their trusted devices and any half-finished sign-in. Afterwards the user
+signs in with the password alone. If two-factor is mandatory for the instance
+they are asked to enrol straight away; otherwise they can enrol again from their
+account settings. An unknown email exits with status 1 and a message; a missing
+argument exits with status 2 and the usage line.
+
+If the Docktor container cannot start, the same change can be made in SQL. Run
+`docker compose exec db psql -U <user> <database>` (the user and database are the
+`POSTGRES_USER` and `POSTGRES_DB` of the `db` service) and execute, with the
+user's email in place of `<email>`:
+
+```sql
+BEGIN;
+DELETE FROM "TwoFactor" WHERE "userId" = (SELECT id FROM "User" WHERE email = '<email>');
+DELETE FROM "Session" WHERE "userId" = (SELECT id FROM "User" WHERE email = '<email>');
+DELETE FROM "Verification"
+  WHERE value = (SELECT id FROM "User" WHERE email = '<email>')
+    AND (identifier LIKE 'trust-device-%' OR identifier LIKE '2fa-%');
+UPDATE "User" SET "twoFactorEnabled" = false WHERE email = '<email>';
+COMMIT;
+```
 
 ## Stacks directory path (read this before your first deploy)
 
@@ -331,3 +411,6 @@ of this project — fixed as noted, or still requiring the workaround described.
 | 9 | After upgrading, `docker compose up -d` fails because the env file named in `docker-compose.yml` (`.env`) is not found, or a previously-working custom stacks directory starts failing the path-mismatch check even though nothing about your setup changed | The deployment env file was renamed from `.env.local` to `.env` so Docker Compose's own top-level `${VAR}` interpolation can read it (see the callout in [Quickstart](#quickstart) step 2) | Rename your existing file in place: `mv .env.local .env`. The contents are unchanged — no values need editing, and no secrets need regenerating. |
 | 10 | The server refuses to boot with an error saying the stacks directory is not on a persistent filesystem | The stacks volume never attached, so the directory `ensureStacksDir()` created lives in the container's writable layer instead of on a real mount | Check that `docker-compose.yml`'s stacks volume is present and that `DOCKTOR_STACKS_HOST_DIR` equals `DOCKTOR_STACKS_DIR`. Confirm with `docker exec <container> cat /proc/self/mountinfo`. Only use `DOCKTOR_STACKS_MOUNT_CHECK=false` when running on ephemeral storage is intentional. |
 | 11 | After Docktor was stopped, `docker start docktor` (or the restart policy) fails with `network <name> not found` and the container stays exited; Docktor's logs show nothing because it never ran | HTTP health probes briefly connect Docktor's own container to the probed stack's network. Docker saves that connection in the container's configuration and re-attaches every saved network on each start. If such a network was removed or re-created while Docktor was down (`docker compose down` of that stack, `docker network prune`), Docker refuses to start the container before any Docktor code, including its startup cleanup, can run. Docktor disconnects on a normal stop (`docker stop`, SIGTERM, within about 5 seconds), so this only happens after a crash, SIGKILL, out-of-memory kill, daemon crash or power loss | Run `docker inspect docktor` and read `NetworkSettings.Networks`; the stale entry is the one whose `Aliases` contain `docktor-health-probe` and whose network no longer exists. Disconnect it by network NAME, not by ID (disconnecting by ID fails once the network is gone): `docker network disconnect <network-NAME> docktor`. Then `docker start docktor`. As an alternative, `docker rm docktor` followed by `docker compose up -d` recreates the container from `docker-compose.yml` with no saved attachments (data lives in volumes and the database, not in the container). A design that never attaches Docktor's own container (a short-lived helper container per probe) was evaluated and rejected, because it starts a container for every probe. |
+| 12 | Everyone is told "Too many attempts. Try again in N minutes." at the same time, after a few failed sign-ins by one person | Docktor sits behind a reverse proxy and `TRUST_PROXY` is unset, so every user shares the proxy's IP and one rate-limit bucket | Set `TRUST_PROXY=1` (one proxy in front) in `.env` and restart. See [Sign-in protection](#sign-in-protection). |
+| 13 | Saving or deploying fails with 403 "Cross-origin request blocked" | The page was opened from an address Docktor does not trust: `BETTER_AUTH_URL` (and the Base URL in Settings) do not match the URL in the browser | Set `BETTER_AUTH_URL` to the exact URL users open (protocol, host and port) and restart. See [Sign-in protection](#sign-in-protection). |
+| 14 | A user lost their authenticator app and their recovery codes and cannot sign in | Two-factor needs one of the two, and neither can be recovered | An operator with shell access resets two-factor for that user: see [Resetting two-factor authentication](#resetting-two-factor-authentication). |
