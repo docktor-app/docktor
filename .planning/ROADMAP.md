@@ -27,7 +27,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 12: Compose Safety and Templates** - Diff-before-apply, dangerous-config warnings, port-conflict detection, and git-based stack templates ([#18](https://github.com/docktor-app/docktor/issues/18), [#19](https://github.com/docktor-app/docktor/issues/19), [#20](https://github.com/docktor-app/docktor/issues/20), [#21](https://github.com/docktor-app/docktor/issues/21))
 - [x] **Phase 13: Update Checker Reliability** - Fix misleading update badges, wrong upgrade-dialog messaging, slow post-deploy status, and stale database rows ([#29](https://github.com/docktor-app/docktor/issues/29), [#31](https://github.com/docktor-app/docktor/issues/31), [#32](https://github.com/docktor-app/docktor/issues/32), [#33](https://github.com/docktor-app/docktor/issues/33), [#34](https://github.com/docktor-app/docktor/issues/34)) (completed 2026-10-07)
 - [x] **Phase 14: Health, Uptime and Disk Visibility** - HTTP health probes with history, per-stack uptime, and disk usage per stack/volume ([#23](https://github.com/docktor-app/docktor/issues/23), [#24](https://github.com/docktor-app/docktor/issues/24), [#27](https://github.com/docktor-app/docktor/issues/27)) (completed 2026-10-10)
-- [ ] **Phase 15: Access Hardening** - TOTP 2FA and an auth-endpoint security audit (rate limiting, CSRF, cookies) ([#45](https://github.com/docktor-app/docktor/issues/45), [#46](https://github.com/docktor-app/docktor/issues/46))
+- [x] **Phase 15: Access Hardening** - TOTP 2FA and an auth-endpoint security audit (rate limiting, CSRF, cookies) ([#45](https://github.com/docktor-app/docktor/issues/45), [#46](https://github.com/docktor-app/docktor/issues/46)) (completed 2026-10-11)
 - [ ] **Phase 16: Release Readiness for v0.1.0** - Docs, demo instance, license decision, published images, hardened startup, community health files — closes the milestone ([#7](https://github.com/docktor-app/docktor/issues/7), [#11](https://github.com/docktor-app/docktor/issues/11), [#17](https://github.com/docktor-app/docktor/issues/17), [#42](https://github.com/docktor-app/docktor/issues/42), [#53](https://github.com/docktor-app/docktor/issues/53), [#54](https://github.com/docktor-app/docktor/issues/54), [#55](https://github.com/docktor-app/docktor/issues/55), [#57](https://github.com/docktor-app/docktor/issues/57))
 
 ## Phase Details
@@ -622,7 +622,7 @@ Needs Phase 11's UI patterns for the 2FA enrollment flow. The rate-limiting/CSRF
   2. Auth endpoints (login, password reset, etc.) have rate limiting (#46)
   3. CSRF protection and session-cookie security defaults (httpOnly/sameSite/secure) are verified or closed on the existing better-auth integration (#46)
 
-**Plans:** 7/7 plans executed
+**Plans:** 7/7 plans complete
 
 Plans:
 **Wave 1**
