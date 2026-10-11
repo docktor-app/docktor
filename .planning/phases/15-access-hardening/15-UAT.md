@@ -3,16 +3,16 @@ status: testing
 phase: 15-access-hardening
 source: 15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md
 started: 2026-10-11T12:27:56Z
-updated: 2026-10-11T13:33:41Z
+updated: 2026-10-11T14:19:31Z
 ---
 
 ## Current Test
 <!-- OVERWRITE each test - shows where we are -->
 
-number: 3
-name: Enroll in Two-Factor from the Account Page
+number: 4
+name: Sign-in with Authenticator Code
 expected: |
-  User menu has an "Account" item. On /account, "Set up two-factor authentication" opens a 3-step dialog: password, then a QR code (issuer "Docktor", your email) with a "Copy setup key" button, then a 6-digit code check. After verifying, 10 recovery codes appear with Copy codes and Download .txt; Continue is only available after ticking "I have saved". Afterwards the page shows an "Enabled" pill. The QR is readable in light and dark theme.
+  After signing out and entering email and password, the card swaps to a two-factor step asking for the 6-digit code (numeric keypad, one-time-code autofill). An unchecked "Trust this device for 30 days" checkbox and "Back to sign in" are present. A wrong code shows a clear error and clears the input; the correct code signs you in. With trust-device ticked, the next sign-in from that browser skips the code step.
 awaiting: user response
 
 ## Tests
@@ -27,7 +27,7 @@ result: pass
 
 ### 3. Enroll in Two-Factor from the Account Page
 expected: User menu has an "Account" item. On /account, "Set up two-factor authentication" opens a 3-step dialog: password, then a QR code (issuer "Docktor", your email) with a "Copy setup key" button, then a 6-digit code check. After verifying, 10 recovery codes appear with Copy codes and Download .txt; Continue is only available after ticking "I have saved". Afterwards the page shows an "Enabled" pill. The QR is readable in light and dark theme.
-result: [pending]
+result: pass
 
 ### 4. Sign-in with Authenticator Code
 expected: After signing out and entering email and password, the card swaps to a two-factor step asking for the 6-digit code (numeric keypad, one-time-code autofill). An unchecked "Trust this device for 30 days" checkbox and "Back to sign in" are present. A wrong code shows a clear error and clears the input; the correct code signs you in. With trust-device ticked, the next sign-in from that browser skips the code step.
@@ -78,9 +78,9 @@ severity: major
 ## Summary
 
 total: 14
-passed: 2
+passed: 3
 issues: 1
-pending: 11
+pending: 10
 skipped: 0
 blocked: 0
 
