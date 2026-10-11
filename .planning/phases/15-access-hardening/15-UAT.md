@@ -3,16 +3,16 @@ status: testing
 phase: 15-access-hardening
 source: 15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md
 started: 2026-10-11T12:27:56Z
-updated: 2026-10-11T14:41:38Z
+updated: 2026-10-11T15:07:02Z
 ---
 
 ## Current Test
 <!-- OVERWRITE each test - shows where we are -->
 
-number: 10
-name: Other Sessions Signed Out on 2FA Change
+number: 11
+name: Cross-Origin Write Blocked
 expected: |
-  Signed in on two browsers, enabling 2FA (or disabling / regenerating codes) in one keeps that browser signed in and signs the other browser out on its next request. A failed attempt (wrong password) signs nobody out.
+  A state-changing request to an /api/* route (e.g. curl -X PUT /api/settings ... with a cookie and `Origin: https://evil.example`) is answered 403 {"error":"Cross-origin request blocked","code":"CROSS_ORIGIN_REQUEST_REJECTED"}. The same request from the app's own origin works.
 awaiting: user response
 
 ## Tests
@@ -58,7 +58,7 @@ reason: "No way to register a second user (sign-up is blocked), so a user withou
 
 ### 10. Other Sessions Signed Out on 2FA Change
 expected: Signed in on two browsers, enabling 2FA (or disabling / regenerating codes) in one keeps that browser signed in and signs the other browser out on its next request. A failed attempt (wrong password) signs nobody out.
-result: [pending]
+result: pass
 
 ### 11. Cross-Origin Write Blocked
 expected: A state-changing request to an /api/* route (e.g. curl -X PUT /api/settings ... with a cookie and `Origin: https://evil.example`) is answered 403 {"error":"Cross-origin request blocked","code":"CROSS_ORIGIN_REQUEST_REJECTED"}. The same request from the app's own origin works.
@@ -81,9 +81,9 @@ severity: major
 ## Summary
 
 total: 14
-passed: 8
+passed: 9
 issues: 1
-pending: 4
+pending: 3
 skipped: 0
 blocked: 1
 
