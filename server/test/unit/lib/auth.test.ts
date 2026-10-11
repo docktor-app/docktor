@@ -1,5 +1,6 @@
 import {describe, expect, it} from "vitest";
-import {buildTrustedOrigins} from "../../../src/lib/auth.js";
+import {auth, buildTrustedOrigins} from "../../../src/lib/auth.js";
+import {CLIENT_IP_HEADER} from "../../../src/lib/auth-config.js";
 
 describe("buildTrustedOrigins", () => {
     it("includes only the env URL when the Settings baseUrl is unset", () => {
@@ -31,5 +32,15 @@ describe("buildTrustedOrigins", () => {
 
     it("treats an empty-string Settings baseUrl as unset", () => {
         expect(buildTrustedOrigins("https://env.example.com", "")).toEqual(["https://env.example.com"]);
+    });
+});
+
+describe("auth rate limiting configuration (#46)", () => {
+    it("reads the client IP only from the private header Docktor stamps", () => {
+        expect(auth.options.advanced?.ipAddress?.ipAddressHeaders).toEqual([CLIENT_IP_HEADER]);
+    });
+
+    it("persists limiter counters in the database", () => {
+        expect(auth.options.rateLimit?.storage).toBe("database");
     });
 });

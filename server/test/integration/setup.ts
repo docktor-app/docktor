@@ -132,10 +132,12 @@ export async function cleanDatabase(): Promise<void> {
     await p.account.deleteMany();
     await p.verification.deleteMany();
     await p.setting.deleteMany();
+    await p.twoFactor.deleteMany();
+    await p.rateLimit.deleteMany();
     await p.user.deleteMany();
 }
 
-export async function createTestUser(): Promise<{cookie: string}> {
+export async function createTestUser(): Promise<{cookie: string; email: string; password: string}> {
     const email = `test-${Date.now()}@example.com`;
     const password = "TestPassword123!";
 
@@ -162,5 +164,5 @@ export async function createTestUser(): Promise<{cookie: string}> {
         throw new Error(`Failed to create test user (status: ${signupRes.statusCode}): ${signupRes.body}`);
     }
 
-    return {cookie: sessionCookie};
+    return {cookie: sessionCookie, email, password};
 }

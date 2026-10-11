@@ -2,6 +2,7 @@ import {betterAuth} from "better-auth";
 import {prismaAdapter} from "better-auth/adapters/prisma";
 import {APIError, createAuthMiddleware} from "better-auth/api";
 import {prisma} from "./db.js";
+import {buildRateLimitConfig, CLIENT_IP_HEADER} from "./auth-config.js";
 import {SettingsRepository, SETTING_KEYS} from "../repositories/settings-repository.js";
 
 // A local instance, not the application/index.ts singleton — that module
@@ -53,6 +54,15 @@ export const auth = betterAuth({
     trustedOrigins: resolveTrustedOrigins,
     emailAndPassword: {
         enabled: true,
+    },
+    // D-11/D-12: database-backed limiter, 5 attempts per 15 minutes on sign-in.
+    rateLimit: buildRateLimitConfig(),
+    advanced: {
+        // better-auth reads the client IP only from headers and skips rate
+        // limiting entirely when none is valid. Docktor therefore stamps a
+        // private header from Fastify's request.ip (routes/auth.ts) and tells
+        // better-auth to trust only that one.
+        ipAddress: {ipAddressHeaders: [CLIENT_IP_HEADER]},
     },
     hooks: {
         // T-05-09/CR-01: self-registration via better-auth's own

@@ -20,6 +20,7 @@ import templateRoutes from "./routes/templates.js";
 import healthRoutes from "./routes/health.js";
 import storageRoutes from "./routes/storage.js";
 import {AppError} from "./lib/errors.js";
+import {parseTrustProxy} from "./lib/auth-config.js";
 import {startJobs, stopJobs} from "./jobs/index.js";
 import {prisma} from "./lib/db.js";
 
@@ -53,6 +54,10 @@ export async function buildApp() {
     const app = Fastify({
         logger: envToLogger[env] ?? true,
         disableRequestLogging: true,
+        // D-13: default off, so request.ip is the socket address and a forged
+        // X-Forwarded-For cannot pick a rate-limit bucket. Operators behind a
+        // reverse proxy opt in with TRUST_PROXY (hop count 1 for one proxy).
+        trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
     }).withTypeProvider<ZodTypeProvider>();
 
     app.setValidatorCompiler(validatorCompiler);

@@ -8,6 +8,10 @@ model User {
   updatedAt     DateTime  @updatedAt
   sessions      Session[]
   accounts      Account[]
+
+  // Issue #45: set by better-auth's twoFactor plugin once the first TOTP code is verified.
+  twoFactorEnabled Boolean?    @default(false)
+  twoFactor        TwoFactor[]
 }
 
 model Session {
