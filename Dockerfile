@@ -1,8 +1,14 @@
-FROM node:22-slim AS client-build
+# The client stage only produces static JS/CSS, so it runs natively on the build host
+# ($BUILDPLATFORM) instead of under QEMU emulation. server-build below deliberately stays
+# per target platform: its node_modules (including the Prisma CLI that schema-sync runs at
+# container start) is copied into the final image and must match the image architecture.
+FROM --platform=$BUILDPLATFORM node:22-slim AS client-build
 WORKDIR /app
-RUN corepack enable && corepack prepare yarn@4.12.0 --activate
+# The yarn version must match "packageManager" in the root package.json. The .yarn directory
+# is gitignored (nothing in it is tracked), so a clean checkout has nothing to COPY from it;
+# Corepack provides yarn instead.
+RUN corepack enable && corepack prepare yarn@4.13.0 --activate
 COPY package.json yarn.lock* .yarnrc.yml ./
-COPY .yarn .yarn
 COPY client/package.json client/
 COPY shared/package.json shared/
 COPY server/package.json server/
@@ -13,9 +19,9 @@ RUN yarn workspace @docktor/shared build && yarn workspace @docktor/client build
 
 FROM node:22-slim AS server-build
 WORKDIR /app
-RUN corepack enable && corepack prepare yarn@4.12.0 --activate
+# Keep in sync with "packageManager" in the root package.json (see client-build).
+RUN corepack enable && corepack prepare yarn@4.13.0 --activate
 COPY package.json yarn.lock* .yarnrc.yml ./
-COPY .yarn .yarn
 COPY server/package.json server/
 COPY shared/package.json shared/
 COPY client/package.json client/
@@ -35,7 +41,10 @@ RUN yarn prisma generate --config=server/prisma/prisma.config.ts && yarn workspa
 # ships in the final image; only the resulting /usr/local/bin/restic binary is copied
 # out. Bump RESTIC_VERSION here to upgrade; nothing does this automatically, so it
 # needs periodic manual review. Never use "latest" — pinning keeps builds reproducible.
+# The release asset is chosen per target architecture (amd64 or arm64) from the
+# TARGETARCH build argument that BuildKit/buildx sets.
 FROM node:22-slim AS restic-install
+ARG TARGETARCH
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates curl bzip2 && \
     rm -rf /var/lib/apt/lists/*
@@ -43,13 +52,18 @@ RUN apt-get update && \
 # intermediate state where an unverified restic binary could be picked up by a later
 # step — important because this binary will run with access to the host Docker socket.
 RUN set -eu; \
+    case "${TARGETARCH}" in \
+      amd64|arm64) ;; \
+      *) echo "Unsupported TARGETARCH '${TARGETARCH}' (build with BuildKit/buildx)" >&2; exit 1 ;; \
+    esac; \
     RESTIC_VERSION=0.19.1; \
+    ASSET="restic_${RESTIC_VERSION}_linux_${TARGETARCH}"; \
     cd /tmp; \
-    curl -fsSLO "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_amd64.bz2"; \
+    curl -fsSLO "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/${ASSET}.bz2"; \
     curl -fsSLO "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/SHA256SUMS"; \
-    grep " restic_${RESTIC_VERSION}_linux_amd64.bz2\$" SHA256SUMS | sha256sum -c -; \
-    bzip2 -d "restic_${RESTIC_VERSION}_linux_amd64.bz2"; \
-    mv "restic_${RESTIC_VERSION}_linux_amd64" /usr/local/bin/restic; \
+    grep " ${ASSET}.bz2\$" SHA256SUMS | sha256sum -c -; \
+    bzip2 -d "${ASSET}.bz2"; \
+    mv "${ASSET}" /usr/local/bin/restic; \
     chmod +x /usr/local/bin/restic; \
     rm -f SHA256SUMS
 
@@ -72,28 +86,33 @@ COPY --from=restic-install /usr/local/bin/restic /usr/local/bin/restic
 
 # Install docker CLI and compose plugin. Both run with the same host Docker
 # socket access as restic (see restic-install above), so they get the same
-# checksum-verification treatment (WR-03). docker/compose publishes a
-# checksums.txt per release, verified below the same way restic's SHA256SUMS
-# is. download.docker.com does NOT publish a checksum manifest for the
-# static CLI tarball, so DOCKER_CLI_SHA256 is pinned here to the sha256 of
-# the exact docker-27.5.1.tgz artifact this build has always downloaded —
-# it guards against CDN corruption/tampering during the build even without
-# an upstream-signed manifest to verify against. Bump both together with
-# their *_VERSION when upgrading; DOCKER_CLI_SHA256 must be recomputed via
-# `sha256sum` on the new tarball.
+# checksum-verification treatment (WR-03), per target architecture. docker/compose
+# publishes a checksums.txt per release, verified below the same way restic's
+# SHA256SUMS is. download.docker.com does NOT publish a checksum manifest for the
+# static CLI tarball, so DOCKER_CLI_SHA256 is pinned per architecture to the sha256
+# of the exact docker-27.5.1.tgz artifact: it guards against CDN corruption or
+# tampering during the build even without an upstream-signed manifest. The x86_64
+# digest is the long-standing pin; the aarch64 digest is trust-on-first-use (computed
+# from one TLS download). Bump both digests together with DOCKER_VERSION: recompute
+# each with `sha256sum` on the new tarball for its own architecture.
+ARG TARGETARCH
 RUN set -eu; \
     DOCKER_VERSION=27.5.1; \
-    DOCKER_CLI_SHA256=4f798b3ee1e0140eab5bf30b0edc4e84f4cdb53255a429dc3bbae9524845d640; \
     COMPOSE_VERSION=2.33.1; \
+    case "${TARGETARCH}" in \
+      amd64) DOCKER_ARCH=x86_64;  DOCKER_CLI_SHA256=4f798b3ee1e0140eab5bf30b0edc4e84f4cdb53255a429dc3bbae9524845d640 ;; \
+      arm64) DOCKER_ARCH=aarch64; DOCKER_CLI_SHA256=e6b53725a73763ab3f988c73f8772eaed429754c1a579db5ff11f21990fd1817 ;; \
+      *) echo "Unsupported TARGETARCH '${TARGETARCH}' (build with BuildKit/buildx)" >&2; exit 1 ;; \
+    esac; \
     cd /tmp; \
-    curl -fsSLO "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz"; \
+    curl -fsSLO "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-${DOCKER_VERSION}.tgz"; \
     echo "${DOCKER_CLI_SHA256}  docker-${DOCKER_VERSION}.tgz" | sha256sum -c -; \
     tar xzf "docker-${DOCKER_VERSION}.tgz" --strip-components=1 -C /usr/local/bin docker/docker; \
     mkdir -p /usr/local/lib/docker/cli-plugins; \
-    curl -fsSLO "https://github.com/docker/compose/releases/download/v${COMPOSE_VERSION}/docker-compose-linux-x86_64"; \
+    curl -fsSLO "https://github.com/docker/compose/releases/download/v${COMPOSE_VERSION}/docker-compose-linux-${DOCKER_ARCH}"; \
     curl -fsSLO "https://github.com/docker/compose/releases/download/v${COMPOSE_VERSION}/checksums.txt"; \
-    grep -E " \*docker-compose-linux-x86_64\$" checksums.txt | sha256sum -c -; \
-    mv docker-compose-linux-x86_64 /usr/local/lib/docker/cli-plugins/docker-compose; \
+    grep -E " \*docker-compose-linux-${DOCKER_ARCH}\$" checksums.txt | sha256sum -c -; \
+    mv "docker-compose-linux-${DOCKER_ARCH}" /usr/local/lib/docker/cli-plugins/docker-compose; \
     chmod +x /usr/local/lib/docker/cli-plugins/docker-compose; \
     rm -f "docker-${DOCKER_VERSION}.tgz" checksums.txt
 
