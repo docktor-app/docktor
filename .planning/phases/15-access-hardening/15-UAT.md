@@ -1,19 +1,14 @@
 ---
-status: testing
+status: partial
 phase: 15-access-hardening
 source: 15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md
 started: 2026-10-11T12:27:56Z
-updated: 2026-10-11T15:13:17Z
+updated: 2026-10-11T15:15:14.092Z
 ---
 
 ## Current Test
-<!-- OVERWRITE each test - shows where we are -->
 
-number: 13
-name: Mobile Layout of Enrollment
-expected: |
-  At phone width (~412 px) the enrollment dialog (QR step and recovery-codes step) scrolls within the viewport, footer buttons stack full width, and nothing overflows horizontally.
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -70,7 +65,7 @@ result: pass
 
 ### 13. Mobile Layout of Enrollment
 expected: At phone width (~412 px) the enrollment dialog (QR step and recovery-codes step) scrolls within the viewport, footer buttons stack full width, and nothing overflows horizontally.
-result: [pending]
+result: pass
 
 ### 14. Single Login After Startup (reported during test 2)
 expected: After starting the app and signing in once, the user lands in the app and stays signed in; no second login prompt appears.
@@ -81,9 +76,9 @@ severity: major
 ## Summary
 
 total: 14
-passed: 11
+passed: 12
 issues: 1
-pending: 1
+pending: 0
 skipped: 0
 blocked: 1
 
