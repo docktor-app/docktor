@@ -3,7 +3,7 @@ import {Link, useNavigate} from "react-router";
 import {useForm} from "react-hook-form";
 import {standardSchemaResolver} from "@hookform/resolvers/standard-schema";
 import {LoginInput, loginSchema} from "@docktor/shared";
-import {signIn} from "@/lib/auth-client";
+import {refreshSession, signIn} from "@/lib/auth-client";
 import {classifyAuthError} from "@/lib/auth-errors";
 import {formatRetryAfter, readRetryAfterSeconds} from "@/lib/rate-limit";
 import {TwoFactorStep} from "@/routes/auth/components/two-factor-step";
@@ -33,6 +33,12 @@ export function LoginForm(): React.JSX.Element {
             password: "",
         },
     });
+
+    // G-15-14: the session store must hold the new session before the protected route reads it.
+    async function completeSignIn(): Promise<void> {
+        await refreshSession();
+        navigate("/");
+    }
 
     async function onSubmit(values: LoginInput) {
         setError("");
@@ -67,13 +73,13 @@ export function LoginForm(): React.JSX.Element {
             return;
         }
 
-        navigate("/");
+        await completeSignIn();
     }
 
     if (step === "two-factor") {
         return (
             <TwoFactorStep
-                onSuccess={() => navigate("/")}
+                onSuccess={completeSignIn}
                 onBack={() => {
                     setError("");
                     setStep("password");
