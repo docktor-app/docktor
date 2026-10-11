@@ -4,15 +4,25 @@ import {useForm} from "react-hook-form";
 import {standardSchemaResolver} from "@hookform/resolvers/standard-schema";
 import {LoginInput, loginSchema} from "@docktor/shared";
 import {signIn} from "@/lib/auth-client";
+import {TwoFactorStep} from "@/routes/auth/components/two-factor-step";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {Card, CardContent, CardDescription, CardHeader, CardTitle,} from "@/components/ui/card";
 import {Form, FormControl, FormField, FormItem, FormLabel, FormMessage,} from "@/components/ui/form";
 
-export function LoginForm() {
+type LoginStep = "password" | "two-factor";
+
+/** True when the sign-in result asks for a second factor instead of opening a session. */
+function requiresTwoFactor(data: unknown): boolean {
+    return typeof data === "object" && data !== null
+        && "twoFactorRedirect" in data && data.twoFactorRedirect === true;
+}
+
+export function LoginForm(): React.JSX.Element {
     const navigate = useNavigate();
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
+    const [step, setStep] = useState<LoginStep>("password");
 
     const form = useForm<LoginInput>({
         resolver: standardSchemaResolver(loginSchema),
@@ -26,7 +36,7 @@ export function LoginForm() {
         setError("");
         setLoading(true);
 
-        const {error: signInError} = await signIn.email({
+        const {data, error: signInError} = await signIn.email({
             email: values.email,
             password: values.password,
         });
@@ -37,7 +47,25 @@ export function LoginForm() {
             return;
         }
 
+        if (requiresTwoFactor(data)) {
+            // The typed credentials are not kept once the second screen is shown.
+            form.reset();
+            setLoading(false);
+            setStep("two-factor");
+            return;
+        }
+
         navigate("/");
+    }
+
+    if (step === "two-factor") {
+        return (
+            <TwoFactorStep
+                onSuccess={() => navigate("/")}
+                onBack={() => setStep("password")}
+                onExpired={() => setStep("password")}
+            />
+        );
     }
 
     return (
