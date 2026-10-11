@@ -1,0 +1,84 @@
+name: Bug report
+description: Something in Docktor does not work as expected
+type: Bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please search the [existing issues](https://github.com/docktor-app/docktor/issues) first.
+
+        **Security problems do not belong here.** Report them privately through the [private advisory form](https://github.com/docktor-app/docktor/security/advisories/new) instead.
+  - type: input
+    id: version
+    attributes:
+      label: Docktor version or image tag
+      description: Shown in the image tag you run, for example in your docker-compose.yml.
+      placeholder: "0.1.0, edge or sha-1a2b3c4"
+    validations:
+      required: true
+  - type: dropdown
+    id: run-mode
+    attributes:
+      label: How do you run Docktor?
+      options:
+        - Published image with docker compose
+        - Built from source with docker-compose.build.yml
+        - Development with yarn dev
+    validations:
+      required: true
+  - type: dropdown
+    id: architecture
+    attributes:
+      label: Host architecture
+      options:
+        - amd64
+        - arm64
+        - other
+    validations:
+      required: true
+  - type: input
+    id: docker-versions
+    attributes:
+      label: Docker and Compose versions
+      description: Output of `docker version --format '{{.Server.Version}}'` and `docker compose version --short`.
+      placeholder: "Docker 28.0.1, Compose 2.34.0"
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the problem. Screenshots are welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to ...
+        2. Click ...
+        3. See ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: |
+        Run `docker compose logs docktor --tail 200` and paste the relevant lines.
+        Remove passwords, keys, tokens and private hostnames before pasting.
+      render: shell
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Before you submit
+      options:
+        - label: I searched existing issues
+          required: true
+        - label: I removed passwords, keys, tokens and private hostnames from everything above
+          required: true
