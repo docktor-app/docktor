@@ -6,6 +6,7 @@ import {prisma} from "./db.js";
 import {
     buildRateLimitConfig,
     CLIENT_IP_HEADER,
+    resolveUseSecureCookies,
     TWO_FACTOR_DISABLED_PATHS,
     TWO_FACTOR_TRUST_DEVICE_MAX_AGE_SECONDS,
 } from "./auth-config.js";
@@ -107,6 +108,9 @@ export const auth = betterAuth({
         // NODE_ENV=test unless told otherwise, which would make CSRF tests
         // pass vacuously. Production behaviour is unchanged.
         disableOriginCheck: false,
+        // D-15: Secure exactly when the configured base URL is https, never
+        // from NODE_ENV (see resolveUseSecureCookies).
+        useSecureCookies: resolveUseSecureCookies(process.env.BETTER_AUTH_URL),
     },
     hooks: {
         // T-05-09/CR-01: self-registration via better-auth's own

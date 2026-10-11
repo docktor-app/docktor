@@ -7,6 +7,7 @@ import {
     CLIENT_IP_HEADER,
     isAuthRateLimitEnabled,
     parseTrustProxy,
+    resolveUseSecureCookies,
     TWO_FACTOR_DISABLED_PATHS,
     TWO_FACTOR_TRUST_DEVICE_MAX_AGE_SECONDS,
 } from "../../../src/lib/auth-config.js";
@@ -112,5 +113,20 @@ describe("static auth constants", () => {
                 "/two-factor/verify-otp",
             ].sort(),
         );
+    });
+});
+
+describe("resolveUseSecureCookies (D-15)", () => {
+    it.each([
+        [undefined, false],
+        ["", false],
+        ["   ", false],
+        ["http://192.168.1.10:3000", false],
+        ["http://docktor.local", false],
+        ["https://docktor.example", true],
+        ["  HTTPS://docktor.example ", true],
+        ["https://docktor.example:8443/base", true],
+    ])("maps BETTER_AUTH_URL %j to %j", (baseUrl, expected) => {
+        expect(resolveUseSecureCookies(baseUrl)).toBe(expected);
     });
 });

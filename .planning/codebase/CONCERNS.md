@@ -68,17 +68,15 @@
 - Current mitigation: Zod schema validation on all route params via `stackParamsSchema`. Risk is low.
 - Recommendations: Add an explicit path-traversal assertion in `getStackPath()` itself (verify the resolved path starts with `getStacksDir()`) as defence in depth.
 
-**No rate limiting on auth endpoints:**
-- Risk: `POST /api/auth/sign-in` and `POST /api/auth/sign-up` are handled by better-auth via `toNodeHandler`. There is no Fastify rate-limit plugin registered in `buildApp()`. Brute-force password attacks are unconstrained.
-- Files: `server/src/app.ts`, `server/src/routes/auth.ts`
-- Current mitigation: None detected.
-- Recommendations: Add `@fastify/rate-limit` scoped to `/api/auth/*` routes.
+**~~No rate limiting on auth endpoints~~ (resolved in Phase 15):**
+- Resolution: better-auth's built-in limiter now runs with database storage (`server/src/lib/auth-config.ts`, `buildRateLimitConfig`): 5 attempts per 15 minutes per client IP on sign-in, the 2FA verify endpoints and the password-confirmed account actions, 100 per minute elsewhere. The client IP comes from Fastify's `request.ip`, which honours `TRUST_PROXY` (default: trust no proxy headers).
+- Tests: `server/test/unit/lib/auth-config.test.ts`, `server/test/integration/auth-rate-limit.test.ts`.
+- Remaining caveat: limits are per IP and path, not per account (documented in `docs/deployment.md`, "Sign-in protection").
 
-**No CSRF protection despite design doc stating it is planned:**
-- Risk: The design document (`docs/design.md`) states "Fastify CSRF plugin enabled by default" in the security summary. The actual `buildApp()` does not register `@fastify/csrf-protection`. Cookie-based sessions used by better-auth are susceptible to CSRF if the app ever serves requests from other origins.
-- Files: `server/src/app.ts`
-- Current mitigation: CORS is restricted to `http://localhost:5173` in development and disabled in production (`origin: false`), which blocks cross-origin requests and provides partial mitigation. Not equivalent to CSRF tokens.
-- Recommendations: Either add `@fastify/csrf-protection` or document why the CORS-only approach is sufficient for the single-user single-origin use case.
+**~~No CSRF protection~~ (resolved in Phase 15):**
+- Resolution: the old design-doc claim of a CSRF plugin was never true. Cross-origin state changes are now refused by two layers, with no token layer: better-auth's origin check on `/api/auth/*` (forced on in every environment, including `NODE_ENV=test`) and `createOriginGuard` in `server/src/lib/origin-guard.ts` for every other unsafe `/api` request (Origin must be trusted or the request's own; Sec-Fetch-Site same-site/cross-site without an Origin is refused). This also covers same-site sibling origins (another port on the same host), which SameSite=Lax alone does not stop.
+- Cookies: HttpOnly, SameSite=Lax, Path=/, Secure exactly when `BETTER_AUTH_URL` is https (not derived from `NODE_ENV`).
+- Tests: `server/test/unit/lib/origin-guard.test.ts`, `server/test/integration/auth-csrf.test.ts`, `server/test/unit/lib/auth-cookie-config.test.ts`, `server/test/integration/auth-cookies.test.ts`, `server/test/integration/auth-cookies-https.test.ts`.
 
 **`.env` file content served over API without any redaction:**
 - Risk: `GET /api/stacks/:id/env` returns the full raw content of the `.env` file as plaintext. This exposes all secrets (database passwords, API keys) to anyone with a valid session.

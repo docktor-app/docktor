@@ -84,7 +84,19 @@ export function isAuthRateLimitEnabled(env: NodeJS.ProcessEnv = process.env): bo
     return env.DOCKTOR_AUTH_RATE_LIMIT === "on";
 }
 
-type RateLimitConfig = NonNullable<BetterAuthOptions["rateLimit"]>;
+/**
+ * Whether auth cookies carry the Secure flag (and the `__Secure-` name prefix),
+ * decided only by the scheme of BETTER_AUTH_URL (D-15). Without an explicit
+ * value better-auth falls back to NODE_ENV=production, which would log out
+ * every plain-http LAN install: the browser refuses to send a Secure cookie
+ * over http. Only the env URL can drive this because better-auth reads cookie
+ * options once at start-up; the Settings Base URL is live and cannot.
+ */
+export function resolveUseSecureCookies(baseUrl: string | undefined): boolean {
+    return /^https:\/\//i.test(baseUrl?.trim() ?? "");
+}
+
+type RateLimitConfig =NonNullable<BetterAuthOptions["rateLimit"]>;
 
 /**
  * better-auth rate-limit configuration (D-11, D-12). Counters live in the
