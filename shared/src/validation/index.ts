@@ -7,3 +7,4 @@ export * from "./wizard.js";
 export * from "./proxy.js";
 export * from "./templates.js";
 export * from "./health.js";
+export * from "./environment.js";

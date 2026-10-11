@@ -347,3 +347,91 @@ describe("architecture: layering", () => {
         });
     });
 });
+
+describe("startup environment check runs before lib/auth.ts is evaluated (#7, RESEARCH Pitfall 1)", () => {
+    // lib/auth.ts reads BETTER_AUTH_SECRET and BETTER_AUTH_URL while the module
+    // is evaluated. ES module imports are evaluated before the importing
+    // module's own body, so if index.ts statically reached lib/auth.ts, a
+    // missing secret would crash inside better-auth before the environment
+    // check could print its report. index.ts therefore loads app.js with a
+    // dynamic import() after the check, and this test keeps that true.
+    const INDEX_FILE = path.join(SRC_ROOT, "index.ts");
+    const AUTH_FILE = path.join(SRC_ROOT, "lib", "auth.ts");
+
+    // Static runtime import / re-export statements with a relative specifier.
+    // The clause may span several lines but never crosses a quote or a
+    // semicolon, so one match can never swallow a neighbouring statement.
+    // `import type` is erased at runtime and is skipped; a dynamic import() has
+    // no whitespace after `import` and never matches.
+    const STATIC_IMPORT_PATTERN =
+        /^import\s+(?!type\s)(?:[^;"']*?\bfrom\s*)?["'](\.[^"']*)["']|^export\s+(?:\*(?:\s+as\s+\w+)?|\{[^}]*\})\s*from\s*["'](\.[^"']*)["']/gm;
+
+    function staticRuntimeImports(file: string): string[] {
+        const source = fs.readFileSync(file, "utf-8");
+        const resolved: string[] = [];
+        for (const match of source.matchAll(STATIC_IMPORT_PATTERN)) {
+            const specifier = match[1] ?? match[2];
+            if (!specifier) continue;
+            const target = path.resolve(path.dirname(file), specifier.replace(/\.js$/, ".ts"));
+            if (fs.existsSync(target)) resolved.push(target);
+        }
+        return resolved;
+    }
+
+    // Breadth-first walk over static runtime imports. Returns each reachable
+    // file with the file that first imported it, so a failure can print the chain.
+    function reachableFrom(entry: string): Map<string, string | null> {
+        const importedBy = new Map<string, string | null>([[entry, null]]);
+        const queue = [entry];
+        while (queue.length > 0) {
+            const current = queue.shift() as string; // length checked by the loop condition
+            for (const target of staticRuntimeImports(current)) {
+                if (importedBy.has(target)) continue;
+                importedBy.set(target, current);
+                queue.push(target);
+            }
+        }
+        return importedBy;
+    }
+
+    function importChain(importedBy: Map<string, string | null>, file: string): string {
+        const chain: string[] = [];
+        for (let node: string | null | undefined = file; node; node = importedBy.get(node)) {
+            chain.unshift(relative(node));
+        }
+        return chain.join(" -> ");
+    }
+
+    it("the import-graph walker finds the files index.ts really imports", () => {
+        const reachable = reachableFrom(INDEX_FILE);
+
+        expect(reachable.has(path.join(SRC_ROOT, "lib", "startup-environment.ts"))).toBe(true);
+        expect(reachable.has(path.join(SRC_ROOT, "lib", "graceful-shutdown.ts"))).toBe(true);
+    });
+
+    it("index.ts never reaches lib/auth.ts through static runtime imports", () => {
+        const reachable = reachableFrom(INDEX_FILE);
+
+        expect(
+            reachable.has(AUTH_FILE) ? importChain(reachable, AUTH_FILE) : null,
+            "index.ts statically reaches lib/auth.ts, which reads BETTER_AUTH_SECRET at import time — load that module with a dynamic import() after the environment check",
+        ).toBeNull();
+    });
+
+    it("index.ts calls the environment check before it dynamically imports app.js", () => {
+        const source = fs.readFileSync(INDEX_FILE, "utf-8");
+        const checkAt = source.indexOf("runStartupEnvironmentCheck(");
+        const appImportAt = source.indexOf('import("./app.js")');
+
+        expect(checkAt, "index.ts does not call runStartupEnvironmentCheck").toBeGreaterThanOrEqual(0);
+        expect(appImportAt, 'index.ts does not load app.js with import("./app.js")').toBeGreaterThanOrEqual(0);
+        expect(checkAt).toBeLessThan(appImportAt);
+    });
+
+    it("the environment check modules do not import lib/auth.ts", () => {
+        for (const name of ["startup-environment.ts", "environment-check.ts", "environment-report.ts"]) {
+            const reachable = reachableFrom(path.join(SRC_ROOT, "lib", name));
+            expect(reachable.has(AUTH_FILE), `${name} reaches lib/auth.ts`).toBe(false);
+        }
+    });
+});
