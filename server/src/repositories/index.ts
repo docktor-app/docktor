@@ -20,3 +20,4 @@ export {serviceHealthEventRepository} from "./service-health-event-repository.js
 export {stackDiskUsageRepository} from "./stack-disk-usage-repository.js";
 export {statusLogRepository} from "./status-log-repository.js";
 export {stackIncidentRepository} from "./stack-incident-repository.js";
+export {accountSecurityRepository} from "./account-security-repository.js";

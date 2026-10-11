@@ -19,6 +19,7 @@ import certificateRoutes from "./routes/certificates.js";
 import templateRoutes from "./routes/templates.js";
 import healthRoutes from "./routes/health.js";
 import storageRoutes from "./routes/storage.js";
+import accountRoutes from "./routes/account.js";
 import {AppError} from "./lib/errors.js";
 import {parseTrustProxy} from "./lib/auth-config.js";
 import {startJobs, stopJobs} from "./jobs/index.js";
@@ -100,7 +101,9 @@ export async function buildApp() {
     // Global error handler for AppError subclasses
     app.setErrorHandler((error: FastifyError | AppError, _request, reply) => {
         if (error instanceof AppError) {
-            return reply.status(error.statusCode).send({error: error.message});
+            return reply
+                .status(error.statusCode)
+                .send(error.code === undefined ? {error: error.message} : {error: error.message, code: error.code});
         }
         // Zod validation errors (from type-provider-zod validator compiler)
         if (error.statusCode === 400 && "validation" in error) {
@@ -142,6 +145,7 @@ export async function buildApp() {
     await app.register(templateRoutes);
     await app.register(healthRoutes);
     await app.register(storageRoutes);
+    await app.register(accountRoutes);
 
     // Jobs: start/stop with server lifecycle (skipped in test environment)
     if (process.env.NODE_ENV !== "test") {

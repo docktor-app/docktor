@@ -1,5 +1,7 @@
 import {PostgreSqlContainer, type StartedPostgreSqlContainer} from "@testcontainers/postgresql";
 import {execFileSync} from "node:child_process";
+import {randomUUID} from "node:crypto";
+import {hashPassword} from "better-auth/crypto";
 import {buildApp} from "../../src/app.js";
 import type {FastifyInstance} from "fastify";
 import path from "node:path";
@@ -172,6 +174,28 @@ export async function createTestUser(): Promise<{cookie: string; email: string; 
     }
 
     return {cookie: sessionCookie, email, password};
+}
+
+/**
+ * Inserts a second user with a credential account directly through Prisma:
+ * self-registration is blocked once a user exists, so sign-up cannot create
+ * one. Test-only; production code never writes users or password hashes this
+ * way. Sign in with `signIn(email, password)` afterwards.
+ */
+export async function createAdditionalUser(email: string, password: string): Promise<{id: string}> {
+    const id = randomUUID();
+    const p = getPrisma();
+    await p.user.create({data: {id, name: email.split("@")[0], email, emailVerified: false}});
+    await p.account.create({
+        data: {
+            id: randomUUID(),
+            accountId: id,
+            providerId: "credential",
+            userId: id,
+            password: await hashPassword(password),
+        },
+    });
+    return {id};
 }
 
 /** Every raw `Set-Cookie` header value of a response (attributes included). */

@@ -10,6 +10,7 @@ import {
     TWO_FACTOR_TRUST_DEVICE_MAX_AGE_SECONDS,
 } from "./auth-config.js";
 import {SettingsRepository, SETTING_KEYS} from "../repositories/settings-repository.js";
+import {parseMandatoryFlag, REQUIRE_TWO_FACTOR_SETTING_KEY} from "../domain/two-factor-policy.js";
 
 // A local instance, not the application/index.ts singleton — that module
 // eventually imports this file (via onboarding-service.ts), so importing it
@@ -48,6 +49,15 @@ export async function resolveTrustedOrigins(): Promise<string[]> {
         // must never throw and block login entirely because of it.
     }
     return buildTrustedOrigins(process.env.BETTER_AUTH_URL, settingBaseUrl);
+}
+
+/**
+ * D-03: whether the instance requires two-factor for every user. Read on every
+ * gated request (no cache). Errors are NOT swallowed, unlike
+ * resolveTrustedOrigins: the enrollment gate must fail closed.
+ */
+export async function isTwoFactorMandatory(): Promise<boolean> {
+    return parseMandatoryFlag(await settingsRepository.get(REQUIRE_TWO_FACTOR_SETTING_KEY));
 }
 
 export const auth = betterAuth({
