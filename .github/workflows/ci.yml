@@ -147,3 +147,48 @@ jobs:
         with:
           args: >
             --define sonar.branch.name=main
+
+  # Builds the production image from a clean checkout on every pull request (amd64
+  # only, to bound PR time; arm64 is built by publish.yml) and proves the startup
+  # environment check (#7) rejects an empty environment inside the real image.
+  docker-image:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # PIN-PENDING: replace the major tag with the full commit SHA and keep the
+      # "# vN" comment (see 16-04-SUMMARY.md, "Action pins").
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # PIN-PENDING: as above.
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: docktor:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Startup check rejects an empty environment (#7)
+        run: |
+          set +e
+          output=$(docker run --rm docktor:ci 2>&1)
+          code=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$code" -ne 1 ]; then
+            echo "Expected exit code 1 from an empty environment, got $code" >&2
+            exit 1
+          fi
+          for name in DATABASE_URL BETTER_AUTH_SECRET BETTER_AUTH_URL ENCRYPTION_KEY; do
+            if ! printf '%s\n' "$output" | grep -q "$name"; then
+              echo "Startup report does not mention $name" >&2
+              exit 1
+            fi
+          done
