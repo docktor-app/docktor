@@ -91,5 +91,22 @@ blocked: 1
   severity: major
   test: 14
   reproduced: "Also seen during test 4 (sign-in with authenticator code): login required twice."
-  artifacts: []  # Filled by diagnosis
-  missing: []    # Filled by diagnosis
+  root_cause: "Sign-in navigates to / before better-auth's session atom refreshes (its refetch is deferred ~10ms via setTimeout). ProtectedRoute reads the stale cached {data:null,isPending:false} left by an earlier signed-out visit to / and redirects to /login; the second sign-in then works because the atom is populated. Not a Phase 15 regression (navigate('/') dates from the initial commit); e2e specs start at /login so they never prime the stale null."
+  artifacts:
+    - path: "client/src/routes/auth/components/login-form.tsx"
+      issue: "navigate('/') right after signIn.email / on 2FA onSuccess without awaiting a session refresh"
+    - path: "client/src/routes/auth/components/two-factor-step.tsx"
+      issue: "onSuccess is synchronous/un-awaited, step cannot hold 'Verifying...' while session refreshes"
+    - path: "client/src/lib/auth-client.ts"
+      issue: "no helper to refresh and await the session atom"
+    - path: "client/src/routes/setup.tsx"
+      issue: "auto-login signIn.email has the same pattern (optional hardening)"
+    - path: "client/test/integration/auth.spec.ts, two-factor.spec.ts"
+      issue: "journeys start at /login so the stale-null race is never exercised"
+  missing:
+    - "Add refreshSession() helper (await session atom refetch) in auth-client.ts"
+    - "await refreshSession() before navigate('/') in login-form.tsx (plain and 2FA-success paths)"
+    - "two-factor-step onSuccess: (): void | Promise<void>, awaited in onSubmit"
+    - "Optionally refresh after auto-login in setup.tsx"
+    - "Unit tests asserting refresh happens before navigate; Playwright journeys starting at / signed out for password and TOTP sign-in"
+  debug_session: ".planning/debug/double-login-after-startup.md"
