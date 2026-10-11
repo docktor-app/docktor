@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 milestone: v0.1.0
 current_phase: 16
 current_phase_name: Release Readiness for v0.1.0
-current_plan: 7
+current_plan: 8
 status: "Phases 1-13 complete (v0.1.0 scope: ROADMAP Phases 10-16, sourced from GitHub issues in docktor-app/docktor; product tracking lives in GitHub Issues). Phase 14 (Health, Uptime and Disk Visibility): all 14 plans executed, code review done, verification found gaps (9/13 truths) — CR-01 probe Docker calls lack timeouts, WR-01/WR-05 probe results not tied to current container. Gap-closure plan (14-15) being created via /gsd-plan-phase 14 --gaps. Phases 15 (Access Hardening) and 16 (Release Readiness) not started."
-stopped_at: "Partial 16-07-PLAN.md: tasks 1 and 3 done; task 2 (Recordly assets) pending human action"
-last_updated: "2026-10-11T21:47:41.711Z"
-state_head: 1d57dd5ecc162781f1570705820cd4523898b0b4
+stopped_at: Completed 16-08-PLAN.md
+last_updated: "2026-10-11T22:03:03.314Z"
+state_head: 2260430f35bbc3017ec2e23e9af00948927ee637
 progress:
   total_phases: 17
   completed_phases: 9
   total_plans: 166
-  completed_plans: 161
+  completed_plans: 163
 milestone_name: milestone
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-22)
 ## Current Position
 
 Phase: 16 (Release Readiness for v0.1.0) — EXECUTING
-Current Plan: 7
+Current Plan: 8
 Total Plans in Phase: 10
 
 ## Performance Metrics
@@ -195,6 +195,7 @@ Total Plans in Phase: 10
 | Phase 16 P03 | 5 min | 2 tasks | 11 files |
 | Phase 16 P05 | 30 min | 2 tasks | 2 files |
 | Phase 16 P06 | 25 min | 3 tasks | 13 files |
+| Phase 16 P08 | 15 min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -481,6 +482,8 @@ Recent decisions affecting current work:
 - [Phase 16]: 16-05: design.md uses interim GitHub-style docs links (docks/blob/main) that must be rewritten when a docs site is hosted
 - [Phase 16]: 16-06: docs site lives in docktor-app/docks (VitePress 1.6.4 exact pin); site URL, project name and repo URLs are constants at the top of .vitepress/config.mts, DOCS_SITE_URL empty for the interim GitHub link style
 - [Phase 16]: 16-06: docs/deployment.md and docs/templates.md here are pointer pages; the deployment reference was re-verified against server/src and drops pre-release-only troubleshooting rows
+- [Phase 16]: [16-08] Backups guide documents actual behaviour: all backups go to <stack>/backups regardless of repository type; SFTP/S3 settings are labelled not used in v0.1.0 (README and docs/design.md still claim them; needs a decision)
+- [Phase 16]: [16-08] Guides omit features with no UI or no producer in v0.1.0 (backup abort, template repo removal, password change, Update Available activity entries)
 
 ### Quick Tasks Completed
 
@@ -555,6 +558,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-10-11T21:47:40.289Z
-Stopped at: Partial 16-07-PLAN.md: tasks 1 and 3 done; task 2 (Recordly assets) pending human action
-Resume file: .planning/phases/16-release-readiness-for-v0-1-0/16-07-SUMMARY.md
+Last session: 2026-10-11T22:03:02.774Z
+Stopped at: Completed 16-08-PLAN.md
+Resume file: None

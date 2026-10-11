@@ -663,7 +663,7 @@ Plans:
   7. `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, and issue/PR templates exist (#55)
   8. Project license is decided and a `LICENSE` file reflecting it is added (#57)
 
-**Plans:** 6/10 plans executed
+**Plans:** 8/10 plans executed
 
 Plans:
 
@@ -673,8 +673,8 @@ Plans:
 - [x] 16-04-PLAN.md — Clean-checkout multi-arch Dockerfile, PR image build + startup smoke, gate/tag decision, CI-gated GHCR publish workflow (#11, #42)
 - [x] 16-05-PLAN.md — CONTRIBUTING.md and docs/design.md drift fixes (#55, #17)
 - [x] 16-06-PLAN.md — VitePress docs site in docktor-app/docks: scaffold, Get started, deployment and template references; pointer pages here (#17)
-- [ ] 16-07-PLAN.md — Doc pointers, recording kit, Recordly capture, short visual README (#54, #17)
-- [ ] 16-08-PLAN.md — Docs site Introduction, eight feature guides and Security page (#17)
+- [x] 16-07-PLAN.md — Doc pointers, recording kit, Recordly capture, short visual README (#54, #17)
+- [x] 16-08-PLAN.md — Docs site Introduction, eight feature guides and Security page (#17)
 - [ ] 16-09-PLAN.md — Release-candidate dry run: v0.1.0-rc.1 through the full Publish pipeline (#11, #42)
 - [ ] 16-10-PLAN.md — Public GHCR package, docker-compose.yml pulls :latest, release procedure, #53 deferral bookkeeping (#11, #53, #42, #55)
 
