@@ -3,23 +3,23 @@ status: testing
 phase: 15-access-hardening
 source: 15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md
 started: 2026-10-11T12:27:56Z
-updated: 2026-10-11T12:27:56Z
+updated: 2026-10-11T13:31:53Z
 ---
 
 ## Current Test
 <!-- OVERWRITE each test - shows where we are -->
 
-number: 1
-name: Cold Start Smoke Test
+number: 2
+name: Sign-in Rate Limiting
 expected: |
-  Kill any running server/service. Clear ephemeral state (temp DBs, caches, lock files). Start the application from scratch. The new migration (TwoFactor, RateLimit tables, User.twoFactorEnabled) applies, the server boots without errors, and a primary request (health check, login page, or basic API call) returns live data.
+  Entering a wrong password 5 times shows the normal "invalid credentials" error. The 6th attempt is refused with a message such as "Too many attempts, try again in N minutes" (based on X-Retry-After), the Sign in button stays enabled, and changing the X-Forwarded-For header does not reset the counter.
 awaiting: user response
 
 ## Tests
 
 ### 1. Cold Start Smoke Test
 expected: Kill any running server/service. Clear ephemeral state. Start the application from scratch. The new migration (TwoFactor, RateLimit tables, User.twoFactorEnabled) applies, the server boots without errors, and a primary request (health check, login page, or basic API call) returns live data.
-result: [pending]
+result: pass
 
 ### 2. Sign-in Rate Limiting
 expected: Entering a wrong password 5 times shows the normal "invalid credentials" error. The 6th attempt is refused with a message such as "Too many attempts, try again in N minutes" (based on X-Retry-After), the Sign in button stays enabled, and changing the X-Forwarded-For header does not reset the counter.
@@ -72,9 +72,9 @@ result: [pending]
 ## Summary
 
 total: 13
-passed: 0
+passed: 1
 issues: 0
-pending: 13
+pending: 12
 skipped: 0
 blocked: 0
 
