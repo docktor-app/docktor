@@ -5,9 +5,9 @@ current_phase: 16
 current_phase_name: Release Readiness for v0.1.0
 current_plan: 7
 status: "Phases 1-13 complete (v0.1.0 scope: ROADMAP Phases 10-16, sourced from GitHub issues in docktor-app/docktor; product tracking lives in GitHub Issues). Phase 14 (Health, Uptime and Disk Visibility): all 14 plans executed, code review done, verification found gaps (9/13 truths) — CR-01 probe Docker calls lack timeouts, WR-01/WR-05 probe results not tied to current container. Gap-closure plan (14-15) being created via /gsd-plan-phase 14 --gaps. Phases 15 (Access Hardening) and 16 (Release Readiness) not started."
-stopped_at: Completed 16-06-PLAN.md
-last_updated: "2026-10-11T21:38:46.773Z"
-state_head: cf059ce6efcdd245293247279cc930dbc11acf9b
+stopped_at: "Partial 16-07-PLAN.md: tasks 1 and 3 done; task 2 (Recordly assets) pending human action"
+last_updated: "2026-10-11T21:47:41.711Z"
+state_head: 1d57dd5ecc162781f1570705820cd4523898b0b4
 progress:
   total_phases: 17
   completed_phases: 9
@@ -542,6 +542,7 @@ Recent decisions affecting current work:
 - [Phase 12-09] New Playwright templates.spec.ts (tracer + multi-variant dialog + no-match search + repo-sync-error/Retry) was written per plan but not executed in this session per the orchestrator's resource_constraint (no Playwright/integration suites on this host). All unit `<verify>` commands and tsc -b ran clean (31/31 tests). Tracked as WINDOWS.md entry #19 — a developer/CI must run PLAYWRIGHT_PORT=5215 yarn workspace @docktor/client test:integration templates.spec.ts to confirm these live.
 - [Phase 08-03] yarn workspace @docktor/client test:unit showed 5 unrelated test files (proxy-tab.test.tsx, certificates-card.test.tsx, service-upgrade-dialog.test.tsx, stack-actions.test.tsx, stack-detail-page.test.tsx) timing out at 15000ms under severe host contention (uptime load avg 86, swap exhausted) — same pre-existing flake class as Phase 06-05/08-01; touch this plans scope; this plans own two test files pass 28/28 in isolation. A human should re-confirm the full suite on an unloaded host.
 - 16-04: GitHub Actions in publish.yml/ci.yml are on major tags (PIN-PENDING); resolve full commit SHAs before the 16-09 release candidate (gh api was denied in-session)
+- 16-07 pending: record docs/assets/docktor-demo.gif, dashboard.png, stack-detail.png, backups.png (README links 404 until then); also fix 3 stale docs/deployment.md comments in server/src/lib/environment-check.ts (lines 96, 125, 166)
 
 ### Roadmap Evolution
 
@@ -554,6 +555,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-10-11T21:38:46.181Z
-Stopped at: Completed 16-06-PLAN.md
-Resume file: None
+Last session: 2026-10-11T21:47:40.289Z
+Stopped at: Partial 16-07-PLAN.md: tasks 1 and 3 done; task 2 (Recordly assets) pending human action
+Resume file: .planning/phases/16-release-readiness-for-v0-1-0/16-07-SUMMARY.md
