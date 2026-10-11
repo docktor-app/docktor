@@ -2,6 +2,8 @@ export class AppError extends Error {
     constructor(
         message: string,
         public statusCode: number = 500,
+        // Optional machine-readable discriminator, sent next to `error` by the global error handler.
+        public code?: string,
     ) {
         super(message);
         this.name = this.constructor.name;
@@ -23,6 +25,18 @@ export class ConflictError extends AppError {
 export class BadRequestError extends AppError {
     constructor(message = "Bad request") {
         super(message, 400);
+    }
+}
+
+export class ForbiddenError extends AppError {
+    constructor(message = "Forbidden", code?: string) {
+        super(message, 403, code);
+    }
+}
+
+export class UnauthorizedError extends AppError {
+    constructor(message = "Unauthorized") {
+        super(message, 401);
     }
 }
 

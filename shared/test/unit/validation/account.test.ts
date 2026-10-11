@@ -1,5 +1,8 @@
 import {describe, expect, it} from "vitest";
 import {
+    ACCOUNT_SECURITY_ERROR_CODES,
+    accountSecurityStatusSchema,
+    mandatoryTwoFactorSchema,
     passwordConfirmSchema,
     recoveryChallengeSchema,
     recoveryCodeSchema,
@@ -74,5 +77,35 @@ describe("login challenge schemas", () => {
     it("recoveryChallengeSchema requires trustDevice and a code", () => {
         expect(recoveryChallengeSchema.safeParse({code: "ab12C-d34Ef"}).success).toBe(false);
         expect(recoveryChallengeSchema.safeParse({code: "", trustDevice: false}).success).toBe(false);
+    });
+});
+
+describe("mandatoryTwoFactorSchema", () => {
+    it("accepts a boolean enabled flag", () => {
+        expect(mandatoryTwoFactorSchema.safeParse({enabled: true}).success).toBe(true);
+        expect(mandatoryTwoFactorSchema.safeParse({enabled: false}).success).toBe(true);
+    });
+
+    it("rejects a non-boolean or missing flag", () => {
+        expect(mandatoryTwoFactorSchema.safeParse({enabled: "yes"}).success).toBe(false);
+        expect(mandatoryTwoFactorSchema.safeParse({}).success).toBe(false);
+    });
+});
+
+describe("accountSecurityStatusSchema", () => {
+    it("parses the three status booleans", () => {
+        const status = {twoFactorEnabled: false, mandatory: true, enrollmentRequired: true};
+        expect(accountSecurityStatusSchema.parse(status)).toEqual(status);
+    });
+
+    it("rejects a status with a missing field", () => {
+        expect(accountSecurityStatusSchema.safeParse({twoFactorEnabled: true, mandatory: false}).success).toBe(false);
+    });
+});
+
+describe("ACCOUNT_SECURITY_ERROR_CODES", () => {
+    it("exposes the machine-readable codes shared by client and server", () => {
+        expect(ACCOUNT_SECURITY_ERROR_CODES.TWO_FACTOR_ENROLLMENT_REQUIRED).toBe("TWO_FACTOR_ENROLLMENT_REQUIRED");
+        expect(ACCOUNT_SECURITY_ERROR_CODES.TWO_FACTOR_NOT_ENABLED).toBe("TWO_FACTOR_NOT_ENABLED");
     });
 });
