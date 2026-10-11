@@ -3,16 +3,16 @@ status: testing
 phase: 15-access-hardening
 source: 15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md
 started: 2026-10-11T12:27:56Z
-updated: 2026-10-11T14:37:09Z
+updated: 2026-10-11T14:37:47Z
 ---
 
 ## Current Test
 <!-- OVERWRITE each test - shows where we are -->
 
-number: 7
-name: Disable Two-Factor
+number: 8
+name: Require Two-Factor Instance-wide
 expected: |
-  "Disable two-factor" opens a destructive confirm asking for your password. A wrong password shows a field error and leaves 2FA on; the correct password turns it off and the status returns to "Not enabled". While the instance-wide requirement is on, the Disable button is disabled with an explanatory tooltip.
+  On /account, the "Require two-factor for everyone" switch is disabled with a visible helper if your own account has no 2FA. With 2FA enabled, turning it on shows an AlertDialog "Require two-factor authentication?" and a confirmation toast; turning it off applies immediately.
 awaiting: user response
 
 ## Tests
@@ -44,7 +44,7 @@ result: pass
 
 ### 7. Disable Two-Factor
 expected: "Disable two-factor" opens a destructive confirm asking for your password. A wrong password shows a field error and leaves 2FA on; the correct password turns it off and the status returns to "Not enabled". While the instance-wide requirement is on, the Disable button is disabled with an explanatory tooltip.
-result: [pending]
+result: pass
 
 ### 8. Require Two-Factor Instance-wide
 expected: On /account, the "Require two-factor for everyone" switch is disabled with a visible helper if your own account has no 2FA. With 2FA enabled, turning it on shows an AlertDialog "Require two-factor authentication?" and a confirmation toast; turning it off applies immediately.
@@ -79,9 +79,9 @@ severity: major
 ## Summary
 
 total: 14
-passed: 6
+passed: 7
 issues: 1
-pending: 7
+pending: 6
 skipped: 0
 blocked: 0
 
