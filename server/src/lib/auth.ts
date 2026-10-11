@@ -1,8 +1,14 @@
 import {betterAuth} from "better-auth";
 import {prismaAdapter} from "better-auth/adapters/prisma";
 import {APIError, createAuthMiddleware} from "better-auth/api";
+import {twoFactor} from "better-auth/plugins";
 import {prisma} from "./db.js";
-import {buildRateLimitConfig, CLIENT_IP_HEADER} from "./auth-config.js";
+import {
+    buildRateLimitConfig,
+    CLIENT_IP_HEADER,
+    TWO_FACTOR_DISABLED_PATHS,
+    TWO_FACTOR_TRUST_DEVICE_MAX_AGE_SECONDS,
+} from "./auth-config.js";
 import {SettingsRepository, SETTING_KEYS} from "../repositories/settings-repository.js";
 
 // A local instance, not the application/index.ts singleton — that module
@@ -55,6 +61,20 @@ export const auth = betterAuth({
     emailAndPassword: {
         enabled: true,
     },
+    // #45: TOTP second factor with single-use recovery codes. Only the TOTP
+    // and recovery-code paths are used; the OTP endpoints are closed below.
+    plugins: [
+        twoFactor({
+            issuer: "Docktor",
+            trustDeviceMaxAge: TWO_FACTOR_TRUST_DEVICE_MAX_AGE_SECONDS,
+        }),
+    ],
+    disabledPaths: [...TWO_FACTOR_DISABLED_PATHS],
+    // NOTE: `session.cookieCache` is deliberately not configured and must stay
+    // off (GHSA-xg6x-h9c9-2m83): with it on, a revoked session would keep
+    // working until the cached cookie expired, which would defeat session
+    // revocation on 2FA changes.
+
     // D-11/D-12: database-backed limiter, 5 attempts per 15 minutes on sign-in.
     rateLimit: buildRateLimitConfig(),
     advanced: {
@@ -63,6 +83,10 @@ export const auth = betterAuth({
         // private header from Fastify's request.ip (routes/auth.ts) and tells
         // better-auth to trust only that one.
         ipAddress: {ipAddressHeaders: [CLIENT_IP_HEADER]},
+        // Explicit false: better-auth switches its origin check off under
+        // NODE_ENV=test unless told otherwise, which would make CSRF tests
+        // pass vacuously. Production behaviour is unchanged.
+        disableOriginCheck: false,
     },
     hooks: {
         // T-05-09/CR-01: self-registration via better-auth's own
@@ -85,3 +109,7 @@ export const auth = betterAuth({
         }),
     },
 });
+
+/** The signed-in user as better-auth returns it, including `twoFactorEnabled`. */
+export type AuthUser = typeof auth.$Infer.Session.user;
+export type AuthSession = typeof auth.$Infer.Session.session;

@@ -1,7 +1,20 @@
 import {afterAll, beforeAll, beforeEach, describe, expect, it, vi} from "vitest";
 import type {FastifyInstance} from "fastify";
 import {buildApp} from "../../src/app.js";
-import {cleanDatabase, createTestUser, getApp, getPrisma, startContainer, stopContainer} from "./setup.js";
+import {
+    cleanDatabase,
+    createTestUser,
+    enrollTwoFactor,
+    extractCookie,
+    getApp,
+    getPrisma,
+    signIn as signInAsBrowser,
+    startContainer,
+    stopContainer,
+    TEST_ORIGIN,
+    TWO_FACTOR_COOKIE_NAME,
+} from "./setup.js";
+import {totpFromUri} from "../helpers/totp.js";
 
 // The limiter configuration is read when lib/auth.ts is first imported, i.e.
 // before any beforeAll runs, so the opt-in has to be set while the hoisted
@@ -12,6 +25,7 @@ vi.hoisted(() => {
 
 describe("Auth rate limiting (#46)", () => {
     let app: FastifyInstance;
+    let cookie: string;
     let email: string;
     let password: string;
 
@@ -34,6 +48,7 @@ describe("Auth rate limiting (#46)", () => {
         // cleanDatabase() also clears the RateLimit rows, so every test starts with empty counters.
         await cleanDatabase();
         const user = await createTestUser();
+        cookie = user.cookie;
         email = user.email;
         password = user.password;
     });
@@ -117,5 +132,33 @@ describe("Auth rate limiting (#46)", () => {
 
         const blocked = await signIn(app, password);
         expect(blocked.statusCode).toBe(429);
+    });
+
+    it("limits wrong TOTP codes to five per 15 minutes, overriding the plugin's own rule", async () => {
+        const enrolled = await enrollTwoFactor(cookie, password);
+        // Enrollment already spent attempts in this IP's buckets; start the challenge from empty counters.
+        await getPrisma().rateLimit.deleteMany();
+
+        const challenge = await signInAsBrowser(email, password);
+        const pending = extractCookie(challenge, TWO_FACTOR_COOKIE_NAME);
+        expect(pending).not.toBeNull();
+
+        const valid = totpFromUri(enrolled.totpURI);
+        const wrong = valid === "000000" ? "111111" : "000000";
+        const verify = (code: string) =>
+            app.inject({
+                method: "POST",
+                url: "/api/auth/two-factor/verify-totp",
+                headers: {origin: TEST_ORIGIN, cookie: pending as string},
+                payload: {code},
+            });
+
+        for (let attempt = 1; attempt <= 5; attempt++) {
+            expect((await verify(wrong)).statusCode).toBe(401);
+        }
+
+        const blocked = await verify(wrong);
+        expect(blocked.statusCode).toBe(429);
+        expect(Number(blocked.headers["x-retry-after"])).toBeGreaterThanOrEqual(1);
     });
 });

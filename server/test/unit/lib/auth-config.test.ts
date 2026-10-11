@@ -7,6 +7,8 @@ import {
     CLIENT_IP_HEADER,
     isAuthRateLimitEnabled,
     parseTrustProxy,
+    TWO_FACTOR_DISABLED_PATHS,
+    TWO_FACTOR_TRUST_DEVICE_MAX_AGE_SECONDS,
 } from "../../../src/lib/auth-config.js";
 
 describe("parseTrustProxy", () => {
@@ -94,5 +96,21 @@ describe("buildRateLimitConfig", () => {
 describe("static auth constants", () => {
     it("uses a private header name for the client IP", () => {
         expect(CLIENT_IP_HEADER).toBe("x-docktor-client-ip");
+    });
+
+    it("keeps the trusted-device cookie for 30 days", () => {
+        expect(TWO_FACTOR_TRUST_DEVICE_MAX_AGE_SECONDS).toBe(30 * 24 * 60 * 60);
+    });
+
+    it("closes the OTP, TOTP-URI and password-reset endpoints", () => {
+        expect([...TWO_FACTOR_DISABLED_PATHS].sort()).toEqual(
+            [
+                "/request-password-reset",
+                "/reset-password",
+                "/two-factor/get-totp-uri",
+                "/two-factor/send-otp",
+                "/two-factor/verify-otp",
+            ].sort(),
+        );
     });
 });

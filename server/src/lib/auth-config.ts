@@ -31,6 +31,24 @@ export const AUTH_STRICT_PATHS = [
     "/verify-password",
 ] as const;
 
+/** D-05: how long a "trust this device" cookie skips the second step (30 days). */
+export const TWO_FACTOR_TRUST_DEVICE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+
+/**
+ * better-auth endpoints answered with 404 (D-16). OTP delivery is not
+ * configured (no sendOTP). get-totp-uri would re-expose the TOTP secret to
+ * anyone holding a session and the password, and enrollment already returns
+ * the URI exactly once. Password reset is not built in this phase (a follow-up
+ * issue tracks it).
+ */
+export const TWO_FACTOR_DISABLED_PATHS = [
+    "/two-factor/send-otp",
+    "/two-factor/verify-otp",
+    "/two-factor/get-totp-uri",
+    "/request-password-reset",
+    "/reset-password",
+] as const;
+
 /**
  * Parses the TRUST_PROXY environment variable into Fastify's `trustProxy`
  * option (D-13). Default is off: the client IP is the TCP peer address, so a
