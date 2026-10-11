@@ -3,16 +3,16 @@ status: testing
 phase: 15-access-hardening
 source: 15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md
 started: 2026-10-11T12:27:56Z
-updated: 2026-10-11T14:20:22Z
+updated: 2026-10-11T14:36:39Z
 ---
 
 ## Current Test
 <!-- OVERWRITE each test - shows where we are -->
 
-number: 5
-name: Sign-in with a Recovery Code (single use)
+number: 6
+name: Regenerate Recovery Codes
 expected: |
-  "Use a recovery code" switches the step to an xxxxx-xxxxx input. A valid recovery code signs you in; the same code used again is rejected. "Use authenticator app instead" switches back. The step mentions docs/deployment.md for the lost-everything case.
+  On /account with 2FA enabled, "Regenerate recovery codes" asks for your password, then shows 10 new codes (Continue gated by "I have saved") and a toast "Recovery codes regenerated." Old codes no longer work.
 awaiting: user response
 
 ## Tests
@@ -36,7 +36,7 @@ note: \"User: had to log in twice again (same as gap G-15-14)\"
 
 ### 5. Sign-in with a Recovery Code (single use)
 expected: "Use a recovery code" switches the step to an xxxxx-xxxxx input. A valid recovery code signs you in; the same code used again is rejected. "Use authenticator app instead" switches back. The step mentions docs/deployment.md for the lost-everything case.
-result: [pending]
+result: pass
 
 ### 6. Regenerate Recovery Codes
 expected: On /account with 2FA enabled, "Regenerate recovery codes" asks for your password, then shows 10 new codes (Continue gated by "I have saved") and a toast "Recovery codes regenerated." Old codes no longer work.
@@ -79,9 +79,9 @@ severity: major
 ## Summary
 
 total: 14
-passed: 4
+passed: 5
 issues: 1
-pending: 9
+pending: 8
 skipped: 0
 blocked: 0
 
