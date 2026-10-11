@@ -3,16 +3,16 @@ status: testing
 phase: 15-access-hardening
 source: 15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md
 started: 2026-10-11T12:27:56Z
-updated: 2026-10-11T15:07:02Z
+updated: 2026-10-11T15:10:13Z
 ---
 
 ## Current Test
 <!-- OVERWRITE each test - shows where we are -->
 
-number: 11
-name: Cross-Origin Write Blocked
+number: 12
+name: Reset Two-Factor from the Server Box
 expected: |
-  A state-changing request to an /api/* route (e.g. curl -X PUT /api/settings ... with a cookie and `Origin: https://evil.example`) is answered 403 {"error":"Cross-origin request blocked","code":"CROSS_ORIGIN_REQUEST_REJECTED"}. The same request from the app's own origin works.
+  Running the documented reset script on the host (`docs/deployment.md` section "Resetting two-factor authentication") for a user email disables their 2FA, ends all their sessions and trusted devices, exits 0, and the user can sign in with just a password again. An unknown email exits non-zero with a clear message.
 awaiting: user response
 
 ## Tests
@@ -62,7 +62,7 @@ result: pass
 
 ### 11. Cross-Origin Write Blocked
 expected: A state-changing request to an /api/* route (e.g. curl -X PUT /api/settings ... with a cookie and `Origin: https://evil.example`) is answered 403 {"error":"Cross-origin request blocked","code":"CROSS_ORIGIN_REQUEST_REJECTED"}. The same request from the app's own origin works.
-result: [pending]
+result: pass
 
 ### 12. Reset Two-Factor from the Server Box
 expected: Running the documented reset script on the host (`docs/deployment.md` section "Resetting two-factor authentication") for a user email disables their 2FA, ends all their sessions and trusted devices, exits 0, and the user can sign in with just a password again. An unknown email exits non-zero with a clear message.
@@ -81,9 +81,9 @@ severity: major
 ## Summary
 
 total: 14
-passed: 9
+passed: 10
 issues: 1
-pending: 3
+pending: 2
 skipped: 0
 blocked: 1
 
