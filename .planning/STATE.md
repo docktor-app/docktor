@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 milestone: v0.1.0
 current_phase: 16
 current_phase_name: Release Readiness for v0.1.0
-current_plan: 2
+current_plan: 3
 status: "Phases 1-13 complete (v0.1.0 scope: ROADMAP Phases 10-16, sourced from GitHub issues in docktor-app/docktor; product tracking lives in GitHub Issues). Phase 14 (Health, Uptime and Disk Visibility): all 14 plans executed, code review done, verification found gaps (9/13 truths) — CR-01 probe Docker calls lack timeouts, WR-01/WR-05 probe results not tied to current container. Gap-closure plan (14-15) being created via /gsd-plan-phase 14 --gaps. Phases 15 (Access Hardening) and 16 (Release Readiness) not started."
-stopped_at: Completed 16-01-PLAN.md
-last_updated: "2026-10-11T20:44:28.890Z"
-state_head: 12f9d3353a07f1a36419b6629842397d92d813be
+stopped_at: Completed 16-02-PLAN.md
+last_updated: "2026-10-11T21:08:36.703Z"
+state_head: 1475f434ae413bf92e33e7ee256e354a8ed8c527
 progress:
   total_phases: 17
   completed_phases: 9
   total_plans: 166
-  completed_plans: 156
+  completed_plans: 157
 milestone_name: milestone
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-22)
 ## Current Position
 
 Phase: 16 (Release Readiness for v0.1.0) — EXECUTING
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 10
 
 ## Performance Metrics
@@ -190,6 +190,7 @@ Total Plans in Phase: 10
 | Phase 14 P19 | 11 min | 3 tasks | 6 files |
 | Phase 14 P20 | 6 min | 3 tasks | 13 files |
 | Phase 16 P01 | 9min | 2 tasks | 15 files |
+| Phase 16 P02 | 15min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -469,6 +470,7 @@ Recent decisions affecting current work:
 - [Phase 14]: 14-20: no logging change (log-pipe mechanism refuted); history outbox is in-memory only; pg pool max left at default with idle reaping off
 - [Phase 16]: [Phase 16-01]: Blocking env set stays exactly D-10; malformed-but-present DATABASE_URL/BETTER_AUTH_URL only warn
 - [Phase 16]: [Phase 16-01]: index.ts loads app.js via dynamic import after the env check; layering test walks static imports to keep lib/auth.ts unreachable
+- [Phase 16]: [Phase 16-02]: MIT license confirmed (Copyright (c) 2026 Docktor contributors, no CLA/DCO); docs links use interim GitHub style (DOCS_BASE_URL https://github.com/docktor-app/docks/blob/main); security/CoC contact info@docktor.app; quickstart ref v0.1.0
 
 ### Quick Tasks Completed
 
@@ -541,6 +543,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-10-11T20:44:28.399Z
-Stopped at: Completed 16-01-PLAN.md
+Last session: 2026-10-11T21:08:36.213Z
+Stopped at: Completed 16-02-PLAN.md
 Resume file: None

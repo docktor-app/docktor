@@ -663,12 +663,12 @@ Plans:
   7. `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, and issue/PR templates exist (#55)
   8. Project license is decided and a `LICENSE` file reflecting it is added (#57)
 
-**Plans:** 1/10 plans executed
+**Plans:** 2/10 plans executed
 
 Plans:
 
 - [x] 16-01-PLAN.md — Startup environment check: one Zod schema blocks on missing/invalid DATABASE_URL, BETTER_AUTH_SECRET, BETTER_AUTH_URL, ENCRYPTION_KEY before app.js loads; nine non-blocking warnings stored and served by GET /api/settings/environment (#7)
-- [ ] 16-02-PLAN.md — License door + release inputs checkpoint; MIT LICENSE and license fields, SECURITY.md, CODE_OF_CONDUCT.md, issue forms and PR template (#57, #55)
+- [x] 16-02-PLAN.md — License door + release inputs checkpoint; MIT LICENSE and license fields, SECURITY.md, CODE_OF_CONDUCT.md, issue forms and PR template (#57, #55)
 - [ ] 16-03-PLAN.md — Dismissible environment-warnings banner in AppLayout, docs-link helper, Playwright default stub and journey (#7)
 - [ ] 16-04-PLAN.md — Clean-checkout multi-arch Dockerfile, PR image build + startup smoke, gate/tag decision, CI-gated GHCR publish workflow (#11, #42)
 - [ ] 16-05-PLAN.md — CONTRIBUTING.md and docs/design.md drift fixes (#55, #17)
