@@ -32,3 +32,44 @@ export function isEnrollmentRequired({
 export function canChangeMandatory({actorHasTwoFactor}: {actorHasTwoFactor: boolean}): boolean {
     return actorHasTwoFactor;
 }
+
+/** D-10: the better-auth endpoints whose success changes the user's credential factor. */
+export const TWO_FACTOR_CHANGE_PATHS = [
+    "/two-factor/verify-totp",
+    "/two-factor/disable",
+    "/two-factor/generate-backup-codes",
+] as const;
+
+export function isTwoFactorChangePath(path: string): boolean {
+    return (TWO_FACTOR_CHANGE_PATHS as readonly string[]).includes(path);
+}
+
+export interface SessionRevocationInput {
+    path: string;
+    /** The endpoint returned a result rather than an error. */
+    succeeded: boolean;
+    /** Token of the session that made the call; null when there was none (sign-in challenge). */
+    actorSessionToken: string | null;
+    /** The caller's twoFactorEnabled before the endpoint ran. */
+    twoFactorEnabledBefore: boolean | null;
+    /** Token of the session the endpoint swapped in (enabling verify-totp, disable); null otherwise. */
+    reissuedSessionToken: string | null;
+}
+
+export type SessionRevocationPlan = {revoke: false} | {revoke: true; keepToken: string};
+
+/**
+ * D-10: decides whether a two-factor change signs out the user's other
+ * devices. verify-totp counts only on the false -> true transition by a
+ * logged-in caller (the same endpoint also completes the sign-in challenge
+ * and plain re-verification, which must revoke nothing); disable and
+ * generate-backup-codes count on success. The caller keeps their session:
+ * the re-issued one when the endpoint swapped it, otherwise their own.
+ * Trust-device records are purged whenever revoke is true.
+ */
+export function planSessionRevocation(input: SessionRevocationInput): SessionRevocationPlan {
+    const {path, succeeded, actorSessionToken, twoFactorEnabledBefore, reissuedSessionToken} = input;
+    if (!succeeded || actorSessionToken === null || !isTwoFactorChangePath(path)) return {revoke: false};
+    if (path === "/two-factor/verify-totp" && twoFactorEnabledBefore === true) return {revoke: false};
+    return {revoke: true, keepToken: reissuedSessionToken ?? actorSessionToken};
+}

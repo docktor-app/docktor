@@ -9,7 +9,9 @@ import {
     TWO_FACTOR_DISABLED_PATHS,
     TWO_FACTOR_TRUST_DEVICE_MAX_AGE_SECONDS,
 } from "./auth-config.js";
+import {AccountSecurityRepository} from "../repositories/account-security-repository.js";
 import {SettingsRepository, SETTING_KEYS} from "../repositories/settings-repository.js";
+import {createTwoFactorAfterHook, createTwoFactorBeforeHook} from "./two-factor-hooks.js";
 import {parseMandatoryFlag, REQUIRE_TWO_FACTOR_SETTING_KEY} from "../domain/two-factor-policy.js";
 
 // A local instance, not the application/index.ts singleton — that module
@@ -17,6 +19,8 @@ import {parseMandatoryFlag, REQUIRE_TWO_FACTOR_SETTING_KEY} from "../domain/two-
 // here would be circular. SettingsRepository is a stateless wrapper around
 // the shared `prisma` client, so a second instance is harmless.
 const settingsRepository = new SettingsRepository();
+// Same reasoning for the trust-device purge used by the two-factor hooks.
+const accountSecurityRepository = new AccountSecurityRepository();
 
 const DEFAULT_TRUSTED_ORIGIN = "http://localhost:5173";
 
@@ -59,6 +63,12 @@ export async function resolveTrustedOrigins(): Promise<string[]> {
 export async function isTwoFactorMandatory(): Promise<boolean> {
     return parseMandatoryFlag(await settingsRepository.get(REQUIRE_TWO_FACTOR_SETTING_KEY));
 }
+
+const twoFactorHookDeps = {
+    isMandatory: isTwoFactorMandatory,
+    deleteTrustDeviceRecords: (userId: string): Promise<number> => accountSecurityRepository.deleteTrustDeviceRecords(userId),
+};
+const twoFactorBeforeHook = createTwoFactorBeforeHook(twoFactorHookDeps);
 
 export const auth = betterAuth({
     database: prismaAdapter(prisma, {
@@ -107,16 +117,22 @@ export const auth = betterAuth({
         // when the instance is empty. Scoped to this single path via
         // `ctx.path` so login/session/every other auth route is
         // unaffected.
+        //
+        // #45/D-10: the same hook then runs the two-factor guards (enable
+        // twice, disable while the requirement is on) and records the caller
+        // for the after hook, which signs out their other devices.
         before: createAuthMiddleware(async (ctx) => {
-            if (ctx.path !== "/sign-up/email") return;
-
-            const userCount = await prisma.user.count();
-            if (userCount > 0) {
-                throw new APIError("FORBIDDEN", {
-                    message: "Self-registration is disabled; setup has already been completed",
-                });
+            if (ctx.path === "/sign-up/email") {
+                const userCount = await prisma.user.count();
+                if (userCount > 0) {
+                    throw new APIError("FORBIDDEN", {
+                        message: "Self-registration is disabled; setup has already been completed",
+                    });
+                }
             }
+            await twoFactorBeforeHook(ctx);
         }),
+        after: createAuthMiddleware(createTwoFactorAfterHook(twoFactorHookDeps)),
     },
 });
 
