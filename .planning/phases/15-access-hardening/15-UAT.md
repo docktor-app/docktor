@@ -3,16 +3,16 @@ status: testing
 phase: 15-access-hardening
 source: 15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md
 started: 2026-10-11T12:27:56Z
-updated: 2026-10-11T15:10:13Z
+updated: 2026-10-11T15:13:17Z
 ---
 
 ## Current Test
 <!-- OVERWRITE each test - shows where we are -->
 
-number: 12
-name: Reset Two-Factor from the Server Box
+number: 13
+name: Mobile Layout of Enrollment
 expected: |
-  Running the documented reset script on the host (`docs/deployment.md` section "Resetting two-factor authentication") for a user email disables their 2FA, ends all their sessions and trusted devices, exits 0, and the user can sign in with just a password again. An unknown email exits non-zero with a clear message.
+  At phone width (~412 px) the enrollment dialog (QR step and recovery-codes step) scrolls within the viewport, footer buttons stack full width, and nothing overflows horizontally.
 awaiting: user response
 
 ## Tests
@@ -66,7 +66,7 @@ result: pass
 
 ### 12. Reset Two-Factor from the Server Box
 expected: Running the documented reset script on the host (`docs/deployment.md` section "Resetting two-factor authentication") for a user email disables their 2FA, ends all their sessions and trusted devices, exits 0, and the user can sign in with just a password again. An unknown email exits non-zero with a clear message.
-result: [pending]
+result: pass
 
 ### 13. Mobile Layout of Enrollment
 expected: At phone width (~412 px) the enrollment dialog (QR step and recovery-codes step) scrolls within the viewport, footer buttons stack full width, and nothing overflows horizontally.
@@ -81,9 +81,9 @@ severity: major
 ## Summary
 
 total: 14
-passed: 10
+passed: 11
 issues: 1
-pending: 2
+pending: 1
 skipped: 0
 blocked: 1
 
