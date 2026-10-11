@@ -622,7 +622,7 @@ Needs Phase 11's UI patterns for the 2FA enrollment flow. The rate-limiting/CSRF
   2. Auth endpoints (login, password reset, etc.) have rate limiting (#46)
   3. CSRF protection and session-cookie security defaults (httpOnly/sameSite/secure) are verified or closed on the existing better-auth integration (#46)
 
-**Plans:** 6 plans
+**Plans:** 7 plans
 
 Plans:
 **Wave 1**
@@ -642,6 +642,10 @@ Plans:
 **Wave 4** *(blocked on 15-05)*
 
 - [ ] 15-06-PLAN.md — Mandatory-2FA switch, forced-enrollment redirect and alert, regenerate/disable dialogs, Playwright 2FA journey (#45)
+
+**Gap closure** *(UAT G-15-14; independent of the executed plans)*
+
+- [ ] 15-07-PLAN.md — Single sign-in after startup: refreshSession() awaits better-auth's session-store refetch before navigating to / on password, 2FA and setup-wizard auto-login; Playwright journeys that start signed out at / (#45, G-15-14)
 
 ### Phase 16: Release Readiness for v0.1.0
 
