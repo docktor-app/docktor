@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 milestone: v0.1.0
 current_phase: 16
 current_phase_name: Release Readiness for v0.1.0
-current_plan: 5
+current_plan: 6
 status: "Phases 1-13 complete (v0.1.0 scope: ROADMAP Phases 10-16, sourced from GitHub issues in docktor-app/docktor; product tracking lives in GitHub Issues). Phase 14 (Health, Uptime and Disk Visibility): all 14 plans executed, code review done, verification found gaps (9/13 truths) — CR-01 probe Docker calls lack timeouts, WR-01/WR-05 probe results not tied to current container. Gap-closure plan (14-15) being created via /gsd-plan-phase 14 --gaps. Phases 15 (Access Hardening) and 16 (Release Readiness) not started."
-stopped_at: Completed 16-03-PLAN.md
-last_updated: "2026-10-11T21:18:31.619Z"
-state_head: 99ce3eb6f3df81a72766b6caa641af1a843a6a79
+stopped_at: Completed 16-05-PLAN.md
+last_updated: "2026-10-11T21:25:16.940Z"
+state_head: 2d37f4f433e3bd10523e15f6744fce568ec1cd40
 progress:
   total_phases: 17
   completed_phases: 9
   total_plans: 166
-  completed_plans: 159
+  completed_plans: 160
 milestone_name: milestone
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-22)
 ## Current Position
 
 Phase: 16 (Release Readiness for v0.1.0) — EXECUTING
-Current Plan: 5
+Current Plan: 6
 Total Plans in Phase: 10
 
 ## Performance Metrics
@@ -193,6 +193,7 @@ Total Plans in Phase: 10
 | Phase 16 P02 | 15min | 3 tasks | 11 files |
 | Phase 16 P04 | 14 min | 3 tasks | 5 files |
 | Phase 16 P03 | 5 min | 2 tasks | 11 files |
+| Phase 16 P05 | 30 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -475,6 +476,8 @@ Recent decisions affecting current work:
 - [Phase 16]: [Phase 16-02]: MIT license confirmed (Copyright (c) 2026 Docktor contributors, no CLA/DCO); docs links use interim GitHub style (DOCS_BASE_URL https://github.com/docktor-app/docks/blob/main); security/CoC contact info@docktor.dev; quickstart ref v0.1.0
 - [Phase 16]: 16-04: publish gate is reusable workflow_call (call-suppress-zero); bare major tag suppressed while major is 0; latest only on non-prerelease v* tags
 - [Phase 16]: 16-03: environment banner lives in AppLayout above the Outlet; dismissal is per-browser localStorage keyed code:variable with stale-key pruning
+- [Phase 16]: 16-05: CONTRIBUTING tells contributors BETTER_AUTH_URL=http://localhost:3000; Vite origin localhost:5173 is a default trusted origin
+- [Phase 16]: 16-05: design.md uses interim GitHub-style docs links (docks/blob/main) that must be rewritten when a docs site is hosted
 
 ### Quick Tasks Completed
 
@@ -548,6 +551,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-10-11T21:18:31.134Z
-Stopped at: Completed 16-03-PLAN.md
+Last session: 2026-10-11T21:25:16.423Z
+Stopped at: Completed 16-05-PLAN.md
 Resume file: None
