@@ -93,7 +93,7 @@ type WarningEvaluator = (
     context: EnvironmentContext,
 ) => EnvironmentWarning | EnvironmentWarning[] | null
 
-// .env.example "TRUST_PROXY" and docs/deployment.md "Sign-in protection": behind
+// .env.example "TRUST_PROXY" and docs site reference/deployment "Sign-in protection": behind
 // a TLS-terminating proxy, an unset TRUST_PROXY puts every client in one
 // sign-in rate-limit bucket.
 const trustProxyUnsetBehindHttps: WarningEvaluator = (env) => {
@@ -122,7 +122,7 @@ const trustProxyTrustsAll: WarningEvaluator = (env) => {
     }
 }
 
-// .env.example "Disk monitoring" / docs/deployment.md: the disk checker's default
+// .env.example "Disk monitoring" / docs site reference/deployment: the disk checker's default
 // (/var/lib/docker) measures the container's own throwaway filesystem layer.
 const dockerDataPathNotHostMount: WarningEvaluator = (env, context) => {
     if (!context.containerized) return null
@@ -163,7 +163,7 @@ const stacksHostDirUnset: WarningEvaluator = (env, context) => {
     }
 }
 
-// docs/deployment.md "Stacks directory persistence": lib/stacks-dir.ts skips the
+// docs site reference/deployment "Stacks directory persistence": lib/stacks-dir.ts skips the
 // persistence check only on the exact value "false".
 const stacksMountCheckDisabled: WarningEvaluator = (env) => {
     if (env.DOCKTOR_STACKS_MOUNT_CHECK !== "false") return null
