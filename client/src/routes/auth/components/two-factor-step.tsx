@@ -25,7 +25,8 @@ import {
 } from "@/components/ui/form";
 
 export interface TwoFactorStepProps {
-    onSuccess(): void;
+    /** The step keeps its pending state ("Verifying...") until a returned promise settles. */
+    onSuccess(): void | Promise<void>;
 
     onBack(): void;
 
@@ -206,7 +207,7 @@ export function TwoFactorStep({onSuccess, onBack, onExpired}: Readonly<TwoFactor
         });
 
         if (!verifyError) {
-            onSuccess();
+            await onSuccess();
             return;
         }
 

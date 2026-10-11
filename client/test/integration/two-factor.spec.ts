@@ -99,6 +99,42 @@ test.describe("Two-factor UI (desktop)", () => {
         expect(verifyBody).toEqual(expect.objectContaining({code: "123456", trustDevice: false}));
     });
 
+    test("signs in once with an authenticator code after a signed-out visit to / (G-15-14)", async ({page}) => {
+        await mockDashboardData(page);
+        let hasSession = false;
+        let signInCalls = 0;
+        let verifyCalls = 0;
+        await page.route("**/api/auth/get-session", (route) =>
+            route.fulfill(json(hasSession ? mockSession : null)),
+        );
+        await page.route("**/api/auth/sign-in/email", (route) => {
+            signInCalls += 1;
+            return route.fulfill(json({twoFactorRedirect: true}));
+        });
+        await page.route("**/api/auth/two-factor/verify-totp", (route) => {
+            verifyCalls += 1;
+            hasSession = true;
+            return route.fulfill(json({token: "t", user: mockUser}));
+        });
+
+        // The signed-out visit to / primes the stale signed-out session store.
+        await page.goto("/");
+        await expect(page).toHaveURL(/\/login$/);
+        await page.getByLabel(/email/i).fill("test@example.com");
+        await page.getByLabel(/password/i).fill("TestPassword123!");
+        await page.getByRole("button", {name: /sign in/i}).click();
+
+        await expect(page.getByText("Two-factor authentication", {exact: true})).toBeVisible();
+        await page.getByLabel("Authentication code").fill("123456");
+        await page.getByRole("button", {name: "Verify", exact: true}).click();
+
+        await expect(page.getByRole("heading", {name: "Dashboard", level: 1})).toBeVisible({timeout: 10_000});
+        await expect(page).toHaveURL("/");
+        await expect(page.getByText("Sign in to Docktor")).toHaveCount(0);
+        expect(signInCalls).toBe(1);
+        expect(verifyCalls).toBe(1);
+    });
+
     test("shows the rate-limit message with the wait from X-Retry-After", async ({page}) => {
         await page.route("**/api/auth/get-session", (route) => route.fulfill(json(null)));
         await page.route("**/api/auth/sign-in/email", (route) =>

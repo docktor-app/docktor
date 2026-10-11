@@ -159,6 +159,29 @@ describe("LoginForm", () => {
             await waitFor(() => expect(navigate).toHaveBeenCalledWith("/"));
         });
 
+        it("refreshes the session before navigating and keeps Verifying... meanwhile (G-15-14)", async () => {
+            const refresh = deferred();
+            refreshSession.mockReturnValue(refresh.promise);
+            const user = userEvent.setup();
+            renderLoginForm();
+
+            await submitCredentials(user);
+            await user.type(await screen.findByLabelText("Authentication code"), "123456");
+            await user.click(screen.getByRole("button", {name: "Verify"}));
+
+            await waitFor(() => expect(refreshSession).toHaveBeenCalledTimes(1));
+            expect(navigate).not.toHaveBeenCalled();
+            expect(screen.getByRole("button", {name: "Verifying..."})).toBeDisabled();
+
+            await act(async () => {
+                refresh.resolve();
+            });
+
+            await waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
+            expect(navigate).toHaveBeenCalledWith("/");
+            expect(refreshSession.mock.invocationCallOrder[0]).toBeLessThan(navigate.mock.invocationCallOrder[0]);
+        });
+
         it("returns to an empty password step from Back to sign in", async () => {
             const user = userEvent.setup();
             renderLoginForm();

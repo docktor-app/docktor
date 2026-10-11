@@ -1,5 +1,5 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
-import {render, screen, waitFor} from "@testing-library/react";
+import {act, render, screen, waitFor} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {TwoFactorStep} from "../../../../../src/routes/auth/components/two-factor-step";
 
@@ -22,12 +22,19 @@ vi.mock("@/lib/auth-client", () => ({
     twoFactor: {verifyTotp, verifyBackupCode},
 }));
 
-function renderStep() {
-    const onSuccess = vi.fn();
+function deferred(): {promise: Promise<void>; resolve: () => void} {
+    let resolve: () => void = () => {};
+    const promise = new Promise<void>((res) => {
+        resolve = res;
+    });
+    return {promise, resolve};
+}
+
+function renderStep(onSuccess: () => void | Promise<void> = vi.fn()) {
     const onBack = vi.fn();
     const onExpired = vi.fn();
     render(<TwoFactorStep onSuccess={onSuccess} onBack={onBack} onExpired={onExpired}/>);
-    return {onSuccess, onBack, onExpired};
+    return {onBack, onExpired};
 }
 
 describe("TwoFactorStep (authenticator code)", () => {
@@ -66,13 +73,34 @@ describe("TwoFactorStep (authenticator code)", () => {
 
     it("verifies the code with trustDevice false by default and calls onSuccess once", async () => {
         const user = userEvent.setup();
-        const {onSuccess} = renderStep();
+        const onSuccess = vi.fn();
+        renderStep(onSuccess);
 
         await user.type(screen.getByLabelText("Authentication code"), "123456");
         await user.click(screen.getByRole("button", {name: "Verify"}));
 
         await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
         expect(verifyTotp).toHaveBeenCalledWith(expect.objectContaining({code: "123456", trustDevice: false}));
+    });
+
+    it("keeps Verifying... disabled until a pending onSuccess promise resolves (G-15-14)", async () => {
+        const pending = deferred();
+        const onSuccess = vi.fn(() => pending.promise);
+        const user = userEvent.setup();
+        renderStep(onSuccess);
+
+        await user.type(screen.getByLabelText("Authentication code"), "123456");
+        await user.click(screen.getByRole("button", {name: "Verify"}));
+
+        await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+        expect(screen.getByRole("button", {name: "Verifying..."})).toBeDisabled();
+
+        await act(async () => {
+            pending.resolve();
+        });
+
+        expect(await screen.findByRole("button", {name: "Verify"})).toBeEnabled();
+        expect(onSuccess).toHaveBeenCalledTimes(1);
     });
 
     it("shows the trust checkbox unchecked with its helper text and sends trustDevice true when checked", async () => {
@@ -175,7 +203,8 @@ describe("TwoFactorStep (errors)", () => {
     it("calls onExpired when the pending sign-in cookie is gone", async () => {
         verifyTotp.mockImplementation(failWith({status: 401, message: "Invalid two factor cookie"}));
         const user = userEvent.setup();
-        const {onExpired, onSuccess} = renderStep();
+        const onSuccess = vi.fn();
+        const {onExpired} = renderStep(onSuccess);
 
         await submitTotp(user);
 
@@ -233,7 +262,8 @@ describe("TwoFactorStep (recovery code)", () => {
 
     it("trims the code, keeps its case and carries the trust choice over", async () => {
         const user = userEvent.setup();
-        const {onSuccess} = renderStep();
+        const onSuccess = vi.fn();
+        renderStep(onSuccess);
 
         await user.click(screen.getByRole("checkbox", {name: "Trust this device for 30 days"}));
         const input = await openRecoveryMode(user);
@@ -247,6 +277,26 @@ describe("TwoFactorStep (recovery code)", () => {
             expect.objectContaining({code: "ab12C-d34Ef", trustDevice: true}),
         );
         expect(verifyTotp).not.toHaveBeenCalled();
+    });
+
+    it("keeps Verifying... disabled for a recovery code until onSuccess resolves (G-15-14)", async () => {
+        const pending = deferred();
+        const onSuccess = vi.fn(() => pending.promise);
+        const user = userEvent.setup();
+        renderStep(onSuccess);
+
+        const input = await openRecoveryMode(user);
+        await user.type(input, "aaaaa-bbbbb");
+        await user.click(screen.getByRole("button", {name: "Verify"}));
+
+        await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+        expect(screen.getByRole("button", {name: "Verifying..."})).toBeDisabled();
+
+        await act(async () => {
+            pending.resolve();
+        });
+
+        expect(await screen.findByRole("button", {name: "Verify"})).toBeEnabled();
     });
 
     it("requires a recovery code", async () => {
