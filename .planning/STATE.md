@@ -5,7 +5,7 @@ current_phase: 15
 current_phase_name: Access Hardening
 current_plan: Not started
 status: "Phases 1-13 complete (v0.1.0 scope: ROADMAP Phases 10-16, sourced from GitHub issues in docktor-app/docktor; product tracking lives in GitHub Issues). Phase 14 (Health, Uptime and Disk Visibility): all 14 plans executed, code review done, verification found gaps (9/13 truths) — CR-01 probe Docker calls lack timeouts, WR-01/WR-05 probe results not tied to current container. Gap-closure plan (14-15) being created via /gsd-plan-phase 14 --gaps. Phases 15 (Access Hardening) and 16 (Release Readiness) not started."
-stopped_at: Phase 15 UI-SPEC approved
+stopped_at: Phase 15 executed (6/6 plans), verification human_needed
 last_updated: "2026-10-10T12:57:38.333Z"
 state_head: b5b22ae3eb345caca7dfd779c965000a5d539c22
 progress:
@@ -539,5 +539,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-10-10T12:57:37.032Z
-Stopped at: Phase 15 UI-SPEC approved
+Stopped at: Phase 15 executed (6/6 plans), verification human_needed — CI integration + Playwright runs and real-authenticator QR check pending
 Resume file: .planning/phases/15-access-hardening/15-UI-SPEC.md
