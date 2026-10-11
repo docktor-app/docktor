@@ -25,7 +25,7 @@ CREATE TABLE "TwoFactor" (
 CREATE UNIQUE INDEX "RateLimit_key_key" ON "RateLimit"("key");
 
 -- CreateIndex
-CREATE INDEX "TwoFactor_userId_idx" ON "TwoFactor"("userId");
+CREATE UNIQUE INDEX "TwoFactor_userId_key" ON "TwoFactor"("userId");
 
 -- AddForeignKey
 ALTER TABLE "TwoFactor" ADD CONSTRAINT "TwoFactor_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;

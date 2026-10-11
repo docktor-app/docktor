@@ -6,8 +6,6 @@ model TwoFactor {
   id          String @id
   secret      String
   backupCodes String
-  userId      String
+  userId      String @unique
   user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
 }

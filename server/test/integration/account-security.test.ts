@@ -69,6 +69,9 @@ describe("Account security and the mandatory two-factor gate (#45)", () => {
     }
 
     it("rejects unauthenticated requests with the unchanged 401 body", async () => {
+        // The setup gate answers 503 until a user exists; the 401 only applies once the instance is set up.
+        await createTestUser();
+
         const res = await get("/api/account/security");
 
         expect(res.statusCode).toBe(401);
