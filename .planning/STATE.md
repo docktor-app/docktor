@@ -473,7 +473,7 @@ Recent decisions affecting current work:
 - [Phase 14]: 14-20: no logging change (log-pipe mechanism refuted); history outbox is in-memory only; pg pool max left at default with idle reaping off
 - [Phase 16]: [Phase 16-01]: Blocking env set stays exactly D-10; malformed-but-present DATABASE_URL/BETTER_AUTH_URL only warn
 - [Phase 16]: [Phase 16-01]: index.ts loads app.js via dynamic import after the env check; layering test walks static imports to keep lib/auth.ts unreachable
-- [Phase 16]: [Phase 16-02]: MIT license confirmed (Copyright (c) 2026 Docktor contributors, no CLA/DCO); docs links use interim GitHub style (DOCS_BASE_URL https://github.com/docktor-app/docks/blob/main); security/CoC contact info@docktor.dev; quickstart ref v0.1.0
+- [Phase 16]: [Phase 16-02]: MIT license confirmed (Copyright (c) 2026 Docktor contributors, no CLA/DCO); docs links use interim GitHub style (DOCS_BASE_URL https://github.com/docktor-app/docks/blob/main); security/CoC contact info@raphael-muesseler.de; quickstart ref v0.1.0
 - [Phase 16]: 16-04: publish gate is reusable workflow_call (call-suppress-zero); bare major tag suppressed while major is 0; latest only on non-prerelease v* tags
 - [Phase 16]: 16-03: environment banner lives in AppLayout above the Outlet; dismissal is per-browser localStorage keyed code:variable with stale-key pruning
 - [Phase 16]: 16-05: CONTRIBUTING tells contributors BETTER_AUTH_URL=http://localhost:3000; Vite origin localhost:5173 is a default trusted origin

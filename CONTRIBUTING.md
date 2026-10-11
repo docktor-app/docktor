@@ -4,7 +4,7 @@ Thanks for helping make Docktor better. This guide takes you from a fresh clone 
 
 ## Code of Conduct
 
-This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). By participating you agree to uphold it. Report unacceptable behaviour to info@docktor.dev.
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). By participating you agree to uphold it. Report unacceptable behaviour to info@raphael-muesseler.de.
 
 ## License
 
