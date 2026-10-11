@@ -153,3 +153,255 @@ describe("formatEnvironmentWarning", () => {
         expect(line).toBe("[env] WARNING TRUST_PROXY Trusts every hop. (TRUST_PROXY_TRUSTS_ALL)")
     })
 })
+
+function warningCodes(env: EnvironmentSource, context = HOST): string[] {
+    return checkEnvironment(env, context).warnings.map((w) => w.code)
+}
+
+const IN_CONTAINER = {containerized: true}
+
+// A container deployment that triggers none of the warnings, as the starting point for each rule.
+const HEALTHY_CONTAINER_ENV: EnvironmentSource = {
+    ...VALID_ENV,
+    NODE_ENV: "production",
+    DOCKER_DATA_PATH: "/host/var/lib/docker",
+    DOCKTOR_STACKS_HOST_DIR: "/opt/docktor/stacks",
+}
+
+describe("checkEnvironment: warning rules (#7, D-11)", () => {
+    it("reports no warning for a healthy container deployment", () => {
+        expect(warningCodes(HEALTHY_CONTAINER_ENV, IN_CONTAINER)).toEqual([])
+    })
+
+    it.each([
+        ["true", true],
+        [" true ", true],
+        ["1", false],
+        ["10.0.0.0/8", false],
+        [undefined, false],
+    ])("TRUST_PROXY_TRUSTS_ALL for TRUST_PROXY %j: %s", (trustProxy, expected) => {
+        const codes = warningCodes({...VALID_ENV, TRUST_PROXY: trustProxy})
+
+        expect(codes.includes("TRUST_PROXY_TRUSTS_ALL")).toBe(expected)
+        if (expected) {
+            const warning = checkEnvironment({...VALID_ENV, TRUST_PROXY: trustProxy}, HOST).warnings[0]
+            expect(warning?.variable).toBe("TRUST_PROXY")
+        }
+    })
+
+    it.each([
+        ["containerized, unset", IN_CONTAINER, undefined, true],
+        ["containerized, the container's own default", IN_CONTAINER, "/var/lib/docker", true],
+        ["containerized, the default with a trailing slash", IN_CONTAINER, "/var/lib/docker/", true],
+        ["containerized, the host mount", IN_CONTAINER, "/host/var/lib/docker", false],
+        ["not containerized, unset", HOST, undefined, false],
+        ["not containerized, the default", HOST, "/var/lib/docker", false],
+    ])("DOCKER_DATA_PATH_NOT_HOST_MOUNT when %s", (_label, context, dockerDataPath, expected) => {
+        const env = {...HEALTHY_CONTAINER_ENV, DOCKER_DATA_PATH: dockerDataPath}
+
+        expect(warningCodes(env, context).includes("DOCKER_DATA_PATH_NOT_HOST_MOUNT")).toBe(expected)
+    })
+
+    it.each([
+        ["containerized, development", IN_CONTAINER, "development", true],
+        ["containerized, unset", IN_CONTAINER, undefined, true],
+        ["containerized, production", IN_CONTAINER, "production", false],
+        ["not containerized, development", HOST, "development", false],
+        ["not containerized, unset", HOST, undefined, false],
+    ])("NODE_ENV_NOT_PRODUCTION_IN_CONTAINER when %s", (_label, context, nodeEnv, expected) => {
+        const env = {...HEALTHY_CONTAINER_ENV, NODE_ENV: nodeEnv}
+        const warnings = checkEnvironment(env, context).warnings
+
+        expect(warnings.some((w) => w.code === "NODE_ENV_NOT_PRODUCTION_IN_CONTAINER")).toBe(expected)
+        if (expected) {
+            expect(warnings.find((w) => w.code === "NODE_ENV_NOT_PRODUCTION_IN_CONTAINER")?.variable).toBe("NODE_ENV")
+        }
+    })
+
+    it.each([
+        ["containerized, unset", IN_CONTAINER, undefined, true],
+        ["containerized, blank", IN_CONTAINER, "  ", true],
+        ["containerized, set", IN_CONTAINER, "/opt/docktor/stacks", false],
+        ["not containerized, unset", HOST, undefined, false],
+    ])("STACKS_HOST_DIR_UNSET when %s", (_label, context, hostDir, expected) => {
+        const env = {...HEALTHY_CONTAINER_ENV, DOCKTOR_STACKS_HOST_DIR: hostDir}
+        const warnings = checkEnvironment(env, context).warnings
+
+        expect(warnings.some((w) => w.code === "STACKS_HOST_DIR_UNSET")).toBe(expected)
+        if (expected) {
+            expect(warnings.find((w) => w.code === "STACKS_HOST_DIR_UNSET")?.variable).toBe("DOCKTOR_STACKS_HOST_DIR")
+        }
+    })
+
+    it.each([
+        ["false in a container", IN_CONTAINER, "false", true],
+        ["false outside a container", HOST, "false", true],
+        ["true", HOST, "true", false],
+        ["unset", HOST, undefined, false],
+    ])("STACKS_MOUNT_CHECK_DISABLED for DOCKTOR_STACKS_MOUNT_CHECK %s", (_label, context, check, expected) => {
+        const env = {...HEALTHY_CONTAINER_ENV, DOCKTOR_STACKS_MOUNT_CHECK: check}
+
+        expect(warningCodes(env, context).includes("STACKS_MOUNT_CHECK_DISABLED")).toBe(expected)
+    })
+
+    it.each([
+        ["mysql://u:p@h/d", true],
+        ["postgres://u:p@h/d", false],
+        ["postgresql://u:p@h/d", false],
+        ["POSTGRESQL://u:p@h/d", false],
+    ])("DATABASE_URL_NOT_POSTGRES for %s: %s", (url, expected) => {
+        const warnings = checkEnvironment({...VALID_ENV, DATABASE_URL: url}, HOST).warnings
+
+        expect(warnings.some((w) => w.code === "DATABASE_URL_NOT_POSTGRES")).toBe(expected)
+    })
+
+    it("reports a missing DATABASE_URL only as the blocking error, not as a warning", () => {
+        const result = checkEnvironment({...VALID_ENV, DATABASE_URL: undefined}, HOST)
+
+        expect(result.errors.map((e) => e.variable)).toEqual(["DATABASE_URL"])
+        expect(result.warnings).toEqual([])
+    })
+
+    it.each([
+        ["localhost:3000", true],
+        ["ftp://host", true],
+        ["not a url", true],
+        ["http://localhost:3000", false],
+        ["https://docktor.example.com", false],
+    ])("BETTER_AUTH_URL_NOT_HTTP for %s: %s", (url, expected) => {
+        const env = {...VALID_ENV, BETTER_AUTH_URL: url, TRUST_PROXY: "1"}
+
+        expect(warningCodes(env).includes("BETTER_AUTH_URL_NOT_HTTP")).toBe(expected)
+    })
+
+    it("reports a missing BETTER_AUTH_URL only as the blocking error, not as a warning", () => {
+        const result = checkEnvironment({...VALID_ENV, BETTER_AUTH_URL: undefined}, HOST)
+
+        expect(result.errors.map((e) => e.variable)).toEqual(["BETTER_AUTH_URL"])
+        expect(result.warnings).toEqual([])
+    })
+
+    it("sorts warnings by code, then variable, so the output is deterministic", () => {
+        const env = {
+            ...VALID_ENV,
+            NODE_ENV: "production",
+            BETTER_AUTH_SECRET: "CHANGE_ME_GENERATE_A_RANDOM_SECRET",
+            DATABASE_URL: "postgresql://docktor:CHANGE_ME_DB_PASSWORD@db:5432/docktor",
+            TRUST_PROXY: "true",
+            DOCKTOR_STACKS_MOUNT_CHECK: "false",
+        }
+        const warnings = checkEnvironment(env, HOST).warnings
+        const keys = warnings.map((w) => `${w.code}/${w.variable}`)
+
+        expect(keys).toEqual([...keys].sort((a, b) => a.localeCompare(b)))
+        expect(keys).toHaveLength(4)
+    })
+})
+
+describe("checkEnvironment: TEMPLATE_SECRET_IN_PRODUCTION (#7, D-12)", () => {
+    const TEMPLATE_SECRET = "CHANGE_ME_GENERATE_A_RANDOM_SECRET"
+    const TEMPLATE_DATABASE_URL = "postgresql://docktor:CHANGE_ME_DB_PASSWORD@db:5432/docktor"
+
+    function templateWarnings(env: EnvironmentSource) {
+        return checkEnvironment(env, HOST).warnings.filter((w) => w.code === "TEMPLATE_SECRET_IN_PRODUCTION")
+    }
+
+    it("warns for a template BETTER_AUTH_SECRET in production", () => {
+        const warnings = templateWarnings({...VALID_ENV, NODE_ENV: "production", BETTER_AUTH_SECRET: TEMPLATE_SECRET})
+
+        expect(warnings.map((w) => w.variable)).toEqual(["BETTER_AUTH_SECRET"])
+    })
+
+    it("warns for a template DATABASE_URL in production", () => {
+        const warnings = templateWarnings({...VALID_ENV, NODE_ENV: "production", DATABASE_URL: TEMPLATE_DATABASE_URL})
+
+        expect(warnings.map((w) => w.variable)).toEqual(["DATABASE_URL"])
+    })
+
+    it("gives two separate warnings when both are still the template", () => {
+        const warnings = templateWarnings({
+            ...VALID_ENV,
+            NODE_ENV: "production",
+            BETTER_AUTH_SECRET: TEMPLATE_SECRET,
+            DATABASE_URL: TEMPLATE_DATABASE_URL,
+        })
+
+        expect(warnings.map((w) => w.variable)).toEqual(["BETTER_AUTH_SECRET", "DATABASE_URL"])
+    })
+
+    it.each(["development", "test", undefined])("does nothing when NODE_ENV is %j", (nodeEnv) => {
+        const env = {
+            ...VALID_ENV,
+            NODE_ENV: nodeEnv,
+            BETTER_AUTH_SECRET: TEMPLATE_SECRET,
+            DATABASE_URL: TEMPLATE_DATABASE_URL,
+        }
+        const result = checkEnvironment(env, HOST)
+
+        expect(result.warnings.filter((w) => w.code === "TEMPLATE_SECRET_IN_PRODUCTION")).toEqual([])
+        expect(result.errors).toEqual([])
+    })
+
+    it("never turns a template value into a blocking error", () => {
+        const env = {
+            ...VALID_ENV,
+            NODE_ENV: "production",
+            BETTER_AUTH_SECRET: TEMPLATE_SECRET,
+            DATABASE_URL: TEMPLATE_DATABASE_URL,
+        }
+
+        expect(checkEnvironment(env, HOST).errors).toEqual([])
+    })
+
+    it("yields one ENCRYPTION_KEY error and no other error for the whole .env.example template", () => {
+        const template: EnvironmentSource = {
+            NODE_ENV: "production",
+            PORT: "3000",
+            HOST: "0.0.0.0",
+            DATABASE_URL: TEMPLATE_DATABASE_URL,
+            BETTER_AUTH_SECRET: TEMPLATE_SECRET,
+            BETTER_AUTH_URL: "http://localhost:3000",
+            ENCRYPTION_KEY: TEMPLATE_KEY,
+            DOCKTOR_STACKS_DIR: "/opt/docktor/stacks",
+            DOCKTOR_STACKS_HOST_DIR: "/opt/docktor/stacks",
+            DOCKER_DATA_PATH: "/host/var/lib/docker",
+        }
+        const result = checkEnvironment(template, IN_CONTAINER)
+
+        expect(result.errors.map((e) => e.variable)).toEqual(["ENCRYPTION_KEY"])
+        expect(result.errors[0]?.message).toContain(".env.example template value")
+        expect(result.warnings.map((w) => `${w.code}/${w.variable}`)).toEqual([
+            "TEMPLATE_SECRET_IN_PRODUCTION/BETTER_AUTH_SECRET",
+            "TEMPLATE_SECRET_IN_PRODUCTION/DATABASE_URL",
+        ])
+    })
+})
+
+describe("environment check output never echoes a value (#7, T-16-01)", () => {
+    const SECRETS = ["s3cr3t-VALUE-xyz", "p4ssw0rd-XYZ", "SECRETKEY"]
+    const env: EnvironmentSource = {
+        DATABASE_URL: "mysql://u:p4ssw0rd-XYZ@h/d",
+        BETTER_AUTH_SECRET: "s3cr3t-VALUE-xyz",
+        BETTER_AUTH_URL: "https://docktor.example.com",
+        ENCRYPTION_KEY: "zz-not-hex-SECRETKEY",
+        TRUST_PROXY: "true",
+        NODE_ENV: "production",
+    }
+
+    it("keeps secret-looking values out of error lines, warning lines and the serialized result", () => {
+        const result = checkEnvironment(env, IN_CONTAINER)
+        const output = [
+            formatEnvironmentErrors(result.errors),
+            ...result.warnings.map(formatEnvironmentWarning),
+            JSON.stringify(result),
+        ].join("\n")
+
+        // The fixture must actually exercise both an error and a warning path.
+        expect(result.errors.map((e) => e.variable)).toEqual(["ENCRYPTION_KEY"])
+        expect(result.warnings.map((w) => w.code)).toContain("DATABASE_URL_NOT_POSTGRES")
+        expect(result.warnings.map((w) => w.code)).toContain("TRUST_PROXY_TRUSTS_ALL")
+        for (const secret of SECRETS) {
+            expect(output).not.toContain(secret)
+        }
+    })
+})

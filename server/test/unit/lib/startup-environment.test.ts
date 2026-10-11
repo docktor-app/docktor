@@ -72,4 +72,24 @@ describe("runStartupEnvironmentCheck (#7, D-10)", () => {
 
         expect(report).toEqual({warnings: []})
     })
+
+    it("logs each of three warnings exactly once through log.warn and never errors or exits", () => {
+        const log = silentLog()
+        const exit = vi.fn()
+        const env = {
+            ...VALID_ENV,
+            NODE_ENV: "production",
+            TRUST_PROXY: "true",
+            DOCKTOR_STACKS_MOUNT_CHECK: "false",
+            DATABASE_URL: "mysql://u:p@h/d",
+        }
+
+        const report = runStartupEnvironmentCheck({env, containerized: false, log, exit})
+
+        expect(log.warn).toHaveBeenCalledTimes(3)
+        expect(log.error).not.toHaveBeenCalled()
+        expect(exit).not.toHaveBeenCalled()
+        expect(report.warnings).toHaveLength(3)
+        expect(log.info).toHaveBeenCalledWith("[env] environment check passed with 3 warning(s)")
+    })
 })
