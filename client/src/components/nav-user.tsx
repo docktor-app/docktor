@@ -1,4 +1,5 @@
-import {ChevronsUpDown, LogOut} from "lucide-react";
+import {Link} from "react-router";
+import {ChevronsUpDown, LogOut, UserRound} from "lucide-react";
 import {signOut, useSession} from "@/lib/auth-client";
 import {Avatar, AvatarFallback} from "@/components/ui/avatar";
 import {DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,} from "@/components/ui/dropdown-menu";
@@ -46,6 +47,12 @@ export function NavUser() {
                         align="end"
                         sideOffset={4}
                     >
+                        <DropdownMenuItem asChild>
+                            <Link to="/account">
+                                <UserRound className="mr-2 h-4 w-4" />
+                                Account
+                            </Link>
+                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => signOut()}>
                             <LogOut className="mr-2 h-4 w-4" />
                             Sign out

@@ -3,6 +3,7 @@ import {createRoutesFromElements, Navigate, Route} from "react-router";
 import {AppLayout} from "@/components/app-layout";
 import {FirstRunGate} from "@/components/domain/auth/first-run-gate";
 import {ProtectedRoute} from "@/components/domain/auth/protected-route";
+import AccountPage from "@/routes/app/account";
 import Dashboard from "@/routes/app/dashboard";
 import StacksPage from "@/routes/app/stacks/index";
 import CreateStackPage from "@/routes/app/stacks/create";
@@ -62,6 +63,7 @@ export const router = ReactRouterCore.createBrowserRouter(
                 <Route path="/storage" element={<StoragePage />} />
                 <Route path="/settings" element={<Navigate to="/settings/general" replace />} />
                 <Route path="/settings/:tab" element={<SettingsPage />} />
+                <Route path="/account" element={<AccountPage />} />
             </Route>
         </>,
     ),
