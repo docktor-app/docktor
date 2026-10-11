@@ -1,6 +1,8 @@
 # Docktor self-host deployment — this is the documented, copy-pasteable
-# quickstart described in docs/deployment.md. See that file for the full
-# setup walkthrough and the complete environment-variable reference.
+# quickstart described in the Get started guide
+# (https://github.com/docktor-app/docks/blob/main/guide/get-started.md).
+# The Deployment reference has the complete environment-variable reference
+# (https://github.com/docktor-app/docks/blob/main/reference/deployment.md).
 #
 # For local development instead (yarn dev against a bare Postgres, no
 # Docktor container), use docker-compose.dev.yml.
@@ -84,7 +86,9 @@ services:
     # comes from) rather than hardcoded here, so there is no guessable shipped
     # default and no way for the two to silently drift apart (WR-04). Set
     # POSTGRES_PASSWORD in .env to the same password embedded in
-    # DATABASE_URL — see docs/deployment.md. If it's left unset, the official
+    # DATABASE_URL (.env.example already contains the line; see
+    # https://github.com/docktor-app/docks/blob/main/guide/get-started.md).
+    # If it's left unset, the official
     # postgres image refuses to start rather than falling back to a known
     # default, which is the intended fail-loud behavior here.
     env_file:

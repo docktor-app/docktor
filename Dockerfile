@@ -150,7 +150,8 @@ ENV DOCKTOR_FS_POLLING=true
 # existing install whose schema was created by the older schemaless
 # `db push` mechanism is detected and baselined into migration history
 # automatically on first boot after upgrade — no operator action required
-# (see docs/deployment.md's Database schema section).
+# (see the Database schema section of
+# https://github.com/docktor-app/docks/blob/main/reference/deployment.md#database-schema).
 # Set DOCKTOR_DB_AUTO_MIGRATE=false to disable this step entirely.
 ENV DOCKTOR_DB_AUTO_MIGRATE=true
 # Deprecated alias for DOCKTOR_DB_AUTO_MIGRATE above, honoured only when the

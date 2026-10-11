@@ -7,8 +7,9 @@ import {AppError} from "../lib/errors.js";
 //   docker compose exec docktor node dist/server/scripts/reset-two-factor.js <email>
 //
 // Shell access to the host is the authorisation: there is no HTTP route, no
-// email flow and no override for another user. See docs/deployment.md,
-// "Resetting two-factor authentication".
+// email flow and no override for another user. See "Resetting two-factor
+// authentication" in the Deployment reference:
+// https://github.com/docktor-app/docks/blob/main/reference/deployment.md#resetting-two-factor-authentication
 
 const USAGE = "Usage: node dist/server/scripts/reset-two-factor.js <email>";
 
