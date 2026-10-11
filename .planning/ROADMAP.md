@@ -658,7 +658,7 @@ Plans:
   2. Docker images are built and published on release tags and on `main`-branch commits (#11)
   3. Documentation covers the app's purpose, features, setup, and usage (#17)
   4. Restic is pinned to a specific current release via explicit binary download, not `apt-get install` (#42)
-  5. A public demo instance is live and resets hourly (#53)
+  5. ~~A public demo instance is live and resets hourly (#53)~~ — deferred past v0.1.0 (16-CONTEXT D-03); #53 stays open outside the milestone
   6. README has screenshots and a short GIF (#54)
   7. `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, and issue/PR templates exist (#55)
   8. Project license is decided and a `LICENSE` file reflecting it is added (#57)
