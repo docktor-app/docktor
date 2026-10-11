@@ -1,10 +1,21 @@
 name: CI
 
+# CI for pull requests runs from this file directly. Pushes to main and v* release
+# tags no longer trigger it on their own: publish.yml calls it (workflow_call) as its
+# first job and only builds and pushes the image once it has passed, so main and tag
+# CI runs appear inside the "Publish" workflow run.
 on:
-  push:
-    branches: [main]
+  workflow_call:
+    secrets:
+      SONAR_TOKEN:
+        required: false
+      SONAR_HOST_URL:
+        required: false
   pull_request:
     branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   build-and-test:
