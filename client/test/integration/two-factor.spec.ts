@@ -167,7 +167,8 @@ test.describe("Two-factor UI (desktop)", () => {
         await expect(dialog).toHaveCount(0);
         await page.getByRole("link", {name: "Stacks"}).first().click();
         await expect(page).toHaveURL(/\/account$/);
-        await expect(page.getByRole("button", {name: "Set up two-factor authentication"})).toBeVisible();
+        // The page remounts, so the enrollment dialog opens again.
+        await expect(page.getByRole("dialog").getByText("Step 1 of 3")).toBeVisible();
     });
 });
 
