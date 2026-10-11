@@ -1,5 +1,5 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
-import {act, render, screen, waitFor} from "@testing-library/react";
+import {act, render, screen, waitFor, within} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {MemoryRouter} from "react-router";
 import type {AccountSecurityStatus} from "@docktor/shared";
@@ -7,6 +7,7 @@ import AccountPage from "@/routes/app/account";
 import {SidebarProvider} from "@/components/ui/sidebar";
 import {accountSecurityStore} from "@/hooks/use-account-security";
 import {getAccountSecurity} from "@/lib/account-api";
+import {twoFactor} from "@/lib/auth-client";
 
 // jsdom has no ResizeObserver; Radix's Checkbox (enroll dialog) requires one.
 if (typeof globalThis.ResizeObserver === "undefined") {
@@ -23,7 +24,11 @@ vi.mock("@/lib/account-api", () => ({
 }));
 
 vi.mock("@/lib/auth-client", () => ({
-    twoFactor: {enable: vi.fn(), verifyTotp: vi.fn()},
+    twoFactor: {enable: vi.fn(), verifyTotp: vi.fn(), disable: vi.fn(), generateBackupCodes: vi.fn()},
+}));
+
+vi.mock("sonner", () => ({
+    toast: {success: vi.fn(), error: vi.fn()},
 }));
 
 const NOT_ENROLLED: AccountSecurityStatus = {twoFactorEnabled: false, mandatory: false, enrollmentRequired: false};
@@ -105,6 +110,48 @@ describe("AccountPage", () => {
             screen.getByText("Your account asks for a code from your authenticator app when you sign in."),
         ).toBeInTheDocument();
         expect(screen.queryByRole("button", {name: "Set up two-factor authentication"})).not.toBeInTheDocument();
+    });
+
+    it("offers Regenerate and Disable when two-factor is enabled and not required", async () => {
+        vi.mocked(getAccountSecurity).mockResolvedValue(ENROLLED);
+        renderPage();
+
+        expect(await screen.findByRole("button", {name: "Regenerate recovery codes"})).toBeEnabled();
+        const disable = screen.getByRole("button", {name: "Disable two-factor"});
+        expect(disable).toBeEnabled();
+        expect(disable).not.toHaveAttribute("aria-disabled");
+    });
+
+    it("blocks Disable with an accessible reason while the requirement is on", async () => {
+        vi.mocked(getAccountSecurity).mockResolvedValue({
+            twoFactorEnabled: true,
+            mandatory: true,
+            enrollmentRequired: false,
+        });
+        renderPage();
+
+        const disable = await screen.findByRole("button", {name: "Disable two-factor"});
+        expect(disable).toBeDisabled();
+        expect(disable).toHaveAttribute("aria-disabled", "true");
+        expect(disable).toHaveAccessibleDescription(
+            "Turn off the instance-wide requirement before disabling two-factor on your account.",
+        );
+        expect(screen.getByRole("button", {name: "Regenerate recovery codes"})).toBeEnabled();
+    });
+
+    it("refetches and shows Not enabled after two-factor is disabled", async () => {
+        const user = userEvent.setup();
+        vi.mocked(getAccountSecurity).mockResolvedValueOnce(ENROLLED).mockResolvedValue(NOT_ENROLLED);
+        vi.mocked(twoFactor.disable).mockResolvedValue({data: {status: true}, error: null});
+        renderPage();
+
+        await user.click(await screen.findByRole("button", {name: "Disable two-factor"}));
+        await user.type(await screen.findByLabelText("Password"), "hunter2hunter2");
+        await user.click(within(screen.getByRole("dialog")).getByRole("button", {name: "Disable two-factor"}));
+
+        expect(await screen.findByText("Not enabled")).toBeInTheDocument();
+        expect(getAccountSecurity).toHaveBeenCalledTimes(2);
+        expect(screen.getByRole("button", {name: "Set up two-factor authentication"})).toBeInTheDocument();
     });
 
     it("renders the mandatory-two-factor row below the two-factor row", async () => {

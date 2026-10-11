@@ -14,7 +14,7 @@ import {
 import {twoFactor} from "@/lib/auth-client";
 import {classifyAuthError} from "@/lib/auth-errors";
 import {copyToClipboard} from "@/lib/clipboard";
-import {formatRetryAfter, readRetryAfterSeconds} from "@/lib/rate-limit";
+import {createRetryAfterProbe} from "@/lib/rate-limit";
 import {RecoveryCodesPanel} from "@/components/domain/auth/recovery-codes-panel";
 import {Button} from "@/components/ui/button";
 import {
@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import {Form, FormControl, FormField, FormItem, FormLabel, FormMessage} from "@/components/ui/form";
 import {Input} from "@/components/ui/input";
+import {ErrorBanner, FOOTER_BUTTON_CLASS, PasswordField} from "@/routes/app/account/components/dialog-form-parts";
 
 export interface EnrollDialogProps {
     open: boolean;
@@ -45,8 +46,6 @@ interface Enrollment {
     backupCodes: readonly string[];
 }
 
-const FOOTER_BUTTON_CLASS = "w-full sm:w-auto";
-
 /** The TOTP shared secret, read from the `secret` parameter of the otpauth URI. */
 function parseSetupKey(totpURI: string): string | null {
     try {
@@ -54,34 +53,6 @@ function parseSetupKey(totpURI: string): string | null {
     } catch {
         return null;
     }
-}
-
-interface FetchErrorContext {
-    response: Pick<Response, "headers">;
-}
-
-/** Captures X-Retry-After from a failed better-auth call so a 429 can name the wait. */
-function createRetryAfterProbe() {
-    let seconds: number | null = null;
-    return {
-        fetchOptions: {
-            onError: (context: FetchErrorContext): void => {
-                seconds = readRetryAfterSeconds(context.response.headers);
-            },
-        },
-        message: (): string => formatRetryAfter(seconds),
-    };
-}
-
-function ErrorBanner({message}: Readonly<{ message: string }>): React.JSX.Element | null {
-    if (!message) {
-        return null;
-    }
-    return (
-        <div role="alert" className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-            {message}
-        </div>
-    );
 }
 
 interface StepHeaderProps {
@@ -144,19 +115,7 @@ function PasswordStep({onEnabled, onCancel}: Readonly<PasswordStepProps>): React
             <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                     <ErrorBanner message={error}/>
-                    <FormField
-                        control={form.control}
-                        name="password"
-                        render={({field}) => (
-                            <FormItem>
-                                <FormLabel>Password</FormLabel>
-                                <FormControl>
-                                    <Input type="password" autoComplete="current-password" autoFocus {...field}/>
-                                </FormControl>
-                                <FormMessage/>
-                            </FormItem>
-                        )}
-                    />
+                    <PasswordField control={form.control}/>
                     <DialogFooter>
                         <Button type="button" variant="outline" className={FOOTER_BUTTON_CLASS} onClick={onCancel}>
                             Cancel

@@ -1,5 +1,28 @@
 import {describe, expect, it} from "vitest";
-import {formatRetryAfter, RETRY_AFTER_HEADER, readRetryAfterSeconds} from "../../../src/lib/rate-limit";
+import {
+    createRetryAfterProbe,
+    formatRetryAfter,
+    RETRY_AFTER_HEADER,
+    readRetryAfterSeconds,
+} from "../../../src/lib/rate-limit";
+
+describe("createRetryAfterProbe", () => {
+    it("names the wait from the X-Retry-After header of the failed call", () => {
+        const probe = createRetryAfterProbe();
+
+        probe.fetchOptions.onError({response: {headers: new Headers({"X-Retry-After": "600"})}});
+
+        expect(probe.message()).toBe("Too many attempts. Try again in 10 minutes.");
+    });
+
+    it("falls back to the generic message when no call failed or the header is missing", () => {
+        const probe = createRetryAfterProbe();
+        expect(probe.message()).toBe("Too many attempts. Try again in a few minutes.");
+
+        probe.fetchOptions.onError({response: {headers: new Headers()}});
+        expect(probe.message()).toBe("Too many attempts. Try again in a few minutes.");
+    });
+});
 
 describe("readRetryAfterSeconds", () => {
     it("reads the X-Retry-After header as a positive integer", () => {
