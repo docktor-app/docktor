@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v0.1.0
-current_phase: 15
-current_phase_name: Access Hardening
-current_plan: Not started
+current_phase: 16
+current_phase_name: Release Readiness for v0.1.0
+current_plan: 1
 status: "Phases 1-13 complete (v0.1.0 scope: ROADMAP Phases 10-16, sourced from GitHub issues in docktor-app/docktor; product tracking lives in GitHub Issues). Phase 14 (Health, Uptime and Disk Visibility): all 14 plans executed, code review done, verification found gaps (9/13 truths) — CR-01 probe Docker calls lack timeouts, WR-01/WR-05 probe results not tied to current container. Gap-closure plan (14-15) being created via /gsd-plan-phase 14 --gaps. Phases 15 (Access Hardening) and 16 (Release Readiness) not started."
 stopped_at: Phase 16 context gathered
-last_updated: "2026-10-11T18:56:52.958Z"
-state_head: a637ee9552b6aa3389d22c4881ffc84a3c0c02b0
+last_updated: "2026-10-11T20:32:16.476Z"
+state_head: 5a898559d6f9d7dcd44f780388cf880721a76ee7
 progress:
   total_phases: 17
   completed_phases: 9
-  total_plans: 156
+  total_plans: 166
   completed_plans: 155
 milestone_name: milestone
 ---
@@ -23,13 +23,13 @@ milestone_name: milestone
 See: .planning/PROJECT.md (updated 2026-09-22)
 
 **Core value:** Users can deploy, monitor, and manage Docker Compose stacks through a browser UI without needing SSH or Docker CLI access.
-**Current focus:** Phase 14 — Health, Uptime and Disk Visibility
+**Current focus:** Phase 16 — Release Readiness for v0.1.0
 
 ## Current Position
 
-Phase: 15 — Access Hardening
-Current Plan: Not started
-Total Plans in Phase: 20
+Phase: 16 (Release Readiness for v0.1.0) — EXECUTING
+Current Plan: 1
+Total Plans in Phase: 10
 
 ## Performance Metrics
 
