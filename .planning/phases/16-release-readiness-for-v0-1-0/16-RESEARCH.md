@@ -567,26 +567,26 @@ export class EnvironmentStatusService {
 | A12 | `<picture>` with `prefers-color-scheme` sources renders light/dark README images on GitHub | README | Fallback: a single (light) image |
 | A13 | GitHub Actions majors (`build-push v7`, `login v4`, `buildx v4`, `qemu v4`, `metadata v6`) are current | Standard Stack | Re-check each Releases page when authoring; an outdated major still works |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Gate mechanism for D-06: `workflow_call` vs `workflow_run`?**
+1. **Gate mechanism for D-06: `workflow_call` vs `workflow_run`?** (RESOLVED: decision checkpoint in 16-04 Task 2)
    - What we know: CONTEXT's Integration Points allow either. `ci.yml` has no tag trigger (Pitfall 3); `workflow_run` runs in default-branch context.
    - What's unclear: whether the maintainer is willing to remove `push: [main]` from `ci.yml` (CI for main would then appear inside the "Publish" workflow run) and accept CI re-running for tags.
    - Recommendation: `workflow_call` as specced above. If the user insists on literal `workflow_run`, add `tags: ['v*']` to `ci.yml`'s push trigger, trigger publish on `workflow_run` completed + `conclusion == 'success'` + `event == 'push'`, check out `head_sha`, and pass `value=${{ github.event.workflow_run.head_branch }}` to the semver tag rules; note it cannot be tested before it exists on `main`.
 
-2. **What is the public docs-site URL?**
+2. **What is the public docs-site URL?** (RESOLVED: decision checkpoint in 16-02)
    - What we know: maintainer self-hosts (D-14); README, `.env.example`, compose comments, `SECURITY.md`/`CONTRIBUTING.md` and error messages need to link to it.
    - Unclear: the hostname (not decided anywhere in context).
    - Recommendation: define it once (e.g., a constant in the plan and a single find/replace token), default to `https://github.com/docktor-app/docks` until hosted.
 
-3. **Quickstart file source:** `raw.githubusercontent.com/.../main/docker-compose.yml` moves with development, but `latest` is a release image.
+3. **Quickstart file source:** (RESOLVED: decision checkpoint in 16-02, default pinned to release tag) `raw.githubusercontent.com/.../main/docker-compose.yml` moves with development, but `latest` is a release image.
    - Recommendation: docs/README fetch compose and `.env.example` pinned to the release tag (`.../v0.1.0/...`) or attach both as release assets; update at each release.
 
-4. **`docks` repo write access:** CONTEXT said read-only in the discuss session; this session's `gh api repos/docktor-app/docks` reports `permissions.push: true` and `size: 0` (empty) `[VERIFIED]`. Planner should still make the content plan a checkpoint for the maintainer, since credentials may differ between sessions.
+4. **`docks` repo write access:** (RESOLVED: precondition check in 16-06 and 16-08) CONTEXT said read-only in the discuss session; this session's `gh api repos/docktor-app/docks` reports `permissions.push: true` and `size: 0` (empty) `[VERIFIED]`. Planner should still make the content plan a checkpoint for the maintainer, since credentials may differ between sessions.
 
-5. **Maintainer contact email** for `SECURITY.md`/`CODE_OF_CONDUCT.md` fallback is not in context. `userEmail` in the session context is the user's, but must not be published without explicit confirmation — ask.
+5. **Maintainer contact email** (RESOLVED: decision checkpoint in 16-02) for `SECURITY.md`/`CODE_OF_CONDUCT.md` fallback is not in context. `userEmail` in the session context is the user's, but must not be published without explicit confirmation — ask.
 
-6. **Are PR required-status-check names pinned to current CI job names?** Unreadable (403). After first CI change confirm checks (`build-and-test`, `cross-platform-unit (...)`, `sonarqube`) still appear on PRs; PR-triggered runs from `ci.yml` itself keep their names.
+6. **Are PR required-status-check names (RESOLVED: human-check in 16-04) pinned to current CI job names?** Unreadable (403). After first CI change confirm checks (`build-and-test`, `cross-platform-unit (...)`, `sonarqube`) still appear on PRs; PR-triggered runs from `ci.yml` itself keep their names.
 
 ## Environment Availability
 
