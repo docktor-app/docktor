@@ -1,4 +1,4 @@
-import {useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import type {AccountSecurityStatus} from "@docktor/shared";
 
 import {ToneBadge} from "@/components/common/tone-badge";
@@ -9,6 +9,9 @@ export interface TwoFactorSectionProps {
     status: AccountSecurityStatus;
 
     onChanged(): void;
+
+    /** Opens the enrollment dialog by itself, once per mount (forced enrollment, D-01). */
+    autoOpenEnroll?: boolean;
 }
 
 const NOT_ENABLED_BODY =
@@ -16,9 +19,22 @@ const NOT_ENABLED_BODY =
 const ENABLED_BODY = "Your account asks for a code from your authenticator app when you sign in.";
 
 /** The 2FA row of the Security section: status pill, explanation and the enroll entry point. */
-export function TwoFactorSection({status, onChanged}: Readonly<TwoFactorSectionProps>): React.JSX.Element {
+export function TwoFactorSection({
+    status,
+    onChanged,
+    autoOpenEnroll = false,
+}: Readonly<TwoFactorSectionProps>): React.JSX.Element {
     const [enrollOpen, setEnrollOpen] = useState(false);
+    const autoOpened = useRef(false);
     const enabled = status.twoFactorEnabled;
+
+    // The ref keeps a rerender or a later status change from reopening a dialog the user closed.
+    useEffect(() => {
+        if (autoOpenEnroll && !autoOpened.current) {
+            autoOpened.current = true;
+            setEnrollOpen(true);
+        }
+    }, [autoOpenEnroll]);
 
     return (
         <div className="flex flex-col gap-4 py-4 sm:flex-row sm:items-start sm:justify-between">

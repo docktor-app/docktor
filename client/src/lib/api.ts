@@ -1,8 +1,14 @@
+import {ACCOUNT_SECURITY_ERROR_CODES} from "@docktor/shared";
+
+/** Fired on globalThis when the server answers 403 TWO_FACTOR_ENROLLMENT_REQUIRED. */
+export const ENROLLMENT_REQUIRED_EVENT = "docktor:two-factor-enrollment-required";
+
 export class ApiError extends Error {
     constructor(
         message: string,
         public status: number,
         public fields?: Record<string, string>,
+        public code?: string,
     ) {
         super(message);
         this.name = "ApiError";
@@ -49,10 +55,16 @@ export async function apiFetch<T>(
 
     if (!res.ok) {
         const body = await res.json().catch(() => ({}));
+        // An Observer signal so this HTTP helper stays free of routing (CLAUDE.md
+        // layering): ProtectedRoute listens and decides where the user goes.
+        if (res.status === 403 && body.code === ACCOUNT_SECURITY_ERROR_CODES.TWO_FACTOR_ENROLLMENT_REQUIRED) {
+            globalThis.dispatchEvent(new CustomEvent(ENROLLMENT_REQUIRED_EVENT));
+        }
         throw new ApiError(
             body.error ?? `Request failed with status ${res.status}`,
             res.status,
             body.fields,
+            body.code,
         );
     }
 

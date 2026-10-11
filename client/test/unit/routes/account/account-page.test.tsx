@@ -1,5 +1,5 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
-import {render, screen, waitFor} from "@testing-library/react";
+import {act, render, screen, waitFor} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {MemoryRouter} from "react-router";
 import type {AccountSecurityStatus} from "@docktor/shared";
@@ -105,6 +105,67 @@ describe("AccountPage", () => {
             screen.getByText("Your account asks for a code from your authenticator app when you sign in."),
         ).toBeInTheDocument();
         expect(screen.queryByRole("button", {name: "Set up two-factor authentication"})).not.toBeInTheDocument();
+    });
+
+    it("renders the mandatory-two-factor row below the two-factor row", async () => {
+        vi.mocked(getAccountSecurity).mockResolvedValue(ENROLLED);
+        renderPage();
+
+        expect(await screen.findByRole("switch", {name: "Require two-factor for all users"})).toBeEnabled();
+        expect(screen.queryByText("Two-factor authentication is required")).not.toBeInTheDocument();
+    });
+
+    describe("when enrollment is required", () => {
+        const REQUIRED_NOT_ENROLLED: AccountSecurityStatus = {
+            twoFactorEnabled: false,
+            mandatory: true,
+            enrollmentRequired: true,
+        };
+
+        beforeEach(() => {
+            vi.mocked(getAccountSecurity).mockResolvedValue(REQUIRED_NOT_ENROLLED);
+        });
+
+        it("shows the alert with the Setup required pill", async () => {
+            renderPage();
+
+            expect(await screen.findByText("Two-factor authentication is required")).toBeInTheDocument();
+            expect(screen.getByText("Setup required")).toBeInTheDocument();
+            expect(
+                screen.getByText(
+                    "This Docktor instance requires every user to use two-factor authentication. Set it up to continue.",
+                ),
+            ).toBeInTheDocument();
+        });
+
+        it("opens the enrollment dialog by itself", async () => {
+            renderPage();
+
+            expect(await screen.findByRole("dialog")).toBeInTheDocument();
+            expect(screen.getByText("Step 1 of 3")).toBeInTheDocument();
+        });
+
+        it("leaves the setup button after closing and does not reopen on rerender", async () => {
+            const user = userEvent.setup();
+            const view = renderPage();
+            await screen.findByRole("dialog");
+
+            await user.click(screen.getByRole("button", {name: "Cancel"}));
+            await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+            expect(screen.getByRole("button", {name: "Set up two-factor authentication"})).toBeInTheDocument();
+
+            view.rerender(
+                <MemoryRouter>
+                    <SidebarProvider>
+                        <AccountPage/>
+                    </SidebarProvider>
+                </MemoryRouter>,
+            );
+            // A status refetch with the same flag must not pop the dialog again either.
+            await act(() => accountSecurityStore.refresh());
+
+            expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        });
     });
 
     it("opens the enrollment dialog from the setup button", async () => {
