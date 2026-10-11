@@ -3,16 +3,16 @@ status: testing
 phase: 15-access-hardening
 source: 15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md
 started: 2026-10-11T12:27:56Z
-updated: 2026-10-11T14:37:47Z
+updated: 2026-10-11T14:39:54Z
 ---
 
 ## Current Test
 <!-- OVERWRITE each test - shows where we are -->
 
-number: 8
-name: Require Two-Factor Instance-wide
+number: 9
+name: Forced Enrollment for a User Without 2FA
 expected: |
-  On /account, the "Require two-factor for everyone" switch is disabled with a visible helper if your own account has no 2FA. With 2FA enabled, turning it on shows an AlertDialog "Require two-factor authentication?" and a confirmation toast; turning it off applies immediately.
+  With the requirement on, a second user without 2FA who signs in is redirected to /account with a "Setup required" alert, and the enrollment dialog opens automatically. Navigating to any other page (sidebar, direct URL) bounces back to /account. After enrolling, the rest of the app is reachable.
 awaiting: user response
 
 ## Tests
@@ -48,7 +48,7 @@ result: pass
 
 ### 8. Require Two-Factor Instance-wide
 expected: On /account, the "Require two-factor for everyone" switch is disabled with a visible helper if your own account has no 2FA. With 2FA enabled, turning it on shows an AlertDialog "Require two-factor authentication?" and a confirmation toast; turning it off applies immediately.
-result: [pending]
+result: pass
 
 ### 9. Forced Enrollment for a User Without 2FA
 expected: With the requirement on, a second user without 2FA who signs in is redirected to /account with a "Setup required" alert, and the enrollment dialog opens automatically. Navigating to any other page (sidebar, direct URL) bounces back to /account. After enrolling, the rest of the app is reachable.
@@ -79,9 +79,9 @@ severity: major
 ## Summary
 
 total: 14
-passed: 7
+passed: 8
 issues: 1
-pending: 6
+pending: 5
 skipped: 0
 blocked: 0
 
