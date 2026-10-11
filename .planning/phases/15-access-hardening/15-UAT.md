@@ -3,16 +3,16 @@ status: testing
 phase: 15-access-hardening
 source: 15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md
 started: 2026-10-11T12:27:56Z
-updated: 2026-10-11T14:36:39Z
+updated: 2026-10-11T14:37:09Z
 ---
 
 ## Current Test
 <!-- OVERWRITE each test - shows where we are -->
 
-number: 6
-name: Regenerate Recovery Codes
+number: 7
+name: Disable Two-Factor
 expected: |
-  On /account with 2FA enabled, "Regenerate recovery codes" asks for your password, then shows 10 new codes (Continue gated by "I have saved") and a toast "Recovery codes regenerated." Old codes no longer work.
+  "Disable two-factor" opens a destructive confirm asking for your password. A wrong password shows a field error and leaves 2FA on; the correct password turns it off and the status returns to "Not enabled". While the instance-wide requirement is on, the Disable button is disabled with an explanatory tooltip.
 awaiting: user response
 
 ## Tests
@@ -40,7 +40,7 @@ result: pass
 
 ### 6. Regenerate Recovery Codes
 expected: On /account with 2FA enabled, "Regenerate recovery codes" asks for your password, then shows 10 new codes (Continue gated by "I have saved") and a toast "Recovery codes regenerated." Old codes no longer work.
-result: [pending]
+result: pass
 
 ### 7. Disable Two-Factor
 expected: "Disable two-factor" opens a destructive confirm asking for your password. A wrong password shows a field error and leaves 2FA on; the correct password turns it off and the status returns to "Not enabled". While the instance-wide requirement is on, the Disable button is disabled with an explanatory tooltip.
@@ -79,9 +79,9 @@ severity: major
 ## Summary
 
 total: 14
-passed: 5
+passed: 6
 issues: 1
-pending: 8
+pending: 7
 skipped: 0
 blocked: 0
 
