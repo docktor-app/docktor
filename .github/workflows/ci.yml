@@ -26,10 +26,10 @@ jobs:
       NODE_ENV: test
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
 
@@ -73,7 +73,7 @@ jobs:
           done
 
       - name: Upload coverage artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: coverage-reports
@@ -95,10 +95,10 @@ jobs:
       NODE_ENV: test
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
 
@@ -128,17 +128,17 @@ jobs:
     needs: build-and-test
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
       - name: Download coverage artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: coverage-reports
 
       - name: SonarQube Scan for PR
-        uses: sonarsource/sonarqube-scan-action@v7
+        uses: sonarsource/sonarqube-scan-action@c7ee0f9df90b7aa20e8dcf9695dcfe2e7da5b4f2 # v7
         if: github.event_name == 'pull_request'
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -150,7 +150,7 @@ jobs:
             --define sonar.pullrequest.base=main
 
       - name: SonarQube Scan for Main
-        uses: sonarsource/sonarqube-scan-action@v7
+        uses: sonarsource/sonarqube-scan-action@c7ee0f9df90b7aa20e8dcf9695dcfe2e7da5b4f2 # v7
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -167,16 +167,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # PIN-PENDING: replace the major tag with the full commit SHA and keep the
       # "# vN" comment (see 16-04-SUMMARY.md, "Action pins").
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       # PIN-PENDING: as above.
       - name: Build image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           platforms: linux/amd64
