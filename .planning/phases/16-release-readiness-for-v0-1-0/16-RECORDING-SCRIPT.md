@@ -12,19 +12,9 @@ Shot list for the README screenshots and the ~30 s GIF (#54, D-18). Record at 14
 | Instance name | `Docktor Demo` (setup wizard) |
 | Theme | Capture light mode first, then repeat every screenshot in dark mode |
 
-### Recording-only compose override
+### Backup repository
 
-A local restic repository must be reachable from inside the Docktor container, otherwise the manual backup below fails. Save this as `docker-compose.recording.yml` next to `docker-compose.yml` (do not commit it) and add it as a third `-f` argument:
-
-```yaml
-services:
-  docktor:
-    volumes:
-      # Same path on both sides, so the repository path entered in Settings > Backups resolves in the container.
-      - /opt/docktor/backups:/opt/docktor/backups
-```
-
-Create the directory first (`sudo mkdir -p /opt/docktor/backups`), then in Settings > Backups choose a local repository at `/opt/docktor/backups`.
+No extra volume or compose override is needed: every backup is written to the stack's own `backups/` folder, which is already inside the bind-mounted stacks directory. In Settings > Backup choose repository type **Local** (the only option) and set a restic password.
 
 ## Sample data
 
@@ -34,7 +24,7 @@ Create the directory first (`sudo mkdir -p /opt/docktor/backups`), then in Setti
 | Update available | Pin Gitea to an older image tag before deploying, then wait for the update check to run so the update badge shows |
 | Running vs stopped | Deploy Vaultwarden and Gitea; leave Nextcloud stopped |
 | Health data | Give one service an `x-docktor` health probe so uptime and incidents have data (the host must be `localhost`, `127.0.0.1` or `[::1]`): `x-docktor:` / `health-probe:` / `url: http://localhost:3000/` on the Vaultwarden service, set in Config > Compose |
-| Backup history | Run one manual backup to the local repository so the Backups tab has a snapshot |
+| Backup history | Run one manual backup so the Backups tab has a snapshot (Settings > Backup > Local + restic password first) |
 | Storage | Wait at least 60 s after boot (the first disk scan runs 60 s after start), then refresh the Storage page so sizes are measured |
 
 ## Masking
