@@ -27,7 +27,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 12: Compose Safety and Templates** - Diff-before-apply, dangerous-config warnings, port-conflict detection, and git-based stack templates ([#18](https://github.com/docktor-app/docktor/issues/18), [#19](https://github.com/docktor-app/docktor/issues/19), [#20](https://github.com/docktor-app/docktor/issues/20), [#21](https://github.com/docktor-app/docktor/issues/21))
 - [x] **Phase 13: Update Checker Reliability** - Fix misleading update badges, wrong upgrade-dialog messaging, slow post-deploy status, and stale database rows ([#29](https://github.com/docktor-app/docktor/issues/29), [#31](https://github.com/docktor-app/docktor/issues/31), [#32](https://github.com/docktor-app/docktor/issues/32), [#33](https://github.com/docktor-app/docktor/issues/33), [#34](https://github.com/docktor-app/docktor/issues/34)) (completed 2026-10-07)
 - [x] **Phase 14: Health, Uptime and Disk Visibility** - HTTP health probes with history, per-stack uptime, and disk usage per stack/volume ([#23](https://github.com/docktor-app/docktor/issues/23), [#24](https://github.com/docktor-app/docktor/issues/24), [#27](https://github.com/docktor-app/docktor/issues/27)) (completed 2026-10-10)
-- [ ] **Phase 15: Access Hardening** - TOTP 2FA and an auth-endpoint security audit (rate limiting, CSRF, cookies) ([#45](https://github.com/docktor-app/docktor/issues/45), [#46](https://github.com/docktor-app/docktor/issues/46))
+- [x] **Phase 15: Access Hardening** - TOTP 2FA and an auth-endpoint security audit (rate limiting, CSRF, cookies) ([#45](https://github.com/docktor-app/docktor/issues/45), [#46](https://github.com/docktor-app/docktor/issues/46)) (completed 2026-10-11)
 - [ ] **Phase 16: Release Readiness for v0.1.0** - Docs, demo instance, license decision, published images, hardened startup, community health files — closes the milestone ([#7](https://github.com/docktor-app/docktor/issues/7), [#11](https://github.com/docktor-app/docktor/issues/11), [#17](https://github.com/docktor-app/docktor/issues/17), [#42](https://github.com/docktor-app/docktor/issues/42), [#53](https://github.com/docktor-app/docktor/issues/53), [#54](https://github.com/docktor-app/docktor/issues/54), [#55](https://github.com/docktor-app/docktor/issues/55), [#57](https://github.com/docktor-app/docktor/issues/57))
 
 ## Phase Details
@@ -622,30 +622,30 @@ Needs Phase 11's UI patterns for the 2FA enrollment flow. The rate-limiting/CSRF
   2. Auth endpoints (login, password reset, etc.) have rate limiting (#46)
   3. CSRF protection and session-cookie security defaults (httpOnly/sameSite/secure) are verified or closed on the existing better-auth integration (#46)
 
-**Plans:** 7 plans
+**Plans:** 7/7 plans complete
 
 Plans:
 **Wave 1**
 
-- [ ] 15-01-PLAN.md — Server auth boundary: TwoFactor/RateLimit schema + migration [BLOCKING], DB-backed rate limiting keyed to an unforgeable client IP (TRUST_PROXY), twoFactor plugin with trust device and recovery codes, origin check forced on, reset/OTP endpoints closed (#45, #46)
+- [x] 15-01-PLAN.md — Server auth boundary: TwoFactor/RateLimit schema + migration [BLOCKING], DB-backed rate limiting keyed to an unforgeable client IP (TRUST_PROXY), twoFactor plugin with trust device and recovery codes, origin check forced on, reset/OTP endpoints closed (#45, #46)
 
 **Wave 2** *(blocked on 15-01; 15-02 and 15-03 run in parallel)*
 
-- [ ] 15-02-PLAN.md — Mandatory 2FA policy: instance-wide setting with self-lockout guard, forced-enrollment gate in requireAuth, /api/account/security API, other sessions revoked on 2FA changes, disable blocked while required (#45)
-- [ ] 15-03-PLAN.md — Login second step: TOTP / recovery code / trust-device checkbox, precise error copy, X-Retry-After rate-limit message (#45, #46)
+- [x] 15-02-PLAN.md — Mandatory 2FA policy: instance-wide setting with self-lockout guard, forced-enrollment gate in requireAuth, /api/account/security API, other sessions revoked on 2FA changes, disable blocked while required (#45)
+- [x] 15-03-PLAN.md — Login second step: TOTP / recovery code / trust-device checkbox, precise error copy, X-Retry-After rate-limit message (#45, #46)
 
 **Wave 3** *(15-04 blocked on 15-02; 15-05 blocked on 15-02 and 15-03; run in parallel)*
 
-- [ ] 15-04-PLAN.md — CSRF Origin guard for Fastify routes (tests first), Secure cookie from the https base URL, on-box 2FA reset CLI, operator/security docs, password-reset follow-up issue (#46, #45)
-- [ ] 15-05-PLAN.md — Account page + enrollment: shared security status store, 3-step enroll dialog with local QR (qrcode.react legitimacy checkpoint), recovery-code copy/download, user-menu entry (#45)
+- [x] 15-04-PLAN.md — CSRF Origin guard for Fastify routes (tests first), Secure cookie from the https base URL, on-box 2FA reset CLI, operator/security docs, password-reset follow-up issue (#46, #45)
+- [x] 15-05-PLAN.md — Account page + enrollment: shared security status store, 3-step enroll dialog with local QR (qrcode.react legitimacy checkpoint), recovery-code copy/download, user-menu entry (#45)
 
 **Wave 4** *(blocked on 15-05)*
 
-- [ ] 15-06-PLAN.md — Mandatory-2FA switch, forced-enrollment redirect and alert, regenerate/disable dialogs, Playwright 2FA journey (#45)
+- [x] 15-06-PLAN.md — Mandatory-2FA switch, forced-enrollment redirect and alert, regenerate/disable dialogs, Playwright 2FA journey (#45)
 
 **Gap closure** *(UAT G-15-14; independent of the executed plans)*
 
-- [ ] 15-07-PLAN.md — Single sign-in after startup: refreshSession() awaits better-auth's session-store refetch before navigating to / on password, 2FA and setup-wizard auto-login; Playwright journeys that start signed out at / (#45, G-15-14)
+- [x] 15-07-PLAN.md — Single sign-in after startup: refreshSession() awaits better-auth's session-store refetch before navigating to / on password, 2FA and setup-wizard auto-login; Playwright journeys that start signed out at / (#45, G-15-14)
 
 ### Phase 16: Release Readiness for v0.1.0
 

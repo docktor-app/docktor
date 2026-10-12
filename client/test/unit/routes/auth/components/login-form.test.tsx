@@ -1,5 +1,5 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
-import {render, screen, waitFor, within} from "@testing-library/react";
+import {act, render, screen, waitFor, within} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {MemoryRouter} from "react-router";
 import {LoginForm} from "../../../../../src/routes/auth/components/login-form";
@@ -14,8 +14,9 @@ if (typeof globalThis.ResizeObserver === "undefined") {
     } as unknown as typeof ResizeObserver;
 }
 
-const {signInEmail, verifyTotp, verifyBackupCode, navigate} = vi.hoisted(() => ({
+const {signInEmail, verifyTotp, verifyBackupCode, navigate, refreshSession} = vi.hoisted(() => ({
     signInEmail: vi.fn(),
+    refreshSession: vi.fn(),
     verifyTotp: vi.fn(),
     verifyBackupCode: vi.fn(),
     navigate: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock("@/lib/auth-client", () => ({
     signIn: {email: signInEmail},
     twoFactor: {verifyTotp, verifyBackupCode},
     useSession: vi.fn().mockReturnValue({data: null, isPending: false}),
+    refreshSession,
 }));
 
 // Mock react-router navigate
@@ -46,6 +48,14 @@ function renderLoginForm() {
     return within(container);
 }
 
+function deferred(): {promise: Promise<void>; resolve: () => void} {
+    let resolve: () => void = () => {};
+    const promise = new Promise<void>((res) => {
+        resolve = res;
+    });
+    return {promise, resolve};
+}
+
 async function submitCredentials(user: ReturnType<typeof userEvent.setup>) {
     await user.type(screen.getByLabelText(/email/i), "admin@example.com");
     await user.type(screen.getByLabelText(/password/i), "hunter2hunter2");
@@ -58,6 +68,7 @@ describe("LoginForm", () => {
         verifyTotp.mockReset().mockResolvedValue({data: {}, error: null});
         verifyBackupCode.mockReset().mockResolvedValue({data: {}, error: null});
         navigate.mockReset();
+        refreshSession.mockReset().mockResolvedValue(undefined);
     });
 
     it("renders email and password fields", () => {
@@ -99,6 +110,27 @@ describe("LoginForm", () => {
         expect(screen.queryByText("Two-factor authentication")).not.toBeInTheDocument();
     });
 
+    it("refreshes the session before navigating and keeps the button busy meanwhile (G-15-14)", async () => {
+        const refresh = deferred();
+        refreshSession.mockReturnValue(refresh.promise);
+        const user = userEvent.setup();
+        renderLoginForm();
+
+        await submitCredentials(user);
+
+        await waitFor(() => expect(refreshSession).toHaveBeenCalledTimes(1));
+        expect(navigate).not.toHaveBeenCalled();
+        expect(screen.getByRole("button", {name: "Signing in..."})).toBeDisabled();
+
+        await act(async () => {
+            refresh.resolve();
+        });
+
+        await waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
+        expect(navigate).toHaveBeenCalledWith("/");
+        expect(refreshSession.mock.invocationCallOrder[0]).toBeLessThan(navigate.mock.invocationCallOrder[0]);
+    });
+
     describe("two-factor second step", () => {
         beforeEach(() => {
             signInEmail.mockResolvedValue({data: {twoFactorRedirect: true}, error: null});
@@ -113,6 +145,7 @@ describe("LoginForm", () => {
             expect(await screen.findByText("Two-factor authentication")).toBeInTheDocument();
             expect(screen.getByLabelText("Authentication code")).toBeInTheDocument();
             expect(navigate).not.toHaveBeenCalled();
+            expect(refreshSession).not.toHaveBeenCalled();
         });
 
         it("navigates to the dashboard after a correct code", async () => {
@@ -124,6 +157,29 @@ describe("LoginForm", () => {
             await user.click(screen.getByRole("button", {name: "Verify"}));
 
             await waitFor(() => expect(navigate).toHaveBeenCalledWith("/"));
+        });
+
+        it("refreshes the session before navigating and keeps Verifying... meanwhile (G-15-14)", async () => {
+            const refresh = deferred();
+            refreshSession.mockReturnValue(refresh.promise);
+            const user = userEvent.setup();
+            renderLoginForm();
+
+            await submitCredentials(user);
+            await user.type(await screen.findByLabelText("Authentication code"), "123456");
+            await user.click(screen.getByRole("button", {name: "Verify"}));
+
+            await waitFor(() => expect(refreshSession).toHaveBeenCalledTimes(1));
+            expect(navigate).not.toHaveBeenCalled();
+            expect(screen.getByRole("button", {name: "Verifying..."})).toBeDisabled();
+
+            await act(async () => {
+                refresh.resolve();
+            });
+
+            await waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
+            expect(navigate).toHaveBeenCalledWith("/");
+            expect(refreshSession.mock.invocationCallOrder[0]).toBeLessThan(navigate.mock.invocationCallOrder[0]);
         });
 
         it("returns to an empty password step from Back to sign in", async () => {
@@ -151,6 +207,7 @@ describe("LoginForm", () => {
             expect(screen.getByRole("alert")).toHaveTextContent("Your sign-in timed out. Sign in again.");
             expect(screen.getByLabelText(/password/i)).toHaveValue("");
             expect(navigate).not.toHaveBeenCalled();
+            expect(refreshSession).not.toHaveBeenCalled();
         });
     });
 
@@ -169,6 +226,7 @@ describe("LoginForm", () => {
 
             expect(await screen.findByRole("alert")).toHaveTextContent("Too many attempts. Try again in 10 minutes.");
             expect(screen.getByRole("button", {name: /sign in/i})).toBeEnabled();
+            expect(refreshSession).not.toHaveBeenCalled();
         });
 
         it("keeps the server message for other failures", async () => {
@@ -179,6 +237,7 @@ describe("LoginForm", () => {
             await submitCredentials(user);
 
             expect(await screen.findByRole("alert")).toHaveTextContent("Invalid email or password");
+            expect(refreshSession).not.toHaveBeenCalled();
         });
     });
 });

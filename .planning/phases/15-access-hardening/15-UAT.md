@@ -1,9 +1,9 @@
 ---
-status: partial
+status: complete
 phase: 15-access-hardening
 source: 15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md
 started: 2026-10-11T12:27:56Z
-updated: 2026-10-11T15:15:14.092Z
+updated: 2026-10-11T17:28:19Z
 ---
 
 ## Current Test
@@ -27,7 +27,7 @@ result: pass
 ### 4. Sign-in with Authenticator Code
 expected: After signing out and entering email and password, the card swaps to a two-factor step asking for the 6-digit code (numeric keypad, one-time-code autofill). An unchecked "Trust this device for 30 days" checkbox and "Back to sign in" are present. A wrong code shows a clear error and clears the input; the correct code signs you in. With trust-device ticked, the next sign-in from that browser skips the code step.
 result: pass
-note: \"User: had to log in twice again (same as gap G-15-14)\"
+note: "Double login seen here (G-15-14); fixed by 15-07 and re-verified in test 14"
 
 ### 5. Sign-in with a Recovery Code (single use)
 expected: "Use a recovery code" switches the step to an xxxxx-xxxxx input. A valid recovery code signs you in; the same code used again is rejected. "Use authenticator app instead" switches back. The step mentions docs/deployment.md for the lost-everything case.
@@ -69,15 +69,14 @@ result: pass
 
 ### 14. Single Login After Startup (reported during test 2)
 expected: After starting the app and signing in once, the user lands in the app and stays signed in; no second login prompt appears.
-result: issue
-reported: "I have experienced after the startup, I had to login twice. I was directly redirected to the login page again. I dont know if this is a caching issue, but I think this should be fixed"
-severity: major
+result: pass
+note: "Originally reported: I have experienced after the startup, I had to login twice. I was directly redirected to the login page again. I dont know if this is a caching issue, but I think this should be fixed Fixed by plan 15-07; re-tested, single login works."
 
 ## Summary
 
 total: 14
-passed: 12
-issues: 1
+passed: 13
+issues: 0
 pending: 0
 skipped: 0
 blocked: 1
@@ -86,7 +85,7 @@ blocked: 1
 
 - gap_id: G-15-14
   truth: "After startup, a single sign-in lands the user in the app and keeps them signed in"
-  status: failed
+  status: resolved
   reason: "User reported: I have experienced after the startup, I had to login twice. I was directly redirected to the login page again. I dont know if this is a caching issue, but I think this should be fixed"
   severity: major
   test: 14

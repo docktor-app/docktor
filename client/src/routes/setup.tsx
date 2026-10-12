@@ -1,7 +1,7 @@
 import {useState, useEffect} from "react";
 import {useNavigate, Link} from "react-router";
 import {toast} from "sonner";
-import {signIn} from "@/lib/auth-client";
+import {refreshSession, signIn} from "@/lib/auth-client";
 import {checkSetupStatus, completeSetup, submitStep1, submitStep2, submitStep3, submitStep4, submitStep6} from "@/lib/setup-api";
 import {WizardStepper} from "@/routes/setup/components/wizard-stepper";
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from "@/components/ui/card";
@@ -60,6 +60,8 @@ export default function SetupPage() {
       await submitStep1(data);
       // Auto-login using better-auth
       await signIn.email({email: data.email, password: data.password});
+      // G-15-14: the wizard ends with navigate("/"), which ProtectedRoute gates on the session store.
+      await refreshSession();
       markStepComplete(1);
       setCurrentStep(2);
       toast.success("Account created successfully");
