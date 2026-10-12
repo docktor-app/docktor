@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/branding/docktor-logo-light.svg">
+    <img src="docs/branding/docktor-logo.svg" alt="Docktor" height="80">
+  </picture>
+</p>
+
 # Docktor
 
 Docktor is a browser UI to deploy, update, monitor and back up Docker Compose apps on your own server, with no SSH needed for day-to-day operation.

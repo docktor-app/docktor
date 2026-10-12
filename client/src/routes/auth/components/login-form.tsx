@@ -4,6 +4,7 @@ import {useForm} from "react-hook-form";
 import {standardSchemaResolver} from "@hookform/resolvers/standard-schema";
 import {LoginInput, loginSchema} from "@docktor/shared";
 import {refreshSession, signIn} from "@/lib/auth-client";
+import {BrandLogo} from "@/components/common/brand-logo";
 import {classifyAuthError} from "@/lib/auth-errors";
 import {formatRetryAfter, readRetryAfterSeconds} from "@/lib/rate-limit";
 import {TwoFactorStep} from "@/routes/auth/components/two-factor-step";
@@ -95,6 +96,7 @@ export function LoginForm(): React.JSX.Element {
     return (
         <Card className="w-full max-w-sm">
             <CardHeader className="text-center">
+                <BrandLogo variant="mark" className="mx-auto mb-2 size-12"/>
                 <CardTitle className="text-2xl">Sign in to Docktor</CardTitle>
                 <CardDescription>
                     Enter your credentials to access your account
