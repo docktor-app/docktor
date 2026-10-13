@@ -121,5 +121,9 @@ jobs:
               echo "Startup report on ${platform} does not mention ENCRYPTION_KEY" >&2
               exit 1
             fi
+            # The classic image store cannot resolve one index digest for a
+            # second platform ("cannot overwrite digest"), so drop the pulled
+            # platform image before the next iteration.
+            docker image rm "${IMAGE}@${DIGEST}" >/dev/null
             echo "::endgroup::"
           done
