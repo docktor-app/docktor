@@ -74,19 +74,34 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BKP-01 .. BKP-03 | TBD | Pending |
-| MIG-01 .. MIG-04 | TBD | Pending |
-| STK-01 .. STK-03 | TBD | Pending |
-| DASH-01 .. DASH-02 | TBD | Pending |
-| UI-01 .. UI-08 | TBD | Pending |
-| A11Y-01 | TBD | Pending |
-| REL-01 | TBD | Pending |
+| BKP-01 | Phase 17 | Pending |
+| BKP-02 | Phase 17 | Pending |
+| BKP-03 | Phase 17 | Pending |
+| STK-01 | Phase 17 | Pending |
+| STK-02 | Phase 17 | Pending |
+| STK-03 | Phase 18 | Pending |
+| MIG-01 | Phase 18 | Pending |
+| MIG-02 | Phase 18 | Pending |
+| MIG-03 | Phase 18 | Pending |
+| MIG-04 | Phase 18 | Pending |
+| UI-01 | Phase 19 | Pending |
+| UI-06 | Phase 19 | Pending |
+| UI-07 | Phase 19 | Pending |
+| UI-02 | Phase 20 | Pending |
+| UI-03 | Phase 20 | Pending |
+| UI-04 | Phase 20 | Pending |
+| UI-05 | Phase 20 | Pending |
+| UI-08 | Phase 20 | Pending |
+| DASH-01 | Phase 20 | Pending |
+| DASH-02 | Phase 20 | Pending |
+| A11Y-01 | Phase 20 | Pending |
+| REL-01 | Phase 21 | Pending |
 
 **Coverage:**
 - v0.1.1 requirements: 22 total
-- Mapped to phases: 0
-- Unmapped: 22 ⚠️
+- Mapped to phases: 22
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-10-14*
-*Last updated: 2026-10-14 after initial definition*
+*Last updated: 2026-10-14 after roadmap creation (traceability mapped to Phases 17-21)*
