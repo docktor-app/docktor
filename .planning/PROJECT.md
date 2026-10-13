@@ -11,6 +11,19 @@ a single Fastify server — API, background jobs, SSE streams, and static React 
 
 Users can deploy, monitor, and manage Docker Compose stacks through a browser UI without needing SSH or Docker CLI access.
 
+## Current Milestone: v0.1.1 Release Follow-ups
+
+**Goal:** A small patch release on one branch (`release/v0.1.1`) that polishes the interface after v0.1.0 and fixes the bugs found right after launch. No new product features.
+
+**Target features:**
+- UI polish bundle ([#96](https://github.com/docktor-app/docktor/issues/96): #88-#95) — sidebar version/links, labelled sidebar sections, Templates page, consistent status casing, monospace KPI typography, tab bar without scrollbar, form spacing, restyled data tables
+- Backup repository fix ([#68](https://github.com/docktor-app/docktor/issues/68)) — configured SFTP/S3 repositories are actually used
+- Migration dialog improvements ([#72](https://github.com/docktor-app/docktor/issues/72))
+- No false port-conflict warnings for a stack's own ports ([#76](https://github.com/docktor-app/docktor/issues/76))
+- Docktor's own stack is not offered by "Import existing stack" ([#13](https://github.com/docktor-app/docktor/issues/13))
+- Clearer dashboard "Backups Configured" card ([#85](https://github.com/docktor-app/docktor/issues/85))
+- 44px mobile touch targets for remaining icon-only controls ([#71](https://github.com/docktor-app/docktor/issues/71))
+
 ## Requirements
 
 ### Validated
@@ -48,17 +61,9 @@ Users can deploy, monitor, and manage Docker Compose stacks through a browser UI
 
 ### Active
 
-<!-- Current scope. Building toward v0.1.0 (first public release) — see ROADMAP.md Phases 10-16. -->
+<!-- Current scope. Building toward v0.1.1 (patch release) — see ROADMAP.md Phase 17+. -->
 
-Scope is now tracked in GitHub Issues (`docktor-app/docktor`, milestone "v0.1.0 - First Release"), not as REQ-IDs here — see CLAUDE.md "Issue Tracking". Phases 10-16 in ROADMAP.md cover, in sequence:
-
-- [ ] Backend architecture refactor (scope TBD via discuss-phase) — Phase 10 (#16), sequenced first so later phases' server-side code lands on the reworked structure
-- [ ] UI rework: component architecture, shadcn patterns, log-table consolidation, dialogs, status-indicator consistency (scope TBD via discuss-phase) — Phase 11 (#15), sequenced first so later phases' new UI lands on the reworked patterns; independent of Phase 10 (separate client/server tracks)
-- [ ] Compose diff-before-apply, dangerous-config warnings, port-conflict detection, git-based templates — Phase 12 (#18, #19, #20, #21), depends on 10 and 11
-- [ ] Update-checker/status bug fixes and cleanup — Phase 13 (#29, #31, #32, #33, #34), low rework risk, can run anytime
-- [ ] HTTP health probes + history, uptime view, disk usage view — Phase 14 (#23, #24, #27), depends on 10 and 11
-- [ ] TOTP 2FA and auth-endpoint hardening — Phase 15 (#45, #46), depends on 11 (2FA UI)
-- [ ] Docs, demo instance, license decision, image publishing, community health files — Phase 16 (#7, #11, #17, #42, #53, #54, #55, #57), closes the milestone
+Scope is tracked in GitHub Issues (`docktor-app/docktor`); see "Current Milestone" above and REQUIREMENTS.md for the issue-to-requirement mapping. v0.1.0 (Phases 10-16) is shipped.
 
 ### Out of Scope
 
@@ -109,5 +114,22 @@ Key architectural constraints:
 | Cut over from schemaless `prisma db push` to real `prisma migrate deploy`, with automatic baselining of an existing `db push` install | `db push` has no migration history, no rollback path, and no audit trail — untenable for a v1.0.0 release that self-hosters will upgrade in place | Shipped Phase 09 |
 | Certificate-source field (`acme` \| `custom`) promoted onto every `ProxyConfig` row, not left implicit from a certificate link's presence/absence | A future third source, or a row with no explicit opinion, must never be ambiguous about who issues its certificate | Shipped Phase 09 |
 
+## Evolution
+
+This document evolves at phase transitions and milestone boundaries.
+
+**After each phase transition** (via `/gsd-transition`):
+1. Requirements invalidated? → Move to Out of Scope with reason
+2. Requirements validated? → Move to Validated with phase reference
+3. New requirements emerged? → Add to Active
+4. Decisions to log? → Add to Key Decisions
+5. "What This Is" still accurate? → Update if drifted
+
+**After each milestone** (via `/gsd-complete-milestone`):
+1. Full review of all sections
+2. Core Value check — still the right priority?
+3. Audit Out of Scope — reasons still valid?
+4. Update Context with current state
+
 ---
-*Last updated: 2026-09-22 — Phases 1-9 completion review, GitHub issue tracking adopted, ROADMAP.md Phases 10-16 scoped toward v0.1.0 (first public release), backend/UI refactors resequenced ahead of feature work*
+*Last updated: 2026-10-14 — milestone v0.1.1 (Release Follow-ups) started*

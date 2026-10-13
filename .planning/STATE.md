@@ -1,19 +1,16 @@
 ---
 gsd_state_version: "1.0"
-milestone: v0.1.0
-current_phase: 16
-current_phase_name: Release Readiness for v0.1.0
-current_plan: 8
-status: "Phases 1-13 complete (v0.1.0 scope: ROADMAP Phases 10-16, sourced from GitHub issues in docktor-app/docktor; product tracking lives in GitHub Issues). Phase 14 (Health, Uptime and Disk Visibility): all 14 plans executed, code review done, verification found gaps (9/13 truths) — CR-01 probe Docker calls lack timeouts, WR-01/WR-05 probe results not tied to current container. Gap-closure plan (14-15) being created via /gsd-plan-phase 14 --gaps. Phases 15 (Access Hardening) and 16 (Release Readiness) not started."
-stopped_at: Completed 16-08-PLAN.md
-last_updated: "2026-10-11T22:03:03.314Z"
-state_head: 2260430f35bbc3017ec2e23e9af00948927ee637
+milestone: v0.1.1
+milestone_name: Release Follow-ups
+status: planning
+last_updated: "2026-10-13T22:48:29.919Z"
+last_activity: 2026-10-14
 progress:
-  total_phases: 17
-  completed_phases: 9
-  total_plans: 166
-  completed_plans: 163
-milestone_name: milestone
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -27,9 +24,10 @@ See: .planning/PROJECT.md (updated 2026-09-22)
 
 ## Current Position
 
-Phase: 16 (Release Readiness for v0.1.0) — EXECUTING
-Current Plan: 8
-Total Plans in Phase: 10
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-10-14 — Milestone v0.1.1 started
 
 ## Performance Metrics
 
