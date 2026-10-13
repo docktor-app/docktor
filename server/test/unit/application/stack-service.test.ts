@@ -619,6 +619,19 @@ describe("StackService", () => {
             expect(repo.clearConfigChanged).toHaveBeenCalledWith("my-app");
         });
 
+        it("clears a stale configChanged flag before the DEPLOYING transition so the banner never flashes during deploy", async () => {
+            repo.findByIdOrThrow.mockResolvedValue({id: "my-app", status: "DRAFT", configChanged: true});
+            docker.up.mockResolvedValue(undefined);
+            fs.readCompose.mockResolvedValue("services:\n  web:\n    image: nginx\n");
+
+            await service.deployStack("my-app");
+
+            expect(repo.setConfigChanged).toHaveBeenCalledWith("my-app", false);
+            expect(repo.setConfigChanged.mock.invocationCallOrder[0]).toBeLessThan(
+                repo.transitionStatus.mock.invocationCallOrder[0],
+            );
+        });
+
         it("catches up the real container states once, after replaceServices and the DEPLOYING -> RUNNING transition", async () => {
             repo.findByIdOrThrow.mockResolvedValue({id: "my-app", status: "DRAFT"});
             docker.up.mockResolvedValue(undefined);
