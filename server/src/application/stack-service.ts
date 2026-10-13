@@ -184,6 +184,10 @@ export class StackService {
             description: input.description,
             hostPath,
             composeConfig,
+            // The .env was just written above; seeding its hash keeps the
+            // file watcher's add event a no-op instead of an "external"
+            // config_changed (toast, activity entry, configChanged flag).
+            envHash: input.envContent ? hashComposeContent(input.envContent) : undefined,
             templatePin: options.templatePin,
         }));
     }
