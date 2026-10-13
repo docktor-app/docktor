@@ -125,3 +125,40 @@ Keep each commit to one logical change, and never commit with failing tests or t
 ## Issue tracking
 
 [GitHub Issues](https://github.com/docktor-app/docktor/issues) are the product backlog. Each issue describes an outcome from the user's point of view. Set the native **Issue Type** (Bug, Feature, Chore, Documentation or Task) rather than a title prefix, and use the `area:*` labels (`area:server`, `area:client`, `area:proxy`, `area:backup`, `area:templates`, `area:auth`, `area:ci`) to show which subsystem is affected. Planned releases are tracked as [milestones](https://github.com/docktor-app/docktor/milestones).
+
+## Building the image from source
+
+`docker-compose.yml` pulls the published image from `ghcr.io/docktor-app/docktor`. To run your own changes, add the build override:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+```
+
+The override builds from the local `Dockerfile` and tags the result `docktor:local` with `pull_policy: build`, so it never pulls and never shadows `ghcr.io/docktor-app/docktor:latest` for a later plain `docker compose up`.
+
+Maintainers who want to test both architectures (the non-native one runs under QEMU) can build them with:
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 .
+```
+
+## Releasing
+
+Releases are for maintainers. The Publish workflow (`.github/workflows/publish.yml`) runs the reusable CI job first and publishes to `ghcr.io/docktor-app/docktor` only if it passes. Each event publishes these tags:
+
+| Event | Tags |
+|---|---|
+| push to `main` | `edge`, `sha-<short>` |
+| tag `v0.1.0` | `0.1.0`, `0.1`, `latest` (no `0` while the major version is 0) |
+| tag `v1.2.3` | `1.2.3`, `1.2`, `1`, `latest` |
+| tag `v0.1.0-rc.1` | `0.1.0-rc.1` only |
+
+Procedure:
+
+1. Merge to `main` and check that the Publish run is green and publishes `edge` and `sha-<short>`.
+2. Tag a release candidate first (`vX.Y.Z-rc.N`) and confirm the run is green, the registry lists only the `X.Y.Z-rc.N` tag, and the image index has both `linux/amd64` and `linux/arm64`.
+3. Then tag `vX.Y.Z`. `latest` moves only on a non-prerelease release tag.
+4. Bump the quickstart ref (the `vX.Y.Z` in the `curl` URLs in `README.md` and in the Get started page of [docktor-app/docks](https://github.com/docktor-app/docks)) to the new tag.
+5. The phase or release pull request closes the issues it implements with `Closes #<n>`.
+
+Never move or delete a published tag. If a candidate fails, fix forward and cut the next one (`-rc.2`, ...). The failed tag stays in the registry.
