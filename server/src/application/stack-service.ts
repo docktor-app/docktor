@@ -184,6 +184,10 @@ export class StackService {
             description: input.description,
             hostPath,
             composeConfig,
+            // The .env was just written above; seeding its hash keeps the
+            // file watcher's add event a no-op instead of an "external"
+            // config_changed (toast, activity entry, configChanged flag).
+            envHash: input.envContent ? hashComposeContent(input.envContent) : undefined,
             templatePin: options.templatePin,
         }));
     }
@@ -491,6 +495,12 @@ export class StackService {
         // DEPLOYING broadcast reaches the client (use-stack.ts's background
         // refetch on that event). Never blocks: runPreflight() never throws.
         const warnings = await this.runPreflight(id);
+
+        // A deploy applies the files on disk as they are now, so any pending
+        // "config changed" flag is moot. Clearing it before the DEPLOYING
+        // broadcast keeps the banner from showing for the whole deploy.
+        // setConfigChanged (not clearConfigChanged) leaves configError intact.
+        await this.repo.setConfigChanged(id, false);
 
         await this.transitionStatus(
             id,

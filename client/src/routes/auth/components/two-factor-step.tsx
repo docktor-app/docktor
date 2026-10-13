@@ -9,6 +9,7 @@ import {
 } from "@docktor/shared";
 import {twoFactor} from "@/lib/auth-client";
 import {AuthErrorLike, classifyAuthError} from "@/lib/auth-errors";
+import {docsUrl} from "@/lib/docs-links";
 import {formatRetryAfter, readRetryAfterSeconds} from "@/lib/rate-limit";
 import {Button} from "@/components/ui/button";
 import {Checkbox} from "@/components/ui/checkbox";
@@ -261,8 +262,16 @@ export function TwoFactorStep({onSuccess, onBack, onExpired}: Readonly<TwoFactor
                 {mode === "recovery" && (
                     <p className="mt-4 text-sm text-muted-foreground">
                         Lost your device and your recovery codes? Ask whoever runs this server to reset
-                        two-factor authentication. See Resetting two-factor authentication in the
-                        deployment docs (docs/deployment.md).
+                        two-factor authentication. See{" "}
+                        <a
+                            href={docsUrl("reference/deployment", "resetting-two-factor-authentication")}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary underline underline-offset-2"
+                        >
+                            Resetting two-factor authentication
+                        </a>{" "}
+                        in the Docktor documentation.
                     </p>
                 )}
             </CardContent>

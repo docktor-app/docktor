@@ -1,0 +1,129 @@
+# Publishes the multi-arch Docktor image to GHCR (D-04) after CI has passed (D-06).
+#
+# Tag rules (D-05), by event:
+#   push to main        -> edge, sha-<short>          (latest never moves on main)
+#   tag vX.Y.Z          -> X.Y.Z, X.Y, latest, and X only when X is not 0
+#   tag vX.Y.Z-rc.N     -> X.Y.Z-rc.N only            (prereleases never move latest)
+#
+# The bare major tag is suppressed while the major version is 0: 0.x releases may
+# break compatibility, so users pinning ":0" would silently receive breaking updates.
+# From v1.0.0 on, "1" is published.
+name: Publish
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+# Never cancel a tag release; a newer push to main may supersede an older one.
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type == 'branch' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # The full CI definition, reused so main and tags are gated by exactly what pull
+  # requests run. Only the two named Sonar secrets are passed, never the whole secret set.
+  ci:
+    uses: ./.github/workflows/ci.yml
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+  publish:
+    needs: ci
+    runs-on: ubuntu-latest
+    # The only job allowed to write packages.
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tag rules, each mapped to D-05 (the tags input is a literal block, so the
+      # explanations live here rather than as comment lines inside it):
+      #   type=edge                      main pushes (development-only tag)
+      #   type=sha                       main pushes only: sha-<short>
+      #   {{version}}                    every v* tag: X.Y.Z, or X.Y.Z-rc.N for a prerelease
+      #   {{major}}.{{minor}}            stable tags only
+      #   {{major}}                      stable tags whose major is not 0
+      #   value=latest                   stable vX.Y.Z tags only; never main, never prereleases
+      - name: Compute image tags
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        with:
+          images: ghcr.io/docktor-app/docktor
+          # latest is set explicitly in the tag list instead of relying on latest=auto.
+          flavor: |
+            latest=false
+          tags: |
+            type=edge
+            type=sha,enable=${{ startsWith(github.ref, 'refs/heads/') }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
+            type=semver,pattern={{major}},enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') && !startsWith(github.ref, 'refs/tags/v0.') }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          # Labels carry org.opencontainers.image.source, linking the package to the repo.
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke-test the pushed image
+        env:
+          IMAGE: ghcr.io/docktor-app/docktor
+          DIGEST: ${{ steps.build.outputs.digest }}
+          PRISMA_CHECK: "require('child_process').execFileSync(process.execPath,[require.resolve('prisma/build/index.js'),'--version'],{stdio:'inherit'})"
+        run: |
+          set -eu
+          for platform in linux/amd64 linux/arm64; do
+            echo "::group::Smoke test ${platform}"
+            docker run --rm --platform "$platform" -e PRISMA_CHECK "${IMAGE}@${DIGEST}" sh -c '
+              restic version &&
+              docker --version &&
+              docker compose version &&
+              node -e "$PRISMA_CHECK"
+            '
+
+            # An empty environment must be rejected by the startup check (#7).
+            set +e
+            output=$(docker run --rm --platform "$platform" "${IMAGE}@${DIGEST}" 2>&1)
+            code=$?
+            set -e
+            printf '%s\n' "$output"
+            if [ "$code" -ne 1 ]; then
+              echo "Expected exit code 1 on ${platform}, got ${code}" >&2
+              exit 1
+            fi
+            if ! printf '%s\n' "$output" | grep -q ENCRYPTION_KEY; then
+              echo "Startup report on ${platform} does not mention ENCRYPTION_KEY" >&2
+              exit 1
+            fi
+            # The classic image store cannot resolve one index digest for a
+            # second platform ("cannot overwrite digest"), so drop the pulled
+            # platform image before the next iteration.
+            docker image rm "${IMAGE}@${DIGEST}" >/dev/null
+            echo "::endgroup::"
+          done

@@ -6,6 +6,7 @@ import {SignupInput, signupSchema} from "@docktor/shared";
 import {signUp} from "@/lib/auth-client";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
+import {BrandLogo} from "@/components/common/brand-logo";
 import {Card, CardContent, CardDescription, CardHeader, CardTitle,} from "@/components/ui/card";
 import {Form, FormControl, FormField, FormItem, FormLabel, FormMessage,} from "@/components/ui/form";
 
@@ -45,6 +46,7 @@ export function SignupForm() {
     return (
         <Card className="w-full max-w-sm">
             <CardHeader className="text-center">
+                <BrandLogo variant="mark" className="mx-auto mb-2 size-12"/>
                 <CardTitle className="text-2xl">Create an account</CardTitle>
                 <CardDescription>
                     Enter your details to get started with Docktor

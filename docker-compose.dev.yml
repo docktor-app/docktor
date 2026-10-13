@@ -5,7 +5,7 @@
 #
 # For the actual self-host Docktor deployment (the application container
 # plus its own Postgres), use docker-compose.yml instead — see
-# docs/deployment.md.
+# https://github.com/docktor-app/docks/blob/main/guide/get-started.md.
 #
 # Postgres major version and credentials intentionally match
 # docker-compose.yml's `db` service (postgres:18, docktor/docktor/docktor)

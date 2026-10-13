@@ -21,3 +21,9 @@
 # build context on every rebuild — the same class of leak this file exists to
 # prevent for secrets, just for data instead of credentials.
 /dev-data
+
+# README screenshots/GIF and the local clone of the docs repository (which carries
+# its own node_modules). Neither is read by any COPY line in the Dockerfile; leaving
+# them in would only enlarge the build context sent to the builder.
+/docs
+/.docks

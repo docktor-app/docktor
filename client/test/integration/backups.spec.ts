@@ -384,44 +384,17 @@ test.describe("Backup UI", () => {
         await expect(page.getByText("Local", {exact: true})).toBeVisible();
     });
 
-    test("Settings Backup tab shows conditional fields for SFTP", async ({page}) => {
+    test("Settings Backup tab offers only the Local repository type", async ({page}) => {
         await page.goto("/settings");
         await page.getByRole("tab", {name: /backup/i}).click();
 
-        // Change repository type to SFTP
-        const typeSelect = page.locator("#repoType");
-        await typeSelect.click();
-        await page.getByRole("option", {name: /SFTP/i}).click();
-
-        // Verify SFTP-specific fields appear (there is no dedicated "port"
-        // field in the real form — SFTP uses repoPath/host/username/key)
-        await expect(page.getByLabel(/repository path/i)).toBeVisible();
-        await expect(page.getByLabel(/host/i)).toBeVisible();
-        await expect(page.getByLabel(/username/i)).toBeVisible();
-        await expect(page.getByLabel(/private key/i)).toBeVisible();
-
-        // Verify S3 fields are NOT visible
-        await expect(page.getByLabel(/bucket/i)).not.toBeVisible();
-    });
-
-    test("Settings Backup tab shows conditional fields for S3", async ({page}) => {
-        await page.goto("/settings");
-        await page.getByRole("tab", {name: /backup/i}).click();
-
-        // Change repository type to S3
-        const typeSelect = page.locator("#repoType");
-        await typeSelect.click();
-        await page.getByRole("option", {name: /S3-compatible/i}).click();
-
-        // Verify S3-specific fields appear (there is no "region" field in the
-        // real form — S3 uses endpoint/bucket/access key/secret key)
-        await expect(page.getByLabel(/endpoint url/i)).toBeVisible();
-        await expect(page.getByLabel(/bucket name/i)).toBeVisible();
-        await expect(page.getByLabel(/access key id/i)).toBeVisible();
-        await expect(page.getByLabel(/secret access key/i)).toBeVisible();
-
-        // Verify SFTP fields are NOT visible
-        await expect(page.getByLabel(/^host$/i)).not.toBeVisible();
+        // Remote targets (SFTP, S3) are planned but not selectable in v0.1.0;
+        // the dropdown stays so the list reads as extensible.
+        await page.locator("#repoType").click();
+        await expect(page.getByRole("option")).toHaveCount(1);
+        await expect(page.getByRole("option", {name: "Local"})).toBeVisible();
+        await expect(page.getByRole("option", {name: /SFTP/i})).toHaveCount(0);
+        await expect(page.getByRole("option", {name: /S3/i})).toHaveCount(0);
     });
 
     test("Settings Backup tab shows defaults card", async ({page}) => {

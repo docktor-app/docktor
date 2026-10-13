@@ -14,7 +14,7 @@ describe("StorageBackupsSection", () => {
         expect(screen.getByRole("heading", {name: "Backups"})).toBeInTheDocument();
         expect(
             screen.getByText(
-                "Local restic repositories stored inside each stack folder. Remote repositories (SFTP, S3) use no local disk.",
+                "Local restic repositories stored inside each stack folder.",
             ),
         ).toBeInTheDocument();
     });

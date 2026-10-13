@@ -1,10 +1,21 @@
 name: CI
 
+# CI for pull requests runs from this file directly. Pushes to main and v* release
+# tags no longer trigger it on their own: publish.yml calls it (workflow_call) as its
+# first job and only builds and pushes the image once it has passed, so main and tag
+# CI runs appear inside the "Publish" workflow run.
 on:
-  push:
-    branches: [main]
+  workflow_call:
+    secrets:
+      SONAR_TOKEN:
+        required: false
+      SONAR_HOST_URL:
+        required: false
   pull_request:
     branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   build-and-test:
@@ -15,10 +26,10 @@ jobs:
       NODE_ENV: test
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
 
@@ -62,7 +73,7 @@ jobs:
           done
 
       - name: Upload coverage artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: coverage-reports
@@ -84,10 +95,10 @@ jobs:
       NODE_ENV: test
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
 
@@ -117,17 +128,17 @@ jobs:
     needs: build-and-test
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
       - name: Download coverage artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: coverage-reports
 
       - name: SonarQube Scan for PR
-        uses: sonarsource/sonarqube-scan-action@v7
+        uses: sonarsource/sonarqube-scan-action@c7ee0f9df90b7aa20e8dcf9695dcfe2e7da5b4f2 # v7
         if: github.event_name == 'pull_request'
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -139,7 +150,7 @@ jobs:
             --define sonar.pullrequest.base=main
 
       - name: SonarQube Scan for Main
-        uses: sonarsource/sonarqube-scan-action@v7
+        uses: sonarsource/sonarqube-scan-action@c7ee0f9df90b7aa20e8dcf9695dcfe2e7da5b4f2 # v7
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -147,3 +158,45 @@ jobs:
         with:
           args: >
             --define sonar.branch.name=main
+
+  # Builds the production image from a clean checkout on every pull request (amd64
+  # only, to bound PR time; arm64 is built by publish.yml) and proves the startup
+  # environment check (#7) rejects an empty environment inside the real image.
+  docker-image:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+
+      - name: Build image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: docktor:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Startup check rejects an empty environment (#7)
+        run: |
+          set +e
+          output=$(docker run --rm docktor:ci 2>&1)
+          code=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$code" -ne 1 ]; then
+            echo "Expected exit code 1 from an empty environment, got $code" >&2
+            exit 1
+          fi
+          for name in DATABASE_URL BETTER_AUTH_SECRET BETTER_AUTH_URL ENCRYPTION_KEY; do
+            if ! printf '%s\n' "$output" | grep -q "$name"; then
+              echo "Startup report does not mention $name" >&2
+              exit 1
+            fi
+          done

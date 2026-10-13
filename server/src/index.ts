@@ -1,8 +1,25 @@
-import {buildApp} from "./app.js";
 import {healthProbeJob} from "./jobs/health-probe-job.js";
 import {installShutdownHandlers, SHUTDOWN_HARD_DEADLINE_MS} from "./lib/graceful-shutdown.js";
-import {assertStacksDirIsMounted, assertStacksDirMatchesHost, ensureStacksDir} from "./lib/stacks-dir.js";
+import {setEnvironmentReport} from "./lib/environment-report.js";
+import {assertStacksDirIsMounted, assertStacksDirMatchesHost, ensureStacksDir, isContainerized} from "./lib/stacks-dir.js";
 import {syncDatabaseSchema} from "./lib/schema-sync.js";
+import {runStartupEnvironmentCheck} from "./lib/startup-environment.js";
+
+// #7, D-10, RESEARCH Pitfall 1: check the environment before anything else
+// runs. Static imports are evaluated before this body, and lib/auth.ts reads
+// BETTER_AUTH_SECRET while it is evaluated — so app.js, which reaches it, is
+// loaded with a dynamic import() further down, after this check, and none of
+// the static imports above may reach lib/auth.ts (an architecture test walks
+// that import graph). A broken required variable ends the process here with
+// one report listing every problem; the warnings are stored for
+// GET /api/settings/environment.
+const environmentReport = runStartupEnvironmentCheck({
+    env: process.env,
+    containerized: await isContainerized(),
+    log: console,
+    exit: (code) => process.exit(code),
+});
+setEnvironmentReport(environmentReport);
 
 // Fail fast on a misconfigured DooD stacks-path mount, then guarantee the
 // managed stacks directory itself exists, then verify it will actually
@@ -63,6 +80,8 @@ switch (schemaSyncResult.outcome) {
         break;
 }
 
+// Loaded only now: this is the first point where lib/auth.ts is evaluated.
+const {buildApp} = await import("./app.js");
 const app = await buildApp();
 
 const port = Number.parseInt(process.env.PORT ?? "3000", 10);

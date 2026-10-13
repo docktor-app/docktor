@@ -26,8 +26,7 @@ export function StorageBackupsSection({backups, loading}: Readonly<StorageBackup
                 <SectionTitle>Backups</SectionTitle>
             </SectionHeader>
             <SectionDescription>
-                Local restic repositories stored inside each stack folder. Remote repositories (SFTP, S3) use no local
-                disk.
+                Local restic repositories stored inside each stack folder.
             </SectionDescription>
 
             {loading && (

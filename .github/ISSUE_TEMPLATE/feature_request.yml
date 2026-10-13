@@ -1,0 +1,51 @@
+name: Feature request
+description: Suggest an improvement or a new capability
+type: Feature
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Describe the outcome you want rather than the implementation. For open-ended questions, use [Discussions](https://github.com/docktor-app/docktor/discussions).
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Explain what you cannot do today, or what is harder than it should be.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would you like Docktor to do?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds or other tools you tried.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Stacks and compose editing
+        - Templates
+        - Backups and restore
+        - Proxy and TLS
+        - Brownfield import
+        - Update checks
+        - Health and uptime
+        - Account and security
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Before you submit
+      options:
+        - label: I searched existing issues and discussions
+          required: true

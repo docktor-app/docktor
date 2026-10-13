@@ -1,8 +1,8 @@
 import type {FastifyPluginAsyncZod} from "fastify-type-provider-zod"
 import {z} from "zod"
-import {composeCheckSettingsSchema, healthSettingsSchema} from "@docktor/shared"
+import {composeCheckSettingsSchema, environmentReportSchema, healthSettingsSchema} from "@docktor/shared"
 import {requireAuth} from "../lib/auth-middleware.js"
-import {settingsService, notificationService} from "../application/index.js"
+import {environmentStatusService, settingsService, notificationService} from "../application/index.js"
 
 const updateGeneralSettingsSchema = z.object({
     instanceName: z.string().optional(),
@@ -51,6 +51,14 @@ const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
     app.get("/api/settings/general", async () => {
         return settingsService.getGeneralSettings()
     })
+
+    // #7/D-13: the non-blocking warnings the startup environment check stored
+    // at boot. The response schema strips anything but code/variable/message.
+    app.get(
+        "/api/settings/environment",
+        {schema: {response: {200: environmentReportSchema}}},
+        async () => environmentStatusService.getReport(),
+    )
 
     app.put(
         "/api/settings/general",

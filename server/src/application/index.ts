@@ -34,11 +34,13 @@ import {TemplateService} from "./template-service.js";
 import {TemplateUpdateService} from "./template-update-service.js";
 import {ServiceHealthHistoryService} from "./service-health-history-service.js";
 import {StorageService} from "./storage-service.js";
+import {EnvironmentStatusService} from "./environment-status-service.js";
 import {UptimeService} from "./uptime-service.js";
 import {IncidentTracker} from "./incident-tracker.js";
 import {ServiceHealthService} from "./service-health-service.js";
 import {certificateFilesystem} from "../infrastructure/certificate-filesystem.js";
 import {stateEventBroadcaster} from "../lib/state-broadcaster.js";
+import {getEnvironmentReport} from "../lib/environment-report.js";
 import {dockerodeClient} from "../infrastructure/dockerode-client.js";
 import {socketInspector} from "../infrastructure/socket-inspector.js";
 import {smtpClient} from "../infrastructure/smtp-client.js";
@@ -125,6 +127,10 @@ export const serviceHealthHistoryService = new ServiceHealthHistoryService(repo,
 // #27/D-15: read side of the disk usage figures DiskUsageJob stores — serves
 // GET /api/storage.
 export const storageService = new StorageService(stackDiskUsageRepository);
+
+// #7/D-13: serves the warnings the startup environment check stored at boot —
+// GET /api/settings/environment.
+export const environmentStatusService = new EnvironmentStatusService(getEnvironmentReport);
 
 // #24/D-09/D-10/D-16: read side of the per-stack uptime view — the uptime
 // percentage comes from StatusLog intervals over the global retention window

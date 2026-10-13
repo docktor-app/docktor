@@ -42,7 +42,7 @@ const baseColumns: TableColumn<StackWithServices>[] = [
             <div className="flex flex-wrap items-center gap-1">
                 <StackStatusBadge status={stack.status} display="compact" />
                 {stack.configError && <ToneBadge tone="red">config error</ToneBadge>}
-                {stack.configChanged && <ToneBadge tone="yellow">config changed</ToneBadge>}
+                {stack.configChanged && stack.status !== "DRAFT" && <ToneBadge tone="yellow">config changed</ToneBadge>}
                 <StackUpdateBadge services={stack.services} />
             </div>
         ),

@@ -2,6 +2,7 @@ import {beforeEach, describe, expect, it, vi} from "vitest";
 import {act, render, screen, waitFor} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {TwoFactorStep} from "../../../../../src/routes/auth/components/two-factor-step";
+import {docsUrl} from "../../../../../src/lib/docs-links";
 
 // jsdom has no ResizeObserver; Radix's Checkbox (via @radix-ui/react-use-size)
 // requires one to measure the control on mount.
@@ -247,17 +248,23 @@ describe("TwoFactorStep (recovery code)", () => {
         expect(input).toHaveFocus();
     });
 
-    it("shows the lost-everything hint only in recovery mode", async () => {
+    it("links the lost-everything hint to the docs section, in recovery mode only", async () => {
         const user = userEvent.setup();
         renderStep();
 
-        expect(screen.queryByText(/docs\/deployment\.md/)).not.toBeInTheDocument();
+        const linkName = "Resetting two-factor authentication";
+        expect(screen.queryByRole("link", {name: linkName})).not.toBeInTheDocument();
+
         await openRecoveryMode(user);
-        expect(screen.getByText(/docs\/deployment\.md/)).toBeInTheDocument();
+        const link = screen.getByRole("link", {name: linkName});
+        expect(link).toHaveAttribute("href", docsUrl("reference/deployment", "resetting-two-factor-authentication"));
+        expect(link).toHaveAttribute("target", "_blank");
+        expect(link.getAttribute("rel")).toContain("noopener");
+        expect(link.getAttribute("rel")).toContain("noreferrer");
 
         await user.click(screen.getByRole("button", {name: "Use authenticator app instead"}));
         expect(await screen.findByLabelText("Authentication code")).toBeInTheDocument();
-        expect(screen.queryByText(/docs\/deployment\.md/)).not.toBeInTheDocument();
+        expect(screen.queryByRole("link", {name: linkName})).not.toBeInTheDocument();
     });
 
     it("trims the code, keeps its case and carries the trust choice over", async () => {

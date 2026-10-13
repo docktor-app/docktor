@@ -13,6 +13,8 @@ export interface StackAlertsProps {
 // (behaviour-preserving extraction); deployWarnings (Issue #21/D-14/D-15)
 // renders after them, persisted independently of either flag — it survives
 // a reload until the next deploy/restart/update/upgrade replaces it.
+// configChanged is suppressed for DRAFT stacks: nothing has been deployed yet,
+// so there is no "last deployment" for the config to have diverged from.
 export function StackAlerts({stack}: Readonly<StackAlertsProps>) {
     const deployWarnings = parseDeployWarnings(stack.deployWarnings);
 
@@ -27,7 +29,7 @@ export function StackAlerts({stack}: Readonly<StackAlertsProps>) {
                 </Alert>
             )}
 
-            {stack.configChanged && (
+            {stack.configChanged && stack.status !== "DRAFT" && (
                 <Alert className="bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900 dark:text-yellow-200 dark:border-yellow-800">
                     <AlertTriangle className="h-4 w-4"/>
                     <AlertDescription className="text-yellow-800 dark:text-yellow-200">

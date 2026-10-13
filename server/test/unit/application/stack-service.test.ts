@@ -2,6 +2,7 @@ import {beforeEach, describe, expect, it, vi} from "vitest";
 import {StackService, toStackSizeDto} from "../../../src/application/stack-service.js";
 import {BadRequestError, ConfirmationRequiredError, ConflictError, NotFoundError} from "../../../src/lib/errors.js";
 import {ComposeEditError, setServiceImageTag} from "../../../src/lib/compose-editor.js";
+import {hashComposeContent} from "../../../src/lib/compose-parser.js";
 import {EMPTY_DEPLOY_WARNINGS, type DeployWarnings} from "../../../src/application/deploy-preflight-service.js";
 
 // Delegates to the real implementation by default; one test overrides
@@ -198,6 +199,35 @@ describe("StackService", () => {
             });
 
             expect(fs.writeEnv).toHaveBeenCalledWith("my-app", "FOO=bar");
+        });
+
+        it("records the env hash at creation so the file watcher doesn't flag the initial .env as an external change", async () => {
+            repo.exists.mockResolvedValue(false);
+            repo.create.mockResolvedValue({id: "my-app"});
+
+            await service.createStack({
+                displayName: "My App",
+                composeContent: "services:\n  web:\n    image: nginx\n",
+                envContent: "FOO=bar",
+            });
+
+            expect(repo.create).toHaveBeenCalledWith(
+                expect.objectContaining({envHash: hashComposeContent("FOO=bar")}),
+            );
+        });
+
+        it("passes no env hash to repo.create when there is no envContent", async () => {
+            repo.exists.mockResolvedValue(false);
+            repo.create.mockResolvedValue({id: "my-app"});
+
+            await service.createStack({
+                displayName: "My App",
+                composeContent: "services:\n  web:\n    image: nginx\n",
+            });
+
+            expect(repo.create).toHaveBeenCalledWith(
+                expect.objectContaining({envHash: undefined}),
+            );
         });
 
         describe("Issue #20/D-02/T-12-20: findings-only review confirmation gate", () => {
@@ -587,6 +617,19 @@ describe("StackService", () => {
                 }),
             );
             expect(repo.clearConfigChanged).toHaveBeenCalledWith("my-app");
+        });
+
+        it("clears a stale configChanged flag before the DEPLOYING transition so the banner never flashes during deploy", async () => {
+            repo.findByIdOrThrow.mockResolvedValue({id: "my-app", status: "DRAFT", configChanged: true});
+            docker.up.mockResolvedValue(undefined);
+            fs.readCompose.mockResolvedValue("services:\n  web:\n    image: nginx\n");
+
+            await service.deployStack("my-app");
+
+            expect(repo.setConfigChanged).toHaveBeenCalledWith("my-app", false);
+            expect(repo.setConfigChanged.mock.invocationCallOrder[0]).toBeLessThan(
+                repo.transitionStatus.mock.invocationCallOrder[0],
+            );
         });
 
         it("catches up the real container states once, after replaceServices and the DEPLOYING -> RUNNING transition", async () => {

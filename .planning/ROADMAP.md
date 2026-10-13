@@ -658,16 +658,25 @@ Plans:
   2. Docker images are built and published on release tags and on `main`-branch commits (#11)
   3. Documentation covers the app's purpose, features, setup, and usage (#17)
   4. Restic is pinned to a specific current release via explicit binary download, not `apt-get install` (#42)
-  5. A public demo instance is live and resets hourly (#53)
+  5. ~~A public demo instance is live and resets hourly (#53)~~ — deferred past v0.1.0 (16-CONTEXT D-03); #53 stays open outside the milestone
   6. README has screenshots and a short GIF (#54)
   7. `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, and issue/PR templates exist (#55)
   8. Project license is decided and a `LICENSE` file reflecting it is added (#57)
 
-**Plans:** 0 plans
+**Plans:** 8/10 plans executed
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 16 to break down)
+- [x] 16-01-PLAN.md — Startup environment check: one Zod schema blocks on missing/invalid DATABASE_URL, BETTER_AUTH_SECRET, BETTER_AUTH_URL, ENCRYPTION_KEY before app.js loads; nine non-blocking warnings stored and served by GET /api/settings/environment (#7)
+- [x] 16-02-PLAN.md — License door + release inputs checkpoint; MIT LICENSE and license fields, SECURITY.md, CODE_OF_CONDUCT.md, issue forms and PR template (#57, #55)
+- [x] 16-03-PLAN.md — Dismissible environment-warnings banner in AppLayout, docs-link helper, Playwright default stub and journey (#7)
+- [x] 16-04-PLAN.md — Clean-checkout multi-arch Dockerfile, PR image build + startup smoke, gate/tag decision, CI-gated GHCR publish workflow (#11, #42)
+- [x] 16-05-PLAN.md — CONTRIBUTING.md and docs/design.md drift fixes (#55, #17)
+- [x] 16-06-PLAN.md — VitePress docs site in docktor-app/docks: scaffold, Get started, deployment and template references; pointer pages here (#17)
+- [ ] 16-07-PLAN.md — Doc pointers, recording kit, Recordly capture, short visual README (#54, #17)
+- [x] 16-08-PLAN.md — Docs site Introduction, eight feature guides and Security page (#17)
+- [ ] 16-09-PLAN.md — Release-candidate dry run: v0.1.0-rc.1 through the full Publish pipeline (#11, #42)
+- [ ] 16-10-PLAN.md — Public GHCR package, docker-compose.yml pulls :latest, release procedure, #53 deferral bookkeeping (#11, #53, #42, #55)
 
 ## Backlog
 

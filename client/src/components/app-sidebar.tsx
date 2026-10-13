@@ -12,6 +12,7 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import {BrandLogo} from "@/components/common/brand-logo";
 import {NavUser} from "@/components/nav-user";
 import {Separator} from "@/components/ui/separator";
 
@@ -29,7 +30,7 @@ export function AppSidebar() {
         <Sidebar>
             <SidebarHeader>
                 <div className="px-2 py-2">
-                    <h1 className="text-xl font-bold">Docktor</h1>
+                    <h1><BrandLogo className="h-7 w-auto"/></h1>
                 </div>
             </SidebarHeader>
             <SidebarContent>

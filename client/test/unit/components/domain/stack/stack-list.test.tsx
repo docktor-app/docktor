@@ -83,6 +83,12 @@ describe("StackList", () => {
         expect(screen.getByText("update available")).toHaveAttribute("data-tone", "blue");
     });
 
+    it("suppresses the config changed pill for DRAFT stacks", () => {
+        renderList([buildStack({status: "DRAFT", configChanged: true})]);
+
+        expect(screen.queryByText("config changed")).not.toBeInTheDocument();
+    });
+
     it("renders no update-available pill when no service has an update", () => {
         const stack = buildStack({services: [buildService({updateAvailable: false})]});
         renderList([stack]);

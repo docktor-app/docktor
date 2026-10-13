@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/docktor-app/docktor/security/advisories/new
+    about: Report it privately, never in a public issue. See SECURITY.md for details.
+  - name: Ask a question or share an idea
+    url: https://github.com/docktor-app/docktor/discussions
+    about: Questions, ideas and general discussion belong in Discussions.
+  - name: Read the documentation
+    url: https://github.com/docktor-app/docks/blob/main/guide/introduction.md
+    about: Guides, feature documentation and the security model.

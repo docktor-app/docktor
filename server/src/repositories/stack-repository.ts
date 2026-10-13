@@ -52,6 +52,7 @@ export class StackRepository {
         hostPath: string;
         composeConfig: ComposeConfig;
         isProtected?: boolean;
+        envHash?: string;
         // Issue #19/D-08: set only when the stack was created from a
         // template variant — maps onto the four templateX columns in the
         // same write, never touched again after creation.
@@ -65,6 +66,7 @@ export class StackRepository {
                 hostPath: data.hostPath,
                 isProtected: data.isProtected ?? false,
                 lastKnownHash: data.composeConfig.hash,
+                lastEnvHash: data.envHash,
                 lastParsedAt: new Date(),
                 templateRepoUrl: data.templatePin?.repoUrl ?? null,
                 templatePath: data.templatePin?.path ?? null,
