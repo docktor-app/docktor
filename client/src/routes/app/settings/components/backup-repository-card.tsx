@@ -25,6 +25,7 @@ const EMPTY_VALUES: BackupSettingsInput = {
     repoPath: "",
     sftpHost: "",
     sftpUser: "",
+    sftpPort: null,
     sftpKey: "",
     s3Endpoint: "",
     s3Bucket: "",
@@ -44,7 +45,7 @@ function secretOrNull(value: string | null | undefined): string | null {
 }
 
 /** Only the fields that belong to the selected repository type are sent. */
-function buildPayload(values: BackupSettingsInput): Record<string, string | null> {
+function buildPayload(values: BackupSettingsInput): BackupSettingsInput {
     const password = secretOrNull(values.password);
     switch (values.repoType) {
         case "sftp":
@@ -52,6 +53,7 @@ function buildPayload(values: BackupSettingsInput): Record<string, string | null
                 repoType: "sftp",
                 sftpHost: plain(values.sftpHost),
                 sftpUser: plain(values.sftpUser),
+                sftpPort: values.sftpPort ?? null,
                 sftpKey: secretOrNull(values.sftpKey),
                 repoPath: plain(values.repoPath),
                 password,
@@ -77,6 +79,7 @@ function toFormValues(settings: BackupSettings): BackupSettingsInput {
         repoPath: settings.repoPath ?? "",
         sftpHost: settings.sftpHost ?? "",
         sftpUser: settings.sftpUser ?? "",
+        sftpPort: settings.sftpPort,
         s3Endpoint: settings.s3Endpoint ?? "",
         s3Bucket: settings.s3Bucket ?? "",
         s3AccessKey: settings.s3AccessKey ?? "",
@@ -87,6 +90,7 @@ export function BackupRepositoryCard() {
     const [loading, setLoading] = useState(true);
     const [resticStatus, setResticStatus] = useState<ResticStatus | null>(null);
     const [settings, setSettings] = useState<BackupSettings | null>(null);
+    const [loadError, setLoadError] = useState(false);
     const [testing, setTesting] = useState(false);
     const [testResult, setTestResult] = useState<BackupConnectionResult | null>(null);
 
@@ -103,14 +107,11 @@ export function BackupRepositoryCard() {
     };
 
     useEffect(() => {
-        Promise.all([loadSettings(), getResticStatus()])
-            .then(([, rs]) => {
-                setResticStatus(rs);
-                setLoading(false);
-            })
-            .catch(() => {
-                setLoading(false);
-            });
+        // The restic status is only a hint; the stored settings are what Save must not overwrite blind.
+        Promise.all([loadSettings(), getResticStatus().catch(() => null)])
+            .then(([, rs]) => setResticStatus(rs))
+            .catch(() => setLoadError(true))
+            .finally(() => setLoading(false));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -168,6 +169,15 @@ export function BackupRepositoryCard() {
                             </>
                         ) : (
                             <>
+                                {loadError && (
+                                    <Alert variant="destructive">
+                                        <AlertTriangle className="h-4 w-4" />
+                                        <AlertDescription>
+                                            Could not load the current backup settings. Reload the page before changing them;
+                                            saving now would overwrite what is stored.
+                                        </AlertDescription>
+                                    </Alert>
+                                )}
                                 {resticStatus && !resticStatus.available && (
                                     <Alert>
                                         <AlertTriangle className="h-4 w-4" />
@@ -245,10 +255,10 @@ export function BackupRepositoryCard() {
                         )}
                     </CardContent>
                     <CardFooter className="flex items-center gap-4">
-                        <Button type="submit" disabled={form.formState.isSubmitting || loading}>
+                        <Button type="submit" disabled={form.formState.isSubmitting || loading || loadError}>
                             Save repository settings
                         </Button>
-                        {!loading && repoType !== "local" && (
+                        {!loading && !loadError && repoType !== "local" && (
                             <>
                                 <Button
                                     type="button"

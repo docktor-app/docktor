@@ -42,6 +42,7 @@ function settings(overrides: Partial<BackupSettings> = {}): BackupSettings {
         repoPath: null,
         sftpHost: null,
         sftpUser: null,
+        sftpPort: null,
         s3Endpoint: null,
         s3Bucket: null,
         s3AccessKey: null,
@@ -123,6 +124,7 @@ describe("BackupRepositoryCard", () => {
             repoType: "sftp",
             sftpHost: "sftp",
             sftpUser: "backup",
+            sftpPort: null,
             sftpKey: "KEY-PEM",
             repoPath: "/upload/restic",
             password: null,
@@ -205,6 +207,54 @@ describe("BackupRepositoryCard", () => {
         render(<BackupRepositoryCard/>);
 
         expect(await screen.findByLabelText("Secret key")).toHaveAttribute("autocomplete", "new-password");
+    });
+
+    it("populates the SFTP port from stored settings", async () => {
+        mockGetBackupSettings.mockResolvedValue(settings({repoType: "sftp", sftpHost: "nas", sftpUser: "backup", sftpPort: 2222}));
+        render(<BackupRepositoryCard/>);
+
+        expect(await screen.findByLabelText("Port")).toHaveValue(2222);
+    });
+
+    it("sends the SFTP port as a number, and null when it is left blank", async () => {
+        mockGetBackupSettings.mockResolvedValue(settings({
+            repoType: "sftp", sftpHost: "nas", sftpUser: "backup", sftpPort: 2222, hasSftpKey: true,
+        }));
+        const user = userEvent.setup();
+        render(<BackupRepositoryCard/>);
+
+        await user.click(await screen.findByRole("button", {name: "Save repository settings"}));
+        await waitFor(() => expect(mockSaveBackupSettings).toHaveBeenLastCalledWith(expect.objectContaining({sftpPort: 2222})));
+
+        await user.clear(screen.getByLabelText("Port"));
+        await user.click(screen.getByRole("button", {name: "Save repository settings"}));
+        await waitFor(() => expect(mockSaveBackupSettings).toHaveBeenLastCalledWith(expect.objectContaining({sftpPort: null})));
+    });
+
+    it("shows an inline error for a host the server would reject", async () => {
+        const user = userEvent.setup();
+        render(<BackupRepositoryCard/>);
+
+        await chooseType(user, "SFTP");
+        await user.type(await screen.findByLabelText("Host"), "nas.example.com:22");
+        await user.type(screen.getByLabelText("Username"), "backup");
+        await user.click(screen.getByRole("button", {name: "Save repository settings"}));
+
+        expect(await screen.findByText(/not a valid host name/i)).toBeInTheDocument();
+        expect(mockSaveBackupSettings).not.toHaveBeenCalled();
+    });
+
+    describe("when the stored settings cannot be loaded (IN-08)", () => {
+        beforeEach(() => {
+            mockGetBackupSettings.mockRejectedValue(new Error("Network down"));
+        });
+
+        it("says so and refuses to save a blank form over the stored repository", async () => {
+            render(<BackupRepositoryCard/>);
+
+            expect(await screen.findByText(/could not load the current backup settings/i)).toBeInTheDocument();
+            expect(screen.getByRole("button", {name: "Save repository settings"})).toBeDisabled();
+        });
     });
 
     describe("test connection", () => {

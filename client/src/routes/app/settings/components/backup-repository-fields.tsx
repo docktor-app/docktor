@@ -47,6 +47,28 @@ export function SftpFields({control, hasSecret}: Readonly<SavedSecretProps>) {
     return (
         <>
             <RepositoryField control={control} name="sftpHost" label="Host" placeholder="backup.example.com" />
+            <FormField
+                control={control}
+                name="sftpPort"
+                render={({field}) => (
+                    <FormItem>
+                        <FormLabel>Port</FormLabel>
+                        <FormControl>
+                            <Input
+                                {...field}
+                                value={field.value ?? ""}
+                                onChange={(e) => field.onChange(e.target.value === "" ? null : Number(e.target.value))}
+                                type="number"
+                                min={1}
+                                max={65535}
+                                placeholder="22"
+                            />
+                        </FormControl>
+                        <FormDescription>Leave blank for the default port, 22.</FormDescription>
+                        <FormMessage />
+                    </FormItem>
+                )}
+            />
             <RepositoryField control={control} name="sftpUser" label="Username" placeholder="backup" />
             <RepositoryField
                 control={control}

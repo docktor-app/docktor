@@ -1,3 +1,5 @@
+import type {BackupSettingsInput} from "@docktor/shared"
+
 import {apiFetch} from "@/lib/api"
 
 export interface BackupRecord {
@@ -28,6 +30,7 @@ export interface BackupSettings {
     repoPath: string | null
     sftpHost: string | null
     sftpUser: string | null
+    sftpPort: number | null
     s3Endpoint: string | null
     s3Bucket: string | null
     s3AccessKey: string | null
@@ -101,7 +104,7 @@ export async function getBackupSettings(): Promise<BackupSettings> {
     return apiFetch<BackupSettings>("/api/settings/backup")
 }
 
-export async function saveBackupSettings(data: Record<string, unknown>): Promise<void> {
+export async function saveBackupSettings(data: BackupSettingsInput): Promise<void> {
     await apiFetch("/api/settings/backup", {
         method: "PUT",
         body: JSON.stringify(data),
