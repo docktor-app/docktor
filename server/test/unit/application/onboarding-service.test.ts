@@ -1,6 +1,9 @@
 import {describe, it, expect, vi, beforeEach} from "vitest";
+import type Dockerode from "dockerode";
 import {OnboardingService} from "../../../src/application/onboarding-service.js";
 import {ConflictError, BadRequestError} from "../../../src/lib/errors.js";
+import {DockerSelfStack} from "../../../src/infrastructure/docker-self-stack.js";
+import type {ScanResult} from "../../../src/application/ports/brownfield-scanner-port.js";
 import {wizardStep6Schema} from "@docktor/shared";
 
 function createMockSettingsRepo() {
@@ -48,6 +51,19 @@ function createMockCrypto() {
 function createMockFsLib() {
     return {
         readFile: vi.fn(),
+    };
+}
+
+function discoveredStack(path: string): ScanResult["stacks"][number] {
+    return {
+        path,
+        directory: path.slice(0, path.lastIndexOf("/")),
+        compatibility: "compatible",
+        serviceCount: 1,
+        namedVolumes: [],
+        absolutePaths: [],
+        inlineEnvVars: false,
+        unsupportedFeatures: [],
     };
 }
 
@@ -432,6 +448,7 @@ describe("OnboardingService", () => {
                 mockFsLib as any,
                 mockUserRepo as any,
                 mockScanner as any,
+                {composeFilePaths: vi.fn().mockResolvedValue([])},
             );
 
             const result = await service.scan(["/opt/stacks"]);
@@ -461,6 +478,7 @@ describe("OnboardingService", () => {
                 mockFsLib as any,
                 mockUserRepo as any,
                 mockScanner as any,
+                {composeFilePaths: vi.fn().mockResolvedValue([])},
             );
 
             const fromSetupRoute = await service.scan(["/opt/stacks"]);
@@ -469,6 +487,48 @@ describe("OnboardingService", () => {
             expect(mockScanner.scan).toHaveBeenCalledTimes(2);
             expect(fromSetupRoute).toBe(setupRouteScanResult);
             expect(fromImportsRoute).toBe(importsRouteScanResult);
+        });
+    });
+
+    describe("scan excludes Docktor's own stack (STK-03, #13)", () => {
+        it("drops the compose file Docktor's own container was started from, resolved through its /host mount", async () => {
+            // Partial ContainerInspectInfo: DockerSelfStack only reads Config.Labels and Mounts.
+            const inspectInfo = {
+                Config: {
+                    Labels: {
+                        "com.docker.compose.project.config_files": "/opt/docktor/docker-compose.yml",
+                        "com.docker.compose.project.working_dir": "/opt/docktor",
+                    },
+                },
+                Mounts: [{Type: "bind", Source: "/", Destination: "/host", Mode: "ro", RW: false, Propagation: "rslave"}],
+            } as unknown as Dockerode.ContainerInspectInfo;
+            const docker = {inspectContainer: vi.fn().mockResolvedValue(inspectInfo)};
+            const selfStack = new DockerSelfStack(docker, {containerId: async () => "abc123def456"});
+            mockScanner.scan.mockResolvedValue({
+                stacks: [
+                    discoveredStack("/host/opt/docktor/docker-compose.yml"),
+                    discoveredStack("/host/opt/blog/docker-compose.yml"),
+                ],
+                skippedDirectories: 2,
+            });
+            const service = new OnboardingService(
+                mockAuthClient as any,
+                mockSettingsRepo as any,
+                mockCrypto as any,
+                mockStackRepo as any,
+                mockProxy as any,
+                mockFsLib as any,
+                mockUserRepo as any,
+                mockScanner as any,
+                selfStack,
+            );
+
+            const result = await service.scan(["/host/opt"]);
+
+            expect(result.stacks.map((s) => s.path)).toEqual(["/host/opt/blog/docker-compose.yml"]);
+            expect(result.skippedDirectories).toBe(2);
+            expect(docker.inspectContainer).toHaveBeenCalledTimes(1);
+            expect(docker.inspectContainer).toHaveBeenCalledWith("abc123def456", expect.any(AbortSignal));
         });
     });
 });
