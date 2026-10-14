@@ -63,12 +63,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Deploying or redeploying a stack that publishes a host port shows no port warning when the only holder of that port is the stack's own container
   5. Deploying a stack whose host port is held by a different stack or an external process still shows the warning and names the holder
 
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 Plans:
 **Wave 1**
 - [x] 17-01-PLAN.md — Backup, restore and snapshot listing resolve the configured repository (per-stack S3/SFTP sub-repo, local unchanged, hard-fail on incomplete remote config) (wave 1)
-- [ ] 17-02-PLAN.md — Port check ignores the stack's own published sockets, real conflicts still name the holder (wave 1)
+- [x] 17-02-PLAN.md — Port check ignores the stack's own published sockets, real conflicts still name the holder (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 17-03-PLAN.md — SFTP authentication: per-run 0600 key file via sftp.command, accept-new host pinning, openssh-client in the image (wave 2, after 17-01)
@@ -150,7 +150,7 @@ Phases execute in numeric order: 17 → 18 → 19 → 20 → 21
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 17. Backup Repository and Port-Check Fixes | 1/3 | In Progress | - |
+| 17. Backup Repository and Port-Check Fixes | 2/3 | In Progress | - |
 | 18. Import and Migration Flow | 0/TBD | Not started | - |
 | 19. Sidebar, Templates and Version Block | 0/TBD | Not started | - |
 | 20. Visual Consistency, Dashboard Clarity and Touch Targets | 0/TBD | Not started | - |
