@@ -3,18 +3,18 @@ gsd_state_version: "1.0"
 milestone: v0.1.1
 milestone_name: Release Follow-ups
 current_phase: 17
-current_phase_name: backup-repository-and-port-check-fixes
+current_phase_name: Backup Repository and Port-Check Fixes
 status: executing
-stopped_at: Roadmap for milestone v0.1.1 created; ready to run `/gsd-plan-phase 17`
-last_updated: "2026-10-14T07:35:56.540Z"
+stopped_at: Completed 17-01-PLAN.md
+last_updated: "2026-10-14T08:35:06.530Z"
 last_activity: 2026-10-14
-last_activity_desc: Roadmap created for milestone v0.1.1 (5 phases, 22/22 requirements mapped)
-state_head: 8d738455f1cb1bd5deac0bf8211f3ca6b5126e57
+last_activity_desc: Phase 17 execution started
+state_head: f24d9492dd781ddfdcdb9f57d24be5cef00ecebd
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 3
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -25,14 +25,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-14)
 
 **Core value:** Users can deploy, monitor, and manage Docker Compose stacks through a browser UI without needing SSH or Docker CLI access.
-**Current focus:** Phase 17 — Backup Repository and Port-Check Fixes (milestone v0.1.1, branch `release/v0.1.1`)
+**Current focus:** Phase 17 — Backup Repository and Port-Check Fixes
 
 ## Current Position
 
-Phase: 17 (backup-repository-and-port-check-fixes) — READY TO EXECUTE
-Plan: Not started
+Phase: 17 (Backup Repository and Port-Check Fixes) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-10-14 — Roadmap created for milestone v0.1.1 (5 phases, 22/22 requirements mapped)
+Last activity: 2026-10-14 — Phase 17 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -58,6 +58,11 @@ Progress: [░░░░░░░░░░] 0%
 *Updated after each plan completion*
 
 v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milestones/v0.1.0-STATE.md`.
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 17 P01 | 25min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -71,6 +76,7 @@ Roadmap decisions for v0.1.1:
 - [Roadmap v0.1.1]: UI-01, UI-06 and UI-07 form one phase (19): sidebar sections, Templates entry and version/links block share `app-sidebar.tsx` / `nav-user.tsx` and the collapsed + mobile constraints
 - [Roadmap v0.1.1]: A11Y-01 (44px touch targets) and DASH-01/02 ride with the visual-polish phase (20) because they touch the same call sites (data-table pagination, dashboard cards); `components/ui/` stays untouched, so sizing is applied at call sites
 - [Roadmap v0.1.1]: REL-01 is its own final phase (21) so the version bump, changelog and green-CI gate run after every other change lands on the branch
+- [Phase 17]: Remote restic repos are per-stack sub-repos (s3 <bucket>/<stackId>, sftp <repoPath>/<stackId>); remote config errors hard-fail via BadRequestError, never falling back to local
 
 ### Pending Todos
 
@@ -94,6 +100,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14
-Stopped at: Roadmap for milestone v0.1.1 created; ready to run `/gsd-plan-phase 17`
+Last session: 2026-10-14T08:35:06.457Z
+Stopped at: Completed 17-01-PLAN.md
 Resume file: None

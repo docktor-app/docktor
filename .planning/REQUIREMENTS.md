@@ -9,9 +9,9 @@ Patch release on branch `release/v0.1.1`: bug fixes and interface polish only, n
 
 ### Backup (BKP)
 
-- [ ] **BKP-01**: Backup, restore and snapshot listing use the configured SFTP or S3 repository when the repository type is `sftp` or `s3`, and only use the stack-local path for `local` ([#68](https://github.com/docktor-app/docktor/issues/68))
-- [ ] **BKP-02**: Existing local-repository backups behave exactly as before ([#68](https://github.com/docktor-app/docktor/issues/68))
-- [ ] **BKP-03**: The SFTP/S3 branch of repository environment construction is covered by unit tests ([#68](https://github.com/docktor-app/docktor/issues/68))
+- [x] **BKP-01**: Backup, restore and snapshot listing use the configured SFTP or S3 repository when the repository type is `sftp` or `s3`, and only use the stack-local path for `local` ([#68](https://github.com/docktor-app/docktor/issues/68))
+- [x] **BKP-02**: Existing local-repository backups behave exactly as before ([#68](https://github.com/docktor-app/docktor/issues/68))
+- [x] **BKP-03**: The SFTP/S3 branch of repository environment construction is covered by unit tests ([#68](https://github.com/docktor-app/docktor/issues/68))
 
 ### Migration (MIG)
 
@@ -74,9 +74,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BKP-01 | Phase 17 | Pending |
-| BKP-02 | Phase 17 | Pending |
-| BKP-03 | Phase 17 | Pending |
+| BKP-01 | Phase 17 | Complete |
+| BKP-02 | Phase 17 | Complete |
+| BKP-03 | Phase 17 | Complete |
 | STK-01 | Phase 17 | Pending |
 | STK-02 | Phase 17 | Pending |
 | STK-03 | Phase 18 | Pending |
