@@ -120,7 +120,7 @@ export class ResticExecutor implements ResticExecutorPort {
             await writeFile(keyPath, normalisePrivateKey(repository.sftp.privateKey), {mode: 0o600, flag: "wx"});
             const command = this.buildSftpCommand(repository.sftp, keyPath, path.join(sshDir, "known_hosts"));
             return await this.spawnRestic(
-                ["-o", `sftp.command=${command}`, ...args],
+                ["-o", toCsvField(`sftp.command=${command}`), ...args],
                 {...repository.env},
                 onLine,
                 cwd,
@@ -312,6 +312,11 @@ export class ResticExecutor implements ResticExecutorPort {
 function normalisePrivateKey(privateKey: string): string {
     const lf = privateKey.replace(/\r\n/g, "\n");
     return lf.endsWith("\n") ? lf : `${lf}\n`;
+}
+
+/** Restic parses each `-o` value as a CSV record, so a value containing double quotes must be quoted as a CSV field. */
+function toCsvField(value: string): string {
+    return `"${value.replaceAll('"', '""')}"`;
 }
 
 export const resticExecutor = new ResticExecutor();

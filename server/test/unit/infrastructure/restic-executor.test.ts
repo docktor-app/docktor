@@ -77,6 +77,7 @@ function s3Target(): ResticRepositoryTarget {
 
 interface SpawnCapture {
     argv: string[];
+    command: string;
     env: Record<string, string | undefined>;
     keyPath: string;
     keyContent: string;
@@ -88,6 +89,11 @@ interface SpawnCapture {
  * Mocks spawn so that the key file is inspected while "restic is running".
  * The capture is filled synchronously inside spawn, before the key can be removed.
  */
+/** restic reads -o values as CSV: the whole value is quoted, inner quotes doubled. */
+function decodeCsvOption(field: string): string {
+    return field.slice(1, -1).replaceAll('""', '"');
+}
+
 function captureSftpSpawn(
     result: () => ReturnType<typeof createMockProcess> = () => createMockProcess([]),
 ): SpawnCapture {
@@ -95,7 +101,8 @@ function captureSftpSpawn(
     mockSpawn.mockImplementation(((_bin: string, argv: string[], options: {env: Record<string, string | undefined>}) => {
         capture.argv = argv;
         capture.env = options.env;
-        const command = argv[1] ?? "";
+        const command = decodeCsvOption(argv[1] ?? "");
+        capture.command = command;
         const match = /-i "([^"]+)"/.exec(command);
         if (match) {
             capture.keyPath = match[1];
@@ -299,8 +306,10 @@ describe("ResticExecutor", () => {
 
             expect(capture.argv.slice(0, 1)).toEqual(["-o"]);
             expect(capture.argv.slice(2)).toEqual(["backup", "."]);
-            const command = capture.argv[1];
-            expect(command.startsWith("sftp.command=ssh ")).toBe(true);
+            // restic reads -o values as CSV: the whole value is quoted, inner quotes doubled.
+            expect(capture.argv[1].startsWith('"sftp.command=ssh ')).toBe(true);
+            expect(capture.argv[1].endsWith('"')).toBe(true);
+            const command = capture.command;
             const knownHosts = path.join(sshDir, "known_hosts");
             const expectedOrder = [
                 `-i "${capture.keyPath}"`,
@@ -361,7 +370,7 @@ describe("ResticExecutor", () => {
 
             expect(result).toEqual(snapshots);
             expect(capture.argv[0]).toBe("-o");
-            expect(capture.argv[1].startsWith("sftp.command=ssh ")).toBe(true);
+            expect(capture.argv[1].startsWith('"sftp.command=ssh ')).toBe(true);
             expect(capture.argv.slice(2)).toEqual(["snapshots", "--tag", "stack-1", "--json"]);
             expect(fs.existsSync(capture.keyDir)).toBe(false);
         });
@@ -399,7 +408,7 @@ describe("ResticExecutor", () => {
             for (let run = 0; run < 2; run++) {
                 const capture = captureSftpSpawn();
                 await executor.run(["backup", "."], sftpTarget());
-                commands.push(capture.argv[1]);
+                commands.push(capture.command);
             }
 
             expect(fs.readFileSync(knownHosts, "utf8")).toBe(pinned);
@@ -434,7 +443,7 @@ describe("ResticExecutor", () => {
                 await defaultExecutor.run(["backup", "."], sftpTarget());
 
                 const expectedDir = path.join(path.resolve(sshDir), ".docktor", "ssh");
-                expect(capture.argv[1]).toContain(`UserKnownHostsFile=${path.join(expectedDir, "known_hosts")}`);
+                expect(capture.command).toContain(`UserKnownHostsFile=${path.join(expectedDir, "known_hosts")}`);
                 expect(path.dirname(capture.keyDir)).toBe(expectedDir);
             });
         });
