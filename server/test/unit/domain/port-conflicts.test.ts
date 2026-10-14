@@ -140,6 +140,32 @@ describe("resolvePortConflicts", () => {
         });
     });
 
+    describe("tier 3: the deploying stack's own sockets (D-06)", () => {
+        const OWN_CONTAINER_8080 = {
+            containerName: "/new-app-web-1",
+            composeProject: "new-app",
+            publishedPorts: [{port: 8080, protocol: "tcp" as const}],
+        };
+
+        it("ignores a docker-proxy listener on a (port, protocol) pair the deploying stack's own container publishes", () => {
+            const input = baseInput({
+                stacks: [],
+                containers: [OWN_CONTAINER_8080],
+                listeners: [{port: 8080, protocol: "tcp", processName: "docker-proxy", pid: 4321}],
+            });
+            expect(resolvePortConflicts(input)).toEqual([]);
+        });
+
+        it("ignores an unidentified listener on the stack's own published pair", () => {
+            const input = baseInput({
+                stacks: [],
+                containers: [OWN_CONTAINER_8080],
+                listeners: [{port: 8080, protocol: "tcp", processName: null, pid: null}],
+            });
+            expect(resolvePortConflicts(input)).toEqual([]);
+        });
+    });
+
     it("precedence: a DB-tier stack holder wins over a matching container holder for the same port", () => {
         const input = baseInput({
             stacks: [blogStack()],

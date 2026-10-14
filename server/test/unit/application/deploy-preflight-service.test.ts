@@ -1,6 +1,7 @@
 import {describe, expect, it, vi} from "vitest";
 import {DeployPreflightService, EMPTY_DEPLOY_WARNINGS} from "../../../src/application/deploy-preflight-service.js";
 import {ComposeReviewService} from "../../../src/application/compose-review-service.js";
+import {PortConflictService} from "../../../src/application/port-conflict-service.js";
 import {ComposeRuleEngine} from "../../../src/infrastructure/compose-rule-engine.js";
 
 function createMockReview() {
@@ -67,6 +68,36 @@ describe("DeployPreflightService", () => {
         expect(result.composeFindings).toHaveLength(1);
         expect(result.portConflicts).toEqual([]);
         warnSpy.mockRestore();
+    });
+
+    describe("own published ports (STK-01, #76)", () => {
+        const COMPOSE = "services:\n  web:\n    image: nginx\n    ports:\n      - \"8080:80\"\n";
+        const PORTS_8080 = JSON.stringify([{host: 8080, container: 80, protocol: "tcp"}]);
+        const OWN_STACK = {id: "my-app", displayName: "My App", status: "RUNNING", services: [{ports: PORTS_8080}]};
+        const OWN_CONTAINER = {
+            Names: ["/my-app-web-1"],
+            Labels: {"com.docker.compose.project": "my-app"},
+            Ports: [{PrivatePort: 80, PublicPort: 8080, Type: "tcp", IP: "0.0.0.0"}],
+        };
+        const DOCKER_PROXY = {port: 8080, protocol: "tcp", processName: "docker-proxy", pid: 4321};
+
+        function buildService(overrides: {stacks?: unknown[]; containers?: unknown[]; listeners?: unknown[]}) {
+            const portConflicts = new PortConflictService(
+                {findAll: vi.fn().mockResolvedValue(overrides.stacks ?? [])} as any,
+                {readCompose: vi.fn().mockResolvedValue(COMPOSE), readEnv: vi.fn().mockResolvedValue("")} as any,
+                {listContainers: vi.fn().mockResolvedValue(overrides.containers ?? [])} as any,
+                {listListeners: vi.fn().mockResolvedValue(overrides.listeners ?? [])} as any,
+            );
+            return new DeployPreflightService(createMockReview() as any, portConflicts);
+        }
+
+        it("records no port warning when the stack's own running container publishes the port and docker-proxy listens on it", async () => {
+            const service = buildService({stacks: [OWN_STACK], containers: [OWN_CONTAINER], listeners: [DOCKER_PROXY]});
+
+            const result = await service.run("my-app");
+
+            expect(result.portConflicts).toEqual([]);
+        });
     });
 
     describe("D-09: deploy-time re-check of an externally edited compose file", () => {
