@@ -34,7 +34,7 @@ export interface SelfContainer {
 
 // Docktor identifies its own container by the hostname Docker assigns it (the
 // short container id), as socket-inspector does. Resolved once.
-function createDefaultSelf(): SelfContainer {
+export function createDefaultSelf(): SelfContainer {
     let resolved: Promise<string | null> | undefined;
     return {
         containerId: () => (resolved ??= isContainerized().then((containerized) => (containerized ? hostname() : null))),

@@ -12,8 +12,11 @@ import {createComposeConfig} from "../domain/compose-config.js";
 // so there is no circular dependency.
 import {proxyService} from "./index.js";
 import type {ProxyService} from "./proxy-service.js";
+import {excludeOwnComposeFiles} from "../domain/self-stack-paths.js";
 import {brownfieldScanner} from "../infrastructure/brownfield-scanner.js";
+import {dockerSelfStack} from "../infrastructure/docker-self-stack.js";
 import type {BrownfieldScannerPort, ScanResult} from "./ports/brownfield-scanner-port.js";
+import type {SelfStackPort} from "./ports/self-stack-port.js";
 import type {
     WizardStep1Input,
     WizardStep2Input,
@@ -62,6 +65,9 @@ export class OnboardingService {
         // (post-setup) so the two callers can never drift onto different
         // scan behaviours (T-10-16).
         private readonly scanner: BrownfieldScannerPort = brownfieldScanner,
+        // D-03/STK-03: last position so every existing positional call keeps
+        // compiling. Identifies Docktor's own compose file so scan() can hide it.
+        private readonly selfStack: SelfStackPort = dockerSelfStack,
     ) {}
 
     /**
@@ -208,9 +214,33 @@ export class OnboardingService {
      * port. Both routes/setup.ts (pre-wizard-complete) and routes/imports.ts
      * (post-setup) call this one method, so they can never reach the
      * scanner through two different code paths.
+     *
+     * STK-03/D-03 (#13): the compose file Docktor's own container was started
+     * from is dropped from the result, by exact file equality, so users are
+     * never offered the stack that runs Docktor itself. Fail-open (D-02): when
+     * the own stack cannot be identified nothing is excluded. The exclusion is
+     * silent: skippedDirectories is left untouched.
      */
     async scan(directories: string[]): Promise<ScanResult> {
-        return this.scanner.scan(directories);
+        const [result, ownPaths] = await Promise.all([
+            this.scanner.scan(directories),
+            this.ownComposeFilePaths(),
+        ]);
+        if (ownPaths.length === 0) {
+            return result;
+        }
+        return {...result, stacks: excludeOwnComposeFiles(result.stacks, ownPaths)};
+    }
+
+    // Defence in depth for D-02: even a faulty SelfStackPort must not fail a scan.
+    private async ownComposeFilePaths(): Promise<readonly string[]> {
+        try {
+            return await this.selfStack.composeFilePaths();
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.warn(`[OnboardingService] self-stack lookup failed, every stack will be listed: ${message}`);
+            return [];
+        }
     }
 
     /**
