@@ -10,6 +10,7 @@ import {decrypt} from "../lib/crypto.js"
 import {assertTransition} from "../domain/stack-status-machine.js"
 import {createComposeConfig} from "../domain/compose-config.js"
 import {parseRetentionPolicy} from "../domain/backup-retention-policy.js"
+import {resolveResticRepository} from "../domain/restic-repository.js"
 import {BadRequestError, ConflictError} from "../lib/errors.js"
 import type {StackStatus, BackupTrigger} from "../generated/prisma/enums.js"
 // The single surviving infrastructure/ import: isRepositoryNotFoundError is
@@ -233,9 +234,11 @@ export class BackupService {
         console.log(`[BackupService] Starting backup ${backupRecord.id} for stack ${stack.id}`)
 
         try {
-            const env = this.buildEnv(repoConfig, stack.hostPath ?? undefined)
+            const target = resolveResticRepository(repoConfig, {id: stack.id, hostPath: stack.hostPath})
+            const env: Record<string, string> = {...target.env}
             const stackPath = stack.hostPath ?? "."
-            console.log(`[BackupService] Using repository: ${env.RESTIC_REPOSITORY}`)
+            // Log the repository only, never env: it carries RESTIC_PASSWORD and AWS keys.
+            console.log(`[BackupService] Using repository: ${target.repository}`)
             const onLine = (line: string): void => {
                 console.log(`[BackupService] Log line: ${line}`)
                 lines.push(line)
