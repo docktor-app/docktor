@@ -1777,4 +1777,78 @@ services:
             expect(result).toEqual({available: true, version: "0.16.0"});
         });
     });
+
+    describe("testRepositoryConnection()", () => {
+        function useRepoConfig(config: unknown): void {
+            vi.spyOn(service, "getBackupRepoConfig").mockResolvedValue(config as any);
+        }
+
+        it("reports a missing configuration without running restic", async () => {
+            useRepoConfig(null);
+
+            const result = await service.testRepositoryConnection();
+
+            expect(result.ok).toBe(false);
+            expect(result.message).toMatch(/no backup repository is configured/i);
+            expect(mockResticExecutor.run).not.toHaveBeenCalled();
+        });
+
+        it("has nothing to connect to for a local repository", async () => {
+            useRepoConfig({repoType: "local", password: "restic-pass"});
+
+            const result = await service.testRepositoryConnection();
+
+            expect(result.ok).toBe(true);
+            expect(mockResticExecutor.run).not.toHaveBeenCalled();
+        });
+
+        it("probes an SFTP repository with a read-only restic command", async () => {
+            useRepoConfig(SFTP_REPO_CONFIG);
+
+            const result = await service.testRepositoryConnection();
+
+            expect(result.ok).toBe(true);
+            expect(mockResticExecutor.run).toHaveBeenCalledWith(["cat", "config"], expect.objectContaining({kind: "sftp"}));
+            expect(resticEnvOf(mockResticExecutor.run.mock.calls[0][1]).RESTIC_REPOSITORY)
+                .toMatch(/^sftp:backup@nas\.example\.com:\/srv\/restic\//);
+        });
+
+        it("probes an S3 repository", async () => {
+            useRepoConfig(S3_REPO_CONFIG);
+
+            const result = await service.testRepositoryConnection();
+
+            expect(result.ok).toBe(true);
+            expect(mockResticExecutor.run).toHaveBeenCalledWith(["cat", "config"], expect.objectContaining({kind: "s3"}));
+        });
+
+        it("treats a missing repository as a working connection", async () => {
+            useRepoConfig(S3_REPO_CONFIG);
+            mockResticExecutor.run.mockRejectedValue(new Error("Fatal: unable to open config file: Stat: key does not exist"));
+
+            const result = await service.testRepositoryConnection();
+
+            expect(result.ok).toBe(true);
+        });
+
+        it("reports the restic error when the connection fails", async () => {
+            useRepoConfig(SFTP_REPO_CONFIG);
+            mockResticExecutor.run.mockRejectedValue(new Error("ssh: connect to host nas.example.com port 22: Connection refused"));
+
+            const result = await service.testRepositoryConnection();
+
+            expect(result.ok).toBe(false);
+            expect(result.message).toContain("Connection refused");
+        });
+
+        it("reports an incomplete remote configuration instead of throwing", async () => {
+            useRepoConfig({...SFTP_REPO_CONFIG, sftpKey: undefined});
+
+            const result = await service.testRepositoryConnection();
+
+            expect(result.ok).toBe(false);
+            expect(result.message).toContain("SFTP private key");
+            expect(mockResticExecutor.run).not.toHaveBeenCalled();
+        });
+    });
 });

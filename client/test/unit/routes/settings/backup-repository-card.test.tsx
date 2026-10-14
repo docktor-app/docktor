@@ -2,12 +2,16 @@ import {beforeEach, describe, expect, it, vi} from "vitest";
 import {render, screen, waitFor} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {BackupRepositoryCard} from "@/routes/app/settings/components/backup-repository-card";
-import {getBackupSettings, getResticStatus, saveBackupSettings, type BackupSettings} from "@/lib/backups-api";
+import {
+    getBackupSettings, getResticStatus, saveBackupSettings, testBackupConnection,
+    type BackupSettings,
+} from "@/lib/backups-api";
 
 vi.mock("@/lib/backups-api", () => ({
     getBackupSettings: vi.fn(),
     saveBackupSettings: vi.fn(),
     getResticStatus: vi.fn(),
+    testBackupConnection: vi.fn(),
 }));
 
 vi.mock("sonner", () => ({
@@ -30,6 +34,7 @@ vi.setConfig({testTimeout: 15000});
 const mockGetBackupSettings = vi.mocked(getBackupSettings);
 const mockSaveBackupSettings = vi.mocked(saveBackupSettings);
 const mockGetResticStatus = vi.mocked(getResticStatus);
+const mockTestBackupConnection = vi.mocked(testBackupConnection);
 
 function settings(overrides: Partial<BackupSettings> = {}): BackupSettings {
     return {
@@ -51,6 +56,7 @@ beforeEach(() => {
     mockGetBackupSettings.mockReset().mockResolvedValue(settings());
     mockSaveBackupSettings.mockReset().mockResolvedValue(settings());
     mockGetResticStatus.mockReset().mockResolvedValue({available: true, version: "0.17.0"});
+    mockTestBackupConnection.mockReset().mockResolvedValue({ok: true, message: "Connection successful."});
 });
 
 async function chooseType(user: ReturnType<typeof userEvent.setup>, name: string): Promise<void> {
@@ -155,5 +161,62 @@ describe("BackupRepositoryCard", () => {
             s3SecretKey: null,
             password: null,
         }));
+    });
+
+    describe("test connection", () => {
+        const storedSftp = () => settings({repoType: "sftp", sftpHost: "sftp", sftpUser: "backup", hasSftpKey: true});
+
+        it("is not offered for a local repository", async () => {
+            render(<BackupRepositoryCard/>);
+
+            await screen.findByLabelText(/restic password/i);
+            expect(screen.queryByRole("button", {name: "Test connection"})).not.toBeInTheDocument();
+        });
+
+        it("shows the success message after testing the saved repository", async () => {
+            mockGetBackupSettings.mockResolvedValue(storedSftp());
+            const user = userEvent.setup();
+            render(<BackupRepositoryCard/>);
+
+            await user.click(await screen.findByRole("button", {name: "Test connection"}));
+
+            expect(await screen.findByText("Connection successful.")).toBeInTheDocument();
+            expect(mockTestBackupConnection).toHaveBeenCalledTimes(1);
+        });
+
+        it("shows the failure message from the server", async () => {
+            mockGetBackupSettings.mockResolvedValue(storedSftp());
+            mockTestBackupConnection.mockResolvedValue({ok: false, message: "Permission denied (publickey)"});
+            const user = userEvent.setup();
+            render(<BackupRepositoryCard/>);
+
+            await user.click(await screen.findByRole("button", {name: "Test connection"}));
+
+            expect(await screen.findByText("Permission denied (publickey)")).toBeInTheDocument();
+        });
+
+        it("shows a request failure as an error", async () => {
+            mockGetBackupSettings.mockResolvedValue(storedSftp());
+            mockTestBackupConnection.mockRejectedValue(new Error("Network down"));
+            const user = userEvent.setup();
+            render(<BackupRepositoryCard/>);
+
+            await user.click(await screen.findByRole("button", {name: "Test connection"}));
+
+            expect(await screen.findByText("Network down")).toBeInTheDocument();
+        });
+
+        it("tests the saved settings only, so unsaved edits disable it", async () => {
+            mockGetBackupSettings.mockResolvedValue(storedSftp());
+            const user = userEvent.setup();
+            render(<BackupRepositoryCard/>);
+
+            const button = await screen.findByRole("button", {name: "Test connection"});
+            expect(button).toBeEnabled();
+            await user.type(screen.getByLabelText("Host"), "x");
+
+            expect(button).toBeDisabled();
+            expect(screen.getByText(/save your changes to test/i)).toBeInTheDocument();
+        });
     });
 });

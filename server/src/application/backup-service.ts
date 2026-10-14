@@ -160,6 +160,15 @@ interface StackRecord {
 
 // ─── BackupService ────────────────────────────────────────────────────────────
 
+export interface RepositoryConnectionResult {
+    readonly ok: boolean
+    readonly message: string
+}
+
+/** Stack id used to address a throwaway repository when testing the connection. */
+const CONNECTION_PROBE_STACK_ID = "connection-test"
+const MAX_CONNECTION_ERROR_LENGTH = 500
+
 export class BackupService {
     constructor(
         private readonly resticExecutor: ResticExecutorPort,
@@ -599,6 +608,35 @@ export class BackupService {
             s3SecretKey,
             password,
         }
+    }
+
+    /**
+     * Checks that the configured remote repository is reachable and the credentials
+     * are accepted, by reading the config of a throwaway per-stack repository.
+     * "Repository does not exist" counts as success: the connection and
+     * authentication worked, there is just nothing at the probe location yet.
+     * The repository password cannot be verified until a repository exists.
+     * Never throws for a bad configuration; the outcome is the result.
+     */
+    async testRepositoryConnection(): Promise<RepositoryConnectionResult> {
+        const config = await this.getBackupRepoConfig()
+        if (!config) {
+            return {ok: false, message: "No backup repository is configured. Save the repository settings first."}
+        }
+        if (config.repoType === "local") {
+            return {ok: true, message: "Local backups are stored in each stack's directory; there is nothing to connect to."}
+        }
+
+        try {
+            const target = resolveResticRepository(config, {id: CONNECTION_PROBE_STACK_ID})
+            await this.resticExecutor.run(["cat", "config"], target)
+        } catch (err) {
+            if (!isRepositoryNotFoundError(err)) {
+                const message = err instanceof Error ? err.message : String(err)
+                return {ok: false, message: message.slice(0, MAX_CONNECTION_ERROR_LENGTH)}
+            }
+        }
+        return {ok: true, message: "Connection successful. The repository password is verified on the first backup."}
     }
 
     /**

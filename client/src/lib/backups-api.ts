@@ -108,6 +108,16 @@ export async function saveBackupSettings(data: Record<string, unknown>): Promise
     })
 }
 
+export interface BackupConnectionResult {
+    ok: boolean
+    message: string
+}
+
+/** Tests the saved remote repository (the server reads the stored settings, not form values). */
+export async function testBackupConnection(): Promise<BackupConnectionResult> {
+    return apiFetch<BackupConnectionResult>("/api/settings/backup/test", {method: "POST"})
+}
+
 export async function getBackupDefaults(): Promise<BackupDefaults> {
     return apiFetch<BackupDefaults>("/api/settings/backup-defaults")
 }

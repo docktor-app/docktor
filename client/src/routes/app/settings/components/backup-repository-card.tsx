@@ -2,7 +2,7 @@ import {useEffect, useState} from "react";
 import {useForm} from "react-hook-form";
 import {standardSchemaResolver} from "@hookform/resolvers/standard-schema";
 import {toast} from "sonner";
-import {AlertTriangle} from "lucide-react";
+import {AlertTriangle, CheckCircle2} from "lucide-react";
 import {backupSettingsSchema, type BackupSettingsInput} from "@docktor/shared";
 
 import {Card, CardContent, CardFooter, CardHeader, CardTitle} from "@/components/ui/card";
@@ -15,8 +15,8 @@ import {Alert, AlertDescription} from "@/components/ui/alert";
 import {Form, FormControl, FormField, FormItem, FormLabel, FormMessage} from "@/components/ui/form";
 import {
     getBackupSettings, saveBackupSettings,
-    getResticStatus,
-    type BackupSettings, type ResticStatus,
+    getResticStatus, testBackupConnection,
+    type BackupConnectionResult, type BackupSettings, type ResticStatus,
 } from "@/lib/backups-api";
 import {S3Fields, SftpFields} from "./backup-repository-fields";
 
@@ -88,6 +88,8 @@ export function BackupRepositoryCard() {
     const [loading, setLoading] = useState(true);
     const [resticStatus, setResticStatus] = useState<ResticStatus | null>(null);
     const [settings, setSettings] = useState<BackupSettings | null>(null);
+    const [testing, setTesting] = useState(false);
+    const [testResult, setTestResult] = useState<BackupConnectionResult | null>(null);
 
     const form = useForm<BackupSettingsInput>({
         resolver: standardSchemaResolver(backupSettingsSchema),
@@ -95,11 +97,15 @@ export function BackupRepositoryCard() {
     });
     const repoType = form.watch("repoType");
 
+    const loadSettings = async () => {
+        const s = await getBackupSettings();
+        setSettings(s);
+        form.reset(toFormValues(s));
+    };
+
     useEffect(() => {
-        Promise.all([getBackupSettings(), getResticStatus()])
-            .then(([s, rs]) => {
-                setSettings(s);
-                form.reset(toFormValues(s));
+        Promise.all([loadSettings(), getResticStatus()])
+            .then(([, rs]) => {
                 setResticStatus(rs);
                 setLoading(false);
             })
@@ -110,12 +116,29 @@ export function BackupRepositoryCard() {
     }, []);
 
     const handleSave = (values: BackupSettingsInput) => {
-        toast.promise(saveBackupSettings(buildPayload(values)), {
+        setTestResult(null);
+        // Reloading resets the form's dirty state and refreshes the "saved" secret hints.
+        const saved = saveBackupSettings(buildPayload(values)).then(loadSettings);
+        toast.promise(saved, {
             loading: "Saving...",
             success: "Repository settings saved",
             error: (err: Error) => err?.message ?? "Failed to save",
         });
     };
+
+    const handleTestConnection = async () => {
+        setTesting(true);
+        setTestResult(null);
+        try {
+            setTestResult(await testBackupConnection());
+        } catch (err) {
+            setTestResult({ok: false, message: err instanceof Error ? err.message : "Connection test failed"});
+        } finally {
+            setTesting(false);
+        }
+    };
+
+    const isDirty = form.formState.isDirty;
 
     return (
         <Card>
@@ -204,6 +227,12 @@ export function BackupRepositoryCard() {
                                         </FormItem>
                                     )}
                                 />
+                                {testResult && (
+                                    <Alert variant={testResult.ok ? "default" : "destructive"}>
+                                        {testResult.ok ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                                        <AlertDescription>{testResult.message}</AlertDescription>
+                                    </Alert>
+                                )}
                             </>
                         )}
                     </CardContent>
@@ -211,6 +240,21 @@ export function BackupRepositoryCard() {
                         <Button type="submit" disabled={form.formState.isSubmitting || loading}>
                             Save repository settings
                         </Button>
+                        {!loading && repoType !== "local" && (
+                            <>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={handleTestConnection}
+                                    disabled={isDirty || testing}
+                                >
+                                    {testing ? "Testing..." : "Test connection"}
+                                </Button>
+                                {isDirty && (
+                                    <span className="text-xs text-muted-foreground">Save your changes to test them.</span>
+                                )}
+                            </>
+                        )}
                         {resticStatus?.available && resticStatus.version && (
                             <Badge variant="secondary">restic {resticStatus.version}</Badge>
                         )}
