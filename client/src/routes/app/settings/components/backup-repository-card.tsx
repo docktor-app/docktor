@@ -33,13 +33,12 @@ const EMPTY_VALUES: BackupSettingsInput = {
     password: "",
 };
 
-/** Blank inputs are sent as null so the server leaves the stored value (notably secrets) untouched. */
-function orNull(value: string | null | undefined): string | null {
-    const trimmed = value?.trim();
-    return trimmed ? trimmed : null;
+/** Plain fields are always sent, blank as "", so the server can clear a previously stored value. */
+function plain(value: string | null | undefined): string {
+    return value?.trim() ?? "";
 }
 
-/** Secrets are sent verbatim (never trimmed) unless blank. */
+/** Secrets are sent verbatim (never trimmed); blank becomes null so the server keeps the stored one. */
 function secretOrNull(value: string | null | undefined): string | null {
     return value?.trim() ? value : null;
 }
@@ -51,18 +50,18 @@ function buildPayload(values: BackupSettingsInput): Record<string, string | null
         case "sftp":
             return {
                 repoType: "sftp",
-                sftpHost: orNull(values.sftpHost),
-                sftpUser: orNull(values.sftpUser),
+                sftpHost: plain(values.sftpHost),
+                sftpUser: plain(values.sftpUser),
                 sftpKey: secretOrNull(values.sftpKey),
-                repoPath: orNull(values.repoPath),
+                repoPath: plain(values.repoPath),
                 password,
             };
         case "s3":
             return {
                 repoType: "s3",
-                s3Endpoint: orNull(values.s3Endpoint),
-                s3Bucket: orNull(values.s3Bucket),
-                s3AccessKey: orNull(values.s3AccessKey),
+                s3Endpoint: plain(values.s3Endpoint),
+                s3Bucket: plain(values.s3Bucket),
+                s3AccessKey: plain(values.s3AccessKey),
                 s3SecretKey: secretOrNull(values.s3SecretKey),
                 password,
             };
@@ -115,7 +114,14 @@ export function BackupRepositoryCard() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const handleSave = (values: BackupSettingsInput) => {
+    // A result describes the settings it was run against; any edit makes it stale.
+    useEffect(() => {
+        const subscription = form.watch(() => setTestResult(null));
+        return () => subscription.unsubscribe();
+    }, [form]);
+
+    // Returning the promise keeps the form "submitting" (Save disabled) until the request settles.
+    const handleSave = async (values: BackupSettingsInput) => {
         setTestResult(null);
         // Reloading resets the form's dirty state and refreshes the "saved" secret hints.
         const saved = saveBackupSettings(buildPayload(values)).then(loadSettings);
@@ -124,6 +130,7 @@ export function BackupRepositoryCard() {
             success: "Repository settings saved",
             error: (err: Error) => err?.message ?? "Failed to save",
         });
+        await saved.catch(() => undefined);
     };
 
     const handleTestConnection = async () => {
@@ -220,6 +227,7 @@ export function BackupRepositoryCard() {
                                                     {...field}
                                                     value={field.value ?? ""}
                                                     type="password"
+                                                    autoComplete="new-password"
                                                     placeholder="Enter encryption password"
                                                 />
                                             </FormControl>

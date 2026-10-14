@@ -163,6 +163,50 @@ describe("BackupRepositoryCard", () => {
         }));
     });
 
+    it("sends a blank optional field as an empty string so a stored value can be cleared", async () => {
+        mockGetBackupSettings.mockResolvedValue(settings({
+            repoType: "s3", s3Bucket: "docktor", s3AccessKey: "AKIA", s3Endpoint: "minio:9000", hasS3SecretKey: true,
+        }));
+        const user = userEvent.setup();
+        render(<BackupRepositoryCard/>);
+
+        await user.clear(await screen.findByLabelText("Endpoint"));
+        await user.click(screen.getByRole("button", {name: "Save repository settings"}));
+
+        await waitFor(() => expect(mockSaveBackupSettings).toHaveBeenCalledWith(
+            expect.objectContaining({repoType: "s3", s3Endpoint: ""}),
+        ));
+    });
+
+    it("disables the save button while the request is in flight", async () => {
+        let finishSave: () => void = () => undefined;
+        mockSaveBackupSettings.mockReturnValue(new Promise<void>((resolve) => {
+            finishSave = resolve;
+        }));
+        const user = userEvent.setup();
+        render(<BackupRepositoryCard/>);
+
+        const save = await screen.findByRole("button", {name: "Save repository settings"});
+        await user.click(save);
+
+        await waitFor(() => expect(save).toBeDisabled());
+        finishSave();
+        await waitFor(() => expect(save).toBeEnabled());
+    });
+
+    it("keeps the browser from autofilling the restic password with the login password", async () => {
+        render(<BackupRepositoryCard/>);
+
+        expect(await screen.findByLabelText(/restic password/i)).toHaveAttribute("autocomplete", "new-password");
+    });
+
+    it("does not let the browser autofill the S3 secret key either", async () => {
+        mockGetBackupSettings.mockResolvedValue(settings({repoType: "s3"}));
+        render(<BackupRepositoryCard/>);
+
+        expect(await screen.findByLabelText("Secret key")).toHaveAttribute("autocomplete", "new-password");
+    });
+
     describe("test connection", () => {
         const storedSftp = () => settings({repoType: "sftp", sftpHost: "sftp", sftpUser: "backup", hasSftpKey: true});
 
@@ -217,6 +261,18 @@ describe("BackupRepositoryCard", () => {
 
             expect(button).toBeDisabled();
             expect(screen.getByText(/save your changes to test/i)).toBeInTheDocument();
+        });
+
+        it("drops a stale result as soon as the form is edited", async () => {
+            mockGetBackupSettings.mockResolvedValue(storedSftp());
+            const user = userEvent.setup();
+            render(<BackupRepositoryCard/>);
+
+            await user.click(await screen.findByRole("button", {name: "Test connection"}));
+            expect(await screen.findByText("Connection successful.")).toBeInTheDocument();
+            await user.type(screen.getByLabelText("Host"), "x");
+
+            expect(screen.queryByText("Connection successful.")).not.toBeInTheDocument();
         });
     });
 });

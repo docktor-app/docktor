@@ -28,7 +28,7 @@ function RepositoryField({control, name, label, placeholder, description, savedH
                         {savedHint && <span className="ml-2 text-xs text-muted-foreground">{savedHint}</span>}
                     </FormLabel>
                     <FormControl>
-                        <Input {...field} value={field.value ?? ""} type={type} placeholder={placeholder} autoComplete="off" />
+                        <Input {...field} value={field.value ?? ""} type={type} placeholder={placeholder} autoComplete={type === "password" ? "new-password" : "off"} />
                     </FormControl>
                     {description && <FormDescription>{description}</FormDescription>}
                     <FormMessage />
