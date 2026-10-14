@@ -98,6 +98,30 @@ describe("DeployPreflightService", () => {
 
             expect(result.portConflicts).toEqual([]);
         });
+
+        it("still warns naming another Docktor stack that holds the port", async () => {
+            const blog = {id: "blog", displayName: "Blog", status: "RUNNING", services: [{ports: PORTS_8080}]};
+            const service = buildService({stacks: [OWN_STACK, blog]});
+
+            const result = await service.run("my-app");
+
+            expect(result.portConflicts).toEqual([
+                {port: 8080, protocol: "tcp", serviceName: "web", holder: {kind: "stack", stackId: "blog", stackDisplayName: "Blog"}},
+            ]);
+        });
+
+        it("still warns naming an external process when the stack is not running", async () => {
+            const service = buildService({
+                stacks: [OWN_STACK],
+                listeners: [{port: 8080, protocol: "tcp", processName: "caddy", pid: 99}],
+            });
+
+            const result = await service.run("my-app");
+
+            expect(result.portConflicts).toEqual([
+                {port: 8080, protocol: "tcp", serviceName: "web", holder: {kind: "process", processName: "caddy", pid: 99}},
+            ]);
+        });
     });
 
     describe("D-09: deploy-time re-check of an externally edited compose file", () => {
