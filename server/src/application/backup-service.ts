@@ -168,6 +168,8 @@ export interface RepositoryConnectionResult {
 /** Stack id used to address a throwaway repository when testing the connection. */
 const CONNECTION_PROBE_STACK_ID = "connection-test"
 const MAX_CONNECTION_ERROR_LENGTH = 500
+/** restic retries failing S3 requests for ~15 minutes; the probe must answer long before that. */
+const CONNECTION_PROBE_TIMEOUT_MS = 30_000
 
 export class BackupService {
     constructor(
@@ -629,7 +631,7 @@ export class BackupService {
 
         try {
             const target = resolveResticRepository(config, {id: CONNECTION_PROBE_STACK_ID})
-            await this.resticExecutor.run(["cat", "config"], target)
+            await this.resticExecutor.run(["cat", "config"], target, undefined, undefined, {timeoutMs: CONNECTION_PROBE_TIMEOUT_MS})
         } catch (err) {
             if (!isRepositoryNotFoundError(err)) {
                 const message = err instanceof Error ? err.message : String(err)

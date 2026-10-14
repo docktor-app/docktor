@@ -2,6 +2,7 @@ import type {ResticRepositoryTarget} from "../../domain/restic-repository.js";
 import type {
     BackupRepoConfig,
     RetentionPolicy,
+    ResticRunOptions,
     ResticRunResult,
     ResticSnapshot,
 } from "../../infrastructure/restic-executor.js";
@@ -23,6 +24,7 @@ export interface ResticExecutorPort {
         repository: ResticRepositoryTarget,
         onLine?: (line: string) => void,
         cwd?: string,
+        options?: ResticRunOptions,
     ): Promise<ResticRunResult>;
 
     buildBackupArgs(stackPath: string, stackId: string): string[];
@@ -38,4 +40,4 @@ export interface ResticExecutorPort {
     checkVersion(): Promise<{available: boolean; version?: string}>;
 }
 
-export type {BackupRepoConfig, ResticRepositoryTarget, RetentionPolicy, ResticRunResult, ResticSnapshot};
+export type {BackupRepoConfig, ResticRepositoryTarget, ResticRunOptions, RetentionPolicy, ResticRunResult, ResticSnapshot};

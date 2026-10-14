@@ -1807,7 +1807,13 @@ services:
             const result = await service.testRepositoryConnection();
 
             expect(result.ok).toBe(true);
-            expect(mockResticExecutor.run).toHaveBeenCalledWith(["cat", "config"], expect.objectContaining({kind: "sftp"}));
+            expect(mockResticExecutor.run).toHaveBeenCalledWith(
+                ["cat", "config"],
+                expect.objectContaining({kind: "sftp"}),
+                undefined,
+                undefined,
+                {timeoutMs: 30_000},
+            );
             expect(resticEnvOf(mockResticExecutor.run.mock.calls[0][1]).RESTIC_REPOSITORY)
                 .toMatch(/^sftp:backup@nas\.example\.com:\/srv\/restic\//);
         });
@@ -1818,7 +1824,13 @@ services:
             const result = await service.testRepositoryConnection();
 
             expect(result.ok).toBe(true);
-            expect(mockResticExecutor.run).toHaveBeenCalledWith(["cat", "config"], expect.objectContaining({kind: "s3"}));
+            expect(mockResticExecutor.run).toHaveBeenCalledWith(
+                ["cat", "config"],
+                expect.objectContaining({kind: "s3"}),
+                undefined,
+                undefined,
+                {timeoutMs: 30_000},
+            );
         });
 
         it("treats a missing repository as a working connection", async () => {
@@ -1830,6 +1842,16 @@ services:
             const result = await service.testRepositoryConnection();
 
             expect(result.ok).toBe(true);
+        });
+
+        it("reports a probe that had to be stopped as a failed connection", async () => {
+            useRepoConfig(S3_REPO_CONFIG);
+            mockResticExecutor.run.mockRejectedValue(new Error("restic did not finish within 30 seconds and was stopped"));
+
+            const result = await service.testRepositoryConnection();
+
+            expect(result.ok).toBe(false);
+            expect(result.message).toContain("did not finish within 30 seconds");
         });
 
         it("does not mistake an S3 Stat failure for a missing repository", async () => {

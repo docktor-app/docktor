@@ -346,6 +346,66 @@ describe("SettingsService", () => {
             password: null,
         };
 
+        // The stored secrets a configured repository already holds (the form only sends secrets that changed).
+        const STORED_SECRETS = {"backup.s3SecretKey": "enc", "backup.sftpKey": "enc", "backup.password": "enc"};
+
+        beforeEach(() => {
+            mockRepo.getMany.mockResolvedValue(STORED_SECRETS);
+        });
+
+        it("clears a plain field when it is saved blank, so a stored endpoint can be reverted to the default", async () => {
+            mockRepo.upsert.mockResolvedValue(undefined);
+
+            await service.saveBackupRepositorySettings({...baseInput, s3Endpoint: "", repoPath: ""});
+
+            expect(mockRepo.upsert).toHaveBeenCalledWith("backup.s3Endpoint", "");
+            expect(mockRepo.upsert).toHaveBeenCalledWith("backup.repoPath", "");
+        });
+
+        it("leaves a plain field untouched when it is absent", async () => {
+            mockRepo.upsert.mockResolvedValue(undefined);
+
+            await service.saveBackupRepositorySettings({...baseInput, s3Endpoint: undefined, repoPath: null});
+
+            const keys = mockRepo.upsert.mock.calls.map((call) => call[0]);
+            expect(keys).not.toContain("backup.s3Endpoint");
+            expect(keys).not.toContain("backup.repoPath");
+        });
+
+        it("rejects a remote repository whose required secrets are neither sent nor already stored, writing nothing", async () => {
+            mockRepo.getMany.mockResolvedValue({});
+
+            await expect(service.saveBackupRepositorySettings(baseInput)).rejects.toThrow(
+                /S3 secret key.*repository password|repository password.*S3 secret key/,
+            );
+            expect(mockRepo.upsert).not.toHaveBeenCalled();
+        });
+
+        it("accepts a remote repository whose secrets are sent in the same request", async () => {
+            mockRepo.getMany.mockResolvedValue({});
+            mockRepo.upsert.mockResolvedValue(undefined);
+            mockRepo.upsertEncrypted.mockResolvedValue(undefined);
+
+            await expect(
+                service.saveBackupRepositorySettings({...baseInput, s3SecretKey: "secret", password: "pw"}),
+            ).resolves.toBeUndefined();
+        });
+
+        it("does not demand remote secrets for a local repository", async () => {
+            mockRepo.getMany.mockResolvedValue({});
+            mockRepo.upsert.mockResolvedValue(undefined);
+
+            await expect(service.saveBackupRepositorySettings({repoType: "local"})).resolves.toBeUndefined();
+        });
+
+        it("requires the SFTP key for an SFTP repository", async () => {
+            mockRepo.getMany.mockResolvedValue({"backup.password": "enc"});
+
+            await expect(
+                service.saveBackupRepositorySettings({repoType: "sftp", sftpHost: "h", sftpUser: "u"}),
+            ).rejects.toThrow(/SFTP private key/);
+        });
+
         it("writes the non-secret fields via repo.upsert in the route's original order", async () => {
             mockRepo.upsert.mockResolvedValue(undefined);
 

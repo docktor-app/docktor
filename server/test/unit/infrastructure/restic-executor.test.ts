@@ -1,10 +1,15 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 
 vi.mock("node:child_process");
+vi.mock("node:fs/promises", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("node:fs/promises")>();
+    return {...actual, rm: vi.fn(actual.rm)};
+});
 
 import {spawn} from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
+import {rm} from "node:fs/promises";
 import path from "node:path";
 import type {ResticRepositoryTarget} from "../../../src/domain/restic-repository.js";
 import {AppError} from "../../../src/lib/errors.js";
@@ -400,6 +405,44 @@ describe("ResticExecutor", () => {
             expect(fs.existsSync(capture.keyDir)).toBe(false);
         });
 
+        it("does not let a failed key cleanup mask a successful restic run", async () => {
+            captureSftpSpawn();
+            vi.mocked(rm).mockRejectedValueOnce(new Error("EBUSY: resource busy"));
+
+            await expect(executor.run(["backup", "."], sftpTarget())).resolves.toMatchObject({exitCode: 0});
+        });
+
+        it("does not let a failed key cleanup replace restic's own error", async () => {
+            captureSftpSpawn(() => createMockProcess([], 255, "Host key verification failed.\n"));
+            vi.mocked(rm).mockRejectedValueOnce(new Error("EBUSY: resource busy"));
+
+            await expect(executor.run(["backup", "."], sftpTarget())).rejects.toThrow("Host key verification failed");
+        });
+
+        it("sweeps key directories orphaned by a hard kill, but not recent ones", async () => {
+            const stale = path.join(sshDir, "key-stale");
+            const recent = path.join(sshDir, "key-recent");
+            fs.mkdirSync(stale);
+            fs.writeFileSync(path.join(stale, "id"), "leaked-key");
+            fs.mkdirSync(recent);
+            const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+            fs.utimesSync(stale, twoHoursAgo, twoHoursAgo);
+            captureSftpSpawn();
+
+            await executor.run(["backup", "."], sftpTarget());
+
+            expect(fs.existsSync(stale)).toBe(false);
+            expect(fs.existsSync(recent)).toBe(true);
+        });
+
+        it("gives ssh a connect timeout so an unreachable host cannot hang for the kernel TCP timeout", async () => {
+            const capture = captureSftpSpawn();
+
+            await executor.run(["backup", "."], sftpTarget());
+
+            expect(capture.command).toContain("-o ConnectTimeout=15");
+        });
+
         it("keeps known_hosts untouched across runs so the first pin persists", async () => {
             const knownHosts = path.join(sshDir, "known_hosts");
             const pinned = "nas.example.com ssh-ed25519 AAAATESTKEY\n";
@@ -464,6 +507,31 @@ describe("ResticExecutor", () => {
 
             expect(mockSpawn).not.toHaveBeenCalled();
             expect(fs.existsSync(badDir)).toBe(false);
+        });
+    });
+
+    describe("run() with a timeout", () => {
+        function hangingProcess() {
+            const proc = {stdout: {on: vi.fn()}, stderr: {on: vi.fn()}, on: vi.fn()} as any;
+            proc.on.mockImplementation((event: string, cb: (code: number | null, signal: string | null) => void) => {
+                if (event === "close") cb(null, "SIGTERM");
+            });
+            return proc;
+        }
+
+        it("passes the timeout to the spawned process", async () => {
+            mockSpawn.mockReturnValue(createMockProcess([]));
+
+            await executor.run(["cat", "config"], s3Target(), undefined, undefined, {timeoutMs: 30_000});
+
+            expect(mockSpawn.mock.calls[0][2]).toMatchObject({timeout: 30_000});
+        });
+
+        it("rejects with a readable timeout error when restic had to be stopped", async () => {
+            mockSpawn.mockReturnValue(hangingProcess());
+
+            await expect(executor.run(["cat", "config"], s3Target(), undefined, undefined, {timeoutMs: 30_000}))
+                .rejects.toThrow(/did not finish within 30 seconds/);
         });
     });
 
@@ -571,6 +639,20 @@ describe("ResticExecutor", () => {
             const result = await executor.snapshots(localTarget({RESTIC_REPOSITORY: "/repo"}), "stack-1");
 
             expect(result).toEqual([]);
+        });
+
+        it("parses only stdout, so ssh's first-connection notice on stderr cannot corrupt the JSON (WR-01)", async () => {
+            const snapshot = {id: "abc", time: "2026-01-01T00:00:00Z", hostname: "h", tags: ["stack-1"], paths: ["/x"], short_id: "abc"};
+            const mockProc = createMockProcess(
+                [JSON.stringify([snapshot])],
+                0,
+                "subprocess ssh: Warning: Permanently added 'nas.example.com' (ED25519) to the list of known hosts.\n",
+            );
+            mockSpawn.mockReturnValue(mockProc);
+
+            const result = await executor.snapshots(localTarget({RESTIC_REPOSITORY: "/repo"}), "stack-1");
+
+            expect(result).toEqual([snapshot]);
         });
 
         it("throws for an S3 Stat failure that shares the 'unable to open config file' prefix (bad credentials, not a missing repo)", async () => {

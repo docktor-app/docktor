@@ -1,5 +1,5 @@
 import {spawn} from "node:child_process";
-import {mkdir, mkdtemp, rm, writeFile} from "node:fs/promises";
+import {mkdir, mkdtemp, readdir, rm, stat, writeFile} from "node:fs/promises";
 import path from "node:path";
 
 import type {ResticExecutorPort} from "../application/ports/restic-executor-port.js";
@@ -34,6 +34,17 @@ export interface ResticSnapshot {
     paths: string[];
     short_id: string;
 }
+
+export interface ResticRunOptions {
+    /** Stops restic (SIGTERM) and rejects when it has not finished in this many milliseconds. */
+    readonly timeoutMs?: number;
+}
+
+/** Tag spawnRestic puts on every stderr line it forwards to `onLine`. */
+const STDERR_LINE_PREFIX = "[stderr] ";
+
+/** A key directory this old cannot belong to a live run, so it was orphaned by a hard kill. */
+const ORPHANED_KEY_DIR_AGE_MS = 60 * 60 * 1000;
 
 export interface BackupRepoConfig {
     repoType: "local" | "sftp" | "s3";
@@ -81,31 +92,35 @@ export class ResticExecutor implements ResticExecutorPort {
      *
      * @param cwd - Optional working directory for the restic process. Use this to run
      *              restic from the stack directory so backups use relative paths.
+     * @param options - Optional run options, e.g. a deadline for probes that must not hang.
      */
     async run(
         args: string[],
         repository: ResticRepositoryTarget,
         onLine?: (line: string) => void,
         cwd?: string,
+        options: ResticRunOptions = {},
     ): Promise<ResticRunResult> {
         if (repository.kind === "sftp") {
-            return this.runWithSftpIdentity(repository, args, onLine, cwd);
+            return this.runWithSftpIdentity(repository, args, onLine, cwd, options);
         }
-        return this.spawnRestic(args, {...repository.env}, onLine, cwd);
+        return this.spawnRestic(args, {...repository.env}, onLine, cwd, options.timeoutMs);
     }
 
     /**
      * Writes the decrypted key to a per-run 0600 file, points restic's ssh at it
      * and pins the server host key on first use (D-03, D-04). The key directory
      * is removed in `finally`, so success, a non-zero exit and a spawn error all
-     * leave nothing behind. known_hosts is never removed: the first connection's
-     * pin must survive runs and container recreation.
+     * leave nothing behind. A hard kill (SIGKILL, OOM) skips `finally`, so each run
+     * also sweeps key directories left behind by earlier ones. known_hosts is never
+     * removed: the first connection's pin must survive runs and container recreation.
      */
     private async runWithSftpIdentity(
         repository: Extract<ResticRepositoryTarget, {kind: "sftp"}>,
         args: string[],
         onLine?: (line: string) => void,
         cwd?: string,
+        options: ResticRunOptions = {},
     ): Promise<ResticRunResult> {
         const sshDir = this.sshDir ?? path.join(getStacksDir(), ".docktor", "ssh");
         // The path is embedded in a double-quoted token of sftp.command.
@@ -113,6 +128,7 @@ export class ResticExecutor implements ResticExecutorPort {
             throw new AppError("Restic SSH directory path contains a double quote and cannot be passed to ssh");
         }
         await mkdir(sshDir, {recursive: true, mode: 0o700});
+        await this.sweepOrphanedKeyDirs(sshDir);
         const keyDir = await mkdtemp(path.join(sshDir, "key-"));
         try {
             const keyPath = path.join(keyDir, "id");
@@ -123,9 +139,37 @@ export class ResticExecutor implements ResticExecutorPort {
                 {...repository.env},
                 onLine,
                 cwd,
+                options.timeoutMs,
             );
         } finally {
+            await this.removeKeyDir(keyDir);
+        }
+    }
+
+    /**
+     * Cleanup must never mask the outcome of the run it follows: a failure here
+     * (EBUSY on Windows, a permissions glitch) is logged and the sweep of the next
+     * run retries it.
+     */
+    private async removeKeyDir(keyDir: string): Promise<void> {
+        try {
             await rm(keyDir, {recursive: true, force: true});
+        } catch (err) {
+            console.error(`[ResticExecutor] failed to remove SFTP key directory ${keyDir}`, err);
+        }
+    }
+
+    /** Removes `key-*` directories old enough that no live run can still own them. */
+    private async sweepOrphanedKeyDirs(sshDir: string): Promise<void> {
+        try {
+            const cutoff = Date.now() - ORPHANED_KEY_DIR_AGE_MS;
+            for (const entry of await readdir(sshDir, {withFileTypes: true})) {
+                if (!entry.isDirectory() || !entry.name.startsWith("key-")) continue;
+                const dir = path.join(sshDir, entry.name);
+                if ((await stat(dir)).mtimeMs < cutoff) await this.removeKeyDir(dir);
+            }
+        } catch (err) {
+            console.error("[ResticExecutor] failed to sweep orphaned SFTP key directories", err);
         }
     }
 
@@ -141,6 +185,7 @@ export class ResticExecutor implements ResticExecutorPort {
             `-i "${keyPath}"`,
             "-o IdentitiesOnly=yes",
             "-o BatchMode=yes",
+            "-o ConnectTimeout=15",
             "-o StrictHostKeyChecking=accept-new",
             `-o "UserKnownHostsFile=${knownHostsPath}"`,
             "-o ServerAliveInterval=60",
@@ -157,6 +202,7 @@ export class ResticExecutor implements ResticExecutorPort {
         env: Record<string, string>,
         onLine?: (line: string) => void,
         cwd?: string,
+        timeoutMs?: number,
     ): Promise<ResticRunResult> {
         console.log(`[ResticExecutor] Running: ${this.binary}`, args, cwd ? `(cwd: ${cwd})` : '')
         return new Promise((resolve, reject) => {
@@ -164,6 +210,7 @@ export class ResticExecutor implements ResticExecutorPort {
                 env: {...process.env, ...env},
                 stdio: ["ignore", "pipe", "pipe"],
                 cwd: cwd ?? undefined,
+                timeout: timeoutMs,
             });
 
             let stderrBuf = "";
@@ -196,19 +243,24 @@ export class ResticExecutor implements ResticExecutorPort {
                 for (const line of lines) {
                     if (line.trim()) {
                         console.log(`[ResticExecutor] Emitting stderr: ${line.substring(0, 80)}`);
-                        onLine?.(`[stderr] ${line}`);
+                        onLine?.(`${STDERR_LINE_PREFIX}${line}`);
                     }
                 }
             });
 
             child.on("error", reject);
 
-            child.on("close", (code) => {
+            child.on("close", (code, signal) => {
                 console.log(`[ResticExecutor] Process exited with code ${code}`)
                 // Flush any partial stdout line remaining in the buffer
                 if (lineBuf.trim()) onLine?.(lineBuf.trim());
                 // Flush any partial stderr line remaining in the buffer
-                if (stderrLineBuf.trim()) onLine?.(`[stderr] ${stderrLineBuf.trim()}`);
+                if (stderrLineBuf.trim()) onLine?.(`${STDERR_LINE_PREFIX}${stderrLineBuf.trim()}`);
+
+                if (timeoutMs !== undefined && code === null && signal === "SIGTERM") {
+                    reject(new Error(`restic did not finish within ${timeoutMs / 1000} seconds and was stopped`));
+                    return;
+                }
 
                 const exitCode = code ?? 1;
                 if (exitCode !== 0) {
@@ -280,7 +332,11 @@ export class ResticExecutor implements ResticExecutorPort {
             await this.run(
                 ["snapshots", "--tag", tag, "--json"],
                 repository,
-                (l) => lines.push(l),
+                (l) => {
+                    // Only stdout carries the JSON; stderr lines (ssh's first-connection
+                    // notice, restic warnings) arrive tagged and must not reach the parser.
+                    if (!l.startsWith(STDERR_LINE_PREFIX)) lines.push(l);
+                },
             );
         } catch (err) {
             if (isRepositoryNotFoundError(err)) return []; // Repository not initialized

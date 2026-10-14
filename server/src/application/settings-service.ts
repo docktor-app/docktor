@@ -346,26 +346,56 @@ export class SettingsService {
     }
 
     // Saves the backup-repository settings form as one grouped write — the
-    // plain fields via repo.upsert (in the same order and under the same
-    // presence conditionals the route used to apply inline), the three
-    // secrets (sftpKey, s3SecretKey, password, in that order) via the
-    // shared encrypted-write path (upsertEncryptedSetting(), added in plan
-    // 10-09 for SMTP — reused here rather than duplicated). A blank/absent
-    // secret leaves its stored value untouched, matching saveSmtpConfig()'s
-    // blank-password conditional (T-10-33: a blanked backup password would
-    // silently break every subsequent scheduled backup).
+    // plain fields via repo.upsert, the three secrets (sftpKey, s3SecretKey,
+    // password, in that order) via the shared encrypted-write path
+    // (upsertEncryptedSetting(), added in plan 10-09 for SMTP — reused here
+    // rather than duplicated).
+    //
+    // Plain fields: absent/null leaves the stored value untouched, while an
+    // explicit "" clears it (a stored MinIO endpoint or SFTP path must be
+    // revertible to the default). Secrets: a blank/absent value leaves the
+    // stored one untouched, matching saveSmtpConfig()'s blank-password
+    // conditional (T-10-33: a blanked backup password would silently break
+    // every subsequent scheduled backup).
+    //
+    // A remote repository must end up with its secrets: they have to be sent
+    // now or already stored, otherwise the save is rejected before anything is
+    // written rather than failing later at backup time.
     async saveBackupRepositorySettings(data: BackupSettingsInput): Promise<void> {
+        await this.assertRemoteSecretsPresent(data)
+
         await this.repo.upsert("backup.repoType", data.repoType)
-        if (data.repoPath) await this.repo.upsert("backup.repoPath", data.repoPath)
-        if (data.sftpHost) await this.repo.upsert("backup.sftpHost", data.sftpHost)
-        if (data.sftpUser) await this.repo.upsert("backup.sftpUser", data.sftpUser)
-        if (data.s3Endpoint) await this.repo.upsert("backup.s3Endpoint", data.s3Endpoint)
-        if (data.s3Bucket) await this.repo.upsert("backup.s3Bucket", data.s3Bucket)
-        if (data.s3AccessKey) await this.repo.upsert("backup.s3AccessKey", data.s3AccessKey)
+        const plainFields: Array<[string, string | null | undefined]> = [
+            ["backup.repoPath", data.repoPath],
+            ["backup.sftpHost", data.sftpHost],
+            ["backup.sftpUser", data.sftpUser],
+            ["backup.s3Endpoint", data.s3Endpoint],
+            ["backup.s3Bucket", data.s3Bucket],
+            ["backup.s3AccessKey", data.s3AccessKey],
+        ]
+        for (const [key, value] of plainFields) {
+            if (value !== undefined && value !== null) await this.repo.upsert(key, value)
+        }
 
         if (data.sftpKey) await this.upsertEncryptedSetting("backup.sftpKey", data.sftpKey)
         if (data.s3SecretKey) await this.upsertEncryptedSetting("backup.s3SecretKey", data.s3SecretKey)
         if (data.password) await this.upsertEncryptedSetting("backup.password", data.password)
+    }
+
+    private async assertRemoteSecretsPresent(data: BackupSettingsInput): Promise<void> {
+        if (data.repoType === "local") return
+
+        const required: Array<{label: string; key: string; incoming: string | null | undefined}> = [
+            data.repoType === "sftp"
+                ? {label: "SFTP private key", key: "backup.sftpKey", incoming: data.sftpKey}
+                : {label: "S3 secret key", key: "backup.s3SecretKey", incoming: data.s3SecretKey},
+            {label: "repository password", key: "backup.password", incoming: data.password},
+        ]
+        const stored = (await this.repo.getMany(required.map((r) => r.key))) ?? {}
+        const missing = required.filter((r) => !r.incoming && !stored[r.key]).map((r) => r.label)
+        if (missing.length > 0) {
+            throw new BadRequestError(`The ${data.repoType.toUpperCase()} repository is missing: ${missing.join(", ")}`)
+        }
     }
 
     /**
