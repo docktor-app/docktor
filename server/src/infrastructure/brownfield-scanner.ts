@@ -41,6 +41,11 @@ export class BrownfieldScanner implements BrownfieldScannerPort {
         "**/dev/**",
         "**/node_modules/**",
         "**/.git/**",
+        // #72/D-08, RESEARCH Pitfall 3: the opted-in migration backup at
+        // <newStack>/pre-migration-backup/ holds a copy of the old compose
+        // file, which the glob patterns above would otherwise offer as a new
+        // importable stack (duplicate-slug adoption risk).
+        "**/pre-migration-backup/**",
     ];
 
     private readonly SYSTEM_DIRS = ["/proc", "/sys", "/dev"];

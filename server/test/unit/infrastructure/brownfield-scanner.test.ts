@@ -148,6 +148,21 @@ describe("BrownfieldScanner", () => {
             );
         });
 
+        // #72/D-08, RESEARCH Pitfall 3: the opted-in pre-migration backup holds a
+        // copy of the old compose file that must never be offered as a stack.
+        it("should exclude pre-migration-backup directories from scan", async () => {
+            mockFg.mockResolvedValue(["/opt/stacks/app/docker-compose.yml"]);
+
+            const scanner = new BrownfieldScanner(mockAnalyzer);
+            await scanner.scan(["/opt/stacks"]);
+
+            const callOptions = mockFg.mock.calls[0][1];
+            expect(callOptions.ignore).toContain("**/pre-migration-backup/**");
+            expect(callOptions.ignore).toEqual(
+                expect.arrayContaining([expect.stringContaining("node_modules"), expect.stringContaining(".git")]),
+            );
+        });
+
         it("should return absolute paths for discovered compose files", async () => {
             mockFg.mockResolvedValue(["/opt/myapp/docker-compose.yml"]);
 
