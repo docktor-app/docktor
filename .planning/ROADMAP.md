@@ -42,7 +42,7 @@ Deferred past v0.1.0 and still tracked in GitHub Issues: public demo instance (#
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 17: Backup Repository and Port-Check Fixes** - Backups use the configured SFTP/S3 repository, and deploy-time port warnings stop flagging a stack's own ports
+- [x] **Phase 17: Backup Repository and Port-Check Fixes** - Backups use the configured SFTP/S3 repository, and deploy-time port warnings stop flagging a stack's own ports (completed 2026-10-14)
 - [ ] **Phase 18: Import and Migration Flow** - Docktor's own stack is not offered for import, and the migration dialog shows a real diff with explicit backup and stop-old-stack choices
 - [ ] **Phase 19: Sidebar, Templates and Version Block** - Labelled sidebar sections, a standalone Templates page, and the running version plus project links above the account menu
 - [ ] **Phase 20: Visual Consistency, Dashboard Clarity and Touch Targets** - One status casing, monospace KPIs, scrollbar-free tabs, shared form spacing and table look, an honest "Backups Configured" card, and 44px mobile touch targets
@@ -63,7 +63,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Deploying or redeploying a stack that publishes a host port shows no port warning when the only holder of that port is the stack's own container
   5. Deploying a stack whose host port is held by a different stack or an external process still shows the warning and names the holder
 
-**Plans:** 3/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 **Wave 1**
@@ -150,7 +150,7 @@ Phases execute in numeric order: 17 → 18 → 19 → 20 → 21
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 17. Backup Repository and Port-Check Fixes | 3/3 | In Progress | - |
+| 17. Backup Repository and Port-Check Fixes | 3/3 | Complete    | 2026-10-14 |
 | 18. Import and Migration Flow | 0/TBD | Not started | - |
 | 19. Sidebar, Templates and Version Block | 0/TBD | Not started | - |
 | 20. Visual Consistency, Dashboard Clarity and Touch Targets | 0/TBD | Not started | - |
