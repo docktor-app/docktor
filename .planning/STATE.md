@@ -4,17 +4,17 @@ milestone: v0.1.1
 milestone_name: Release Follow-ups
 current_phase: 17
 current_phase_name: Backup Repository and Port-Check Fixes
-status: executing
-stopped_at: Completed 17-02-PLAN.md
-last_updated: "2026-10-14T08:38:57.536Z"
+status: verifying
+stopped_at: Completed 17-03-PLAN.md
+last_updated: "2026-10-14T08:44:04.378Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 17 execution started
-state_head: 216ba38516849aa47e1a840cecd7a441f3274dc2
+state_head: 9182d4d10f2596305f1951f0595a410181dfde4f
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 3
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-10-14)
 
 Phase: 17 (Backup Repository and Port-Check Fixes) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-14 — Phase 17 execution started
 
 Progress: [░░░░░░░░░░] 0%
@@ -64,6 +64,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 |------|----------|-------|-------|
 | Phase 17 P01 | 25min | 2 tasks | 4 files |
 | Phase 17 P02 | 15min | 2 tasks | 4 files |
+| Phase 17 P03 | 20min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -79,6 +80,7 @@ Roadmap decisions for v0.1.1:
 - [Roadmap v0.1.1]: REL-01 is its own final phase (21) so the version bump, changelog and green-CI gate run after every other change lands on the branch
 - [Phase 17]: Remote restic repos are per-stack sub-repos (s3 <bucket>/<stackId>, sftp <repoPath>/<stackId>); remote config errors hard-fail via BadRequestError, never falling back to local
 - [Phase 17]: Plan 17-02: tier-3 port-conflict self-exclusion keyed on the deploying stack's own running containers (compose project = stack id), kept in pure domain function (D-06)
+- [Phase 17]: SSH state for restic SFTP lives in <stacksDir>/.docktor/ssh so the host pin persists across container recreation; key file is 0600 per run and removed in finally
 
 ### Pending Todos
 
@@ -102,6 +104,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T08:38:57.466Z
-Stopped at: Completed 17-02-PLAN.md
+Last session: 2026-10-14T08:44:04.276Z
+Stopped at: Completed 17-03-PLAN.md
 Resume file: None
