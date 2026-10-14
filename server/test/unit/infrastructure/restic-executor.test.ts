@@ -1,8 +1,12 @@
-import {beforeEach, describe, expect, it, vi} from "vitest";
+import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 
 vi.mock("node:child_process");
 
 import {spawn} from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import type {ResticRepositoryTarget} from "../../../src/domain/restic-repository.js";
 import {ResticExecutor, isRepositoryNotFoundError} from "../../../src/infrastructure/restic-executor.js";
 
 const mockSpawn = vi.mocked(spawn);
@@ -40,12 +44,81 @@ function createMockProcess(stdoutLines: string[], exitCode = 0, stderrOutput = "
     return process;
 }
 
+const TEST_KEY = "-----BEGIN OPENSSH PRIVATE KEY-----\nTEST-KEY-BODY\n-----END OPENSSH PRIVATE KEY-----";
+
+function localTarget(env: Record<string, string> = {}): ResticRepositoryTarget {
+    return {kind: "local", repository: env.RESTIC_REPOSITORY ?? "/repo", env};
+}
+
+function sftpTarget(privateKey: string = TEST_KEY): ResticRepositoryTarget {
+    const repository = "sftp:backup@nas.example.com:/srv/restic/stack-1";
+    return {
+        kind: "sftp",
+        repository,
+        env: {RESTIC_REPOSITORY: repository, RESTIC_PASSWORD: "restic-pass"},
+        sftp: {host: "nas.example.com", user: "backup", privateKey},
+    };
+}
+
+function s3Target(): ResticRepositoryTarget {
+    const repository = "s3:https://s3.example.com/docktor-backups/stack-1";
+    return {
+        kind: "s3",
+        repository,
+        env: {
+            RESTIC_REPOSITORY: repository,
+            RESTIC_PASSWORD: "restic-pass",
+            AWS_ACCESS_KEY_ID: "AKIAEXAMPLE",
+            AWS_SECRET_ACCESS_KEY: "s3-secret-example",
+        },
+    };
+}
+
+interface SpawnCapture {
+    argv: string[];
+    env: Record<string, string | undefined>;
+    keyPath: string;
+    keyContent: string;
+    keyMode: number;
+    keyDir: string;
+}
+
+/**
+ * Mocks spawn so that the key file is inspected while "restic is running".
+ * The capture is filled synchronously inside spawn, before the key can be removed.
+ */
+function captureSftpSpawn(
+    result: () => ReturnType<typeof createMockProcess> = () => createMockProcess([]),
+): SpawnCapture {
+    const capture = {} as SpawnCapture;
+    mockSpawn.mockImplementation(((_bin: string, argv: string[], options: {env: Record<string, string | undefined>}) => {
+        capture.argv = argv;
+        capture.env = options.env;
+        const command = argv[1] ?? "";
+        const match = /-i "([^"]+)"/.exec(command);
+        if (match) {
+            capture.keyPath = match[1];
+            capture.keyDir = path.dirname(match[1]);
+            capture.keyContent = fs.readFileSync(match[1], "utf8");
+            capture.keyMode = fs.statSync(match[1]).mode & 0o777;
+        }
+        return result();
+    }) as unknown as typeof spawn);
+    return capture;
+}
+
 describe("ResticExecutor", () => {
     let executor: ResticExecutor;
+    let sshDir: string;
 
     beforeEach(() => {
         vi.clearAllMocks();
-        executor = new ResticExecutor();
+        sshDir = fs.mkdtempSync(path.join(os.tmpdir(), "docktor-restic-ssh-"));
+        executor = new ResticExecutor({sshDir});
+    });
+
+    afterEach(() => {
+        fs.rmSync(sshDir, {recursive: true, force: true});
     });
 
     describe("run()", () => {
@@ -53,7 +126,7 @@ describe("ResticExecutor", () => {
             const mockProc = createMockProcess(["output line"]);
             mockSpawn.mockReturnValue(mockProc);
 
-            await executor.run(["backup", "/path/to/stack"], {RESTIC_REPOSITORY: "/repo"});
+            await executor.run(["backup", "/path/to/stack"], localTarget({RESTIC_REPOSITORY: "/repo"}));
 
             expect(mockSpawn).toHaveBeenCalledWith(
                 expect.stringContaining("restic"),
@@ -67,7 +140,7 @@ describe("ResticExecutor", () => {
             mockSpawn.mockReturnValue(mockProc);
 
             const lines: string[] = [];
-            await executor.run(["backup"], {}, (line) => lines.push(line));
+            await executor.run(["backup"], localTarget(), (line) => lines.push(line));
 
             expect(lines).toContain("line one");
             expect(lines).toContain("line two");
@@ -77,7 +150,7 @@ describe("ResticExecutor", () => {
             const mockProc = createMockProcess([], 0, "some stderr");
             mockSpawn.mockReturnValue(mockProc);
 
-            const result = await executor.run(["backup"], {});
+            const result = await executor.run(["backup"], localTarget());
 
             expect(result).toMatchObject({
                 exitCode: 0,
@@ -100,7 +173,7 @@ describe("ResticExecutor", () => {
 
             mockSpawn.mockReturnValue(mockProc);
 
-            await expect(executor.run(["backup"], {})).rejects.toThrow("spawn ENOENT");
+            await expect(executor.run(["backup"], localTarget())).rejects.toThrow("spawn ENOENT");
         });
 
         it("flushes partial line buffer on close", async () => {
@@ -128,7 +201,7 @@ describe("ResticExecutor", () => {
             mockSpawn.mockReturnValue(mockProc);
 
             const lines: string[] = [];
-            await executor.run(["backup"], {}, (line) => lines.push(line));
+            await executor.run(["backup"], localTarget(), (line) => lines.push(line));
 
             expect(lines).toContain("partial line without newline");
         });
@@ -138,7 +211,7 @@ describe("ResticExecutor", () => {
             mockSpawn.mockReturnValue(mockProc);
 
             const lines: string[] = [];
-            await executor.run(["backup"], {}, (line) => lines.push(line));
+            await executor.run(["backup"], localTarget(), (line) => lines.push(line));
 
             expect(lines).toContain("[stderr] error line one");
             expect(lines).toContain("[stderr] error line two");
@@ -149,7 +222,7 @@ describe("ResticExecutor", () => {
             mockSpawn.mockReturnValue(mockProc);
 
             const lines: string[] = [];
-            await executor.run(["backup"], {}, (line) => lines.push(line));
+            await executor.run(["backup"], localTarget(), (line) => lines.push(line));
 
             expect(lines).toContain("stdout line");
             expect(lines).toContain("[stderr] stderr line");
@@ -181,7 +254,7 @@ describe("ResticExecutor", () => {
             mockSpawn.mockReturnValue(mockProc);
 
             const lines: string[] = [];
-            await executor.run(["backup"], {}, (line) => lines.push(line));
+            await executor.run(["backup"], localTarget(), (line) => lines.push(line));
 
             expect(lines).toContain("[stderr] partial stderr line");
             expect(lines).toContain("[stderr] next"); // Flushed on close
@@ -211,9 +284,100 @@ describe("ResticExecutor", () => {
             mockSpawn.mockReturnValue(mockProc);
 
             const lines: string[] = [];
-            await executor.run(["backup"], {}, (line) => lines.push(line));
+            await executor.run(["backup"], localTarget(), (line) => lines.push(line));
 
             expect(lines).toContain("[stderr] partial stderr without newline");
+        });
+    });
+
+    describe("run() with an SFTP target (BKP-01, D-03, D-04)", () => {
+        it("prefixes restic with an ssh sftp.command carrying the key file, host pinning and user/host", async () => {
+            const capture = captureSftpSpawn();
+
+            await executor.run(["backup", "."], sftpTarget());
+
+            expect(capture.argv.slice(0, 1)).toEqual(["-o"]);
+            expect(capture.argv.slice(2)).toEqual(["backup", "."]);
+            const command = capture.argv[1];
+            expect(command.startsWith("sftp.command=ssh ")).toBe(true);
+            const knownHosts = path.join(sshDir, "known_hosts");
+            const expectedOrder = [
+                `-i "${capture.keyPath}"`,
+                "-o IdentitiesOnly=yes",
+                "-o BatchMode=yes",
+                "-o StrictHostKeyChecking=accept-new",
+                `-o "UserKnownHostsFile=${knownHosts}"`,
+                "-o ServerAliveInterval=60",
+                "-o ServerAliveCountMax=240",
+            ];
+            let from = 0;
+            for (const token of expectedOrder) {
+                const at = command.indexOf(token, from);
+                expect(at, `missing or out of order: ${token}`).toBeGreaterThanOrEqual(from);
+                from = at + token.length;
+            }
+            expect(command.endsWith("-l backup nas.example.com -s sftp")).toBe(true);
+        });
+
+        it("writes the key as a 0600 file in a per-run directory directly under the ssh dir while restic runs", async () => {
+            const capture = captureSftpSpawn();
+
+            await executor.run(["backup", "."], sftpTarget());
+
+            expect(path.dirname(capture.keyDir)).toBe(sshDir);
+            expect(path.basename(capture.keyDir).startsWith("key-")).toBe(true);
+            expect(capture.keyContent).toBe(`${TEST_KEY}\n`);
+            if (process.platform !== "win32") {
+                expect(capture.keyMode).toBe(0o600);
+            }
+        });
+
+        it("passes repository and password in env, and the key neither in env nor in argv", async () => {
+            const capture = captureSftpSpawn();
+
+            await executor.run(["backup", "."], sftpTarget());
+
+            expect(capture.env.RESTIC_REPOSITORY).toBe("sftp:backup@nas.example.com:/srv/restic/stack-1");
+            expect(capture.env.RESTIC_PASSWORD).toBe("restic-pass");
+            expect(Object.values(capture.env).join("\n")).not.toContain("TEST-KEY-BODY");
+            expect(capture.argv.join("\n")).not.toContain("TEST-KEY-BODY");
+        });
+
+        it("removes the key file and its directory after the run", async () => {
+            const capture = captureSftpSpawn();
+
+            await executor.run(["backup", "."], sftpTarget());
+
+            expect(fs.existsSync(capture.keyPath)).toBe(false);
+            expect(fs.existsSync(capture.keyDir)).toBe(false);
+        });
+
+        it("applies the same identity handling to snapshots()", async () => {
+            const snapshots = [{id: "abc123", time: "2024-01-01T00:00:00Z", hostname: "host", tags: ["stack-1"]}];
+            const capture = captureSftpSpawn(() => createMockProcess([JSON.stringify(snapshots)]));
+
+            const result = await executor.snapshots(sftpTarget(), "stack-1");
+
+            expect(result).toEqual(snapshots);
+            expect(capture.argv[0]).toBe("-o");
+            expect(capture.argv[1].startsWith("sftp.command=ssh ")).toBe(true);
+            expect(capture.argv.slice(2)).toEqual(["snapshots", "--tag", "stack-1", "--json"]);
+            expect(fs.existsSync(capture.keyDir)).toBe(false);
+        });
+    });
+
+    describe("run() with an S3 target", () => {
+        it("spawns restic without extra arguments and writes no files", async () => {
+            mockSpawn.mockReturnValue(createMockProcess([]));
+
+            await executor.run(["backup", "."], s3Target());
+
+            expect(mockSpawn).toHaveBeenCalledWith(
+                expect.any(String),
+                ["backup", "."],
+                expect.objectContaining({env: expect.objectContaining({AWS_ACCESS_KEY_ID: "AKIAEXAMPLE"})}),
+            );
+            expect(fs.readdirSync(sshDir)).toEqual([]);
         });
     });
 
@@ -281,7 +445,7 @@ describe("ResticExecutor", () => {
             const mockProc = createMockProcess([JSON.stringify(snapshots)]);
             mockSpawn.mockReturnValue(mockProc);
 
-            const result = await executor.snapshots({RESTIC_REPOSITORY: "/repo"}, "stack-1");
+            const result = await executor.snapshots(localTarget({RESTIC_REPOSITORY: "/repo"}), "stack-1");
 
             expect(result).toEqual(snapshots);
         });
@@ -290,7 +454,7 @@ describe("ResticExecutor", () => {
             const mockProc = createMockProcess([], 10, "Fatal: unable to open repo");
             mockSpawn.mockReturnValue(mockProc);
 
-            const result = await executor.snapshots({RESTIC_REPOSITORY: "/repo"}, "stack-1");
+            const result = await executor.snapshots(localTarget({RESTIC_REPOSITORY: "/repo"}), "stack-1");
 
             expect(result).toEqual([]);
         });
@@ -303,7 +467,7 @@ describe("ResticExecutor", () => {
             );
             mockSpawn.mockReturnValue(mockProc);
 
-            const result = await executor.snapshots({RESTIC_REPOSITORY: "/repo"}, "stack-1");
+            const result = await executor.snapshots(localTarget({RESTIC_REPOSITORY: "/repo"}), "stack-1");
 
             expect(result).toEqual([]);
         });
@@ -312,7 +476,7 @@ describe("ResticExecutor", () => {
             const mockProc = createMockProcess([], 1, "Fatal: something went wrong");
             mockSpawn.mockReturnValue(mockProc);
 
-            await expect(executor.snapshots({RESTIC_REPOSITORY: "/repo"}, "stack-1")).rejects.toThrow();
+            await expect(executor.snapshots(localTarget({RESTIC_REPOSITORY: "/repo"}), "stack-1")).rejects.toThrow();
         });
     });
 

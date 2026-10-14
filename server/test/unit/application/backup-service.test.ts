@@ -96,14 +96,15 @@ function createMockDockerExecutor() {
 }
 
 /**
- * Narrows the env argument of a resticExecutor.run / .snapshots call. All env
+ * Reads the env of the ResticRepositoryTarget passed to a resticExecutor.run / .snapshots call. All env
  * assertions go through this helper so the call shape lives in one place.
  */
 function resticEnvOf(arg: unknown): Record<string, string> {
-    if (typeof arg !== "object" || arg === null) {
-        throw new Error("expected the restic env argument to be an object");
+    if (typeof arg !== "object" || arg === null || !("env" in arg)) {
+        throw new Error("expected the restic repository argument to be a ResticRepositoryTarget");
     }
-    return arg as Record<string, string>;
+    // A ResticRepositoryTarget's env is a plain string record (domain/restic-repository.ts).
+    return (arg as {env: Record<string, string>}).env;
 }
 
 const REMOTE_STACK = {id: "stack-1", hostPath: "/opt/docktor/stacks/stack-1"};
@@ -1366,6 +1367,34 @@ services:
             expect(mockResticExecutor.snapshots).toHaveBeenCalledTimes(1);
             expect(resticEnvOf(mockResticExecutor.snapshots.mock.calls[0][0])).toEqual(S3_ENV);
             expect(mockResticExecutor.snapshots.mock.calls[0][1]).toBe("stack-1");
+        });
+
+        it("runBackup hands the resolved SFTP target, including the configured key, to every restic run", async () => {
+            await service.runBackup(backupRecord as any, backupStack as any, SFTP_REPO_CONFIG);
+
+            expect(mockResticExecutor.run).toHaveBeenCalled();
+            for (const call of mockResticExecutor.run.mock.calls) {
+                expect(call[1]).toMatchObject({
+                    kind: "sftp",
+                    repository: "sftp:backup@nas.example.com:/srv/restic/stack-1",
+                    sftp: {host: "nas.example.com", user: "backup", privateKey: SFTP_REPO_CONFIG.sftpKey},
+                });
+            }
+        });
+
+        it("getSnapshots hands the resolved SFTP target to the executor", async () => {
+            useRepoConfig(SFTP_REPO_CONFIG);
+            mockStackRepository.findByIdOrThrow.mockResolvedValue({...REMOTE_STACK, status: "RUNNING"});
+
+            await service.getSnapshots("stack-1");
+
+            expect(mockResticExecutor.snapshots).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    kind: "sftp",
+                    sftp: expect.objectContaining({privateKey: SFTP_REPO_CONFIG.sftpKey}),
+                }),
+                "stack-1",
+            );
         });
 
         it("getSnapshots lists snapshots of the per-stack SFTP repository", async () => {
