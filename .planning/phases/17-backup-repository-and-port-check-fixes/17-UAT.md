@@ -1,18 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 17-backup-repository-and-port-check-fixes
 source: [17-VERIFICATION.md]
 started: 2026-10-14T08:50:34Z
-updated: 2026-10-14T12:50:00Z
+updated: 2026-10-14T15:12:46.938Z
 ---
 
 ## Current Test
 
-number: 3
-name: Real port scenarios
-expected: |
-  Redeploying a running stack with a published port shows no warning; a second stack or external process on the same port warns and names the holder.
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -26,14 +22,15 @@ result: pass
 
 ### 3. Real port scenarios
 expected: Redeploying a running stack with a published port shows no warning; a second stack or external process on the same port warns and names the holder.
-result: [pending]
+result: pass
+note: Own-port and second-stack scenarios verified. The external-process scenario could not be exercised on Docker Desktop for Windows: the host-namespace probe sees the Docker VM, not Windows listeners, so Docker's own bind error surfaced at deploy time instead.
 
 ## Summary
 
 total: 3
-passed: 2
+passed: 3
 issues: 0
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 
