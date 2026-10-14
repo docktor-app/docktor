@@ -530,5 +530,82 @@ describe("OnboardingService", () => {
             expect(docker.inspectContainer).toHaveBeenCalledTimes(1);
             expect(docker.inspectContainer).toHaveBeenCalledWith("abc123def456", expect.any(AbortSignal));
         });
+
+        function buildServiceWithSelfStack(selfStack: {composeFilePaths: () => Promise<readonly string[]>}) {
+            return new OnboardingService(
+                mockAuthClient as any,
+                mockSettingsRepo as any,
+                mockCrypto as any,
+                mockStackRepo as any,
+                mockProxy as any,
+                mockFsLib as any,
+                mockUserRepo as any,
+                mockScanner as any,
+                selfStack,
+            );
+        }
+
+        it("returns the very object the scanner returned when Docktor's own stack is unknown", async () => {
+            const scanResult = {stacks: [discoveredStack("/opt/a/compose.yml")], skippedDirectories: 0};
+            mockScanner.scan.mockResolvedValue(scanResult);
+            const service = buildServiceWithSelfStack({composeFilePaths: vi.fn().mockResolvedValue([])});
+
+            await expect(service.scan(["/opt"])).resolves.toBe(scanResult);
+        });
+
+        it("lists every stack and warns when the self-stack lookup rejects (fail-open)", async () => {
+            const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+            const stacks = [discoveredStack("/opt/a/compose.yml"), discoveredStack("/opt/b/compose.yml")];
+            mockScanner.scan.mockResolvedValue({stacks, skippedDirectories: 0});
+            const service = buildServiceWithSelfStack({composeFilePaths: vi.fn().mockRejectedValue(new Error("boom"))});
+
+            const result = await service.scan(["/opt"]);
+
+            expect(result.stacks).toEqual(stacks);
+            expect(warn).toHaveBeenCalled();
+            warn.mockRestore();
+        });
+
+        it("lists every stack when Docktor's own path matches nothing that was scanned", async () => {
+            const stacks = [discoveredStack("/opt/a/compose.yml"), discoveredStack("/opt/b/compose.yml")];
+            mockScanner.scan.mockResolvedValue({stacks, skippedDirectories: 1});
+            const service = buildServiceWithSelfStack({
+                composeFilePaths: vi.fn().mockResolvedValue(["/opt/docktor/docker-compose.yml"]),
+            });
+
+            const result = await service.scan(["/opt"]);
+
+            expect(result.stacks).toEqual(stacks);
+        });
+
+        it("keeps a different compose file in the same directory as Docktor's own", async () => {
+            const sibling = discoveredStack("/host/opt/docktor/compose.override.yml");
+            mockScanner.scan.mockResolvedValue({
+                stacks: [discoveredStack("/host/opt/docktor/docker-compose.yml"), sibling],
+                skippedDirectories: 0,
+            });
+            const service = buildServiceWithSelfStack({
+                composeFilePaths: vi.fn().mockResolvedValue(["/host/opt/docktor/docker-compose.yml"]),
+            });
+
+            const result = await service.scan(["/host/opt"]);
+
+            expect(result.stacks).toEqual([sibling]);
+        });
+
+        it("passes skippedDirectories through unchanged when a stack is excluded", async () => {
+            mockScanner.scan.mockResolvedValue({
+                stacks: [discoveredStack("/host/opt/docktor/docker-compose.yml")],
+                skippedDirectories: 7,
+            });
+            const service = buildServiceWithSelfStack({
+                composeFilePaths: vi.fn().mockResolvedValue(["/host/opt/docktor/docker-compose.yml"]),
+            });
+
+            const result = await service.scan(["/host/opt"]);
+
+            expect(result.stacks).toEqual([]);
+            expect(result.skippedDirectories).toBe(7);
+        });
     });
 });
