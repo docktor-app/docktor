@@ -405,7 +405,10 @@ export class BackupService {
                     "No backup repository is configured. Configure one in Settings > Backup.",
                 )
             }
-            const env: Record<string, string> = this.buildEnv(repoConfig, stack.hostPath ?? undefined)
+            // Resolved before docker.stop so an incomplete remote configuration
+            // fails the restore before any container is touched (D-05).
+            const target = resolveResticRepository(repoConfig, {id: stack.id, hostPath: stack.hostPath})
+            const env: Record<string, string> = {...target.env}
             const stackPath = stack.hostPath ?? "."
 
             const onLine = (line: string): void => {
@@ -663,8 +666,10 @@ export class BackupService {
         const stack = await this.stackRepo.findByIdOrThrow(stackId)
         const repoConfig = await this.getBackupRepoConfig()
         if (!repoConfig) return []
-        const env = this.buildEnv(repoConfig, stack.hostPath ?? undefined)
-        return this.resticExecutor.snapshots(env, stackId)
+        // A BadRequestError for an incomplete remote configuration propagates
+        // (400); never list local snapshots instead (D-05).
+        const target = resolveResticRepository(repoConfig, {id: stack.id, hostPath: stack.hostPath})
+        return this.resticExecutor.snapshots({...target.env}, stackId)
     }
 
     /**
@@ -975,33 +980,6 @@ export class BackupService {
                 resolve({stdout: "", exitCode: 1})
             })
         })
-    }
-
-    /**
-     * Builds the restic env object from a BackupRepoConfig.
-     * Uses stack-specific backup directory within the stack's hostPath.
-     */
-    private buildEnv(repoConfig: BackupRepoConfig, stackPath?: string): Record<string, string> {
-        const base: Record<string, string> = {
-            RESTIC_PASSWORD: repoConfig.password,
-        }
-
-        // Always use stack-local backup directory
-        if (stackPath) {
-            base.RESTIC_REPOSITORY = path.resolve(stackPath, "backups")
-        } else {
-            // Fallback to configured repo (shouldn't happen in production)
-            if (repoConfig.repoType === "local") {
-                base.RESTIC_REPOSITORY = repoConfig.repoPath ?? ""
-            } else if (repoConfig.repoType === "sftp") {
-                base.RESTIC_REPOSITORY = `sftp:${repoConfig.sftpUser}@${repoConfig.sftpHost}:${repoConfig.repoPath ?? "/backups"}`
-            } else {
-                base.RESTIC_REPOSITORY = `s3:${repoConfig.s3Endpoint ?? "s3.amazonaws.com"}/${repoConfig.s3Bucket ?? ""}`
-                base.AWS_ACCESS_KEY_ID = repoConfig.s3AccessKey ?? ""
-                base.AWS_SECRET_ACCESS_KEY = repoConfig.s3SecretKey ?? ""
-            }
-        }
-        return base
     }
 
     /**
