@@ -293,40 +293,6 @@ export class ResticExecutor implements ResticExecutorPort {
     }
 
     /**
-     * Builds the env object needed to authenticate restic against the configured
-     * backend. Credentials are injected here — never on the CLI.
-     */
-    buildEnv(config: BackupRepoConfig): Record<string, string> {
-        const base: Record<string, string> = {
-            RESTIC_REPOSITORY: this.buildRepoUrl(config),
-            RESTIC_PASSWORD: config.password,
-        };
-
-        if (config.repoType === "s3") {
-            return {
-                ...base,
-                AWS_ACCESS_KEY_ID: config.s3AccessKey ?? "",
-                AWS_SECRET_ACCESS_KEY: config.s3SecretKey ?? "",
-            };
-        }
-
-        return base;
-    }
-
-    /** Builds the RESTIC_REPOSITORY URL string for the given backend type. */
-    buildRepoUrl(config: BackupRepoConfig): string {
-        if (config.repoType === "local") {
-            return config.repoPath ?? "";
-        }
-        if (config.repoType === "sftp") {
-            return `sftp:${config.sftpUser}@${config.sftpHost}:${config.repoPath ?? "/backups"}`;
-        }
-        // s3
-        const endpoint = config.s3Endpoint ?? "s3.amazonaws.com";
-        return `s3:${endpoint}/${config.s3Bucket}`;
-    }
-
-    /**
      * Checks whether the restic binary is available and returns its version.
      */
     async checkVersion(): Promise<{available: boolean; version?: string}> {

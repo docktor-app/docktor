@@ -35,10 +35,6 @@ export interface ResticExecutorPort {
 
     snapshots(repository: ResticRepositoryTarget, tag: string): Promise<ResticSnapshot[]>;
 
-    buildEnv(config: BackupRepoConfig): Record<string, string>;
-
-    buildRepoUrl(config: BackupRepoConfig): string;
-
     checkVersion(): Promise<{available: boolean; version?: string}>;
 }
 

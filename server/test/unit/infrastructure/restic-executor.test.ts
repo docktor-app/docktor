@@ -7,6 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type {ResticRepositoryTarget} from "../../../src/domain/restic-repository.js";
+import {AppError} from "../../../src/lib/errors.js";
 import {ResticExecutor, isRepositoryNotFoundError} from "../../../src/infrastructure/restic-executor.js";
 
 const mockSpawn = vi.mocked(spawn);
@@ -363,6 +364,97 @@ describe("ResticExecutor", () => {
             expect(capture.argv[1].startsWith("sftp.command=ssh ")).toBe(true);
             expect(capture.argv.slice(2)).toEqual(["snapshots", "--tag", "stack-1", "--json"]);
             expect(fs.existsSync(capture.keyDir)).toBe(false);
+        });
+    });
+
+    describe("SFTP identity lifecycle and host pin (D-03, D-04)", () => {
+        it("removes the key after a failed run and surfaces ssh's error", async () => {
+            const capture = captureSftpSpawn(() => createMockProcess([], 255, "Host key verification failed.\n"));
+
+            await expect(executor.run(["backup", "."], sftpTarget())).rejects.toThrow("Host key verification failed");
+
+            expect(fs.existsSync(capture.keyPath)).toBe(false);
+            expect(fs.existsSync(capture.keyDir)).toBe(false);
+        });
+
+        it("removes the key when the process cannot be spawned", async () => {
+            const capture = captureSftpSpawn(() => {
+                const proc = {stdout: {on: vi.fn()}, stderr: {on: vi.fn()}, on: vi.fn()} as any;
+                proc.on.mockImplementation((event: string, cb: (err: Error) => void) => {
+                    if (event === "error") cb(new Error("spawn ssh ENOENT"));
+                });
+                return proc;
+            });
+
+            await expect(executor.run(["backup", "."], sftpTarget())).rejects.toThrow("spawn ssh ENOENT");
+
+            expect(fs.existsSync(capture.keyDir)).toBe(false);
+        });
+
+        it("keeps known_hosts untouched across runs so the first pin persists", async () => {
+            const knownHosts = path.join(sshDir, "known_hosts");
+            const pinned = "nas.example.com ssh-ed25519 AAAATESTKEY\n";
+            fs.writeFileSync(knownHosts, pinned);
+            const commands: string[] = [];
+            for (let run = 0; run < 2; run++) {
+                const capture = captureSftpSpawn();
+                await executor.run(["backup", "."], sftpTarget());
+                commands.push(capture.argv[1]);
+            }
+
+            expect(fs.readFileSync(knownHosts, "utf8")).toBe(pinned);
+            for (const command of commands) {
+                expect(command).toContain(`-o "UserKnownHostsFile=${knownHosts}"`);
+            }
+            expect(fs.readdirSync(sshDir)).toEqual(["known_hosts"]);
+        });
+
+        it("creates a missing ssh directory", async () => {
+            const nested = path.join(sshDir, "nested", "ssh");
+            const nestedExecutor = new ResticExecutor({sshDir: nested});
+            captureSftpSpawn();
+
+            await nestedExecutor.run(["backup", "."], sftpTarget());
+
+            expect(fs.existsSync(nested)).toBe(true);
+        });
+
+        describe("default location", () => {
+            const originalStacksDir = process.env.DOCKTOR_STACKS_DIR;
+            afterEach(() => {
+                if (originalStacksDir === undefined) delete process.env.DOCKTOR_STACKS_DIR;
+                else process.env.DOCKTOR_STACKS_DIR = originalStacksDir;
+            });
+
+            it("keeps SSH state under <stacksDir>/.docktor/ssh", async () => {
+                process.env.DOCKTOR_STACKS_DIR = sshDir;
+                const defaultExecutor = new ResticExecutor();
+                const capture = captureSftpSpawn();
+
+                await defaultExecutor.run(["backup", "."], sftpTarget());
+
+                const expectedDir = path.join(path.resolve(sshDir), ".docktor", "ssh");
+                expect(capture.argv[1]).toContain(`UserKnownHostsFile=${path.join(expectedDir, "known_hosts")}`);
+                expect(path.dirname(capture.keyDir)).toBe(expectedDir);
+            });
+        });
+
+        it("normalises CRLF line endings in the key", async () => {
+            const capture = captureSftpSpawn();
+
+            await executor.run(["backup", "."], sftpTarget("line-1\r\nline-2"));
+
+            expect(capture.keyContent).toBe("line-1\nline-2\n");
+        });
+
+        it("refuses an ssh directory containing a double quote before touching the filesystem", async () => {
+            const badDir = path.join(sshDir, 'bad"dir');
+            const badExecutor = new ResticExecutor({sshDir: badDir});
+
+            await expect(badExecutor.run(["backup", "."], sftpTarget())).rejects.toBeInstanceOf(AppError);
+
+            expect(mockSpawn).not.toHaveBeenCalled();
+            expect(fs.existsSync(badDir)).toBe(false);
         });
     });
 

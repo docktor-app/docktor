@@ -76,11 +76,14 @@ RUN apt-get update && \
       curl \
       git \
       iproute2 \
-      lsof && \
+      lsof \
+      openssh-client && \
     rm -rf /var/lib/apt/lists/*
 # git (#19): GitExecutor shells out to it to clone/pull template repositories.
 # iproute2 (provides ss) and lsof (#21, D-13): SocketInspector's best-effort
 # tier-3 port-conflict lookup shells out to one of these two tools.
+# openssh-client (#68, D-03): restic's SFTP backend spawns ssh to reach the
+# configured backup repository.
 
 COPY --from=restic-install /usr/local/bin/restic /usr/local/bin/restic
 
