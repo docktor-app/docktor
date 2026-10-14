@@ -88,7 +88,19 @@ Notes: server-side work (backup service and repository environment construction,
   4. The pre-migration backup is its own explicit step the user can opt out of: opting out creates no backup, opting in creates one whether or not the compose file is renamed
   5. The user can choose to stop (undeploy) the old stack as part of the migration, so the new draft stack does not run alongside it; if they decline, the old stack is left running
 
-**Plans**: TBD
+**Plans:** 5 plans
+
+Plans:
+**Wave 1**
+- [ ] 18-01-PLAN.md — Docktor's own stack excluded from the brownfield scan via its own container's compose labels and mounts (fail-open), scanner ignores pre-migration-backup (wave 1)
+- [ ] 18-02-PLAN.md — Brownfield request bodies on shared Zod schemas (incl. compose-path rule), preview returns a real UnifiedDiff, positional diff retired (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 18-03-PLAN.md — Migrate honours required backup/stopOldStack: compose stop before copy via a new port, backup kept in pre-migration-backup/, non-destructive rollback with compose start (wave 2, after 18-01 and 18-02)
+- [ ] 18-04-PLAN.md — Wider dialog with pinned header/footer, review step renders UnifiedDiffView with counters, masked read-only .env CodeEditor via shared env-mask helper (wave 2, after 18-02)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 18-05-PLAN.md — Four-step dialog: backup and old-stack steps with summary, flags sent through typed API clients, step indicator/focus/stale-preview guard, toasts, Playwright flow incl. 360px (wave 3, after 18-03 and 18-04)
 **UI hint**: yes
 
 Notes: STK-03 sits here rather than in Phase 17 because it is the same "Import existing stack" surface (`brownfield-import.tsx`, `BrownfieldScanner`) that launches the migration wizard. Source issues [#13](https://github.com/docktor-app/docktor/issues/13) and [#72](https://github.com/docktor-app/docktor/issues/72). `UnifiedDiffView` and `CodeEditor` already exist in `components/common/`; reuse them, do not add a second diff renderer.
@@ -151,7 +163,7 @@ Phases execute in numeric order: 17 → 18 → 19 → 20 → 21
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 17. Backup Repository and Port-Check Fixes | 3/3 | Complete    | 2026-10-14 |
-| 18. Import and Migration Flow | 0/TBD | Not started | - |
+| 18. Import and Migration Flow | 0/5 | Planned | - |
 | 19. Sidebar, Templates and Version Block | 0/TBD | Not started | - |
 | 20. Visual Consistency, Dashboard Clarity and Touch Targets | 0/TBD | Not started | - |
 | 21. Release v0.1.1 | 0/TBD | Not started | - |
