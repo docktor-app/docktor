@@ -51,6 +51,7 @@ export interface BackupRepoConfig {
     repoPath?: string;
     sftpHost?: string;
     sftpUser?: string;
+    sftpPort?: number;
     sftpKey?: string;
     s3Endpoint?: string;
     s3Bucket?: string;
@@ -190,6 +191,7 @@ export class ResticExecutor implements ResticExecutorPort {
             `-o "UserKnownHostsFile=${knownHostsPath}"`,
             "-o ServerAliveInterval=60",
             "-o ServerAliveCountMax=240",
+            ...(sftp.port === undefined ? [] : [`-p ${sftp.port}`]),
             `-l ${sftp.user}`,
             sftp.host,
             "-s sftp",

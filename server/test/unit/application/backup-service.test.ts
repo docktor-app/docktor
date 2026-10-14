@@ -1844,6 +1844,29 @@ services:
             expect(result.ok).toBe(true);
         });
 
+        it("redacts configured secrets from the error it returns (IN-06)", async () => {
+            useRepoConfig(S3_REPO_CONFIG);
+            mockResticExecutor.run.mockRejectedValue(
+                new Error("Fatal: Stat: request failed for key AKIAEXAMPLE signed with s3-secret-example using restic-pass"),
+            );
+
+            const result = await service.testRepositoryConnection();
+
+            expect(result.ok).toBe(false);
+            for (const secret of ["AKIAEXAMPLE", "s3-secret-example", "restic-pass"]) {
+                expect(result.message).not.toContain(secret);
+            }
+            expect(result.message).toContain("***");
+        });
+
+        it("probes a repository no real stack can be called (IN-05)", async () => {
+            useRepoConfig(SFTP_REPO_CONFIG);
+
+            await service.testRepositoryConnection();
+
+            expect(resticEnvOf(mockResticExecutor.run.mock.calls[0][1]).RESTIC_REPOSITORY).toMatch(/\/docktor-connection-probe$/);
+        });
+
         it("reports a probe that had to be stopped as a failed connection", async () => {
             useRepoConfig(S3_REPO_CONFIG);
             mockResticExecutor.run.mockRejectedValue(new Error("restic did not finish within 30 seconds and was stopped"));

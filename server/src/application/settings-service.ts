@@ -1,4 +1,5 @@
 import {z} from "zod"
+import {parseStoredPort} from "../domain/restic-repository.js"
 import {BadRequestError} from "../lib/errors.js"
 import {decrypt, encrypt} from "../lib/crypto.js"
 import type {SettingsRepository} from "../repositories/settings-repository.js"
@@ -74,6 +75,7 @@ export interface MaskedBackupRepositorySettings {
     repoPath: string | null
     sftpHost: string | null
     sftpUser: string | null
+    sftpPort: number | null
     hasSftpKey: boolean
     s3Endpoint: string | null
     s3Bucket: string | null
@@ -323,6 +325,7 @@ export class SettingsService {
             "backup.repoPath",
             "backup.sftpHost",
             "backup.sftpUser",
+            "backup.sftpPort",
             "backup.sftpKey",
             "backup.s3Endpoint",
             "backup.s3Bucket",
@@ -336,6 +339,7 @@ export class SettingsService {
             repoPath: values["backup.repoPath"] ?? null,
             sftpHost: values["backup.sftpHost"] ?? null,
             sftpUser: values["backup.sftpUser"] ?? null,
+            sftpPort: parseStoredPort(values["backup.sftpPort"]),
             hasSftpKey: !!values["backup.sftpKey"],
             s3Endpoint: values["backup.s3Endpoint"] ?? null,
             s3Bucket: values["backup.s3Bucket"] ?? null,
@@ -376,6 +380,8 @@ export class SettingsService {
         for (const [key, value] of plainFields) {
             if (value !== undefined && value !== null) await this.repo.upsert(key, value)
         }
+        // Unlike the text fields, null here means "clear" (back to the ssh default).
+        if (data.sftpPort !== undefined) await this.repo.upsert("backup.sftpPort", data.sftpPort === null ? "" : String(data.sftpPort))
 
         if (data.sftpKey) await this.upsertEncryptedSetting("backup.sftpKey", data.sftpKey)
         if (data.s3SecretKey) await this.upsertEncryptedSetting("backup.s3SecretKey", data.s3SecretKey)

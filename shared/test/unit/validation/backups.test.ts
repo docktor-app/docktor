@@ -23,4 +23,21 @@ describe("backupSettingsSchema", () => {
         expect(result.success).toBe(false);
         expect(result.error?.issues.map((i) => i.path[0])).toEqual(["sftpHost", "sftpUser"]);
     });
+
+    it("accepts a valid SFTP port and rejects an out-of-range one", () => {
+        const base = {repoType: "sftp", sftpHost: "nas.example.com", sftpUser: "backup"};
+
+        expect(backupSettingsSchema.safeParse({...base, sftpPort: 2222}).success).toBe(true);
+        expect(backupSettingsSchema.safeParse({...base, sftpPort: null}).success).toBe(true);
+        expect(backupSettingsSchema.safeParse({...base, sftpPort: 0}).success).toBe(false);
+        expect(backupSettingsSchema.safeParse({...base, sftpPort: 70000}).success).toBe(false);
+        expect(backupSettingsSchema.safeParse({...base, sftpPort: 22.5}).success).toBe(false);
+    });
+
+    it("rejects an SFTP host or user the server would refuse, so the form can show it inline", () => {
+        const result = backupSettingsSchema.safeParse({repoType: "sftp", sftpHost: "nas.example.com:22", sftpUser: "a@b"});
+
+        expect(result.success).toBe(false);
+        expect(result.error?.issues.map((i) => i.path[0])).toEqual(["sftpHost", "sftpUser"]);
+    });
 });

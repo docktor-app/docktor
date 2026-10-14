@@ -10,7 +10,7 @@ import {decrypt} from "../lib/crypto.js"
 import {assertTransition} from "../domain/stack-status-machine.js"
 import {createComposeConfig} from "../domain/compose-config.js"
 import {parseRetentionPolicy} from "../domain/backup-retention-policy.js"
-import {resolveResticRepository, type ResticRepositoryTarget} from "../domain/restic-repository.js"
+import {parseStoredPort, resolveResticRepository, type ResticRepositoryTarget} from "../domain/restic-repository.js"
 import {BadRequestError, ConflictError} from "../lib/errors.js"
 import type {StackStatus, BackupTrigger} from "../generated/prisma/enums.js"
 // The single surviving infrastructure/ import: isRepositoryNotFoundError is
@@ -126,6 +126,7 @@ const BACKUP_SETTING_KEYS = {
     REPO_PATH: "backup.repoPath",
     SFTP_HOST: "backup.sftpHost",
     SFTP_USER: "backup.sftpUser",
+    SFTP_PORT: "backup.sftpPort",
     SFTP_KEY: "backup.sftpKey",
     S3_ENDPOINT: "backup.s3Endpoint",
     S3_BUCKET: "backup.s3Bucket",
@@ -160,13 +161,27 @@ interface StackRecord {
 
 // ─── BackupService ────────────────────────────────────────────────────────────
 
+/** Values that must never reach a client or a log line, even inside a foreign error message. */
+function secretsOf(config: BackupRepoConfig): string[] {
+    return [config.password, config.sftpKey, config.s3SecretKey, config.s3AccessKey]
+        .flatMap((secret) => (secret ? [secret, secret.trim()] : []))
+        .filter((secret) => secret !== "")
+}
+
+function redactSecrets(message: string, secrets: readonly string[]): string {
+    // Longest first, so a secret that contains another is replaced whole.
+    return [...secrets]
+        .sort((a, b) => b.length - a.length)
+        .reduce((redacted, secret) => redacted.split(secret).join("***"), message)
+}
+
 export interface RepositoryConnectionResult {
     readonly ok: boolean
     readonly message: string
 }
 
 /** Stack id used to address a throwaway repository when testing the connection. */
-const CONNECTION_PROBE_STACK_ID = "connection-test"
+const CONNECTION_PROBE_STACK_ID = "docktor-connection-probe"
 const MAX_CONNECTION_ERROR_LENGTH = 500
 /** restic retries failing S3 requests for ~15 minutes; the probe must answer long before that. */
 const CONNECTION_PROBE_TIMEOUT_MS = 30_000
@@ -603,6 +618,7 @@ export class BackupService {
             repoPath: values[BACKUP_SETTING_KEYS.REPO_PATH],
             sftpHost: values[BACKUP_SETTING_KEYS.SFTP_HOST],
             sftpUser: values[BACKUP_SETTING_KEYS.SFTP_USER],
+            sftpPort: parseStoredPort(values[BACKUP_SETTING_KEYS.SFTP_PORT]) ?? undefined,
             sftpKey,
             s3Endpoint: values[BACKUP_SETTING_KEYS.S3_ENDPOINT],
             s3Bucket: values[BACKUP_SETTING_KEYS.S3_BUCKET],
@@ -635,7 +651,7 @@ export class BackupService {
         } catch (err) {
             if (!isRepositoryNotFoundError(err)) {
                 const message = err instanceof Error ? err.message : String(err)
-                return {ok: false, message: message.slice(0, MAX_CONNECTION_ERROR_LENGTH)}
+                return {ok: false, message: redactSecrets(message, secretsOf(config)).slice(0, MAX_CONNECTION_ERROR_LENGTH)}
             }
         }
         return {ok: true, message: "Connection successful. The repository password is verified on the first backup."}

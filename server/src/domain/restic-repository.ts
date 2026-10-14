@@ -6,6 +6,8 @@ import path from "node:path";
 // (test/unit/architecture/layering.test.ts) forbids. Same edge as
 // backup-retention-policy.ts.
 import type {BackupRepoConfig} from "../application/ports/restic-executor-port.js";
+import {SFTP_HOST_PATTERN, SFTP_USER_PATTERN} from "@docktor/shared";
+
 import {BadRequestError} from "../lib/errors.js";
 
 /**
@@ -30,6 +32,8 @@ export interface SftpConnection {
     readonly host: string;
     readonly user: string;
     readonly privateKey: string;
+    /** ssh port; absent means the ssh default (22). */
+    readonly port?: number;
 }
 
 export type ResticRepositoryTarget =
@@ -47,16 +51,18 @@ export interface BackupStackLocation {
     readonly hostPath?: string | null;
 }
 
+/** A stored port is text; blank or malformed means "not set". */
+export function parseStoredPort(raw: string | undefined): number | null {
+    const port = Number.parseInt(raw ?? "", 10);
+    return Number.isInteger(port) && port >= 1 && port <= 65535 ? port : null;
+}
+
 export const DEFAULT_S3_ENDPOINT = "s3.amazonaws.com";
 export const DEFAULT_SFTP_REPO_PATH = "/backups";
 
 // slugify output is a subset: no dots and no slashes, so a stack id can never
 // address another stack's sub-repository through path traversal.
 const REMOTE_STACK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
-// These values become ssh arguments (plan 17-03): no whitespace, quotes or
-// leading dash may pass, or they could inject ssh options.
-const SFTP_HOST_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$/;
-const SFTP_USER_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9._@-]*$/;
 const LEADING_SLASHES = /^\/+/;
 const TRAILING_SLASHES = /\/+$/;
 
@@ -72,7 +78,10 @@ export function resolveResticRepository(config: BackupRepoConfig, stack: BackupS
 }
 
 function resolveLocal(config: BackupRepoConfig, stack: BackupStackLocation): ResticRepositoryTarget {
-    const repository = stack.hostPath ? path.resolve(stack.hostPath, "backups") : (config.repoPath ?? "");
+    const repository = stack.hostPath ? path.resolve(stack.hostPath, "backups") : (config.repoPath ?? "").trim();
+    if (repository === "") {
+        throw new BadRequestError("Local backup repository path is not configured");
+    }
     return {
         kind: "local",
         repository,
@@ -132,7 +141,7 @@ function resolveSftp(config: BackupRepoConfig, stack: BackupStackLocation): Rest
         repository,
         // The private key travels only in `sftp`, never in the process env.
         env: {RESTIC_REPOSITORY: repository, RESTIC_PASSWORD: config.password},
-        sftp: {host, user, privateKey: config.sftpKey ?? ""},
+        sftp: {host, user, privateKey: config.sftpKey ?? "", ...(config.sftpPort === undefined ? {} : {port: config.sftpPort})},
     };
 }
 

@@ -435,6 +435,25 @@ describe("ResticExecutor", () => {
             expect(fs.existsSync(recent)).toBe(true);
         });
 
+        it("passes a configured SFTP port to ssh", async () => {
+            const capture = captureSftpSpawn();
+            const target = sftpTarget();
+            if (target.kind !== "sftp") throw new Error("expected sftp target");
+
+            await executor.run(["backup", "."], {...target, sftp: {...target.sftp, port: 2222}});
+
+            expect(capture.command).toContain("-p 2222 ");
+            expect(capture.command.endsWith("-l backup nas.example.com -s sftp")).toBe(true);
+        });
+
+        it("does not pass a port to ssh when none is configured", async () => {
+            const capture = captureSftpSpawn();
+
+            await executor.run(["backup", "."], sftpTarget());
+
+            expect(capture.command).not.toContain(" -p ");
+        });
+
         it("gives ssh a connect timeout so an unreachable host cannot hang for the kernel TCP timeout", async () => {
             const capture = captureSftpSpawn();
 

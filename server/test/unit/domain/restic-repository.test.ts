@@ -67,7 +67,6 @@ describe("resolveResticRepository()", () => {
 
             expect(resolveResticRepository(config, {id: "s", hostPath: undefined}).repository).toBe("/backups");
             expect(resolveResticRepository(config, {id: "s", hostPath: null}).repository).toBe("/backups");
-            expect(resolveResticRepository({repoType: "local", password: "pw"}, {id: "s", hostPath: null}).repository).toBe("");
         });
 
         it("does not validate the stack id", () => {
@@ -140,6 +139,37 @@ describe("resolveResticRepository()", () => {
         it("rejects stack ids that could address another stack's repository", () => {
             expect(() => resolveResticRepository(S3_CONFIG, {id: "../other-stack", hostPath: "/x"})).toThrow(BadRequestError);
             expect(() => resolveResticRepository(S3_CONFIG, {id: "a/b", hostPath: "/x"})).toThrow(BadRequestError);
+        });
+    });
+
+    describe("local without any location (IN-01)", () => {
+        it("fails with a clear message instead of handing restic an empty repository", () => {
+            const config: BackupRepoConfig = {repoType: "local", password: "pw"};
+
+            expect(() => resolveResticRepository(config, {id: "s", hostPath: undefined})).toThrow(
+                /Local backup repository path is not configured/,
+            );
+        });
+    });
+
+    describe("sftp port (IN-02)", () => {
+        it("carries a configured port on the connection, not in the repository string", () => {
+            const target = resolveResticRepository({...SFTP_CONFIG, sftpPort: 2222}, STACK);
+
+            if (target.kind !== "sftp") throw new Error("expected sftp target");
+            expect(target.sftp.port).toBe(2222);
+            expect(target.repository).toBe("sftp:backup@nas.example.com:/srv/restic/stack-1");
+        });
+
+        it("leaves the port unset when none is configured", () => {
+            const target = resolveResticRepository(SFTP_CONFIG, STACK);
+
+            if (target.kind !== "sftp") throw new Error("expected sftp target");
+            expect(target.sftp.port).toBeUndefined();
+        });
+
+        it("rejects a user name containing @, which would break the repository location", () => {
+            expect(() => resolveResticRepository({...SFTP_CONFIG, sftpUser: "a@b"}, STACK)).toThrow(BadRequestError);
         });
     });
 

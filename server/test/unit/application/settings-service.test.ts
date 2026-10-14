@@ -471,6 +471,41 @@ describe("SettingsService", () => {
         });
     });
 
+    describe("SFTP port (IN-02)", () => {
+        const sftpInput = {repoType: "sftp" as const, sftpHost: "nas", sftpUser: "backup"};
+
+        beforeEach(() => {
+            mockRepo.getMany.mockResolvedValue({"backup.sftpKey": "enc", "backup.password": "enc"});
+            mockRepo.upsert.mockResolvedValue(undefined);
+        });
+
+        it("stores a port as text", async () => {
+            await service.saveBackupRepositorySettings({...sftpInput, sftpPort: 2222});
+
+            expect(mockRepo.upsert).toHaveBeenCalledWith("backup.sftpPort", "2222");
+        });
+
+        it("clears the stored port when null is sent", async () => {
+            await service.saveBackupRepositorySettings({...sftpInput, sftpPort: null});
+
+            expect(mockRepo.upsert).toHaveBeenCalledWith("backup.sftpPort", "");
+        });
+
+        it("leaves the stored port untouched when it is absent", async () => {
+            await service.saveBackupRepositorySettings(sftpInput);
+
+            expect(mockRepo.upsert.mock.calls.map((call) => call[0])).not.toContain("backup.sftpPort");
+        });
+
+        it("returns the stored port as a number, and null when blank", async () => {
+            mockRepo.getMany.mockResolvedValue({"backup.sftpPort": "2222"});
+            expect((await service.getMaskedBackupRepositorySettings()).sftpPort).toBe(2222);
+
+            mockRepo.getMany.mockResolvedValue({"backup.sftpPort": ""});
+            expect((await service.getMaskedBackupRepositorySettings()).sftpPort).toBeNull();
+        });
+    });
+
     describe("getMaskedBackupRepositorySettings (Task 3, 10-10)", () => {
         it("masks secrets to boolean presence indicators", async () => {
             mockRepo.getMany.mockResolvedValue({
@@ -489,6 +524,7 @@ describe("SettingsService", () => {
                 repoPath: null,
                 sftpHost: null,
                 sftpUser: null,
+                sftpPort: null,
                 hasSftpKey: false,
                 s3Endpoint: "s3.example.com",
                 s3Bucket: "my-bucket",
