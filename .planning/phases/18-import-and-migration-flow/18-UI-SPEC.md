@@ -37,7 +37,7 @@ Installed in `client/src/components/ui/`: alert-dialog, alert, avatar, badge, br
 | Component | Import path | Notes |
 |-----------|-------------|-------|
 | Dialog (+Content/Header/Title/Description/Footer) | `@/components/ui/dialog` | Migration dialog shell. Its base class is `sm:max-w-lg`; width MUST be overridden with an `sm:`-prefixed class (see Layout). |
-| Button | `@/components/ui/button` | Back / Next / Cancel / Confirm & Migrate; ghost `sm` for the secrets reveal toggle. |
+| Button | `@/components/ui/button` | Back / Preview Changes / Choose Backup / Choose Old Stack Action / Cancel Migration / Confirm & Migrate; ghost `sm` for the secrets reveal toggle. |
 | Switch | `@/components/ui/switch` | Backup and Stop-old-stack opt-in/opt-out toggles (steps 3 and 4). |
 | Checkbox, Label, Input | `@/components/ui/checkbox`, `label`, `input` | Step 1 (unchanged: stack name, named volumes, bind mounts). |
 | Alert, AlertDescription | `@/components/ui/alert` | Warnings (opt-out backup, leave-old-stack-running, absolute paths, inline env). |
@@ -97,7 +97,7 @@ Theme tokens from `src/index.css` (neutral base, oklch, light + `.dark`). No new
 | Accent (10%) | `--primary` (light `oklch(0.205 0 0)`, dark `oklch(0.922 0 0)`) | Reserved list below |
 | Destructive | `--destructive` | Not used for any action in this phase. Stopping the old stack is non-destructive (containers stopped, not removed, D-10) and uses neutral/warning styling. Used only for a failed-preview inline error if one is rendered in-dialog. |
 
-Accent reserved for: the primary footer button (Next on steps 1-3, **Confirm & Migrate** on step 4), the active/completed step-indicator dot and its connector, and the checked state of checkboxes and switches. Nothing else.
+Accent reserved for: the primary footer button (`Preview Changes`, `Choose Backup`, `Choose Old Stack Action` on steps 1-3, **Confirm & Migrate** on step 4), the active/completed step-indicator dot and its connector, and the checked state of checkboxes and switches. Nothing else.
 
 Semantic colors (inherited, each with a `dark:` counterpart per CLAUDE.md):
 - Added/removed diff lines: owned by `UnifiedDiffView` (`bg-green-100/dark:bg-green-900/40`, `bg-red-100/dark:bg-red-900/40`).
@@ -116,7 +116,7 @@ Semantic colors (inherited, each with a `dark:` counterpart per CLAUDE.md):
   - Below `sm` the primitive's `w-full max-w-[calc(100%-2rem)]` applies: the dialog is nearly full-width with a 16px margin each side. Padding drops to 16px so content has room at 360px.
 - Structure: `DialogHeader` (title + description) and `DialogFooter` are fixed; the step body between them is `min-h-0 flex-1 overflow-y-auto`, so the footer buttons never scroll out of view and nothing is clipped on a phone.
 - Footer: primitive default (`flex-col-reverse` below `sm`, row at `sm`+). Primary button is on the right on desktop and on top on phone. Buttons are full-width below `sm` (`w-full sm:w-auto`).
-- Closing (X, overlay, Esc, Cancel) resets step to 1 and discards state, as today. WR-09 is preserved: confirm hands `ConfirmMigrateParams` to the parent and closes immediately; the dialog never updates its own state after confirm; the parent owns toasts.
+- Closing (X, overlay, Esc, `Cancel Migration`) resets step to 1 and discards state, as today. WR-09 is preserved: confirm hands `ConfirmMigrateParams` to the parent and closes immediately; the dialog never updates its own state after confirm; the parent owns toasts.
 
 ### Step indicator (assumption: Claude's discretion area)
 
@@ -127,7 +127,9 @@ Above the step body, a compact indicator, not the setup `WizardStepper` (that on
 
 ### Step 1: Select Data (unchanged content)
 
-Stack name input, named-volume checkboxes (default checked), absolute bind-mount checkboxes (default checked), inline-env alert. Existing warnings keep their copy. Only the layout class changes (rows get `min-h-11` below `md`). "Next" is disabled while the name is empty.
+Stack name input, named-volume checkboxes (default checked), absolute bind-mount checkboxes (default checked), inline-env alert. Existing warnings keep their copy. Only the layout class changes (rows get `min-h-11` below `md`). `Preview Changes` is disabled while the name is empty.
+
+**Focal point:** the stack name input, then the volume/bind-mount checkbox groups below it.
 
 ### Step 2: Review Changes (MIG-02, D-04, D-05)
 
@@ -136,15 +138,18 @@ Stack name input, named-volume checkboxes (default checked), absolute bind-mount
 3. `.env` block, shown only when `extractedEnv` is non-empty: heading `New .env file` (14px/600), then `CodeEditor` with `readOnly`, no `extensions`, `height="200px"`, `ariaLabel="Extracted .env preview"`, `onChange` a no-op.
    - Secret masking: keys for which `isSecretKey` (`@/lib/env-file`) is true render their value as `••••••••` until the user toggles `Show secret values` / `Hide secret values` (ghost `sm` Button, `w-fit`, same labels as `diff-confirm-dialog.tsx`). The toggle is rendered only when at least one secret key exists. Reveal state resets to hidden when the dialog closes and when navigating back to step 1.
    - Reuse, do not copy: extract the env-line masking helper currently private to `diff-confirm-dialog.tsx` (`ENV_KEY_VALUE_PATTERN`, mask string) into a shared module in `client/src/lib/` and use it in both places (project rule: no duplicated logic; the helper is not a UI component so `lib/` is the right home). Planner owns the exact file name.
-4. Loading: while `previewMigration` is in flight the Next button on step 1 reads `Generating preview…` and is disabled; the step only advances once the response arrives (as today). If the preview request fails, stay on step 1 and show `toast.error` with the API message (as today); never show a half-empty step 2.
+4. Loading: while `previewMigration` is in flight the `Preview Changes` button on step 1 reads `Generating preview…` and is disabled; the step only advances once the response arrives (as today). If the preview request fails, stay on step 1 and show `toast.error` with the API message (as today); never show a half-empty step 2.
 5. Empty diff (zero hunks): render a muted line `No changes to your compose file.` in place of the diff, counters read `+0` / `−0`.
 6. No `.env` extracted: omit the block; no placeholder.
+
+**Focal point:** the compose diff block leads (it is first, largest, and carries the `+N` / `−N` counters). The `.env` block is secondary: it sits below the diff, is capped at `height="200px"`, and its heading has no counters.
 
 ### Step 3: Backup (MIG-03, D-07, D-08)
 
 - Row: `Switch` (id `backup`, **default on**) with `Label` `Back up the old stack first` and helper text (12px muted) below.
 - Helper (on): `Copies the old stack's directory (compose file, .env and bind-mount data) to pre-migration-backup/ inside the new stack's directory. It is kept after a successful migration. Named Docker volumes are not included.`
 - Off state shows an `Alert` (warning styling): `No backup will be created. Your original directory is never modified, but the new stack will not contain a copy of the original files.`
+- **Focal point:** the backup switch row (label, switch, helper text). The off-state Alert appears directly under it and is the only other element.
 - The backup choice is independent of whether the compose file is renamed: opted in always backs up, opted out never does (D-07).
 
 ### Step 4: Old stack (MIG-04, D-10, D-11)
@@ -152,16 +157,17 @@ Stack name input, named-volume checkboxes (default checked), absolute bind-mount
 - Row: `Switch` (id `stop-old-stack`, **default on**) with `Label` `Stop the old stack before migrating` and helper text.
 - Helper (on): `Runs docker compose stop on the old stack before its data is copied. Containers are stopped, not removed, so you can start the old stack again.`
 - Off state shows an `Alert` (warning styling): `The old stack keeps running. Ports used by both stacks can conflict when you deploy the new stack, and files may change while they are copied.`
-- Below the toggle, a read-only **Summary** block (`rounded-md border bg-muted/50 p-4`, `dl` with 14px text): Stack name, `Volumes to copy: {n}` (named + bind mounts with convert on), `Backup: Yes / No`, `Stop old stack: Yes / No`. Purpose: the user confirms all choices on the last screen without going back.
+- **Focal point:** the stop-old-stack switch row leads, since it is the only decision on this step. The Summary block below it is a secondary read-only recap (neutral `bg-muted/50`, no accent) and the footer `Confirm & Migrate` button is the single action that follows.
+- Below the toggle, a read-only **Summary** block (`rounded-md border bg-muted/50 p-4`, `dl` with 14px text): Stack name, `Volumes to copy: {n}` (named + bind mounts with convert on), `Backup: Yes / No`, `Stop old stack: Yes / No`. Zero-volumes case: when no volume or bind mount is selected (or none exist), the row reads exactly `Volumes to copy: 0` (the row is always rendered, never omitted), followed by the muted 12px note `Nothing to copy. Only the compose file and .env are migrated.` Purpose: the user confirms all choices on the last screen without going back.
 - Footer primary button on this step is `Confirm & Migrate`.
 
 ### Footer by step
 
 | Step | Left / secondary | Right / primary |
 |------|------------------|-----------------|
-| 1 Select data | `Cancel` (outline) | `Next` (disabled if name empty or loading; `Generating preview…` while loading) |
-| 2 Review changes | `Back` (outline) | `Next` |
-| 3 Backup | `Back` (outline) | `Next` |
+| 1 Select data | `Cancel Migration` (outline) | `Preview Changes` (disabled if name empty or loading; `Generating preview…` while loading) |
+| 2 Review changes | `Back` (outline) | `Choose Backup` |
+| 3 Backup | `Back` (outline) | `Choose Old Stack Action` |
 | 4 Old stack | `Back` (outline) | `Confirm & Migrate` |
 
 Back never loses state within one dialog session (selections, name, toggles persist across steps; the preview is regenerated only when step 1 → 2 is taken again, so changes to volume selections are reflected).
@@ -191,14 +197,14 @@ No visual change. Docktor's own stack is excluded server-side, and the exclusion
 
 | Element | Copy |
 |---------|------|
-| Primary CTA (steps 1-3) | `Next` |
+| Primary CTA (steps 1-3) | `Preview Changes` (step 1) / `Choose Backup` (step 2) / `Choose Old Stack Action` (step 3) |
 | Primary CTA (step 4, final) | `Confirm & Migrate` |
-| Secondary / navigation | `Cancel` (step 1), `Back` (steps 2-4) |
+| Secondary / navigation | `Cancel Migration` (step 1), `Back` (steps 2-4) |
 | Step titles | `Select Data to Migrate` / `Review Changes` / `Back Up Before Migrating` / `Old Stack` |
 | Step indicator labels | `Select data` / `Review changes` / `Backup` / `Old stack` |
 | Step descriptions | 1: `Choose which volumes and bind mounts to copy into Docktor's managed directory. Unchecked items will remain at their current location (not backed up).` 2: `Review the changes to your compose file and environment variables before migration.` 3: `Choose whether to keep a copy of the old stack's files before anything is migrated.` 4: `Choose what happens to the old stack while its data is copied.` |
 | Empty state heading (diff) | `No changes to your compose file.` |
-| Empty state body (diff) | `The compose file is migrated as-is. Continue to the next step.` |
+| Empty state body (diff) | `The compose file is migrated as-is. Continue to choose a backup.` |
 | Empty state (scan list) | Existing: `No stacks found` (unchanged) |
 | Error state (preview fails) | Toast: `{API message}` or fallback `Failed to generate preview. Check that the compose file is still readable and try again.` Dialog stays on step 1. |
 | Error state (migration fails) | Toast: `{API message}` or fallback `Migration failed. Your original stack directory was not modified.` |
@@ -209,7 +215,7 @@ No visual change. Docktor's own stack is excluded server-side, and the exclusion
 
 ## UI Considerations
 
-Applicable state considerations resolved: 7 covered, 2 backstop, 1 unresolved
+Applicable state considerations resolved: 8 covered, 2 backstop, 0 unresolved
 
 | Category | Element(s) | Status | Resolution / Reason |
 |----------|------------|--------|---------------------|
@@ -222,7 +228,7 @@ Applicable state considerations resolved: 7 covered, 2 backstop, 1 unresolved
 | overflow | long diff / many hunks | ✅ covered | Diff scrolls inside `ScrollArea max-h-[50vh]`; step body scrolls inside the dialog; footer stays pinned |
 | long-text | long compose lines, long paths, long stack names | 🧪 backstop | Visual test at 360px and 1280px: no horizontal clipping; paths in step 1 use `break-all`; renderer wraps with `break-all` |
 | secrets | `.env` values matching `isSecretKey` | 🧪 backstop | Visual/unit test: masked by default, revealed on toggle, reset on close and on Back to step 1 |
-| zero-one-many | named volumes / bind mounts (0, 1, many) | ⚠ unresolved | Step 1 sections already hide when empty; Summary `Volumes to copy` count with 0 volumes reads "0" (planner treats as acceptable assumption) |
+| zero-one-many | named volumes / bind mounts (0, 1, many) | ✅ covered | Step 1 sections hide when empty; Summary always renders `Volumes to copy: 0` plus the note `Nothing to copy. Only the compose file and .env are migrated.` |
 
 ---
 
