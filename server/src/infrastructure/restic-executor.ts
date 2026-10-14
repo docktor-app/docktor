@@ -1,5 +1,11 @@
 import {spawn} from "node:child_process";
+import {mkdir, mkdtemp, rm, writeFile} from "node:fs/promises";
+import path from "node:path";
+
 import type {ResticExecutorPort} from "../application/ports/restic-executor-port.js";
+import type {ResticRepositoryTarget, SftpConnection} from "../domain/restic-repository.js";
+import {AppError} from "../lib/errors.js";
+import {getStacksDir} from "../lib/stacks-dir.js";
 
 export interface ResticRunResult {
     exitCode: number;
@@ -49,23 +55,105 @@ export interface RetentionPolicy {
     keepMonthly: number;
 }
 
+export interface ResticExecutorOptions {
+    /** Restic binary; defaults to RESTIC_BINARY, then "restic". */
+    readonly binary?: string;
+    /** Directory for SSH state (known_hosts, per-run key directories); defaults to <stacksDir>/.docktor/ssh. */
+    readonly sshDir?: string;
+}
+
 export class ResticExecutor implements ResticExecutorPort {
     private readonly binary: string;
+    private readonly sshDir: string | undefined;
 
-    constructor(binary?: string) {
-        this.binary = binary ?? process.env.RESTIC_BINARY ?? "restic";
+    constructor(options: ResticExecutorOptions = {}) {
+        this.binary = options.binary ?? process.env.RESTIC_BINARY ?? "restic";
+        this.sshDir = options.sshDir;
     }
 
     /**
-     * Spawn the restic binary with provided args and env, streaming stdout lines
+     * Runs restic against the resolved repository target, streaming stdout lines
      * via the optional onLine callback.
      *
      * Credentials must NEVER appear on the CLI — they belong in the env object.
+     * For SFTP targets the private key is written to a 0600 file that exists only
+     * for the lifetime of this one restic process; it is never placed in env,
+     * argv or logs (argv carries only the key file path).
      *
      * @param cwd - Optional working directory for the restic process. Use this to run
      *              restic from the stack directory so backups use relative paths.
      */
     async run(
+        args: string[],
+        repository: ResticRepositoryTarget,
+        onLine?: (line: string) => void,
+        cwd?: string,
+    ): Promise<ResticRunResult> {
+        if (repository.kind === "sftp") {
+            return this.runWithSftpIdentity(repository, args, onLine, cwd);
+        }
+        return this.spawnRestic(args, {...repository.env}, onLine, cwd);
+    }
+
+    /**
+     * Writes the decrypted key to a per-run 0600 file, points restic's ssh at it
+     * and pins the server host key on first use (D-03, D-04). The key directory
+     * is removed in `finally`, so success, a non-zero exit and a spawn error all
+     * leave nothing behind. known_hosts is never removed: the first connection's
+     * pin must survive runs and container recreation.
+     */
+    private async runWithSftpIdentity(
+        repository: Extract<ResticRepositoryTarget, {kind: "sftp"}>,
+        args: string[],
+        onLine?: (line: string) => void,
+        cwd?: string,
+    ): Promise<ResticRunResult> {
+        const sshDir = this.sshDir ?? path.join(getStacksDir(), ".docktor", "ssh");
+        // The path is embedded in a double-quoted token of sftp.command.
+        if (sshDir.includes('"')) {
+            throw new AppError("Restic SSH directory path contains a double quote and cannot be passed to ssh");
+        }
+        await mkdir(sshDir, {recursive: true, mode: 0o700});
+        const keyDir = await mkdtemp(path.join(sshDir, "key-"));
+        try {
+            const keyPath = path.join(keyDir, "id");
+            await writeFile(keyPath, normalisePrivateKey(repository.sftp.privateKey), {mode: 0o600, flag: "wx"});
+            const command = this.buildSftpCommand(repository.sftp, keyPath, path.join(sshDir, "known_hosts"));
+            return await this.spawnRestic(
+                ["-o", `sftp.command=${command}`, ...args],
+                {...repository.env},
+                onLine,
+                cwd,
+            );
+        } finally {
+            await rm(keyDir, {recursive: true, force: true});
+        }
+    }
+
+    /**
+     * Builds the ssh command restic runs for the SFTP backend. Restic splits it on
+     * whitespace and adds neither host nor user, so both are part of it. Path tokens
+     * are wrapped whole in double quotes; host and user are pattern-validated in the
+     * domain (no whitespace, quotes or leading dash).
+     */
+    private buildSftpCommand(sftp: SftpConnection, keyPath: string, knownHostsPath: string): string {
+        return [
+            "ssh",
+            `-i "${keyPath}"`,
+            "-o IdentitiesOnly=yes",
+            "-o BatchMode=yes",
+            "-o StrictHostKeyChecking=accept-new",
+            `-o "UserKnownHostsFile=${knownHostsPath}"`,
+            "-o ServerAliveInterval=60",
+            "-o ServerAliveCountMax=240",
+            `-l ${sftp.user}`,
+            sftp.host,
+            "-s sftp",
+        ].join(" ");
+    }
+
+    /** Spawns the restic binary with the given args and env. */
+    private spawnRestic(
         args: string[],
         env: Record<string, string>,
         onLine?: (line: string) => void,
@@ -187,12 +275,12 @@ export class ResticExecutor implements ResticExecutorPort {
      * Lists snapshots for the given tag. Returns [] if the repository has not
      * been initialised yet (exit code 10). Throws on other non-zero exit codes.
      */
-    async snapshots(env: Record<string, string>, tag: string): Promise<ResticSnapshot[]> {
+    async snapshots(repository: ResticRepositoryTarget, tag: string): Promise<ResticSnapshot[]> {
         const lines: string[] = [];
         try {
             await this.run(
                 ["snapshots", "--tag", tag, "--json"],
-                env,
+                repository,
                 (l) => lines.push(l),
             );
         } catch (err) {
@@ -244,7 +332,7 @@ export class ResticExecutor implements ResticExecutorPort {
     async checkVersion(): Promise<{available: boolean; version?: string}> {
         try {
             const lines: string[] = [];
-            await this.run(["version"], {}, (l) => lines.push(l));
+            await this.spawnRestic(["version"], {}, (l) => lines.push(l));
             const versionLine = lines[0] ?? "";
             const match = versionLine.match(/restic\s+([\d.]+)/);
             return {available: true, version: match?.[1]};
@@ -252,6 +340,12 @@ export class ResticExecutor implements ResticExecutorPort {
             return {available: false};
         }
     }
+}
+
+/** OpenSSH rejects a key without a trailing newline; CRLF (pasted from Windows) is normalised to LF. */
+function normalisePrivateKey(privateKey: string): string {
+    const lf = privateKey.replace(/\r\n/g, "\n");
+    return lf.endsWith("\n") ? lf : `${lf}\n`;
 }
 
 export const resticExecutor = new ResticExecutor();

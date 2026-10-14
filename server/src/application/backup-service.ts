@@ -10,7 +10,7 @@ import {decrypt} from "../lib/crypto.js"
 import {assertTransition} from "../domain/stack-status-machine.js"
 import {createComposeConfig} from "../domain/compose-config.js"
 import {parseRetentionPolicy} from "../domain/backup-retention-policy.js"
-import {resolveResticRepository} from "../domain/restic-repository.js"
+import {resolveResticRepository, type ResticRepositoryTarget} from "../domain/restic-repository.js"
 import {BadRequestError, ConflictError} from "../lib/errors.js"
 import type {StackStatus, BackupTrigger} from "../generated/prisma/enums.js"
 // The single surviving infrastructure/ import: isRepositoryNotFoundError is
@@ -235,7 +235,6 @@ export class BackupService {
 
         try {
             const target = resolveResticRepository(repoConfig, {id: stack.id, hostPath: stack.hostPath})
-            const env: Record<string, string> = {...target.env}
             const stackPath = stack.hostPath ?? "."
             // Log the repository only, never env: it carries RESTIC_PASSWORD and AWS keys.
             console.log(`[BackupService] Using repository: ${target.repository}`)
@@ -253,13 +252,13 @@ export class BackupService {
             // Build backup args: prepend "backup" subcommand, run from stack directory
             const backupArgs = ["backup", ...this.resticExecutor.buildBackupArgs(stackPath, stack.id)]
             console.log(`[BackupService] Running restic with args:`, backupArgs)
-            await this.runWithAutoInit(backupArgs, env, onLine, stackPath)
+            await this.runWithAutoInit(backupArgs, target, onLine, stackPath)
 
             // Run forget / prune only for scheduled backups, not manual ones
             if (backupRecord.trigger === "SCHEDULED") {
                 const retentionPolicy = parseRetentionPolicy(stack.backupRetention)
                 const forgetArgs = this.resticExecutor.buildForgetArgs(stack.id, retentionPolicy)
-                await this.resticExecutor.run(forgetArgs, env, onLine, stackPath)
+                await this.resticExecutor.run(forgetArgs, target, onLine, stackPath)
             }
 
             // Run post-hook if configured
@@ -408,7 +407,6 @@ export class BackupService {
             // Resolved before docker.stop so an incomplete remote configuration
             // fails the restore before any container is touched (D-05).
             const target = resolveResticRepository(repoConfig, {id: stack.id, hostPath: stack.hostPath})
-            const env: Record<string, string> = {...target.env}
             const stackPath = stack.hostPath ?? "."
 
             const onLine = (line: string): void => {
@@ -427,7 +425,7 @@ export class BackupService {
 
             // Step 2: Restore snapshot to "." (current directory) by running from stack directory
             console.log(`[BackupService] Restoring snapshot ${snapshotId} to ${stackPath}`)
-            await this.resticExecutor.run(["restore", snapshotId, "--target", "."], env, onLine, stackPath)
+            await this.resticExecutor.run(["restore", snapshotId, "--target", "."], target, onLine, stackPath)
 
             // Step 3: Redeploy containers with restored configuration
             console.log(`[BackupService] Redeploying stack ${stack.id} after restore`)
@@ -669,7 +667,7 @@ export class BackupService {
         // A BadRequestError for an incomplete remote configuration propagates
         // (400); never list local snapshots instead (D-05).
         const target = resolveResticRepository(repoConfig, {id: stack.id, hostPath: stack.hostPath})
-        return this.resticExecutor.snapshots({...target.env}, stackId)
+        return this.resticExecutor.snapshots(target, stackId)
     }
 
     /**
@@ -927,20 +925,20 @@ export class BackupService {
      */
     private async runWithAutoInit(
         args: string[],
-        env: Record<string, string>,
+        repository: ResticRepositoryTarget,
         onLine: (line: string) => void,
         cwd?: string,
     ): Promise<void> {
         try {
-            await this.resticExecutor.run(args, env, onLine, cwd)
+            await this.resticExecutor.run(args, repository, onLine, cwd)
         } catch (err) {
             if (isRepositoryNotFoundError(err)) {
                 // Repository not initialized — init and retry
                 const initArgs = typeof this.resticExecutor.buildInitArgs === "function"
                     ? this.resticExecutor.buildInitArgs()
                     : ["init"]
-                await this.resticExecutor.run(initArgs, env, onLine, cwd)
-                await this.resticExecutor.run(args, env, onLine, cwd)
+                await this.resticExecutor.run(initArgs, repository, onLine, cwd)
+                await this.resticExecutor.run(args, repository, onLine, cwd)
             } else {
                 throw err
             }
