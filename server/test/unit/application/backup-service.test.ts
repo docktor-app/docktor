@@ -94,6 +94,35 @@ function createMockDockerExecutor() {
     };
 }
 
+/**
+ * Narrows the env argument of a resticExecutor.run / .snapshots call. All env
+ * assertions go through this helper so the call shape lives in one place.
+ */
+function resticEnvOf(arg: unknown): Record<string, string> {
+    if (typeof arg !== "object" || arg === null) {
+        throw new Error("expected the restic env argument to be an object");
+    }
+    return arg as Record<string, string>;
+}
+
+const REMOTE_STACK = {id: "stack-1", hostPath: "/opt/docktor/stacks/stack-1"};
+
+const S3_REPO_CONFIG = {
+    repoType: "s3" as const,
+    s3Endpoint: "https://s3.example.com",
+    s3Bucket: "docktor-backups",
+    s3AccessKey: "AKIAEXAMPLE",
+    s3SecretKey: "s3-secret-example",
+    password: "restic-pass",
+};
+
+const S3_ENV = {
+    RESTIC_REPOSITORY: "s3:https://s3.example.com/docktor-backups/stack-1",
+    RESTIC_PASSWORD: "restic-pass",
+    AWS_ACCESS_KEY_ID: "AKIAEXAMPLE",
+    AWS_SECRET_ACCESS_KEY: "s3-secret-example",
+};
+
 describe("BackupService", () => {
     let service: BackupService;
     let mockResticExecutor: ReturnType<typeof createMockResticExecutor>;
@@ -1260,6 +1289,32 @@ services:
             // path.resolve on Windows converts Unix paths to Windows format
             const expected = path.resolve(unixPath, "backups");
             expect(env.RESTIC_REPOSITORY).toBe(expected);
+        });
+    });
+
+    describe("remote repository routing (BKP-01, #68)", () => {
+        const backupRecord = {id: "backup-1", stackId: "stack-1", trigger: "MANUAL", logLines: []};
+        const stack = {
+            ...REMOTE_STACK,
+            status: "BACKING_UP",
+            previousStatus: "RUNNING",
+            backupRetention: null,
+            backupPreHook: null,
+            backupPostHook: null,
+        };
+
+        it("runBackup with an S3 repository runs restic against the per-stack bucket prefix", async () => {
+            await service.runBackup(backupRecord as any, stack as any, S3_REPO_CONFIG);
+
+            expect(mockResticExecutor.run).toHaveBeenCalled();
+            for (const call of mockResticExecutor.run.mock.calls) {
+                expect(resticEnvOf(call[1])).toEqual(S3_ENV);
+                expect(resticEnvOf(call[1]).RESTIC_REPOSITORY).not.toBe(path.resolve(REMOTE_STACK.hostPath, "backups"));
+            }
+            expect(mockBackupRepository.update).toHaveBeenCalledWith(
+                "backup-1",
+                expect.objectContaining({status: "COMPLETED"}),
+            );
         });
     });
 
