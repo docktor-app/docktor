@@ -1,7 +1,8 @@
 ---
 phase: "18"
 slug: import-and-migration-flow
-status: draft
+status: approved
+reviewed_at: "2026-10-14"
 shadcn_initialized: true
 preset: "style new-york, baseColor neutral, cssVariables true, iconLibrary lucide (components.json)"
 created: "2026-10-14"
@@ -123,7 +124,7 @@ Semantic colors (inherited, each with a `dark:` counterpart per CLAUDE.md):
 Above the step body, a compact indicator, not the setup `WizardStepper` (that one is hard-wired to the six setup steps):
 - Text line: `Step {n} of 4: {label}` in 14px/600 for the label, `text-muted-foreground` for the "Step n of 4" part.
 - Below it a 4-segment bar (`flex gap-1`, each segment `h-1 flex-1 rounded-full`; segments up to the current step `bg-primary`, rest `bg-muted`).
-- Semantics: `<ol aria-label="Migration progress">` with `aria-current="step"` on the current item; segments are decorative (`aria-hidden`); the text line is what screen readers get. Steps are not individually clickable; navigation is via Back/Next only.
+- Semantics: `<ol aria-label="Migration progress">` with `aria-current="step"` on the current item; segments are decorative (`aria-hidden`); the text line is what screen readers get. Steps are not individually clickable; navigation is via the Back and forward footer buttons only.
 
 ### Step 1: Select Data (unchanged content)
 
@@ -207,7 +208,7 @@ No visual change. Docktor's own stack is excluded server-side, and the exclusion
 | Empty state body (diff) | `The compose file is migrated as-is. Continue to choose a backup.` |
 | Empty state (scan list) | Existing: `No stacks found` (unchanged) |
 | Error state (preview fails) | Toast: `{API message}` or fallback `Failed to generate preview. Check that the compose file is still readable and try again.` Dialog stays on step 1. |
-| Error state (migration fails) | Toast: `{API message}` or fallback `Migration failed. Your original stack directory was not modified.` |
+| Error state (migration fails) | Toast: `{API message}` or fallback `Migration failed. Your original stack directory was not modified. Check the error and try again.` |
 | Secret toggle | `Show secret values` / `Hide secret values` |
 | Destructive confirmation | None in this phase. No action here deletes data: the backup is a copy, the old stack is stopped not removed, and rollback removes only the new stack directory Docktor just created. The final `Confirm & Migrate` button is the single explicit confirmation, preceded by the Summary block. |
 
@@ -222,7 +223,7 @@ Applicable state considerations resolved: 8 covered, 2 backstop, 0 unresolved
 | empty | compose diff (zero hunks) | ✅ covered | Renders the documented "No changes to your compose file." copy with `+0` / `−0` counters |
 | empty | extracted `.env` | ✅ covered | The `.env` block is omitted entirely when `extractedEnv` is empty |
 | empty | scan list (only Docktor's stack found) | ✅ covered | Existing "No stacks found" empty state is shown; no hidden-stack note |
-| loading | preview request (step 1 → 2) | ✅ covered | Next shows "Generating preview…", is disabled, and the dialog does not advance until the response arrives |
+| loading | preview request (step 1 → 2) | ✅ covered | `Preview Changes` shows "Generating preview…", is disabled, and the dialog does not advance until the response arrives |
 | error | preview request fails | ✅ covered | Toast with the API message; dialog stays on step 1 with selections intact |
 | partial | opt-out backup / leave old stack running | ✅ covered | Each off-state shows its own warning Alert with the documented copy |
 | overflow | long diff / many hunks | ✅ covered | Diff scrolls inside `ScrollArea max-h-[50vh]`; step body scrolls inside the dialog; footer stays pinned |
