@@ -487,15 +487,14 @@ describe("BackupService", () => {
             expect(mockResticExecutor.run.mock.calls.length).toBeGreaterThanOrEqual(3);
         });
 
-        it("auto-initializes repo on the real restic 0.16.x error shape (exit 1, 'unable to open config file')", async () => {
-            // This is what restic actually returns for a missing local repo — exit code 10
-            // is documented but not what this restic version produces. Reproduced directly:
-            // `restic backup` against a non-existent repo exits 1 with this exact message.
+        it("auto-initializes repo on restic's real repo-not-found shape (exit 10, 'repository does not exist')", async () => {
+            // Reproduced directly against restic 0.18: `restic backup` on a non-existent repo
+            // exits 10 with this message.
             const realRepoNotFoundError = Object.assign(
                 new Error(
-                    "restic exited with code 1: Fatal: unable to open config file: stat /stacks/memos/backups/config: no such file or directory\nIs there a repository at the following location?\n/stacks/memos/backups",
+                    "restic exited with code 10: Fatal: repository does not exist: unable to open config file: stat /stacks/memos/backups/config: no such file or directory\nIs there a repository at the following location?\n/stacks/memos/backups",
                 ),
-                {exitCode: 1},
+                {exitCode: 10},
             );
             mockResticExecutor.run
                 .mockRejectedValueOnce(realRepoNotFoundError)
@@ -1824,11 +1823,25 @@ services:
 
         it("treats a missing repository as a working connection", async () => {
             useRepoConfig(S3_REPO_CONFIG);
-            mockResticExecutor.run.mockRejectedValue(new Error("Fatal: unable to open config file: Stat: key does not exist"));
+            mockResticExecutor.run.mockRejectedValue(
+                Object.assign(new Error("Fatal: repository does not exist: unable to open config file: Stat: key does not exist"), {exitCode: 10}),
+            );
 
             const result = await service.testRepositoryConnection();
 
             expect(result.ok).toBe(true);
+        });
+
+        it("does not mistake an S3 Stat failure for a missing repository", async () => {
+            useRepoConfig(S3_REPO_CONFIG);
+            mockResticExecutor.run.mockRejectedValue(
+                Object.assign(new Error("Fatal: unable to open config file: Stat: The AWS Access Key Id you provided does not exist in our records."), {exitCode: 1}),
+            );
+
+            const result = await service.testRepositoryConnection();
+
+            expect(result.ok).toBe(false);
+            expect(result.message).toContain("Access Key Id");
         });
 
         it("reports the restic error when the connection fails", async () => {

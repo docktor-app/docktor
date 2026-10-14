@@ -14,17 +14,16 @@ export interface ResticRunResult {
 
 /**
  * True when a restic error means "the repository has not been initialized yet".
- * Restic's documented exit code for this (10) is not what restic 0.16.x actually
- * returns for a missing local-backend config — it returns the generic exit code 1
- * for this case (confirmed by direct reproduction), the same code a wrong password
- * also produces. Matching restic's stable "unable to open config file" stderr text
- * distinguishes the two; exitCode 10 is kept as a harmless fallback in case a future
- * restic version does use it.
+ * Since restic 0.17 a missing repository exits with code 10 and says
+ * "repository does not exist". The bare "unable to open config file" prefix is
+ * deliberately NOT matched: restic uses it for every backend Stat failure, so for
+ * S3 it would also swallow bad credentials, an unreachable endpoint or a missing
+ * bucket and report them as an uninitialised repository.
  */
 export function isRepositoryNotFoundError(err: unknown): boolean {
     if (!(err instanceof Error)) return false;
     if ((err as {exitCode?: number}).exitCode === 10) return true;
-    return err.message.includes("unable to open config file");
+    return err.message.includes("repository does not exist");
 }
 
 export interface ResticSnapshot {

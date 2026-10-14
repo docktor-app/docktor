@@ -560,17 +560,28 @@ describe("ResticExecutor", () => {
             expect(result).toEqual([]);
         });
 
-        it("returns empty array when restic 0.16.x exits 1 with the 'unable to open config file' message (real-world repo-not-found shape)", async () => {
+        it("returns empty array for restic's real repo-not-found shape (exit 10, 'repository does not exist')", async () => {
             const mockProc = createMockProcess(
                 [],
-                1,
-                "Fatal: unable to open config file: stat /stacks/memos/backups/config: no such file or directory\nIs there a repository at the following location?\n/stacks/memos/backups",
+                10,
+                "Fatal: repository does not exist: unable to open config file: stat /stacks/memos/backups/config: no such file or directory\nIs there a repository at the following location?\n/stacks/memos/backups",
             );
             mockSpawn.mockReturnValue(mockProc);
 
             const result = await executor.snapshots(localTarget({RESTIC_REPOSITORY: "/repo"}), "stack-1");
 
             expect(result).toEqual([]);
+        });
+
+        it("throws for an S3 Stat failure that shares the 'unable to open config file' prefix (bad credentials, not a missing repo)", async () => {
+            const mockProc = createMockProcess(
+                [],
+                1,
+                "Fatal: unable to open config file: Stat: The AWS Access Key Id you provided does not exist in our records.",
+            );
+            mockSpawn.mockReturnValue(mockProc);
+
+            await expect(executor.snapshots(localTarget({RESTIC_REPOSITORY: "/repo"}), "stack-1")).rejects.toThrow();
         });
 
         it("throws when exit code is non-zero and not 10", async () => {
@@ -587,14 +598,22 @@ describe("ResticExecutor", () => {
             expect(isRepositoryNotFoundError(err)).toBe(true);
         });
 
-        it("returns true for the real restic 0.16.x exit-1 'unable to open config file' message", () => {
+        it("returns true for the 'repository does not exist' message", () => {
             const err = Object.assign(
                 new Error(
-                    "restic exited with code 1: Fatal: unable to open config file: stat /stacks/memos/backups/config: no such file or directory",
+                    "restic exited with code 10: Fatal: repository does not exist: unable to open config file: stat /stacks/memos/backups/config: no such file or directory",
                 ),
-                {exitCode: 1},
+                {exitCode: 10},
             );
             expect(isRepositoryNotFoundError(err)).toBe(true);
+        });
+
+        it("returns false for a backend Stat failure that only shares the 'unable to open config file' prefix", () => {
+            const err = Object.assign(
+                new Error("restic exited with code 1: Fatal: unable to open config file: Stat: dial tcp 10.0.0.1:9000: connect: connection refused"),
+                {exitCode: 1},
+            );
+            expect(isRepositoryNotFoundError(err)).toBe(false);
         });
 
         it("returns false for a wrong-password error, even though it also exits 1", () => {
