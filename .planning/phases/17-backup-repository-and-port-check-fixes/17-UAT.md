@@ -8,10 +8,10 @@ updated: 2026-10-14T12:50:00Z
 
 ## Current Test
 
-number: 2
-name: End-to-end remote backup/restore/list (SFTP and S3/MinIO)
+number: 3
+name: Real port scenarios
 expected: |
-  Snapshots land under <repoPath>/<stackId> or <bucket>/<stackId>; no key-* directory remains afterwards.
+  Redeploying a running stack with a published port shows no warning; a second stack or external process on the same port warns and names the holder.
 awaiting: user response
 
 ## Tests
@@ -22,7 +22,7 @@ result: pass
 
 ### 2. End-to-end remote backup/restore/list (SFTP and S3/MinIO)
 expected: Snapshots land under <repoPath>/<stackId> or <bucket>/<stackId>; no key-* directory remains afterwards.
-result: [pending]
+result: pass
 
 ### 3. Real port scenarios
 expected: Redeploying a running stack with a published port shows no warning; a second stack or external process on the same port warns and names the holder.
@@ -31,9 +31,9 @@ result: [pending]
 ## Summary
 
 total: 3
-passed: 1
+passed: 2
 issues: 0
-pending: 2
+pending: 1
 skipped: 0
 blocked: 0
 
