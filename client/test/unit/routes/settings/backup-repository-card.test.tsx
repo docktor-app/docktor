@@ -1,5 +1,5 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
-import {render, screen} from "@testing-library/react";
+import {render, screen, waitFor} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {BackupRepositoryCard} from "@/routes/app/settings/components/backup-repository-card";
 import {getBackupSettings, getResticStatus, saveBackupSettings, type BackupSettings} from "@/lib/backups-api";
@@ -53,19 +53,23 @@ beforeEach(() => {
     mockGetResticStatus.mockReset().mockResolvedValue({available: true, version: "0.17.0"});
 });
 
+async function chooseType(user: ReturnType<typeof userEvent.setup>, name: string): Promise<void> {
+    await user.click(await screen.findByRole("combobox", {name: "Repository type"}));
+    await user.click(await screen.findByRole("option", {name}));
+}
+
 describe("BackupRepositoryCard", () => {
-    it("keeps the repository type dropdown but offers only Local", async () => {
+    it("offers Local, SFTP and S3 as repository types", async () => {
         const user = userEvent.setup();
         render(<BackupRepositoryCard/>);
 
         await user.click(await screen.findByRole("combobox", {name: "Repository type"}));
 
         const options = await screen.findAllByRole("option");
-        expect(options.map((option) => option.textContent)).toEqual(["Local"]);
+        expect(options.map((option) => option.textContent)).toEqual(["Local", "SFTP", "S3"]);
     });
 
-    it("does not show remote repository fields, even for a previously stored remote type", async () => {
-        mockGetBackupSettings.mockResolvedValue(settings({repoType: "sftp", sftpHost: "backup.example.com"}));
+    it("shows no remote fields for the local type", async () => {
         render(<BackupRepositoryCard/>);
 
         expect(await screen.findByLabelText(/restic password/i)).toBeInTheDocument();
@@ -73,16 +77,83 @@ describe("BackupRepositoryCard", () => {
         expect(screen.queryByLabelText("Bucket name")).not.toBeInTheDocument();
     });
 
-    it("saves without remote-repository fields", async () => {
+    it("saves local settings without remote fields", async () => {
         const user = userEvent.setup();
         render(<BackupRepositoryCard/>);
 
         await user.click(await screen.findByRole("button", {name: "Save repository settings"}));
 
-        expect(mockSaveBackupSettings).toHaveBeenCalledWith({
+        await waitFor(() => expect(mockSaveBackupSettings).toHaveBeenCalledWith({
             repoType: "local",
-            repoPath: null,
             password: null,
-        });
+        }));
+    });
+
+    it("populates the SFTP fields from stored settings and flags a saved key", async () => {
+        mockGetBackupSettings.mockResolvedValue(settings({
+            repoType: "sftp", sftpHost: "backup.example.com", sftpUser: "backup", repoPath: "/upload/restic", hasSftpKey: true,
+        }));
+        render(<BackupRepositoryCard/>);
+
+        expect(await screen.findByLabelText("Host")).toHaveValue("backup.example.com");
+        expect(screen.getByLabelText("Username")).toHaveValue("backup");
+        expect(screen.getByLabelText("Remote path")).toHaveValue("/upload/restic");
+        expect(screen.getByText("(key saved)")).toBeInTheDocument();
+    });
+
+    it("saves SFTP settings including the private key", async () => {
+        const user = userEvent.setup();
+        render(<BackupRepositoryCard/>);
+
+        await chooseType(user, "SFTP");
+        await user.type(await screen.findByLabelText("Host"), "sftp");
+        await user.type(screen.getByLabelText("Username"), "backup");
+        await user.type(screen.getByLabelText("Remote path"), "/upload/restic");
+        await user.click(screen.getByLabelText("Private key"));
+        await user.paste("KEY-PEM");
+        await user.click(screen.getByRole("button", {name: "Save repository settings"}));
+
+        await waitFor(() => expect(mockSaveBackupSettings).toHaveBeenCalledWith({
+            repoType: "sftp",
+            sftpHost: "sftp",
+            sftpUser: "backup",
+            sftpKey: "KEY-PEM",
+            repoPath: "/upload/restic",
+            password: null,
+        }));
+    });
+
+    it("blocks an SFTP save without host and username and shows field errors", async () => {
+        const user = userEvent.setup();
+        render(<BackupRepositoryCard/>);
+
+        await chooseType(user, "SFTP");
+        await user.click(await screen.findByRole("button", {name: "Save repository settings"}));
+
+        expect(await screen.findByText("SFTP host is required")).toBeInTheDocument();
+        expect(screen.getByText("SFTP username is required")).toBeInTheDocument();
+        expect(mockSaveBackupSettings).not.toHaveBeenCalled();
+    });
+
+    it("saves S3 settings; a blank secret key keeps the stored one", async () => {
+        mockGetBackupSettings.mockResolvedValue(settings({
+            repoType: "s3", s3Bucket: "docktor", s3AccessKey: "AKIA", s3Endpoint: "minio:9000", hasS3SecretKey: true,
+        }));
+        const user = userEvent.setup();
+        render(<BackupRepositoryCard/>);
+
+        expect(await screen.findByLabelText("Bucket name")).toHaveValue("docktor");
+        expect(screen.getByLabelText("Endpoint")).toHaveValue("minio:9000");
+        expect(screen.getByText("(secret saved)")).toBeInTheDocument();
+        await user.click(screen.getByRole("button", {name: "Save repository settings"}));
+
+        await waitFor(() => expect(mockSaveBackupSettings).toHaveBeenCalledWith({
+            repoType: "s3",
+            s3Endpoint: "minio:9000",
+            s3Bucket: "docktor",
+            s3AccessKey: "AKIA",
+            s3SecretKey: null,
+            password: null,
+        }));
     });
 });
