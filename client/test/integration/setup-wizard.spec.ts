@@ -461,6 +461,28 @@ test.describe("Setup Wizard", () => {
     });
 
     test.describe("Migration wizard flow", () => {
+        const emptyPreview = {diff: {hunks: [], added: 0, removed: 0}, extractedEnv: ""};
+        const diffPreview = {
+            diff: {
+                added: 1,
+                removed: 1,
+                hunks: [
+                    {
+                        oldStart: 1,
+                        oldLines: 3,
+                        newStart: 1,
+                        newLines: 3,
+                        lines: [
+                            {kind: "context", text: "services:", oldLine: 1, newLine: 1},
+                            {kind: "removed", text: "      - pgdata:/var/lib/postgresql/data", oldLine: 2, newLine: null},
+                            {kind: "added", text: "      - ./volumes/pgdata:/var/lib/postgresql/data", oldLine: null, newLine: 2},
+                        ],
+                    },
+                ],
+            },
+            extractedEnv: "",
+        };
+
         async function scanForYellowStack(page: Page) {
             await reachBrownfieldStep(page);
             await page.route("**/api/setup/scan", (route) =>
@@ -475,6 +497,35 @@ test.describe("Setup Wizard", () => {
             await expect(page.getByText("Discovered Stacks (1)")).toBeVisible();
         }
 
+        async function mockPreview(page: Page, body: unknown = emptyPreview) {
+            await page.route("**/api/setup/migrate/preview", (route) =>
+                route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(body)}),
+            );
+        }
+
+        /** Mocks POST /api/setup/migrate and records the JSON bodies it receives. */
+        async function mockMigrate(page: Page, response: unknown): Promise<unknown[]> {
+            const bodies: unknown[] = [];
+            await page.route("**/api/setup/migrate", (route) => {
+                bodies.push(route.request().postDataJSON());
+                return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(response)});
+            });
+            return bodies;
+        }
+
+        const migrateOk = {success: true, stackId: "db", originalPath: yellowStack.directory};
+
+        /** From the scan result: open the dialog and step through to step 4. */
+        async function openAndWalkToStep4(page: Page) {
+            await page.getByRole("button", {name: "Migrate"}).click();
+            await page.getByRole("button", {name: "Preview Changes"}).click();
+            await expect(page.getByRole("heading", {name: "Review Changes"})).toBeVisible();
+            await page.getByRole("button", {name: "Choose Backup"}).click();
+            await expect(page.getByRole("heading", {name: "Back Up Before Migrating"})).toBeVisible();
+            await page.getByRole("button", {name: "Choose Old Stack Action"}).click();
+            await expect(page.getByRole("heading", {name: "Old Stack"})).toBeVisible();
+        }
+
         test("should open migration wizard when clicking Migrate button", async ({page}) => {
             // BF-04: Migration wizard entry
             await scanForYellowStack(page);
@@ -482,7 +533,8 @@ test.describe("Setup Wizard", () => {
             await page.getByRole("button", {name: "Migrate"}).click();
 
             await expect(page.getByRole("dialog")).toBeVisible();
-            await expect(page.getByText("Select Data to Migrate")).toBeVisible();
+            await expect(page.getByRole("heading", {name: "Select Data to Migrate"})).toBeVisible();
+            await expect(page.getByText("Step 1 of 4")).toBeVisible();
         });
 
         test("should display volume selection checkboxes in step 1", async ({page}) => {
@@ -497,33 +549,7 @@ test.describe("Setup Wizard", () => {
             // BF-04: Diff preview
             await scanForYellowStack(page);
             await page.getByRole("button", {name: "Migrate"}).click();
-
-            await page.route("**/api/setup/migrate/preview", (route) =>
-                route.fulfill({
-                    status: 200,
-                    contentType: "application/json",
-                    body: JSON.stringify({
-                        diff: {
-                            added: 1,
-                            removed: 1,
-                            hunks: [
-                                {
-                                    oldStart: 1,
-                                    oldLines: 3,
-                                    newStart: 1,
-                                    newLines: 3,
-                                    lines: [
-                                        {kind: "context", text: "services:", oldLine: 1, newLine: 1},
-                                        {kind: "removed", text: "      - pgdata:/var/lib/postgresql/data", oldLine: 2, newLine: null},
-                                        {kind: "added", text: "      - ./volumes/pgdata:/var/lib/postgresql/data", oldLine: null, newLine: 2},
-                                    ],
-                                },
-                            ],
-                        },
-                        extractedEnv: "",
-                    }),
-                }),
-            );
+            await mockPreview(page, diffPreview);
 
             await page.getByRole("button", {name: "Preview Changes"}).click();
 
@@ -534,49 +560,60 @@ test.describe("Setup Wizard", () => {
         });
 
         test("should start background migration on confirm", async ({page}) => {
-            // BF-04: Background migration
+            // BF-04: Background migration; MIG-03/MIG-04 default-on choices are sent
             await scanForYellowStack(page);
-            await page.getByRole("button", {name: "Migrate"}).click();
-
-            await page.route("**/api/setup/migrate/preview", (route) =>
-                route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({diff: {hunks: [], added: 0, removed: 0}, extractedEnv: ""})}),
-            );
-            await page.getByRole("button", {name: "Preview Changes"}).click();
-            await expect(page.getByText("Review Changes")).toBeVisible();
-
-            await page.route("**/api/setup/migrate", (route) =>
-                route.fulfill({
-                    status: 200,
-                    contentType: "application/json",
-                    body: JSON.stringify({success: true, stackId: "db", originalPath: yellowStack.directory}),
-                }),
-            );
+            await mockPreview(page);
+            const bodies = await mockMigrate(page, migrateOk);
+            await openAndWalkToStep4(page);
 
             await page.getByRole("button", {name: "Confirm & Migrate"}).click();
 
             await expect(page.getByText(/migrating db/i)).toBeVisible();
+            await expect.poll(() => bodies.length).toBe(1);
+            expect(bodies[0]).toMatchObject({
+                composePath: yellowStack.path,
+                displayName: "db",
+                namedVolumeSelections: {pgdata: true},
+                backup: true,
+                stopOldStack: true,
+            });
+        });
+
+        test("should send backup and stopOldStack as false when both switches are turned off", async ({page}) => {
+            // MIG-03 / MIG-04: the user's opt-outs reach the server and the summary recaps them
+            await scanForYellowStack(page);
+            await mockPreview(page);
+            const bodies = await mockMigrate(page, migrateOk);
+            await page.getByRole("button", {name: "Migrate"}).click();
+            await page.getByRole("button", {name: "Preview Changes"}).click();
+            await page.getByRole("button", {name: "Choose Backup"}).click();
+            await page.getByRole("switch", {name: "Back up the old stack first"}).click();
+            await expect(page.getByText(/No backup will be created\./)).toBeVisible();
+            await page.getByRole("button", {name: "Choose Old Stack Action"}).click();
+            await page.getByRole("switch", {name: "Stop the old stack before migrating"}).click();
+            await expect(page.getByText(/The old stack keeps running\./)).toBeVisible();
+
+            const summary = page.getByRole("region", {name: "Migration summary"});
+            await expect(summary).toContainText("Backup: No");
+            await expect(summary).toContainText("Stop old stack: No");
+
+            await page.getByRole("button", {name: "Confirm & Migrate"}).click();
+
+            await expect.poll(() => bodies.length).toBe(1);
+            expect(bodies[0]).toMatchObject({backup: false, stopOldStack: false});
         });
 
         test("should show success toast with link to stack on completion", async ({page}) => {
             // BF-04: Migration feedback
             await scanForYellowStack(page);
-            await page.getByRole("button", {name: "Migrate"}).click();
+            await mockPreview(page);
+            await mockMigrate(page, migrateOk);
+            await openAndWalkToStep4(page);
 
-            await page.route("**/api/setup/migrate/preview", (route) =>
-                route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({diff: {hunks: [], added: 0, removed: 0}, extractedEnv: ""})}),
-            );
-            await page.getByRole("button", {name: "Preview Changes"}).click();
-
-            await page.route("**/api/setup/migrate", (route) =>
-                route.fulfill({
-                    status: 200,
-                    contentType: "application/json",
-                    body: JSON.stringify({success: true, stackId: "db", originalPath: yellowStack.directory}),
-                }),
-            );
             await page.getByRole("button", {name: "Confirm & Migrate"}).click();
 
             await expect(page.getByText(/migration complete/i)).toBeVisible();
+            await expect(page.getByText(/backup saved to pre-migration-backup/i)).toBeVisible();
             await expect(page.getByRole("button", {name: /view stack/i})).toBeVisible();
         });
 
@@ -586,27 +623,37 @@ test.describe("Setup Wizard", () => {
             // that message via a toast rather than a separate "Rollback complete"
             // element (adapted to the actual MigrationResult contract).
             await scanForYellowStack(page);
-            await page.getByRole("button", {name: "Migrate"}).click();
+            await mockPreview(page);
+            await mockMigrate(page, {
+                success: false,
+                error: "Migration failed: disk full. Your original stack directory was not modified. The old stack was restarted.",
+                originalPath: yellowStack.directory,
+            });
+            await openAndWalkToStep4(page);
 
-            await page.route("**/api/setup/migrate/preview", (route) =>
-                route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({diff: {hunks: [], added: 0, removed: 0}, extractedEnv: ""})}),
-            );
-            await page.getByRole("button", {name: "Preview Changes"}).click();
-
-            await page.route("**/api/setup/migrate", (route) =>
-                route.fulfill({
-                    status: 200,
-                    contentType: "application/json",
-                    body: JSON.stringify({
-                        success: false,
-                        error: "Migration failed: disk full. Rollback complete.",
-                        originalPath: yellowStack.directory,
-                    }),
-                }),
-            );
             await page.getByRole("button", {name: "Confirm & Migrate"}).click();
 
-            await expect(page.getByText(/rollback complete/i)).toBeVisible();
+            await expect(page.getByText(/old stack was restarted/i)).toBeVisible();
+        });
+
+        test("should fit a 360px viewport with the diff and the final action reachable", async ({page}) => {
+            // MIG-01 / D-06: the dialog is usable at phone width
+            await page.setViewportSize({width: 360, height: 740});
+            await scanForYellowStack(page);
+            await mockPreview(page, diffPreview);
+            await page.getByRole("button", {name: "Migrate"}).click();
+            await page.getByRole("button", {name: "Preview Changes"}).click();
+
+            await expect(page.getByRole("heading", {name: "Review Changes"})).toBeVisible();
+            await expect(page.getByRole("region", {name: "Migration compose diff"})).toBeVisible();
+            const box = await page.getByRole("dialog").boundingBox();
+            if (!box) throw new Error("dialog has no bounding box");
+            expect(box.x).toBeGreaterThanOrEqual(0);
+            expect(box.x + box.width).toBeLessThanOrEqual(360);
+
+            await page.getByRole("button", {name: "Choose Backup"}).click();
+            await page.getByRole("button", {name: "Choose Old Stack Action"}).click();
+            await expect(page.getByRole("button", {name: "Confirm & Migrate"})).toBeInViewport();
         });
     });
 });
