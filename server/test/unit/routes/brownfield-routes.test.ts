@@ -183,7 +183,14 @@ describe("brownfield routes", () => {
             const res = await app.inject({
                 method: "POST",
                 url,
-                payload: {composePath, displayName: "My App", volumeSelections, namedVolumeSelections: {pgdata: true}},
+                payload: {
+                    composePath,
+                    displayName: "My App",
+                    volumeSelections,
+                    namedVolumeSelections: {pgdata: true},
+                    backup: true,
+                    stopOldStack: false,
+                },
             });
 
             expect(res.statusCode).toBe(200);
@@ -194,7 +201,34 @@ describe("brownfield routes", () => {
             expect(input?.volumeSelections).toEqual(volumeSelections);
             expect(input?.namedVolumeSelections).toBeInstanceOf(Map);
             expect([...(input?.namedVolumeSelections ?? [])]).toEqual([["pgdata", true]]);
+            expect(input?.backup).toBe(true);
+            expect(input?.stopOldStack).toBe(false);
             expect(res.json()).toEqual(resolved);
+        });
+
+        it.each([
+            ["backup", {stopOldStack: true}],
+            ["stopOldStack", {backup: true}],
+        ])("rejects a body without %s with 400 and never migrates (D-12)", async (_missing, flags) => {
+            const spy = vi.spyOn(migrationService, "migrate").mockResolvedValue({
+                success: true,
+                originalPath: "/unused",
+            });
+
+            const res = await app.inject({
+                method: "POST",
+                url,
+                payload: {
+                    composePath,
+                    displayName: "My App",
+                    volumeSelections: [],
+                    namedVolumeSelections: {},
+                    ...flags,
+                },
+            });
+
+            expect(res.statusCode).toBe(400);
+            expect(spy).not.toHaveBeenCalled();
         });
 
         it("rejects a non-compose path with 400 and never migrates", async () => {
@@ -212,6 +246,8 @@ describe("brownfield routes", () => {
                     displayName: "My App",
                     volumeSelections: [],
                     namedVolumeSelections: {},
+                    backup: true,
+                    stopOldStack: true,
                 },
             });
 

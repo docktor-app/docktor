@@ -2,28 +2,17 @@ import {describe, it, expect, vi, beforeEach, afterEach} from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import {EventEmitter} from "node:events";
-import {spawn} from "node:child_process";
-import type {ChildProcess} from "node:child_process";
 import {MigrationService} from "../../../src/application/migration-service.js";
 import {slugify} from "../../../src/lib/slugify.js";
 import type {DockerExecutorPort} from "../../../src/application/ports/docker-executor-port.js";
 import type {VolumeMigratorPort} from "../../../src/application/ports/volume-migrator-port.js";
 import type {ComposeRewriterPort} from "../../../src/application/ports/compose-rewriter-port.js";
 import type {StackFilesystemPort} from "../../../src/application/ports/stack-filesystem-port.js";
+import type {ExternalStackControlPort} from "../../../src/application/ports/external-stack-control-port.js";
 import type {StackRepository} from "../../../src/repositories/stack-repository.js";
 
-// DockerExecutor (imported transitively via MigrationService's default
-// constructor parameter) calls promisify(execFile) at module scope, so a
-// spawn-only mock breaks module load; preserve the rest of the real module
-// and only replace spawn, which is the sole child_process API migrate()'s
-// injected-around helpers (stopContainersAtPath/startContainersAtPath) use.
-vi.mock("node:child_process", async (importOriginal) => {
-    const actual = await importOriginal<typeof import("node:child_process")>();
-    return {...actual, spawn: vi.fn()};
-});
-
 const COMPOSE = "services:\n  web:\n    image: nginx:latest\n";
+const BACKUP_DIR_NAME = "pre-migration-backup";
 
 function createMockDocker() {
     return {up: vi.fn()};
@@ -39,7 +28,11 @@ function createMockRewriter() {
 
 function createMockStackFs(newStackPath: string) {
     return {
-        createDirectory: vi.fn().mockResolvedValue(newStackPath),
+        getStackDirectory: vi.fn(() => newStackPath),
+        createDirectory: vi.fn(async () => {
+            await fs.mkdir(newStackPath, {recursive: true});
+            return newStackPath;
+        }),
         removeDirectory: vi.fn().mockResolvedValue(undefined),
     };
 }
@@ -52,116 +45,136 @@ function createMockStackRepo() {
     };
 }
 
-describe("MigrationService.migrate (BF-05 rollback)", () => {
+function createMockOldStack() {
+    return {stop: vi.fn().mockResolvedValue(undefined), start: vi.fn().mockResolvedValue(undefined)};
+}
+
+describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
     const displayName = "Rollback Fixture";
     const stackId = slugify(displayName);
 
+    let tmpRoot: string;
     let originalDir: string;
+    let composePath: string;
     let newStackPath: string;
     let mockDocker: ReturnType<typeof createMockDocker>;
     let mockMigrator: ReturnType<typeof createMockMigrator>;
     let mockRewriter: ReturnType<typeof createMockRewriter>;
     let mockStackFs: ReturnType<typeof createMockStackFs>;
     let mockStackRepo: ReturnType<typeof createMockStackRepo>;
+    let mockOldStack: ReturnType<typeof createMockOldStack>;
 
     beforeEach(async () => {
-        vi.mocked(spawn).mockReset();
-        // Test double: both stopContainersAtPath and startContainersAtPath only
-        // ever attach "close" and "error" handlers, so a plain EventEmitter
-        // that emits a successful "close" satisfies the whole surface they use.
-        vi.mocked(spawn).mockImplementation((() => {
-            const emitter = new EventEmitter();
-            setImmediate(() => emitter.emit("close", 0));
-            return emitter as unknown as ChildProcess;
-        }) as unknown as typeof spawn);
-
-        originalDir = await fs.mkdtemp(path.join(os.tmpdir(), "docktor-rollback-original-"));
-        await fs.writeFile(path.join(originalDir, "docker-compose.yml"), COMPOSE, "utf-8");
+        tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "docktor-migrate-"));
+        originalDir = path.join(tmpRoot, "original");
+        composePath = path.join(originalDir, "docker-compose.yml");
         await fs.mkdir(path.join(originalDir, "data"), {recursive: true});
+        await fs.writeFile(composePath, COMPOSE, "utf-8");
         await fs.writeFile(path.join(originalDir, "data", "keep.txt"), "keep me", "utf-8");
-
-        newStackPath = await fs.mkdtemp(path.join(os.tmpdir(), "docktor-rollback-newstack-"));
+        // Not created up front: the service must create it (and only then may it remove it).
+        newStackPath = path.join(tmpRoot, "stacks", stackId);
 
         mockDocker = createMockDocker();
         mockMigrator = createMockMigrator();
         mockRewriter = createMockRewriter();
         mockStackFs = createMockStackFs(newStackPath);
         mockStackRepo = createMockStackRepo();
+        mockOldStack = createMockOldStack();
     });
 
     afterEach(async () => {
-        await fs.rm(originalDir, {recursive: true, force: true});
-        await fs.rm(newStackPath, {recursive: true, force: true});
+        await fs.rm(tmpRoot, {recursive: true, force: true});
     });
 
-    async function assertNoBackupLeftover(): Promise<void> {
+    async function assertNoOsTempBackup(): Promise<void> {
         const leftovers = (await fs.readdir(os.tmpdir())).filter((name) =>
-            name.startsWith(`docktor-migration-backup-${stackId}-`),
+            name.startsWith("docktor-migration-backup-"),
         );
         expect(leftovers).toEqual([]);
     }
 
+    async function assertOriginalUntouched(): Promise<void> {
+        expect(await fs.readFile(composePath, "utf-8")).toBe(COMPOSE);
+        expect(await fs.readFile(path.join(originalDir, "data", "keep.txt"), "utf-8")).toBe("keep me");
+    }
+
     function buildService(): MigrationService {
-        // Test double: these five collaborators are exactly the constructor
+        // Test double: these six collaborators are exactly the constructor
         // parameters migrate() invokes; the casts expose only the members it
-        // calls (up/copyVolumeToBindMount/copyDirectory/rewrite/createDirectory/
-        // removeDirectory/exists/create/delete). The first four cast to their
-        // *Port types (not the concrete infrastructure classes) — proving the
-        // seam this plan changed now accepts a plain-object port double.
+        // calls, proving each seam accepts a plain-object port double.
         return new MigrationService(
             mockDocker as unknown as DockerExecutorPort,
             mockMigrator as unknown as VolumeMigratorPort,
             mockRewriter as unknown as ComposeRewriterPort,
             mockStackFs as unknown as StackFilesystemPort,
             mockStackRepo as unknown as StackRepository,
+            mockOldStack as unknown as ExternalStackControlPort,
         );
     }
 
-    it("BF-05: rolls back and restores the original stack when docker.up fails", async () => {
-        mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
-        const service = buildService();
-
-        const result = await service.migrate({
-            composePath: path.join(originalDir, "docker-compose.yml"),
+    function input(overrides: Partial<{backup: boolean; stopOldStack: boolean}> = {}) {
+        return {
+            composePath,
             displayName,
             volumeSelections: [],
-            namedVolumeSelections: new Map(),
-        });
+            namedVolumeSelections: new Map<string, boolean>(),
+            backup: true,
+            stopOldStack: true,
+            ...overrides,
+        };
+    }
+
+    it("stops the old stack before creating anything and keeps the backup copy (D-07, D-10)", async () => {
+        mockDocker.up.mockResolvedValue(undefined);
+
+        const result = await buildService().migrate(input());
+
+        expect(result).toEqual({success: true, stackId, originalPath: originalDir});
+        expect(mockOldStack.stop).toHaveBeenCalledTimes(1);
+        expect(mockOldStack.stop).toHaveBeenCalledWith(composePath);
+        expect(mockOldStack.stop.mock.invocationCallOrder[0]).toBeLessThan(
+            mockStackFs.createDirectory.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+        );
+        expect(mockMigrator.copyDirectory).toHaveBeenCalledWith(
+            originalDir,
+            path.join(newStackPath, BACKUP_DIR_NAME),
+        );
+        expect(mockStackFs.removeDirectory).not.toHaveBeenCalled();
+        expect(mockStackRepo.delete).not.toHaveBeenCalled();
+        expect(mockOldStack.start).not.toHaveBeenCalled();
+        await assertNoOsTempBackup();
+    });
+
+    it("keeps a real copy of the old directory in pre-migration-backup/ after success (D-08)", async () => {
+        mockDocker.up.mockResolvedValue(undefined);
+        mockMigrator.copyDirectory.mockImplementation((src: string, dest: string) =>
+            fs.cp(src, dest, {recursive: true}),
+        );
+
+        const result = await buildService().migrate(input());
+
+        expect(result.success).toBe(true);
+        const backupDir = path.join(newStackPath, BACKUP_DIR_NAME);
+        expect(await fs.readFile(path.join(backupDir, "docker-compose.yml"), "utf-8")).toBe(COMPOSE);
+        expect(await fs.readFile(path.join(backupDir, "data", "keep.txt"), "utf-8")).toBe("keep me");
+    });
+
+    it("rolls back without touching the original directory and restarts the stack it stopped (D-09, D-11)", async () => {
+        mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
+
+        const result = await buildService().migrate(input());
 
         expect(result.success).toBe(false);
         expect(result.error).toContain("docker compose up failed");
-        expect(result.error).toContain("Rollback complete");
+        expect(result.error).toContain("Your original stack directory was not modified.");
+        expect(result.error).toContain("The old stack was restarted.");
         expect(result.originalPath).toBe(originalDir);
-
         expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
         expect(mockStackRepo.delete).toHaveBeenCalledWith(stackId);
-
-        const restoredCompose = await fs.readFile(path.join(originalDir, "docker-compose.yml"), "utf-8");
-        const restoredData = await fs.readFile(path.join(originalDir, "data", "keep.txt"), "utf-8");
-        expect(restoredCompose).toBe(COMPOSE);
-        expect(restoredData).toBe("keep me");
-
-        expect(vi.mocked(spawn)).toHaveBeenCalledWith("docker", ["compose", "up", "-d"], {cwd: originalDir});
-
-        await assertNoBackupLeftover();
-    });
-
-    it("BF-05: cleans up the backup snapshot on a successful migration", async () => {
-        mockDocker.up.mockResolvedValue(undefined);
-        const service = buildService();
-
-        const result = await service.migrate({
-            composePath: path.join(originalDir, "docker-compose.yml"),
-            displayName,
-            volumeSelections: [],
-            namedVolumeSelections: new Map(),
-        });
-
-        expect(result).toEqual({success: true, stackId, originalPath: originalDir});
-        expect(mockStackFs.removeDirectory).not.toHaveBeenCalled();
-        expect(mockStackRepo.delete).not.toHaveBeenCalled();
-
-        await assertNoBackupLeftover();
+        expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+        expect(mockOldStack.start).toHaveBeenCalledWith(composePath);
+        await assertOriginalUntouched();
+        await assertNoOsTempBackup();
     });
 });
 
