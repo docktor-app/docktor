@@ -88,7 +88,7 @@ Notes: server-side work (backup service and repository environment construction,
   4. The pre-migration backup is its own explicit step the user can opt out of: opting out creates no backup, opting in creates one whether or not the compose file is renamed
   5. The user can choose to stop (undeploy) the old stack as part of the migration, so the new draft stack does not run alongside it; if they decline, the old stack is left running
 
-**Plans:** 5/7 plans executed (2 gap-closure plans pending)
+**Plans:** 5/17 plans executed (12 gap-closure plans pending)
 
 Plans:
 **Wave 1**
@@ -102,9 +102,31 @@ Plans:
 **Wave 3** *(blocked on Wave 2 completion)*
 - [x] 18-05-PLAN.md — Four-step dialog: backup and old-stack steps with summary, flags sent through typed API clients, step indicator/focus/stale-preview guard, toasts, Playwright flow incl. 360px (wave 3, after 18-03 and 18-04)
 
-**Gap closure** *(from 18-VERIFICATION.md: CR-01, CR-02, plus recommended WR-09 and WR-03)*
-- [ ] 18-06-PLAN.md — Failed bind-mount copy rolls back (ENOENT-only empty source), exclusive target mkdir, recordCreated-scoped record delete, per-slug in-flight 409, client disables Migrate/Adopt for in-flight rows (gap wave 1)
-- [ ] 18-07-PLAN.md — Adopt and migrate refuse Docktor's own compose file via one shared fail-open lookup; setup migrate and preview require an existing admin (gap wave 2, after 18-06)
+**Gap closure** *(from 18-VERIFICATION.md: CR-01, CR-02, plus recommended WR-09 and WR-03; from 18-UAT.md round 1: G-18-2, G-18-3-scan, G-18-4, G-18-7, G-18-job)*
+
+*Gap wave 1*
+- [ ] 18-06-PLAN.md — Failed bind-mount copy rolls back (ENOENT-only empty source), exclusive target mkdir, recordCreated-scoped record delete, migrate split into side-effect-free preflight (typed 400/409 refusals) and execute (CR-01, CR-02; in-flight 409 and client row state moved to 18-14/18-17)
+- [ ] 18-08-PLAN.md — Non-lossy compose rewrite: node-range splices keep untouched lines byte-identical (comments, indentation, quoting, CRLF), env values become ${KEY} in place (G-18-4)
+- [ ] 18-09-PLAN.md — Shared scan contract in @docktor/shared; scan returns per-root skip reasons and relative bind mounts (G-18-3-scan, G-18-4)
+
+*Gap wave 2*
+- [ ] 18-07-PLAN.md — Adopt and migrate refuse Docktor's own compose file via one shared fail-open lookup; setup migrate and preview require an existing admin (WR-09, WR-03; after 18-06, 18-09)
+- [ ] 18-10-PLAN.md — Migration dialog offers relative bind mounts (default ./volumes/<name>, per-mount keep with warning), counts and sends them, collision-free targets (G-18-4; after 18-09)
+
+*Gap wave 3*
+- [ ] 18-11-PLAN.md — Scan marks already-managed stacks; adopt and migrate of a managed compose path answer 409 (G-18-2; after 18-07, 18-09, 18-10)
+
+*Gap wave 4*
+- [ ] 18-12-PLAN.md — In-place migration: rename original aside (editable name), build in place, forced stop, full rollback; preview returns the target (G-18-7; after 18-11)
+- [ ] 18-13-PLAN.md — Scan list shows skipped roots with reasons and the /host hint; already-managed rows disabled with indicator and link (G-18-3-scan, G-18-2; after 18-09, 18-10, 18-11)
+
+*Gap wave 5*
+- [ ] 18-14-PLAN.md — Migration as a background operation: 202 with operation id, in-flight 409 by slug and compose path, operation status and list endpoints in both route families (G-18-job; after 18-07, 18-12)
+- [ ] 18-15-PLAN.md — Dialog adapts to in-place vs new directory: aside-name step, forced stop, backup default off with original-path note (G-18-7; after 18-10, 18-12, 18-13)
+
+*Gap wave 6*
+- [ ] 18-16-PLAN.md — Migration steps streamed as migration_progress over the existing SSE/StateBroadcaster channel (G-18-job; after 18-14)
+- [ ] 18-17-PLAN.md — Client follows operations: progress toast, disabled in-flight rows, resync after reload/reconnect (G-18-job; after 18-13, 18-14, 18-15)
 
 **UI hint**: yes
 
@@ -168,7 +190,7 @@ Phases execute in numeric order: 17 → 18 → 19 → 20 → 21
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 17. Backup Repository and Port-Check Fixes | 3/3 | Complete    | 2026-10-14 |
-| 18. Import and Migration Flow | 5/5 | In Progress | - |
+| 18. Import and Migration Flow | 5/17 | In Progress | - |
 | 19. Sidebar, Templates and Version Block | 0/TBD | Not started | - |
 | 20. Visual Consistency, Dashboard Clarity and Touch Targets | 0/TBD | Not started | - |
 | 21. Release v0.1.1 | 0/TBD | Not started | - |
