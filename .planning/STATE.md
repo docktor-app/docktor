@@ -5,16 +5,16 @@ milestone_name: Release Follow-ups
 current_phase: 18
 current_phase_name: Import and Migration Flow
 status: executing
-stopped_at: Completed 18-01-PLAN.md
-last_updated: "2026-10-15T07:10:46.492Z"
+stopped_at: Completed 18-02-PLAN.md
+last_updated: "2026-10-15T07:15:28.682Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 18 execution started
-state_head: a3702a5e0b9f2a2eacb365ef1b25f0154ba9ef97
+state_head: 4e2ff2c93d759096da6d16b1a8806b4b0337c320
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 8
-  completed_plans: 4
+  completed_plans: 5
   percent: 20
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-14)
 ## Current Position
 
 Phase: 18 (Import and Migration Flow) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 18 execution started
 
@@ -66,6 +66,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 17 P02 | 15min | 2 tasks | 4 files |
 | Phase 17 P03 | 20min | 2 tasks | 6 files |
 | Phase 18 P01 | 4 min | 3 tasks | 10 files |
+| Phase 18 P02 | 8 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -83,6 +84,7 @@ Roadmap decisions for v0.1.1:
 - [Phase 17]: Plan 17-02: tier-3 port-conflict self-exclusion keyed on the deploying stack's own running containers (compose project = stack id), kept in pure domain function (D-06)
 - [Phase 17]: SSH state for restic SFTP lives in <stacksDir>/.docktor/ssh so the host pin persists across container recreation; key file is 0600 per run and removed in finally
 - [Phase 18]: 18-01: Own-stack exclusion is exact compose-file equality via Docktor's own bind mounts, fail-open with no name/image heuristic, filtered in OnboardingService.scan (D-01/D-02/D-03)
+- [Phase 18]: 18-02: brownfield request bodies fully replaced by shared Zod schemas; composePath confined to compose file names (T-18-05); computeUnifiedDiff is the only server diff generator (D-04)
 
 ### Pending Todos
 
@@ -106,6 +108,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-15T07:10:46.373Z
-Stopped at: Completed 18-01-PLAN.md
+Last session: 2026-10-15T07:15:28.567Z
+Stopped at: Completed 18-02-PLAN.md
 Resume file: None
