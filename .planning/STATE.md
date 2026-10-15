@@ -3,18 +3,18 @@ gsd_state_version: "1.0"
 milestone: v0.1.1
 milestone_name: Release Follow-ups
 current_phase: 18
-current_phase_name: import-and-migration-flow
+current_phase_name: Import and Migration Flow
 status: executing
-stopped_at: Phase 18 UI-SPEC approved
-last_updated: "2026-10-14T18:49:27.210Z"
+stopped_at: Completed 18-01-PLAN.md
+last_updated: "2026-10-15T07:10:46.492Z"
 last_activity: 2026-10-14
-last_activity_desc: Phase 17 complete, transitioned to Phase 18
-state_head: a949751915ace68fcc74004b906a1a9b8496a2b9
+last_activity_desc: Phase 18 execution started
+state_head: a3702a5e0b9f2a2eacb365ef1b25f0154ba9ef97
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 8
-  completed_plans: 3
+  completed_plans: 4
   percent: 20
 ---
 
@@ -25,14 +25,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-14)
 
 **Core value:** Users can deploy, monitor, and manage Docker Compose stacks through a browser UI without needing SSH or Docker CLI access.
-**Current focus:** Phase 17 — Backup Repository and Port-Check Fixes
+**Current focus:** Phase 18 — Import and Migration Flow
 
 ## Current Position
 
-Phase: 18 (import-and-migration-flow) — READY TO EXECUTE
-Plan: Not started
+Phase: 18 (Import and Migration Flow) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-10-14 — Phase 17 complete, transitioned to Phase 18
+Last activity: 2026-10-14 — Phase 18 execution started
 
 Progress: [██░░░░░░░░] 20%
 
@@ -65,6 +65,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 17 P01 | 25min | 2 tasks | 4 files |
 | Phase 17 P02 | 15min | 2 tasks | 4 files |
 | Phase 17 P03 | 20min | 2 tasks | 6 files |
+| Phase 18 P01 | 4 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -81,6 +82,7 @@ Roadmap decisions for v0.1.1:
 - [Phase 17]: Remote restic repos are per-stack sub-repos (s3 <bucket>/<stackId>, sftp <repoPath>/<stackId>); remote config errors hard-fail via BadRequestError, never falling back to local
 - [Phase 17]: Plan 17-02: tier-3 port-conflict self-exclusion keyed on the deploying stack's own running containers (compose project = stack id), kept in pure domain function (D-06)
 - [Phase 17]: SSH state for restic SFTP lives in <stacksDir>/.docktor/ssh so the host pin persists across container recreation; key file is 0600 per run and removed in finally
+- [Phase 18]: 18-01: Own-stack exclusion is exact compose-file equality via Docktor's own bind mounts, fail-open with no name/image heuristic, filtered in OnboardingService.scan (D-01/D-02/D-03)
 
 ### Pending Todos
 
@@ -104,6 +106,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T18:08:51.450Z
-Stopped at: Phase 18 UI-SPEC approved
-Resume file: .planning/phases/18-import-and-migration-flow/18-UI-SPEC.md
+Last session: 2026-10-15T07:10:46.373Z
+Stopped at: Completed 18-01-PLAN.md
+Resume file: None

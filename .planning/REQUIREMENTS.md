@@ -24,7 +24,7 @@ Patch release on branch `release/v0.1.1`: bug fixes and interface polish only, n
 
 - [x] **STK-01**: Deploying or redeploying a stack shows no port warning when the only user of the port is the stack's own container ([#76](https://github.com/docktor-app/docktor/issues/76))
 - [x] **STK-02**: A port held by another stack or an external process still produces the warning ([#76](https://github.com/docktor-app/docktor/issues/76))
-- [ ] **STK-03**: "Import existing stack" does not offer Docktor's own stack ([#13](https://github.com/docktor-app/docktor/issues/13))
+- [x] **STK-03**: "Import existing stack" does not offer Docktor's own stack ([#13](https://github.com/docktor-app/docktor/issues/13))
 
 ### Dashboard (DASH)
 
@@ -79,7 +79,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BKP-03 | Phase 17 | Complete |
 | STK-01 | Phase 17 | Complete |
 | STK-02 | Phase 17 | Complete |
-| STK-03 | Phase 18 | Pending |
+| STK-03 | Phase 18 | Complete |
 | MIG-01 | Phase 18 | Pending |
 | MIG-02 | Phase 18 | Pending |
 | MIG-03 | Phase 18 | Pending |
