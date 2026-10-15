@@ -46,7 +46,7 @@ note: "User: pass, however Volumes to copy: 0. But this is probably related to t
 expected: With both switches on, click "Confirm & Migrate". A "Migrating {name}…" toast appears, then a success toast mentioning the kept backup and that the old stack was stopped. The new stack directory contains a pre-migration-backup folder, the old stack's containers are stopped, the new stack runs, and the original directory is unchanged.
 result: blocked
 blocked_by: prior-phase
-reason: "Depends on G-18-4 (volume rewrite/copy). User: Doesnt it make sense to test this, when also the volume is copied correctly?"
+reason: "Depends on G-18-4 (volume rewrite/copy). User: Doesnt it make sense to test this, when also the volume is copied correctly? Attempt also hit G-18-7 (overlap refusal)."
 
 ### 8. Migrate with backup off and old stack left running
 expected: Migrate another stack with both switches off. No pre-migration-backup folder is created in the new stack directory, and the old stack's containers keep running.
@@ -133,3 +133,45 @@ blocked: 2
     - "Rewrite compose via yaml parseDocument targeted edits so untouched lines stay byte-identical (comments, indentation, quoting, line endings); diff shows only real changes"
     - "Regression tests: relative-mount scan row, wizard selection/count, rewriter preserving formatting, preview diff containing only the real change"
   debug_session: ".planning/debug/migration-bind-mount-not-rewritten.md"
+
+- gap_id: G-18-7
+  truth: "A stack that already lives in Docktor's stacks folder under the same name can be migrated in place"
+  status: failed
+  reason: "User reported: Migration refused: the new stack directory /run/desktop/mnt/host/c/.../memos-migration and the old stack directory /run/desktop/mnt/host/c/.../memos-migration overlap. If the name doesnt change, it needs to be copied to something like memos-migration-backup (or let the user choose). If it changes, no backup needed, since the old directory still exists."
+  severity: major
+  test: 7
+  root_cause: "MigrationService.checkTargetDirectory refuses whenever the slug's stack directory equals or overlaps the original directory; there is no in-place path. Correct as a safety guard, but the in-place case (stack already in the stacks folder, unchanged name) is a legitimate migration."
+  artifacts:
+    - path: "server/src/application/migration-service.ts"
+      issue: "checkTargetDirectory overlap refusal; no move-aside flow"
+    - path: "client/src/routes/setup/components/migration-backup-step.tsx"
+      issue: "Backup step does not distinguish in-place vs renamed migrations"
+  missing:
+    - "In-place (target == original): rename original aside to <name>-pre-migration (user-editable, validated not to exist), build the new stack in the original directory, copy data from the renamed directory; renamed original is the backup (no extra copy); stopping the old stack is forced (same compose project name)"
+    - "Rollback for in-place: remove the new directory and rename the original back, restart if stopped"
+    - "Different name: original stays untouched, so the backup switch defaults to off with a note naming the original path; backup remains an explicit choice"
+    - "Nested overlap (one inside the other, not equal) stays refused"
+  user_decision: "Approved: rename-aside for same name (user can choose the name); backup default off with note when the name changes."
+
+- gap_id: G-18-job
+  truth: "A long migration (large volume copies, slow Docker Desktop mounts, image pulls) completes reliably and the user sees its progress"
+  status: failed
+  reason: "User asked: Is the migration running in a job? It could take a lot of time."
+  severity: major
+  test: 7
+  root_cause: "MigrationService.migrate runs synchronously inside POST /api/stacks/import/migrate and /api/setup/migrate (stop up to 120 s, unbounded copies, compose up with pulls). Proxy/browser timeouts make the client report failure while the server continues; no progress is shown; no per-slug in-flight guard."
+  artifacts:
+    - path: "server/src/routes/imports.ts"
+      issue: "migrate handler awaits the whole migration"
+    - path: "server/src/routes/setup.ts"
+      issue: "migrate handler awaits the whole migration"
+    - path: "server/src/application/migration-service.ts"
+      issue: "No operation model, progress reporting or in-flight guard"
+    - path: "client/src/components/domain/stack/brownfield-import.tsx"
+      issue: "Single 'Migrating…' toast waiting on one long request"
+  missing:
+    - "Start migration as a one-off background operation: endpoint returns an operation id immediately (202)"
+    - "Progress steps (stopping, copying <volume>, rewriting, deploying, done/failed with rollback message) streamed via the existing SSE/StateBroadcaster channel, consumed by a hook; dialog/toast shows them"
+    - "Per-slug in-flight guard (ConflictError on a second migration of the same name); client disables Migrate/Adopt for in-flight rows"
+    - "Operation status queryable after reconnect/reload"
+  user_decision: "Approved for v0.1.1."
