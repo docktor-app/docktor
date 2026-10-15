@@ -87,10 +87,50 @@ describe("Imports API (post-setup brownfield scan/adopt/migrate)", () => {
                     displayName: "test",
                     volumeSelections: [],
                     namedVolumeSelections: {},
+                    backup: true,
+                    stopOldStack: true,
                 },
             });
             expect(res.statusCode).toBe(401);
         });
+    });
+
+    it("POST /api/stacks/import/migrate/preview → returns a UnifiedDiff-shaped diff and the extracted env (MIG-02)", async () => {
+        const res = await app.inject({
+            method: "POST",
+            url: "/api/stacks/import/migrate/preview",
+            headers: {cookie},
+            payload: {
+                composePath: path.join(scanDir, "docker-compose.yml"),
+                volumeSelections: [],
+                namedVolumeSelections: {},
+            },
+        });
+
+        expect(res.statusCode).toBe(200);
+        const body = res.json();
+        // Shape only: the exact hunks depend on the rewriter and are covered by unit tests.
+        expect(Array.isArray(body.diff.hunks)).toBe(true);
+        expect(typeof body.diff.added).toBe("number");
+        expect(typeof body.diff.removed).toBe("number");
+        expect(typeof body.extractedEnv).toBe("string");
+    });
+
+    it("POST /api/stacks/import/migrate without a backup flag → 400 and nothing runs (D-12)", async () => {
+        const res = await app.inject({
+            method: "POST",
+            url: "/api/stacks/import/migrate",
+            headers: {cookie},
+            payload: {
+                composePath: path.join(scanDir, "docker-compose.yml"),
+                displayName: "test",
+                volumeSelections: [],
+                namedVolumeSelections: {},
+                stopOldStack: true,
+            },
+        });
+
+        expect(res.statusCode).toBe(400);
     });
 
     it("POST /api/stacks/import/scan → returns a ScanResult-shaped body for an authenticated request", async () => {
