@@ -8,6 +8,8 @@ import {Checkbox} from "@/components/ui/checkbox";
 import {Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle} from "@/components/ui/dialog";
 import {Alert, AlertDescription} from "@/components/ui/alert";
 import {MigrationReviewStep} from "./migration-review-step";
+import {MigrationBackupStep} from "./migration-backup-step";
+import {MigrationOldStackStep} from "./migration-old-stack-step";
 import {directoryDisplayName} from "@/lib/path-display";
 import type {DiscoveredStack, MigrationPreview, VolumeSelection} from "@/lib/brownfield-types";
 
@@ -18,7 +20,33 @@ export interface ConfirmMigrateParams {
   displayName: string;
   volumeSelections: VolumeSelection[];
   namedVolumeSelections: Record<string, boolean>;
+  backup: boolean;
+  stopOldStack: boolean;
 }
+
+type MigrationStep = 1 | 2 | 3 | 4;
+
+const STEP_TITLES: Record<MigrationStep, string> = {
+  1: "Select Data to Migrate",
+  2: "Review Changes",
+  3: "Back Up Before Migrating",
+  4: "Old Stack",
+};
+
+const STEP_DESCRIPTIONS: Record<MigrationStep, string> = {
+  1: "Choose which volumes and bind mounts to copy into Docktor's managed directory. Unchecked items will remain at their current location (not backed up).",
+  2: "Review the changes to your compose file and environment variables before migration.",
+  3: "Choose whether to keep a copy of the old stack's files before anything is migrated.",
+  4: "Choose what happens to the old stack while its data is copied.",
+};
+
+const PREVIOUS_STEP: Record<Exclude<MigrationStep, 1>, MigrationStep> = {2: 1, 3: 2, 4: 3};
+const NEXT_STEP: Record<Exclude<MigrationStep, 4>, MigrationStep> = {1: 2, 2: 3, 3: 4};
+
+const NEXT_LABELS: Partial<Record<MigrationStep, string>> = {
+  2: "Choose Backup",
+  3: "Choose Old Stack Action",
+};
 
 interface MigrationWizardProps {
   stack: DiscoveredStack;
@@ -40,7 +68,7 @@ interface MigrationWizardProps {
 }
 
 export function MigrationWizard({stack, open, onClose, onConfirmMigrate, previewMigration}: Readonly<MigrationWizardProps>) {
-  const [step, setStep] = useState<1 | 2>(1);
+  const [step, setStep] = useState<MigrationStep>(1);
   const [displayName, setDisplayName] = useState(directoryDisplayName(stack.directory) || "");
   const [loading, setLoading] = useState(false);
 
@@ -63,6 +91,12 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
   });
 
   const [preview, setPreview] = useState<MigrationPreview | null>(null);
+  const [backup, setBackup] = useState(true);
+  const [stopOldStack, setStopOldStack] = useState(true);
+
+  const volumesToCopy =
+    Object.values(namedVolumeSelections).filter(Boolean).length +
+    bindMountSelections.filter((sel) => sel.convert).length;
 
   const handleVolumeToggle = (volName: string, checked: boolean) => {
     setNamedVolumeSelections((prev) => ({...prev, [volName]: checked}));
@@ -103,6 +137,8 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
       displayName,
       volumeSelections: bindMountSelections,
       namedVolumeSelections,
+      backup,
+      stopOldStack,
     });
     handleClose();
   };
@@ -116,15 +152,8 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="flex flex-col gap-4 p-4 sm:p-6 max-h-[90dvh] sm:max-w-5xl">
         <DialogHeader>
-          <DialogTitle>
-            {step === 1 ? "Select Data to Migrate" : "Review Changes"}
-          </DialogTitle>
-          <DialogDescription>
-            {step === 1
-              ? "Choose which volumes and bind mounts to copy into Docktor's managed directory. Unchecked items will remain at their current location (not backed up)."
-              : "Review the changes to your compose file and environment variables before migration."
-            }
-          </DialogDescription>
+          <DialogTitle>{STEP_TITLES[step]}</DialogTitle>
+          <DialogDescription>{STEP_DESCRIPTIONS[step]}</DialogDescription>
         </DialogHeader>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -208,6 +237,16 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
               <MigrationReviewStep diff={preview.diff} extractedEnv={preview.extractedEnv} />
             </div>
           )}
+
+          {step === 3 && <MigrationBackupStep checked={backup} onCheckedChange={setBackup} />}
+
+          {step === 4 && (
+            <MigrationOldStackStep
+              checked={stopOldStack}
+              onCheckedChange={setStopOldStack}
+              summary={{displayName, volumesToCopy, backup}}
+            />
+          )}
         </div>
 
         <DialogFooter>
@@ -220,10 +259,14 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
             </>
           ) : (
             <>
-              <Button variant="outline" className="w-full sm:w-auto" onClick={() => setStep(1)}>Back</Button>
-              <Button className="w-full sm:w-auto" onClick={handleMigrate} disabled={loading}>
-                {loading ? "Migrating..." : "Confirm & Migrate"}
-              </Button>
+              <Button variant="outline" className="w-full sm:w-auto" onClick={() => setStep(PREVIOUS_STEP[step])}>Back</Button>
+              {step === 4 ? (
+                <Button className="w-full sm:w-auto" onClick={handleMigrate}>Confirm & Migrate</Button>
+              ) : (
+                <Button className="w-full sm:w-auto" onClick={() => setStep(NEXT_STEP[step])}>
+                  {NEXT_LABELS[step]}
+                </Button>
+              )}
             </>
           )}
         </DialogFooter>

@@ -1,4 +1,5 @@
 import {apiFetch} from "./api";
+import type {MigrationExecuteInput} from "@docktor/shared";
 import type {
   MigrationPreview,
   MigrationResult,
@@ -35,14 +36,9 @@ export function previewMigration(
   });
 }
 
-export function executeMigration(
-  composePath: string,
-  displayName: string,
-  volumeSelections: VolumeSelection[],
-  namedVolumeSelections: Record<string, boolean>,
-) {
+export function executeMigration(input: MigrationExecuteInput) {
   return apiFetch<MigrationResult>("/api/stacks/import/migrate", {
     method: "POST",
-    body: JSON.stringify({composePath, displayName, volumeSelections, namedVolumeSelections}),
+    body: JSON.stringify(input),
   });
 }

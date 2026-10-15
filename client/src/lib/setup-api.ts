@@ -1,5 +1,6 @@
 import {apiFetch} from "./api";
 import type {
+  MigrationExecuteInput,
   WizardStep1Input,
   WizardStep2Input,
   WizardStep3Input,
@@ -95,14 +96,9 @@ export function previewMigration(
   });
 }
 
-export function executeMigration(
-  composePath: string,
-  displayName: string,
-  volumeSelections: VolumeSelection[],
-  namedVolumeSelections: Record<string, boolean>,
-) {
+export function executeMigration(input: MigrationExecuteInput) {
   return apiFetch<MigrationResult>("/api/setup/migrate", {
     method: "POST",
-    body: JSON.stringify({composePath, displayName, volumeSelections, namedVolumeSelections}),
+    body: JSON.stringify(input),
   });
 }

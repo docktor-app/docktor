@@ -1,6 +1,7 @@
 import {useState} from "react";
 import {useNavigate} from "react-router";
 import {toast} from "sonner";
+import type {MigrationExecuteInput} from "@docktor/shared";
 import {Search, FolderOpen} from "lucide-react";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
@@ -34,12 +35,7 @@ export interface BrownfieldImportApi {
     volumeSelections: VolumeSelection[],
     namedVolumeSelections: Record<string, boolean>,
   ) => Promise<MigrationPreview>;
-  executeMigration: (
-    composePath: string,
-    displayName: string,
-    volumeSelections: VolumeSelection[],
-    namedVolumeSelections: Record<string, boolean>,
-  ) => Promise<MigrationResult>;
+  executeMigration: (input: MigrationExecuteInput) => Promise<MigrationResult>;
 }
 
 interface BrownfieldImportProps {
@@ -112,11 +108,18 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
   // WR-09: migration execution now runs here (in the parent, which stays
   // mounted for the whole background migration) instead of inside
   // MigrationWizard, which closes/unmounts as soon as the user confirms.
-  const handleConfirmMigrate = ({stack, displayName, volumeSelections, namedVolumeSelections}: ConfirmMigrateParams) => {
+  const handleConfirmMigrate = ({stack, displayName, volumeSelections, namedVolumeSelections, backup, stopOldStack}: ConfirmMigrateParams) => {
     toast.info(`Migrating ${displayName}...`);
 
     api
-      .executeMigration(stack.path, displayName, volumeSelections, namedVolumeSelections)
+      .executeMigration({
+        composePath: stack.path,
+        displayName,
+        volumeSelections,
+        namedVolumeSelections,
+        backup,
+        stopOldStack,
+      })
       .then((result) => {
         if (result.success && result.stackId) {
           toast.success(`Migration complete! ${displayName} is now managed by Docktor`, {
