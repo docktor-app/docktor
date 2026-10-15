@@ -88,7 +88,7 @@ Notes: server-side work (backup service and repository environment construction,
   4. The pre-migration backup is its own explicit step the user can opt out of: opting out creates no backup, opting in creates one whether or not the compose file is renamed
   5. The user can choose to stop (undeploy) the old stack as part of the migration, so the new draft stack does not run alongside it; if they decline, the old stack is left running
 
-**Plans:** 5/5 plans executed
+**Plans:** 5/7 plans executed (2 gap-closure plans pending)
 
 Plans:
 **Wave 1**
@@ -101,6 +101,10 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [x] 18-05-PLAN.md — Four-step dialog: backup and old-stack steps with summary, flags sent through typed API clients, step indicator/focus/stale-preview guard, toasts, Playwright flow incl. 360px (wave 3, after 18-03 and 18-04)
+
+**Gap closure** *(from 18-VERIFICATION.md: CR-01, CR-02, plus recommended WR-09 and WR-03)*
+- [ ] 18-06-PLAN.md — Failed bind-mount copy rolls back (ENOENT-only empty source), exclusive target mkdir, recordCreated-scoped record delete, per-slug in-flight 409, client disables Migrate/Adopt for in-flight rows (gap wave 1)
+- [ ] 18-07-PLAN.md — Adopt and migrate refuse Docktor's own compose file via one shared fail-open lookup; setup migrate and preview require an existing admin (gap wave 2, after 18-06)
 
 **UI hint**: yes
 
