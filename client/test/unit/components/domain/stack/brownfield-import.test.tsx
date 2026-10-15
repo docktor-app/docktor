@@ -1,7 +1,8 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
-import {render, screen} from "@testing-library/react";
+import {render, screen, waitFor} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {MemoryRouter} from "react-router";
+import {toast} from "sonner";
 import {BrownfieldImport, type BrownfieldImportApi} from "@/components/domain/stack/brownfield-import";
 import type {DiscoveredStack, MigrationResult} from "@/lib/brownfield-types";
 import type {CodeEditorProps} from "@/components/common/code-editor";
@@ -16,6 +17,8 @@ vi.mock("@/components/common/code-editor", () => ({
 vi.mock("sonner", () => ({
     toast: {error: vi.fn(), info: vi.fn(), success: vi.fn()},
 }));
+
+const FALLBACK = "Migration failed. Your original stack directory was not modified. Check the error and try again.";
 
 const stack: DiscoveredStack = {
     path: "/host/opt/db/docker-compose.yml",
@@ -122,5 +125,87 @@ describe("BrownfieldImport migration flow", () => {
         await userEvent.click(screen.getByRole("switch", {name: "Stop the old stack before migrating"}));
 
         expect(screen.getByText(/The old stack keeps running\./)).toBeInTheDocument();
+    });
+
+    describe("toasts", () => {
+        const BACKUP_NOTE = "Backup saved to pre-migration-backup/ in the new stack directory.";
+        const SUCCESS_TITLE = "Migration complete! db is now managed by Docktor";
+
+        async function confirm(
+            makeResult: () => Promise<MigrationResult>,
+            options: {backupOff?: boolean; stopOff?: boolean} = {},
+        ): Promise<void> {
+            renderImport(createApi(vi.fn().mockImplementation(makeResult)));
+            await walkToConfirm(options);
+            await userEvent.click(screen.getByRole("button", {name: "Confirm & Migrate"}));
+        }
+
+        it("describes the kept backup and the stopped old stack on success", async () => {
+            await confirm(() => Promise.resolve(okResult));
+
+            expect(toast.info).toHaveBeenCalledWith("Migrating db\u2026");
+            await waitFor(() =>
+                expect(toast.success).toHaveBeenCalledWith(
+                    SUCCESS_TITLE,
+                    expect.objectContaining({
+                        description: `${BACKUP_NOTE} The old stack was stopped.`,
+                        action: expect.objectContaining({label: "View stack"}),
+                    }),
+                ),
+            );
+        });
+
+        it("only mentions the backup when the old stack was left running", async () => {
+            await confirm(() => Promise.resolve(okResult), {stopOff: true});
+
+            await waitFor(() =>
+                expect(toast.success).toHaveBeenCalledWith(SUCCESS_TITLE, expect.objectContaining({description: BACKUP_NOTE})),
+            );
+        });
+
+        it("only mentions the stopped old stack when no backup was made", async () => {
+            await confirm(() => Promise.resolve(okResult), {backupOff: true});
+
+            await waitFor(() =>
+                expect(toast.success).toHaveBeenCalledWith(
+                    SUCCESS_TITLE,
+                    expect.objectContaining({description: "The old stack was stopped."}),
+                ),
+            );
+        });
+
+        it("omits the description when neither a backup nor a stop was chosen", async () => {
+            await confirm(() => Promise.resolve(okResult), {backupOff: true, stopOff: true});
+
+            await waitFor(() => expect(vi.mocked(toast.success).mock.calls.some(([title]) => title === SUCCESS_TITLE)).toBe(true));
+            const call = vi.mocked(toast.success).mock.calls.find(([title]) => title === SUCCESS_TITLE);
+            expect(call?.[1]).not.toHaveProperty("description");
+            expect(call?.[1]).toHaveProperty("action");
+        });
+
+        it("shows the server's failure message verbatim", async () => {
+            const error = "Migration failed: disk full. Your original stack directory was not modified. The old stack was restarted.";
+            await confirm(() => Promise.resolve({success: false, error, originalPath: "/host/opt/db"}));
+
+            await waitFor(() => expect(toast.error).toHaveBeenCalledWith(error));
+        });
+
+        it("falls back to the generic message when the failure carries no error text", async () => {
+            await confirm(() => Promise.resolve({success: false, originalPath: "/host/opt/db"}));
+
+            await waitFor(() => expect(toast.error).toHaveBeenCalledWith(FALLBACK));
+        });
+
+        it("shows the message of an Error rejection", async () => {
+            await confirm(() => Promise.reject(new Error("Network down")));
+
+            await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Network down"));
+        });
+
+        it("falls back to the generic message when the request rejects with a non-Error", async () => {
+            await confirm(() => Promise.reject("boom"));
+
+            await waitFor(() => expect(toast.error).toHaveBeenCalledWith(FALLBACK));
+        });
     });
 });
