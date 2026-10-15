@@ -1,13 +1,10 @@
-import {useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import {toast} from "sonner";
-import {AlertTriangle} from "lucide-react";
 import {Button} from "@/components/ui/button";
-import {Input} from "@/components/ui/input";
-import {Label} from "@/components/ui/label";
-import {Checkbox} from "@/components/ui/checkbox";
 import {Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle} from "@/components/ui/dialog";
-import {Alert, AlertDescription} from "@/components/ui/alert";
+import {MigrationSelectStep} from "./migration-select-step";
 import {MigrationReviewStep} from "./migration-review-step";
+import {MigrationStepIndicator, MIGRATION_STEP_LABELS} from "./migration-step-indicator";
 import {MigrationBackupStep} from "./migration-backup-step";
 import {MigrationOldStackStep} from "./migration-old-stack-step";
 import {directoryDisplayName} from "@/lib/path-display";
@@ -94,6 +91,26 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
   const [backup, setBackup] = useState(true);
   const [stopOldStack, setStopOldStack] = useState(true);
 
+  // RESEARCH Pitfall 7: a preview response that arrives after the dialog was
+  // cancelled or closed must not advance (or toast into) a dead session.
+  const previewRequestId = useRef(0);
+  useEffect(() => {
+    if (!open) previewRequestId.current += 1;
+  }, [open]);
+  useEffect(() => () => {
+    previewRequestId.current += 1;
+  }, []);
+
+  // UI-SPEC focus rule: the step body takes focus on every step change.
+  const stepBodyRef = useRef<HTMLDivElement>(null);
+  const previousStep = useRef(step);
+  useEffect(() => {
+    if (previousStep.current !== step) {
+      previousStep.current = step;
+      stepBodyRef.current?.focus();
+    }
+  }, [step]);
+
   const volumesToCopy =
     Object.values(namedVolumeSelections).filter(Boolean).length +
     bindMountSelections.filter((sel) => sel.convert).length;
@@ -111,6 +128,8 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
   };
 
   const handleNextToPreview = async () => {
+    previewRequestId.current += 1;
+    const requestId = previewRequestId.current;
     setLoading(true);
     try {
       const result = await previewMigration(
@@ -118,12 +137,14 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
         bindMountSelections,
         namedVolumeSelections,
       );
+      if (requestId !== previewRequestId.current) return;
       setPreview(result);
       setStep(2);
     } catch (err: unknown) {
+      if (requestId !== previewRequestId.current) return;
       toast.error(err instanceof Error && err.message ? err.message : PREVIEW_ERROR_FALLBACK);
     } finally {
-      setLoading(false);
+      if (requestId === previewRequestId.current) setLoading(false);
     }
   };
 
@@ -144,6 +165,8 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
   };
 
   const handleClose = () => {
+    previewRequestId.current += 1;
+    setLoading(false);
     setStep(1);
     onClose();
   };
@@ -156,80 +179,26 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
           <DialogDescription>{STEP_DESCRIPTIONS[step]}</DialogDescription>
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <MigrationStepIndicator step={step} />
+
+        <div
+          ref={stepBodyRef}
+          role="group"
+          aria-label={MIGRATION_STEP_LABELS[step - 1]}
+          tabIndex={-1}
+          className="min-h-0 flex-1 overflow-y-auto outline-none"
+        >
           {step === 1 && (
-            <div className="space-y-6 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="displayName">Stack Name</Label>
-                <Input
-                  id="displayName"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="my-stack"
-                />
-              </div>
-
-              {stack.namedVolumes.length > 0 && (
-                <div className="space-y-3">
-                  <Label>Named Volumes</Label>
-                  {stack.namedVolumes.map((vol) => (
-                    <div key={vol} className="flex items-start space-x-3">
-                      <Checkbox
-                        id={`vol-${vol}`}
-                        checked={namedVolumeSelections[vol] ?? true}
-                        onCheckedChange={(checked) => handleVolumeToggle(vol, !!checked)}
-                      />
-                      <div className="space-y-1">
-                        <Label htmlFor={`vol-${vol}`} className="font-normal cursor-pointer">
-                          {vol}
-                        </Label>
-                        {!namedVolumeSelections[vol] && (
-                          <p className="text-xs text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
-                            <AlertTriangle className="h-3 w-3" />
-                            This volume will remain a Docker volume (not backed up)
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {stack.absolutePaths.length > 0 && (
-                <div className="space-y-3">
-                  <Label>Absolute Bind Mounts</Label>
-                  {bindMountSelections.map((sel, i) => (
-                    <div key={sel.originalPath} className="flex items-start space-x-3">
-                      <Checkbox
-                        id={`bind-${i}`}
-                        checked={sel.convert}
-                        onCheckedChange={(checked) => handleBindMountToggle(i, !!checked)}
-                      />
-                      <div className="space-y-1">
-                        <Label htmlFor={`bind-${i}`} className="font-normal cursor-pointer">
-                          {sel.originalPath}
-                        </Label>
-                        <Alert className="py-1 px-2">
-                          <AlertDescription className="text-xs flex items-center gap-1">
-                            <AlertTriangle className="h-3 w-3 text-yellow-600 dark:text-yellow-500" />
-                            Absolute path - not recommended for Docktor
-                          </AlertDescription>
-                        </Alert>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {stack.inlineEnvVars && (
-                <Alert>
-                  <AlertTriangle className="h-4 w-4" />
-                  <AlertDescription>
-                    This compose file has inline environment variables that will be extracted to a .env file.
-                  </AlertDescription>
-                </Alert>
-              )}
-            </div>
+            <MigrationSelectStep
+              displayName={displayName}
+              onDisplayNameChange={setDisplayName}
+              namedVolumes={stack.namedVolumes}
+              namedVolumeSelections={namedVolumeSelections}
+              onVolumeToggle={handleVolumeToggle}
+              bindMountSelections={bindMountSelections}
+              onBindMountToggle={handleBindMountToggle}
+              inlineEnvVars={stack.inlineEnvVars}
+            />
           )}
 
           {step === 2 && preview && (
