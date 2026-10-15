@@ -5,16 +5,16 @@ milestone_name: Release Follow-ups
 current_phase: 18
 current_phase_name: Import and Migration Flow
 status: executing
-stopped_at: Completed 18-03-PLAN.md
-last_updated: "2026-10-15T07:21:00.921Z"
+stopped_at: Completed 18-04-PLAN.md
+last_updated: "2026-10-15T07:25:59.926Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 18 execution started
-state_head: 1eab481c79448c6e8a9c1171ccba747f3d0bb45c
+state_head: 20cab102929af29fe6fc84f99f7918ab9553c682
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 8
-  completed_plans: 6
+  completed_plans: 7
   percent: 20
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-14)
 ## Current Position
 
 Phase: 18 (Import and Migration Flow) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 18 execution started
 
@@ -68,6 +68,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 18 P01 | 4 min | 3 tasks | 10 files |
 | Phase 18 P02 | 8 min | 3 tasks | 10 files |
 | Phase 18 P03 | 4 min | 3 tasks | 10 files |
+| Phase 18 P04 | 3 min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -88,6 +89,7 @@ Roadmap decisions for v0.1.1:
 - [Phase 18]: 18-02: brownfield request bodies fully replaced by shared Zod schemas; composePath confined to compose file names (T-18-05); computeUnifiedDiff is the only server diff generator (D-04)
 - [Phase 18]: migrate requires explicit backup and stopOldStack booleans with no schema default (D-12)
 - [Phase 18]: A failed old-stack stop aborts migration fail-closed; rollback only removes what Docktor created and restarts via docker compose start iff it stopped the stack
+- [Phase 18]: 18-04: migration dialog widened via sm:max-w-5xl; reveal-secrets state kept local to MigrationReviewStep so unmount resets the mask; env masking shared via client/src/lib/env-mask.ts
 
 ### Pending Todos
 
@@ -111,6 +113,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-15T07:21:00.781Z
-Stopped at: Completed 18-03-PLAN.md
+Last session: 2026-10-15T07:25:59.801Z
+Stopped at: Completed 18-04-PLAN.md
 Resume file: None
