@@ -109,6 +109,15 @@ export class MigrationService {
 			return {success: false, error: `Stack "${stackId}" already exists`, originalPath: originalDir};
 		}
 
+		// D-09 / RESEARCH Pitfall 4: rollback removes the target directory, so it
+		// must be one Docktor creates in this run and must not overlap the old
+		// stack (a recursive copy into its own subdirectory fails, and the
+		// rollback would then delete the original). Checked before any side effect.
+		const targetGuardError = await this.checkTargetDirectory(this.stackFs.getStackDirectory(stackId), originalDir);
+		if (targetGuardError) {
+			return {success: false, error: targetGuardError, originalPath: originalDir};
+		}
+
 		let oldStackStopped = false;
 		let createdStackDir = false;
 
@@ -244,6 +253,22 @@ export class MigrationService {
 				originalPath: originalDir,
 			};
 		}
+	}
+
+	/** Returns a user-facing refusal when the target directory is unsafe to create and later remove. */
+	private async checkTargetDirectory(targetDir: string, originalDir: string): Promise<string | null> {
+		const target = path.resolve(targetDir);
+		const original = path.resolve(originalDir);
+		const isInside = (child: string, parent: string): boolean => child.startsWith(parent + path.sep);
+		if (target === original || isInside(target, original) || isInside(original, target)) {
+			return `Migration refused: the new stack directory ${target} and the old stack directory ${original} overlap.`;
+		}
+		try {
+			await fs.access(target);
+		} catch {
+			return null;
+		}
+		return `Migration refused: the new stack directory ${target} already exists.`;
 	}
 
 	/**

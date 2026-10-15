@@ -2,6 +2,7 @@ import {execFile} from "node:child_process";
 import path from "node:path";
 import {promisify} from "node:util";
 import type {ExternalStackControlPort} from "../application/ports/external-stack-control-port.js";
+import {AppError} from "../lib/errors.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -38,11 +39,31 @@ export class ExternalStackControl implements ExternalStackControlPort {
     }
 
     private async compose(composePath: string, subcommand: "stop" | "start"): Promise<void> {
-        await this.run("docker", ["compose", "-f", composePath, subcommand], {
-            cwd: path.dirname(composePath),
-            timeout: COMPOSE_TIMEOUT_MS,
-        });
+        try {
+            await this.run("docker", ["compose", "-f", composePath, subcommand], {
+                cwd: path.dirname(composePath),
+                timeout: COMPOSE_TIMEOUT_MS,
+            });
+        } catch (err: unknown) {
+            const wrapped = new AppError(
+                `docker compose ${subcommand} failed for ${composePath}: ${describeFailure(err)}`,
+            );
+            wrapped.cause = err;
+            throw wrapped;
+        }
     }
+}
+
+/** Prefers the failed command's stderr, which names the actual compose problem. */
+function describeFailure(err: unknown): string {
+    if (err instanceof Error) {
+        const stderr: unknown = Reflect.get(err, "stderr");
+        if (typeof stderr === "string" && stderr.trim() !== "") {
+            return stderr.trim();
+        }
+        return err.message;
+    }
+    return String(err);
 }
 
 export const externalStackControl = new ExternalStackControl();
