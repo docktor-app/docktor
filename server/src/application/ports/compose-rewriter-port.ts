@@ -16,8 +16,6 @@ export interface ComposeRewriterPort {
         volumeSelections: VolumeSelection[],
         namedVolumeSelections: Map<string, boolean>,
     ): RewriteResult;
-
-    generateDiff(originalCompose: string, rewrittenCompose: string): string;
 }
 
 export type {RewriteResult, VolumeSelection};

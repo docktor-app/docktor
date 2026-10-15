@@ -142,32 +142,6 @@ export class ComposeRewriter implements ComposeRewriterPort {
 			envVars: extractedEnvVars,
 		};
 	}
-
-	/**
-	 * Generate unified diff for preview
-	 */
-	generateDiff(originalCompose: string, rewrittenCompose: string): string {
-		// Simple line-by-line diff for preview
-		const origLines = originalCompose.split("\n");
-		const newLines = rewrittenCompose.split("\n");
-
-		const diffLines: string[] = [];
-		const maxLen = Math.max(origLines.length, newLines.length);
-
-		for (let i = 0; i < maxLen; i++) {
-			const orig = origLines[i];
-			const newL = newLines[i];
-
-			if (orig === newL) {
-				if (orig !== undefined) diffLines.push(`  ${orig}`);
-			} else {
-				if (orig !== undefined) diffLines.push(`- ${orig}`);
-				if (newL !== undefined) diffLines.push(`+ ${newL}`);
-			}
-		}
-
-		return diffLines.join("\n");
-	}
 }
 
 export const composeRewriter = new ComposeRewriter();
