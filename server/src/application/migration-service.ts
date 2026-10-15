@@ -1,8 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
-import {spawn} from "node:child_process";
 import {dockerExecutor} from "../infrastructure/docker-executor.js";
+import {externalStackControl} from "../infrastructure/external-stack-control.js";
 import {volumeMigrator} from "../infrastructure/volume-migrator.js";
 import {composeRewriter, type VolumeSelection} from "../infrastructure/compose-rewriter.js";
 import {StackFilesystem} from "../infrastructure/stack-filesystem.js";
@@ -15,6 +14,11 @@ import type {DockerExecutorPort} from "./ports/docker-executor-port.js";
 import type {VolumeMigratorPort} from "./ports/volume-migrator-port.js";
 import type {ComposeRewriterPort} from "./ports/compose-rewriter-port.js";
 import type {StackFilesystemPort} from "./ports/stack-filesystem-port.js";
+import type {ExternalStackControlPort} from "./ports/external-stack-control-port.js";
+
+// D-07/D-08: an opted-in backup is a plain copy of the old stack directory at
+// this fixed name inside the new stack directory; it is kept after success.
+const BACKUP_DIR_NAME = "pre-migration-backup";
 
 // CR-02: Docker volume names are also passed verbatim as the `-v` source to
 // `docker run`; a name containing `/` is interpreted by Docker as a host bind
@@ -42,6 +46,10 @@ export interface MigrationInput {
 	displayName: string;
 	volumeSelections: VolumeSelection[];
 	namedVolumeSelections: Map<string, boolean>;
+	/** D-07: keep a copy of the old stack directory at pre-migration-backup/ in the new stack. */
+	backup: boolean;
+	/** D-10: run `docker compose stop` on the old stack before anything is copied. */
+	stopOldStack: boolean;
 }
 
 export interface MigrationResult {
@@ -58,6 +66,7 @@ export class MigrationService {
 		private readonly rewriter: ComposeRewriterPort = composeRewriter,
 		private readonly stackFs: StackFilesystemPort = new StackFilesystem(),
 		private readonly stackRepo: StackRepository = stackRepository,
+		private readonly oldStack: ExternalStackControlPort = externalStackControl,
 	) {}
 
 	/**
@@ -76,12 +85,18 @@ export class MigrationService {
 	}
 
 	/**
-	 * Execute full migration: stop -> backup -> copy -> rewrite -> deploy
+	 * Execute full migration: stop (optional) -> create -> backup (optional) ->
+	 * copy -> rewrite -> record -> deploy.
 	 * BF-04: Full migration wizard
 	 * BF-05: Rollback on failure
+	 *
+	 * The original directory is only ever read (and its stack optionally
+	 * stopped), never modified. Rollback (D-09/D-11) removes only the new
+	 * stack directory and record Docktor created and restarts the old stack
+	 * with `docker compose start` iff Docktor stopped it.
 	 */
 	async migrate(input: MigrationInput): Promise<MigrationResult> {
-		const {composePath, displayName, volumeSelections, namedVolumeSelections} = input;
+		const {composePath, displayName, volumeSelections, namedVolumeSelections, backup, stopOldStack} = input;
 		const originalDir = path.dirname(composePath);
 		const stackId = slugify(displayName);
 
@@ -94,22 +109,28 @@ export class MigrationService {
 			return {success: false, error: `Stack "${stackId}" already exists`, originalPath: originalDir};
 		}
 
-		// Create backup before migration
-		const backupDir = path.join(os.tmpdir(), `docktor-migration-backup-${stackId}-${Date.now()}`);
+		let oldStackStopped = false;
+		let createdStackDir = false;
 
 		try {
-			// Step 1: Create backup of original directory
-			await fs.cp(originalDir, backupDir, {recursive: true});
-
-			// Step 2: Stop running containers
-			try {
-				await this.stopContainersAtPath(originalDir);
-			} catch {
-				// Continue even if stop fails (might not be running)
+			// Step 1: Stop the old stack first (D-10). The flag is set before the
+			// call so a partial stop is still undone; a rejection is fail-closed
+			// and aborts before anything is created.
+			if (stopOldStack) {
+				oldStackStopped = true;
+				await this.oldStack.stop(composePath);
 			}
 
-			// Step 3: Create new stack directory
+			// Step 2: Create new stack directory
 			const newStackPath = await this.stackFs.createDirectory(stackId);
+			createdStackDir = true;
+
+			// Step 3: Keep a copy of the old stack directory when opted in (D-07),
+			// independent of renames or compose changes.
+			if (backup) {
+				await this.migrator.copyDirectory(originalDir, path.join(newStackPath, BACKUP_DIR_NAME));
+			}
+
 			const volumesDir = path.join(newStackPath, "volumes");
 			await fs.mkdir(volumesDir, {recursive: true});
 
@@ -196,17 +217,6 @@ export class MigrationService {
 			// Step 8: Deploy new stack
 			await this.docker.up(stackId);
 
-			// CR-04: the backup snapshot may contain plaintext secrets (.env
-			// files, database volumes) and was left permanently in the shared,
-			// world-traversable OS temp directory. Remove it now that the new
-			// stack has been confirmed healthy (docker.up succeeded).
-			try {
-				await fs.rm(backupDir, {recursive: true, force: true});
-			} catch (cleanupErr: unknown) {
-				const message = cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr);
-				console.error(`[MigrationService] Failed to clean up migration backup at ${backupDir}: ${message}`);
-			}
-
 			return {success: true, stackId, originalPath: originalDir};
 
 		} catch (err: unknown) {
@@ -214,71 +224,42 @@ export class MigrationService {
 			const errMessage = err instanceof Error ? err.message : String(err);
 			console.error(`[MigrationService] Migration failed, rolling back: ${errMessage}`);
 
-			try {
-				// Delete incomplete stack directory
-				await this.stackFs.removeDirectory(stackId);
-			} catch {
-				// Ignore cleanup errors
+			if (createdStackDir) {
+				try {
+					// Only a directory Docktor created in this run is ever removed (D-09).
+					await this.stackFs.removeDirectory(stackId);
+				} catch {
+					// Ignore cleanup errors
+				}
 			}
 
-			try {
-				// Delete incomplete stack record if created
-				await this.stackRepo.delete(stackId).catch(() => {});
-			} catch {
-				// Ignore
-			}
+			// Delete incomplete stack record if created
+			await this.stackRepo.delete(stackId).catch(() => {});
 
-			try {
-				// Restore original files from backup
-				await fs.rm(originalDir, {recursive: true, force: true});
-				await fs.cp(backupDir, originalDir, {recursive: true});
-			} catch (restoreErr: unknown) {
-				const restoreMessage = restoreErr instanceof Error ? restoreErr.message : String(restoreErr);
-				console.error(`[MigrationService] Restore failed: ${restoreMessage}`);
-			}
-
-			try {
-				// Restart containers at original location
-				await this.startContainersAtPath(originalDir);
-			} catch {
-				// Container restart might fail if compose is broken
-			}
-
-			try {
-				// Clean up backup
-				await fs.rm(backupDir, {recursive: true, force: true});
-			} catch {
-				// Ignore
-			}
+			const restartNote = oldStackStopped ? await this.restartOldStack(composePath, originalDir) : "";
 
 			return {
 				success: false,
-				error: `Migration failed: ${errMessage}. Rollback complete.`,
+				error: `Migration failed: ${errMessage}. Your original stack directory was not modified.${restartNote}`,
 				originalPath: originalDir,
 			};
 		}
 	}
 
-	private async stopContainersAtPath(dirPath: string): Promise<void> {
-		return new Promise((resolve, reject) => {
-			const proc = spawn("docker", ["compose", "stop"], {cwd: dirPath});
-			proc.on("close", (code) => {
-				if (code === 0) resolve();
-				else reject(new Error(`docker compose stop failed with code ${code}`));
-			});
-			proc.on("error", reject);
-		});
-	}
-
-	private async startContainersAtPath(dirPath: string): Promise<void> {
-		return new Promise((resolve, reject) => {
-			const proc = spawn("docker", ["compose", "up", "-d"], {cwd: dirPath});
-			proc.on("close", (code) => {
-				if (code === 0) resolve();
-				else reject(new Error(`docker compose up failed with code ${code}`));
-			});
-			proc.on("error", reject);
-		});
+	/**
+	 * Rollback step (D-11): start the containers Docktor stopped. Uses `start`,
+	 * never the recreate-capable `up` (RESEARCH Pitfall 2). Returns the note
+	 * appended to the user-facing error.
+	 */
+	private async restartOldStack(composePath: string, originalDir: string): Promise<string> {
+		try {
+			await this.oldStack.start(composePath);
+			return " The old stack was restarted.";
+		} catch (startErr: unknown) {
+			const message = startErr instanceof Error ? startErr.message : String(startErr);
+			console.error(`[MigrationService] Failed to restart the old stack: ${message}`);
+			return ` The old stack could not be restarted automatically; run docker compose start in ${originalDir}.`;
+		}
 	}
 }
 

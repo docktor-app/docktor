@@ -33,8 +33,13 @@ export const brownfieldAdoptSchema = z.object({
     displayName: z.string().min(1),
 });
 
+// D-12: both choices are mandatory and deliberately have no default, so an
+// old or buggy client can never let the server decide whether a backup is
+// kept or the old stack is stopped on the user's behalf.
 export const migrationExecuteSchema = migrationPreviewSchema.extend({
     displayName: z.string().min(1),
+    backup: z.boolean(),
+    stopOldStack: z.boolean(),
 });
 
 export type VolumeSelectionInput = z.infer<typeof volumeSelectionSchema>;
