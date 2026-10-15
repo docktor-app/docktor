@@ -164,3 +164,57 @@ describe("MigrationService.migrate (BF-05 rollback)", () => {
         await assertNoBackupLeftover();
     });
 });
+
+describe("previewMigration (MIG-02, D-04)", () => {
+    let tmpDir: string;
+    let composePath: string;
+
+    beforeEach(async () => {
+        tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "docktor-preview-"));
+        composePath = path.join(tmpDir, "docker-compose.yml");
+        await fs.writeFile(composePath, COMPOSE, "utf-8");
+    });
+
+    afterEach(async () => {
+        await fs.rm(tmpDir, {recursive: true, force: true});
+    });
+
+    function buildPreviewService(rewriter: Pick<ComposeRewriterPort, "rewrite">): MigrationService {
+        return new MigrationService(
+            createMockDocker() as unknown as DockerExecutorPort,
+            createMockMigrator() as unknown as VolumeMigratorPort,
+            rewriter as ComposeRewriterPort,
+            createMockStackFs(tmpDir) as unknown as StackFilesystemPort,
+            createMockStackRepo() as unknown as StackRepository,
+        );
+    }
+
+    it("returns a UnifiedDiff with individually marked added and removed lines", async () => {
+        const rewriter = {
+            rewrite: vi.fn().mockReturnValue({
+                rewrittenCompose: "services:\n  web:\n    image: nginx:1.27\n",
+                extractedEnv: "FOO=bar",
+                envVars: {},
+            }),
+        };
+
+        const result = await buildPreviewService(rewriter).previewMigration(composePath, [], new Map());
+
+        expect(result.diff.added).toBe(1);
+        expect(result.diff.removed).toBe(1);
+        const lines = result.diff.hunks.flatMap((hunk) => hunk.lines);
+        expect(lines).toContainEqual(expect.objectContaining({kind: "removed", text: "    image: nginx:latest"}));
+        expect(lines).toContainEqual(expect.objectContaining({kind: "added", text: "    image: nginx:1.27"}));
+        expect(result.extractedEnv).toBe("FOO=bar");
+    });
+
+    it("returns the empty diff when the rewrite leaves the content unchanged", async () => {
+        const rewriter = {
+            rewrite: vi.fn().mockReturnValue({rewrittenCompose: COMPOSE, extractedEnv: "", envVars: {}}),
+        };
+
+        const result = await buildPreviewService(rewriter).previewMigration(composePath, [], new Map());
+
+        expect(result.diff).toEqual({hunks: [], added: 0, removed: 0});
+    });
+});
