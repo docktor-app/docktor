@@ -24,6 +24,8 @@ vi.mock("../../../src/application/onboarding-service.js", () => ({
 import Fastify from "fastify";
 import {serializerCompiler, validatorCompiler, type ZodTypeProvider} from "fastify-type-provider-zod";
 import importRoutes from "../../../src/routes/imports.js";
+import setupRoutes from "../../../src/routes/setup.js";
+import {migrationService} from "../../../src/application/migration-service.js";
 
 const COMPOSE_FIXTURE = [
     "services:",
@@ -41,6 +43,7 @@ async function buildTestApp() {
     app.setValidatorCompiler(validatorCompiler);
     app.setSerializerCompiler(serializerCompiler);
     await app.register(importRoutes);
+    await app.register(setupRoutes);
     return app;
 }
 
@@ -57,6 +60,10 @@ describe("brownfield routes", () => {
     });
 
     afterEach(async () => {
+        vi.restoreAllMocks();
+        onboardingFake.adoptInPlace.mockReset();
+        onboardingFake.isWizardComplete.mockReset();
+        onboardingFake.isWizardComplete.mockResolvedValue(false);
         await app.close();
         await fs.rm(tmpDir, {recursive: true, force: true});
     });
@@ -108,5 +115,108 @@ describe("brownfield routes", () => {
             expect(res.statusCode).toBe(400);
         });
     });
-});
 
+    describe("POST /api/setup/migrate/preview", () => {
+        it("returns a UnifiedDiff-shaped diff", async () => {
+            const res = await app.inject({
+                method: "POST",
+                url: "/api/setup/migrate/preview",
+                payload: {composePath, volumeSelections: [], namedVolumeSelections: {pgdata: true}},
+            });
+
+            expect(res.statusCode).toBe(200);
+            const body = res.json();
+            expect(body.diff.hunks.length).toBeGreaterThan(0);
+            expect(typeof body.diff.added).toBe("number");
+            expect(typeof body.diff.removed).toBe("number");
+        });
+
+        it("answers 410 once the wizard is complete (T-05-09 gate unchanged)", async () => {
+            onboardingFake.isWizardComplete.mockResolvedValue(true);
+
+            const res = await app.inject({
+                method: "POST",
+                url: "/api/setup/migrate/preview",
+                payload: {composePath, volumeSelections: [], namedVolumeSelections: {}},
+            });
+
+            expect(res.statusCode).toBe(410);
+        });
+    });
+
+    describe.each(["/api/stacks/import/adopt", "/api/setup/adopt"])("POST %s", (url) => {
+        it("delegates to onboardingService.adoptInPlace and returns its value", async () => {
+            onboardingFake.adoptInPlace.mockResolvedValue({stackId: "my-app"});
+
+            const res = await app.inject({method: "POST", url, payload: {composePath, displayName: "My App"}});
+
+            expect(res.statusCode).toBe(200);
+            expect(onboardingFake.adoptInPlace).toHaveBeenCalledWith(composePath, "My App");
+            expect(res.json()).toEqual({stackId: "my-app"});
+        });
+
+        it("rejects a non-compose path with 400 and never adopts", async () => {
+            const res = await app.inject({
+                method: "POST",
+                url,
+                payload: {composePath: "/etc/passwd", displayName: "My App"},
+            });
+
+            expect(res.statusCode).toBe(400);
+            expect(onboardingFake.adoptInPlace).not.toHaveBeenCalled();
+        });
+
+        it("rejects an empty displayName with 400", async () => {
+            const res = await app.inject({method: "POST", url, payload: {composePath, displayName: ""}});
+
+            expect(res.statusCode).toBe(400);
+            expect(onboardingFake.adoptInPlace).not.toHaveBeenCalled();
+        });
+    });
+
+    describe.each(["/api/stacks/import/migrate", "/api/setup/migrate"])("POST %s", (url) => {
+        it("passes the validated body to migrationService.migrate with a Map for named volumes", async () => {
+            const resolved = {success: true, stackId: "my-app", originalPath: "/opt/app"};
+            const spy = vi.spyOn(migrationService, "migrate").mockResolvedValue(resolved);
+            const volumeSelections = [{originalPath: "/srv/data", newPath: "./volumes/data", convert: true}];
+
+            const res = await app.inject({
+                method: "POST",
+                url,
+                payload: {composePath, displayName: "My App", volumeSelections, namedVolumeSelections: {pgdata: true}},
+            });
+
+            expect(res.statusCode).toBe(200);
+            expect(spy).toHaveBeenCalledTimes(1);
+            const input = spy.mock.calls[0]?.[0];
+            expect(input?.composePath).toBe(composePath);
+            expect(input?.displayName).toBe("My App");
+            expect(input?.volumeSelections).toEqual(volumeSelections);
+            expect(input?.namedVolumeSelections).toBeInstanceOf(Map);
+            expect([...(input?.namedVolumeSelections ?? [])]).toEqual([["pgdata", true]]);
+            expect(res.json()).toEqual(resolved);
+        });
+
+        it("rejects a non-compose path with 400 and never migrates", async () => {
+            // Resolved stub so a validation regression can never reach the real migration.
+            const spy = vi.spyOn(migrationService, "migrate").mockResolvedValue({
+                success: true,
+                originalPath: "/unused",
+            });
+
+            const res = await app.inject({
+                method: "POST",
+                url,
+                payload: {
+                    composePath: "/etc/passwd",
+                    displayName: "My App",
+                    volumeSelections: [],
+                    namedVolumeSelections: {},
+                },
+            });
+
+            expect(res.statusCode).toBe(400);
+            expect(spy).not.toHaveBeenCalled();
+        });
+    });
+});
