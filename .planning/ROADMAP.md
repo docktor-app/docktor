@@ -88,7 +88,7 @@ Notes: server-side work (backup service and repository environment construction,
   4. The pre-migration backup is its own explicit step the user can opt out of: opting out creates no backup, opting in creates one whether or not the compose file is renamed
   5. The user can choose to stop (undeploy) the old stack as part of the migration, so the new draft stack does not run alongside it; if they decline, the old stack is left running
 
-**Plans:** 4/5 plans executed
+**Plans:** 5/5 plans executed
 
 Plans:
 **Wave 1**
@@ -100,7 +100,7 @@ Plans:
 - [x] 18-04-PLAN.md — Wider dialog with pinned header/footer, review step renders UnifiedDiffView with counters, masked read-only .env CodeEditor via shared env-mask helper (wave 2, after 18-02)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 18-05-PLAN.md — Four-step dialog: backup and old-stack steps with summary, flags sent through typed API clients, step indicator/focus/stale-preview guard, toasts, Playwright flow incl. 360px (wave 3, after 18-03 and 18-04)
+- [x] 18-05-PLAN.md — Four-step dialog: backup and old-stack steps with summary, flags sent through typed API clients, step indicator/focus/stale-preview guard, toasts, Playwright flow incl. 360px (wave 3, after 18-03 and 18-04)
 
 **UI hint**: yes
 
@@ -164,7 +164,7 @@ Phases execute in numeric order: 17 → 18 → 19 → 20 → 21
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 17. Backup Repository and Port-Check Fixes | 3/3 | Complete    | 2026-10-14 |
-| 18. Import and Migration Flow | 4/5 | In Progress | - |
+| 18. Import and Migration Flow | 5/5 | In Progress | - |
 | 19. Sidebar, Templates and Version Block | 0/TBD | Not started | - |
 | 20. Visual Consistency, Dashboard Clarity and Touch Targets | 0/TBD | Not started | - |
 | 21. Release v0.1.1 | 0/TBD | Not started | - |
