@@ -1,9 +1,13 @@
 import type {FastifyPluginAsyncZod} from "fastify-type-provider-zod";
-import {z} from "zod";
 import {requireAuth} from "../lib/auth-middleware.js";
 import {onboardingService} from "../application/onboarding-service.js";
 import {migrationService} from "../application/migration-service.js";
-import {migrationPreviewSchema, wizardStep5Schema} from "@docktor/shared";
+import {
+    brownfieldAdoptSchema,
+    migrationExecuteSchema,
+    migrationPreviewSchema,
+    wizardStep5Schema,
+} from "@docktor/shared";
 
 // T-05.1-32/T-05.1-33: this plugin gives an authenticated user, after the
 // setup wizard has closed, its own reachable copy of the brownfield
@@ -34,10 +38,7 @@ const importRoutes: FastifyPluginAsyncZod = async (app) => {
         "/api/stacks/import/adopt",
         {
             schema: {
-                body: z.object({
-                    composePath: z.string(),
-                    displayName: z.string().min(1),
-                }),
+                body: brownfieldAdoptSchema,
             },
         },
         async (request) => {
@@ -68,26 +69,14 @@ const importRoutes: FastifyPluginAsyncZod = async (app) => {
         "/api/stacks/import/migrate",
         {
             schema: {
-                body: z.object({
-                    composePath: z.string(),
-                    displayName: z.string().min(1),
-                    volumeSelections: z.array(z.object({
-                        originalPath: z.string(),
-                        newPath: z.string(),
-                        convert: z.boolean(),
-                    })),
-                    namedVolumeSelections: z.record(z.string(), z.boolean()),
-                }),
+                body: migrationExecuteSchema,
             },
         },
         async (request) => {
-            const {composePath, displayName, volumeSelections, namedVolumeSelections} = request.body;
-            const namedVolMap = new Map(Object.entries(namedVolumeSelections) as [string, boolean][]);
+            const {namedVolumeSelections, ...rest} = request.body;
             const result = await migrationService.migrate({
-                composePath,
-                displayName,
-                volumeSelections,
-                namedVolumeSelections: namedVolMap,
+                ...rest,
+                namedVolumeSelections: new Map(Object.entries(namedVolumeSelections)),
             });
             return result;
         },

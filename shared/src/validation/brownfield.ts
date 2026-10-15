@@ -28,5 +28,16 @@ export const migrationPreviewSchema = z.object({
     namedVolumeSelections: z.record(z.string(), z.boolean()),
 });
 
+export const brownfieldAdoptSchema = z.object({
+    composePath: composeFilePathSchema,
+    displayName: z.string().min(1),
+});
+
+export const migrationExecuteSchema = migrationPreviewSchema.extend({
+    displayName: z.string().min(1),
+});
+
 export type VolumeSelectionInput = z.infer<typeof volumeSelectionSchema>;
 export type MigrationPreviewInput = z.infer<typeof migrationPreviewSchema>;
+export type BrownfieldAdoptInput = z.infer<typeof brownfieldAdoptSchema>;
+export type MigrationExecuteInput = z.infer<typeof migrationExecuteSchema>;
