@@ -4,7 +4,16 @@ import userEvent from "@testing-library/user-event";
 import {toast} from "sonner";
 import {MigrationWizard} from "@/routes/setup/components/migration-wizard";
 import type {DiscoveredStack, MigrationPreview} from "@/lib/brownfield-types";
+import type {CodeEditorProps} from "@/components/common/code-editor";
 import type {UnifiedDiff} from "@/lib/stacks-api";
+
+// CodeMirror itself is covered by its own tests — mock it with a textarea
+// exposing the same aria-label so this file only asserts the review step.
+vi.mock("@/components/common/code-editor", () => ({
+    CodeEditor: ({value, ariaLabel}: CodeEditorProps) => (
+        <textarea aria-label={ariaLabel} value={value} readOnly onChange={() => undefined} />
+    ),
+}));
 
 vi.mock("sonner", () => ({
     toast: {error: vi.fn(), info: vi.fn(), success: vi.fn()},
@@ -143,5 +152,71 @@ describe("MigrationWizard", () => {
 
         await waitFor(() => expect(toast.error).toHaveBeenCalledWith(PREVIEW_FALLBACK));
         expect(screen.getByRole("heading", {name: "Select Data to Migrate"})).toBeInTheDocument();
+    });
+
+    describe("extracted .env preview", () => {
+        const SECRET_ENV = "DB_PASSWORD=hunter2\nPORT=8080";
+        const MASKED_ENV = "DB_PASSWORD=\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\nPORT=8080";
+
+        async function previewWithEnv(extractedEnv: string, onClose = vi.fn()) {
+            renderWizard(vi.fn().mockResolvedValue({diff: emptyDiff, extractedEnv}), onClose);
+            await userEvent.click(screen.getByRole("button", {name: "Preview Changes"}));
+            await screen.findByRole("heading", {name: "Review Changes"});
+        }
+
+        it("masks secret values in a read-only editor until revealed", async () => {
+            await previewWithEnv(SECRET_ENV);
+
+            expect(screen.getByRole("heading", {name: "New .env file"})).toBeInTheDocument();
+            expect(screen.getByRole("textbox", {name: "Extracted .env preview"})).toHaveValue(MASKED_ENV);
+
+            await userEvent.click(screen.getByRole("button", {name: "Show secret values"}));
+
+            expect(screen.getByRole("textbox", {name: "Extracted .env preview"})).toHaveValue(SECRET_ENV);
+            expect(screen.getByRole("button", {name: "Hide secret values"})).toBeInTheDocument();
+        });
+
+        it("restores the mask after going Back to step 1 and previewing again", async () => {
+            await previewWithEnv(SECRET_ENV);
+            await userEvent.click(screen.getByRole("button", {name: "Show secret values"}));
+
+            await userEvent.click(screen.getByRole("button", {name: "Back"}));
+            await userEvent.click(screen.getByRole("button", {name: "Preview Changes"}));
+
+            expect(await screen.findByRole("textbox", {name: "Extracted .env preview"})).toHaveValue(MASKED_ENV);
+        });
+
+        it("restores the mask after the dialog is closed and reopened", async () => {
+            const onClose = vi.fn();
+            const previewMigration = vi.fn().mockResolvedValue({diff: emptyDiff, extractedEnv: SECRET_ENV});
+            const props = {stack, onClose, onConfirmMigrate: vi.fn(), previewMigration};
+            const {rerender} = render(<MigrationWizard {...props} open />);
+            await userEvent.click(screen.getByRole("button", {name: "Preview Changes"}));
+            await userEvent.click(await screen.findByRole("button", {name: "Show secret values"}));
+
+            await userEvent.click(screen.getByRole("button", {name: "Close"}));
+            expect(onClose).toHaveBeenCalled();
+
+            // BrownfieldImport unmounts the wizard on close; mirror that, then reopen.
+            rerender(<></>);
+            rerender(<MigrationWizard {...props} open />);
+            await userEvent.click(screen.getByRole("button", {name: "Preview Changes"}));
+
+            expect(await screen.findByRole("textbox", {name: "Extracted .env preview"})).toHaveValue(MASKED_ENV);
+        });
+
+        it("offers no reveal button when no key looks secret", async () => {
+            await previewWithEnv("PORT=8080");
+
+            expect(screen.getByRole("textbox", {name: "Extracted .env preview"})).toHaveValue("PORT=8080");
+            expect(screen.queryByRole("button", {name: "Show secret values"})).toBeNull();
+        });
+
+        it("omits the .env block entirely when nothing was extracted", async () => {
+            await previewWithEnv("");
+
+            expect(screen.queryByRole("heading", {name: "New .env file"})).toBeNull();
+            expect(screen.queryByRole("textbox", {name: "Extracted .env preview"})).toBeNull();
+        });
     });
 });
