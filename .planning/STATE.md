@@ -5,16 +5,16 @@ milestone_name: Release Follow-ups
 current_phase: 18
 current_phase_name: Import and Migration Flow
 status: executing
-stopped_at: Completed 18-02-PLAN.md
-last_updated: "2026-10-15T07:15:28.682Z"
+stopped_at: Completed 18-03-PLAN.md
+last_updated: "2026-10-15T07:21:00.921Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 18 execution started
-state_head: 4e2ff2c93d759096da6d16b1a8806b4b0337c320
+state_head: 1eab481c79448c6e8a9c1171ccba747f3d0bb45c
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 8
-  completed_plans: 5
+  completed_plans: 6
   percent: 20
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-14)
 ## Current Position
 
 Phase: 18 (Import and Migration Flow) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 18 execution started
 
@@ -67,6 +67,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 17 P03 | 20min | 2 tasks | 6 files |
 | Phase 18 P01 | 4 min | 3 tasks | 10 files |
 | Phase 18 P02 | 8 min | 3 tasks | 10 files |
+| Phase 18 P03 | 4 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -85,6 +86,8 @@ Roadmap decisions for v0.1.1:
 - [Phase 17]: SSH state for restic SFTP lives in <stacksDir>/.docktor/ssh so the host pin persists across container recreation; key file is 0600 per run and removed in finally
 - [Phase 18]: 18-01: Own-stack exclusion is exact compose-file equality via Docktor's own bind mounts, fail-open with no name/image heuristic, filtered in OnboardingService.scan (D-01/D-02/D-03)
 - [Phase 18]: 18-02: brownfield request bodies fully replaced by shared Zod schemas; composePath confined to compose file names (T-18-05); computeUnifiedDiff is the only server diff generator (D-04)
+- [Phase 18]: migrate requires explicit backup and stopOldStack booleans with no schema default (D-12)
+- [Phase 18]: A failed old-stack stop aborts migration fail-closed; rollback only removes what Docktor created and restarts via docker compose start iff it stopped the stack
 
 ### Pending Todos
 
@@ -108,6 +111,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-15T07:15:28.567Z
-Stopped at: Completed 18-02-PLAN.md
+Last session: 2026-10-15T07:21:00.781Z
+Stopped at: Completed 18-03-PLAN.md
 Resume file: None
