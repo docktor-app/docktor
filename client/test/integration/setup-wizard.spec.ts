@@ -502,15 +502,35 @@ test.describe("Setup Wizard", () => {
                 route.fulfill({
                     status: 200,
                     contentType: "application/json",
-                    body: JSON.stringify({diff: "  services:\n-   pgdata:\n+   ./volumes/pgdata:", extractedEnv: ""}),
+                    body: JSON.stringify({
+                        diff: {
+                            added: 1,
+                            removed: 1,
+                            hunks: [
+                                {
+                                    oldStart: 1,
+                                    oldLines: 3,
+                                    newStart: 1,
+                                    newLines: 3,
+                                    lines: [
+                                        {kind: "context", text: "services:", oldLine: 1, newLine: 1},
+                                        {kind: "removed", text: "      - pgdata:/var/lib/postgresql/data", oldLine: 2, newLine: null},
+                                        {kind: "added", text: "      - ./volumes/pgdata:/var/lib/postgresql/data", oldLine: null, newLine: 2},
+                                    ],
+                                },
+                            ],
+                        },
+                        extractedEnv: "",
+                    }),
                 }),
             );
 
-            await page.getByRole("button", {name: "Next"}).click();
+            await page.getByRole("button", {name: "Preview Changes"}).click();
 
-            await expect(page.getByText("Review Changes")).toBeVisible();
-            await expect(page.getByText("Original")).toBeVisible();
-            await expect(page.getByText("Migrated", {exact: true})).toBeVisible();
+            await expect(page.getByRole("heading", {name: "Review Changes"})).toBeVisible();
+            await expect(page.getByRole("region", {name: "Migration compose diff"})).toBeVisible();
+            await expect(page.getByText("./volumes/pgdata")).toBeVisible();
+            await expect(page.getByText("Compose file changes")).toBeVisible();
         });
 
         test("should start background migration on confirm", async ({page}) => {
@@ -519,9 +539,9 @@ test.describe("Setup Wizard", () => {
             await page.getByRole("button", {name: "Migrate"}).click();
 
             await page.route("**/api/setup/migrate/preview", (route) =>
-                route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({diff: "", extractedEnv: ""})}),
+                route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({diff: {hunks: [], added: 0, removed: 0}, extractedEnv: ""})}),
             );
-            await page.getByRole("button", {name: "Next"}).click();
+            await page.getByRole("button", {name: "Preview Changes"}).click();
             await expect(page.getByText("Review Changes")).toBeVisible();
 
             await page.route("**/api/setup/migrate", (route) =>
@@ -543,9 +563,9 @@ test.describe("Setup Wizard", () => {
             await page.getByRole("button", {name: "Migrate"}).click();
 
             await page.route("**/api/setup/migrate/preview", (route) =>
-                route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({diff: "", extractedEnv: ""})}),
+                route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({diff: {hunks: [], added: 0, removed: 0}, extractedEnv: ""})}),
             );
-            await page.getByRole("button", {name: "Next"}).click();
+            await page.getByRole("button", {name: "Preview Changes"}).click();
 
             await page.route("**/api/setup/migrate", (route) =>
                 route.fulfill({
@@ -569,9 +589,9 @@ test.describe("Setup Wizard", () => {
             await page.getByRole("button", {name: "Migrate"}).click();
 
             await page.route("**/api/setup/migrate/preview", (route) =>
-                route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({diff: "", extractedEnv: ""})}),
+                route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({diff: {hunks: [], added: 0, removed: 0}, extractedEnv: ""})}),
             );
-            await page.getByRole("button", {name: "Next"}).click();
+            await page.getByRole("button", {name: "Preview Changes"}).click();
 
             await page.route("**/api/setup/migrate", (route) =>
                 route.fulfill({

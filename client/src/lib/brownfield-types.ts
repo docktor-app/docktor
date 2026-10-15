@@ -4,6 +4,8 @@
 // /api/stacks/import/*) depend on these — this module has no opinion about
 // which endpoints produced them.
 
+import type {UnifiedDiff} from "./stacks-api";
+
 export interface ScanResult {
   stacks: DiscoveredStack[];
   skippedDirectories: number;
@@ -26,8 +28,10 @@ export interface VolumeSelection {
   convert: boolean;
 }
 
+// The compose diff is the same UnifiedDiff the stack-edit review renders
+// (#72) — one diff shape and one renderer across the client.
 export interface MigrationPreview {
-  diff: string;
+  diff: UnifiedDiff;
   extractedEnv: string;
 }
 
