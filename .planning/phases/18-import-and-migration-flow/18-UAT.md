@@ -1,5 +1,5 @@
 ---
-status: partial
+status: diagnosed
 phase: 18-import-and-migration-flow
 source: [18-01-SUMMARY.md, 18-02-SUMMARY.md, 18-03-SUMMARY.md, 18-04-SUMMARY.md, 18-05-SUMMARY.md]
 started: 2026-10-15T12:00:00Z
@@ -116,5 +116,20 @@ blocked: 2
   severity: major
   test: 4
   related_evidence: "Test 6: migration summary shows 'Volumes to copy: 0' for the same stack, so the ./data bind mount was likely not selected/recognised for conversion at all"
-  artifacts: []
-  missing: []
+  root_cause: "Two pre-phase-18 defects (Phase 5). (A) Relative bind mounts are never offered for conversion: ComposeAnalyzer detects ./data as type 'relative', but BrownfieldScanner.scan() keeps only absolute mounts in absolutePaths and DiscoveredStack has no relative field; MigrationWizard builds bindMountSelections and 'Volumes to copy' from absolutePaths + namedVolumes only, so volumeSelections is [] and nothing is rewritten or copied (new stack would start with empty ./data). Already flagged as 18-REVIEW WR-01. (B) ComposeRewriter.rewrite() always does yaml.parse + yaml.stringify, so the preview diff shows re-serialisation noise (sequence re-indent, dropped comments, requoting, CRLF->LF) instead of only the real change."
+  artifacts:
+    - path: "server/src/infrastructure/brownfield-scanner.ts"
+      issue: "Lines 144-146 filter bindMounts to type 'absolute'; relative mounts discarded"
+    - path: "shared/src/validation/brownfield.ts"
+      issue: "DiscoveredStack DTO has no relative bind mount field (also client/src/lib/brownfield-types.ts)"
+    - path: "client/src/routes/setup/components/migration-wizard.tsx"
+      issue: "Lines 81-88, 114-116: selections and volumesToCopy built from absolutePaths only"
+    - path: "client/src/routes/setup/components/migration-select-step.tsx"
+      issue: "Only renders 'Absolute Bind Mounts'; no relative-mount rows or copy"
+    - path: "server/src/infrastructure/compose-rewriter.ts"
+      issue: "Lines 28, 131-133: lossy parse/stringify round-trip"
+  missing:
+    - "Return relative bind mounts from the scan and list them in step 1 (default on), counted in Volumes to copy, copied from <oldDir>/<rel> to the new stack"
+    - "Rewrite compose via yaml parseDocument targeted edits so untouched lines stay byte-identical (comments, indentation, quoting, line endings); diff shows only real changes"
+    - "Regression tests: relative-mount scan row, wizard selection/count, rewriter preserving formatting, preview diff containing only the real change"
+  debug_session: ".planning/debug/migration-bind-mount-not-rewritten.md"
