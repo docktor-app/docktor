@@ -66,11 +66,34 @@ describe("brownfieldAdoptSchema", () => {
 });
 
 describe("migrationExecuteSchema", () => {
+    const validExecute = {...validPreview, displayName: "My App", backup: true, stopOldStack: true};
+
     it("accepts a full valid body", () => {
-        expect(migrationExecuteSchema.safeParse({...validPreview, displayName: "My App"}).success).toBe(true);
+        expect(migrationExecuteSchema.safeParse(validExecute).success).toBe(true);
+    });
+
+    it("accepts a body with both choices declined", () => {
+        expect(migrationExecuteSchema.safeParse({...validExecute, backup: false, stopOldStack: false}).success).toBe(
+            true,
+        );
     });
 
     it("rejects a body without displayName", () => {
-        expect(migrationExecuteSchema.safeParse(validPreview).success).toBe(false);
+        const {displayName: _displayName, ...body} = validExecute;
+        expect(migrationExecuteSchema.safeParse(body).success).toBe(false);
+    });
+
+    it("rejects a body without backup (D-12)", () => {
+        const {backup: _backup, ...body} = validExecute;
+        expect(migrationExecuteSchema.safeParse(body).success).toBe(false);
+    });
+
+    it("rejects a body without stopOldStack (D-12)", () => {
+        const {stopOldStack: _stopOldStack, ...body} = validExecute;
+        expect(migrationExecuteSchema.safeParse(body).success).toBe(false);
+    });
+
+    it("rejects a non-boolean backup", () => {
+        expect(migrationExecuteSchema.safeParse({...validExecute, backup: "true"}).success).toBe(false);
     });
 });

@@ -176,6 +176,131 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         await assertOriginalUntouched();
         await assertNoOsTempBackup();
     });
+
+    it("aborts fail-closed when the stop fails and undoes a partial stop (orchestrator decision 2)", async () => {
+        mockOldStack.stop.mockRejectedValue(new Error("cannot connect to docker"));
+
+        const result = await buildService().migrate(input());
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain("cannot connect to docker");
+        expect(mockStackFs.createDirectory).not.toHaveBeenCalled();
+        expect(mockMigrator.copyDirectory).not.toHaveBeenCalled();
+        expect(mockMigrator.copyVolumeToBindMount).not.toHaveBeenCalled();
+        expect(mockRewriter.rewrite).not.toHaveBeenCalled();
+        expect(mockStackRepo.create).not.toHaveBeenCalled();
+        expect(mockDocker.up).not.toHaveBeenCalled();
+        expect(mockStackFs.removeDirectory).not.toHaveBeenCalled();
+        expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+        await assertOriginalUntouched();
+    });
+
+    it("never stops or starts the old stack when stopOldStack is false (D-10)", async () => {
+        mockDocker.up.mockRejectedValue(new Error("port is already allocated"));
+
+        const result = await buildService().migrate(input({stopOldStack: false}));
+
+        expect(result.success).toBe(false);
+        expect(mockOldStack.stop).not.toHaveBeenCalled();
+        expect(mockOldStack.start).not.toHaveBeenCalled();
+        expect(result.error).toContain("Your original stack directory was not modified.");
+        expect(result.error).not.toContain("old stack");
+    });
+
+    it("tells the user how to restart manually when the automatic restart fails", async () => {
+        mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
+        mockOldStack.start.mockRejectedValue(new Error("daemon unreachable"));
+
+        const result = await buildService().migrate(input());
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain("could not be restarted automatically");
+        expect(result.error).toContain(originalDir);
+    });
+
+    it("creates no backup when backup is false (MIG-03, D-07)", async () => {
+        mockDocker.up.mockResolvedValue(undefined);
+
+        const result = await buildService().migrate(input({backup: false}));
+
+        expect(result.success).toBe(true);
+        const destinations = mockMigrator.copyDirectory.mock.calls.map((call) => String(call[1]));
+        expect(destinations.some((dest) => dest.endsWith(BACKUP_DIR_NAME))).toBe(false);
+        await expect(fs.access(path.join(newStackPath, BACKUP_DIR_NAME))).rejects.toThrow();
+        await assertNoOsTempBackup();
+    });
+
+    it("still backs up when the stack is not renamed and the compose file is unchanged (D-07)", async () => {
+        mockDocker.up.mockResolvedValue(undefined);
+
+        const result = await buildService().migrate(input({displayName: path.basename(originalDir)}));
+
+        expect(result.success).toBe(true);
+        expect(mockMigrator.copyDirectory).toHaveBeenCalledWith(
+            originalDir,
+            path.join(newStackPath, BACKUP_DIR_NAME),
+        );
+    });
+
+    it("refuses a target directory that already exists before anything is stopped or created (D-09)", async () => {
+        await fs.mkdir(newStackPath, {recursive: true});
+        await fs.writeFile(path.join(newStackPath, "marker.txt"), "mine", "utf-8");
+
+        const result = await buildService().migrate(input());
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain(newStackPath);
+        expect(result.error).toContain("already exists");
+        expect(mockOldStack.stop).not.toHaveBeenCalled();
+        expect(mockStackFs.createDirectory).not.toHaveBeenCalled();
+        expect(mockStackFs.removeDirectory).not.toHaveBeenCalled();
+        expect(await fs.readFile(path.join(newStackPath, "marker.txt"), "utf-8")).toBe("mine");
+    });
+
+    it("refuses a target directory that overlaps the old directory (Pitfall 4)", async () => {
+        mockStackFs.getStackDirectory.mockReturnValue(path.join(originalDir, "nested"));
+
+        const result = await buildService().migrate(input());
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain("overlap");
+        expect(mockOldStack.stop).not.toHaveBeenCalled();
+        expect(mockStackFs.createDirectory).not.toHaveBeenCalled();
+    });
+
+    it("refuses a target directory that contains the old directory (Pitfall 4)", async () => {
+        mockStackFs.getStackDirectory.mockReturnValue(tmpRoot);
+
+        const result = await buildService().migrate(input());
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain("overlap");
+        expect(mockStackFs.createDirectory).not.toHaveBeenCalled();
+    });
+
+    it("keeps rejecting a traversing named volume name and restarts the stopped stack (CR-02)", async () => {
+        const result = await buildService().migrate({
+            ...input(),
+            namedVolumeSelections: new Map([["../escape", true]]),
+        });
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain("Invalid volume name");
+        expect(mockMigrator.copyVolumeToBindMount).not.toHaveBeenCalled();
+        expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps confining a bind-mount newPath to the managed directory (CR-02)", async () => {
+        const result = await buildService().migrate({
+            ...input(),
+            volumeSelections: [{originalPath: "data", newPath: "../../outside", convert: true}],
+        });
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain("managed directory");
+        expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+        await assertOriginalUntouched();
+    });
 });
 
 describe("previewMigration (MIG-02, D-04)", () => {
