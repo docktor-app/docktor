@@ -1,19 +1,14 @@
 ---
-status: testing
+status: partial
 phase: 18-import-and-migration-flow
 source: [18-01-SUMMARY.md, 18-02-SUMMARY.md, 18-03-SUMMARY.md, 18-04-SUMMARY.md, 18-05-SUMMARY.md]
 started: 2026-10-15T12:00:00Z
-updated: 2026-10-15T15:11:30Z
+updated: 2026-10-15T15:48:21.865Z
 ---
 
 ## Current Test
-<!-- OVERWRITE each test - shows where we are -->
 
-number: 4
-name: Review step shows a real line diff and masked .env
-expected: |
-  Click "Preview Changes". Step 2 shows a unified line diff of the compose file with added lines marked green and removed lines red, plus "+N" / "−N" counters. If nothing changes it reads "No changes to your compose file." If the stack has a .env, it is shown in a read-only editor with secret values masked until you click "Show secret values".
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -29,44 +24,48 @@ severity: major
 
 ### 3. Migration dialog opens wide with step indicator
 expected: Click Migrate on a scanned stack. The dialog opens noticeably wider than before (up to ~5xl on desktop), shows "Step 1 of 4" with a progress list, and step 1 lets you pick volumes/options with "Cancel Migration" and "Preview Changes" buttons. Header and footer stay pinned while the body scrolls.
-result: issue
-reported: "i am not able to test this, since the stack I tried to migrate was not found. I am not sure, whether this is a windows issue."
-severity: blocker
-clarification: "no error, only not showing the stack in the table. it is running with docker desktop and /run/desktop/mnt/host/c/... as stack directory volume mount."
-follow_up: "got it, moved it into the stack folder. however, the dialog is rather small."
+result: pass
+note: "Initially reported 'stack not found' (scan root not visible in container, see G-18-3-scan) and 'dialog is rather small'; user then confirmed: test 3 passed."
 
 ### 4. Review step shows a real line diff and masked .env
 expected: Click "Preview Changes". Step 2 shows a unified line diff of the compose file with added lines marked green and removed lines red, plus "+N" / "−N" counters. If nothing changes it reads "No changes to your compose file." If the stack has a .env, it is shown in a read-only editor with secret values masked until you click "Show secret values".
-result: [pending]
+result: issue
+reported: "Test 4 also passed. however, the change is:\n  -     - ./data:/var/opt/memos\n+      - ./data:/var/opt/memos\ninstead of + /volume/data:/var/opt/memos"
+severity: major
 
 ### 5. Backup step is explicit
 expected: Step 3 is a dedicated backup step with a switch that is on by default. Turning it off shows a warning that no pre-migration backup will be made.
-result: [pending]
+result: pass
 
 ### 6. Old-stack step and summary
 expected: Step 4 has a "Stop the old stack" switch, on by default; turning it off warns about possible port conflicts. A "Migration summary" lists the stack name, volumes to copy, Backup Yes/No and Stop old stack Yes/No matching your choices. Back keeps all earlier choices.
-result: [pending]
+result: pass
+note: "User: pass, however Volumes to copy: 0. But this is probably related to the previous issue. (evidence attached to G-18-4)"
 
 ### 7. Migrate with backup on and old stack stopped
 expected: With both switches on, click "Confirm & Migrate". A "Migrating {name}…" toast appears, then a success toast mentioning the kept backup and that the old stack was stopped. The new stack directory contains a pre-migration-backup folder, the old stack's containers are stopped, the new stack runs, and the original directory is unchanged.
-result: [pending]
+result: blocked
+blocked_by: prior-phase
+reason: "Depends on G-18-4 (volume rewrite/copy). User: Doesnt it make sense to test this, when also the volume is copied correctly?"
 
 ### 8. Migrate with backup off and old stack left running
 expected: Migrate another stack with both switches off. No pre-migration-backup folder is created in the new stack directory, and the old stack's containers keep running.
-result: [pending]
+result: blocked
+blocked_by: prior-phase
+reason: "Depends on G-18-4 (volume rewrite/copy). User: Doesnt it make sense to test this, when also the volume is copied correctly?"
 
 ### 9. Phone-width layout
 expected: At a phone width (~360px), the migration dialog fits horizontally without clipping, the diff on step 2 is visible and scrollable, footer buttons are full width, and "Confirm & Migrate" is reachable on step 4.
-result: [pending]
+result: pass
 
 ## Summary
 
 total: 9
-passed: 1
+passed: 5
 issues: 2
-pending: 6
+pending: 0
 skipped: 0
-blocked: 0
+blocked: 2
 
 ## Gaps
 
@@ -90,15 +89,6 @@ blocked: 0
     - "Server-side guard: adopt/migrate of an already-managed compose path is rejected with ConflictError"
   debug_session: ".planning/debug/scan-missing-unmanaged-stack.md"
 
-- gap_id: G-18-3
-  truth: "Migration dialog opens larger than before (up to ~5xl on desktop) so the diff and steps are readable (ROADMAP SC2)"
-  status: failed
-  reason: "User reported: got it, moved it into the stack folder. however, the dialog is rather small."
-  severity: major
-  test: 3
-  artifacts: []
-  missing: []
-
 - gap_id: G-18-3-scan
   truth: "A scan of a directory that does not exist inside the container tells the user so, instead of silently dropping it"
   status: failed
@@ -116,5 +106,15 @@ blocked: 0
     - "Always show them in the UI, with a hint about container-visible paths (/host/...)"
   debug_session: ".planning/debug/scan-missing-unmanaged-stack.md"
   clarification: "User clarified: no error, only not showing the stack in the table. It is running with docker desktop and /run/desktop/mnt/host/c/... as stack directory volume mount."
+  artifacts: []
+  missing: []
+
+- gap_id: G-18-4
+  truth: "The migration preview diff shows the compose rewrite the user selected (bind mount ./data rewritten to the new stack's data path, e.g. /volume/data:/var/opt/memos), without spurious whitespace-only changes"
+  status: failed
+  reason: "User reported: the diff renders, but the change is '-     - ./data:/var/opt/memos' / '+      - ./data:/var/opt/memos' (indentation-only change, path unchanged) instead of '+ /volume/data:/var/opt/memos'"
+  severity: major
+  test: 4
+  related_evidence: "Test 6: migration summary shows 'Volumes to copy: 0' for the same stack, so the ./data bind mount was likely not selected/recognised for conversion at all"
   artifacts: []
   missing: []
