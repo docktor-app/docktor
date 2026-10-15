@@ -9,6 +9,7 @@ import {StackFilesystem} from "../infrastructure/stack-filesystem.js";
 import {StackRepository, stackRepository} from "../repositories/stack-repository.js";
 import {slugify} from "../lib/slugify.js";
 import {createComposeConfig} from "../domain/compose-config.js";
+import {computeUnifiedDiff, type UnifiedDiff} from "../lib/unified-diff.js";
 import {BadRequestError} from "../lib/errors.js";
 import type {DockerExecutorPort} from "./ports/docker-executor-port.js";
 import type {VolumeMigratorPort} from "./ports/volume-migrator-port.js";
@@ -60,16 +61,17 @@ export class MigrationService {
 	) {}
 
 	/**
-	 * Preview migration changes without executing
+	 * Preview migration changes without executing. The diff is a real line diff
+	 * (D-04, MIG-02) in the same UnifiedDiff shape the stack-edit review renders.
 	 */
 	async previewMigration(
 		composePath: string,
 		volumeSelections: VolumeSelection[],
 		namedVolumeSelections: Map<string, boolean>,
-	): Promise<{diff: string; extractedEnv: string}> {
+	): Promise<{diff: UnifiedDiff; extractedEnv: string}> {
 		const originalCompose = await fs.readFile(composePath, "utf-8");
 		const result = this.rewriter.rewrite(originalCompose, volumeSelections, namedVolumeSelections);
-		const diff = this.rewriter.generateDiff(originalCompose, result.rewrittenCompose);
+		const diff = computeUnifiedDiff(originalCompose, result.rewrittenCompose);
 		return {diff, extractedEnv: result.extractedEnv};
 	}
 
