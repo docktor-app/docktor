@@ -20,6 +20,17 @@ import type {
   VolumeSelection,
 } from "@/lib/brownfield-types";
 
+const MIGRATION_ERROR_FALLBACK =
+  "Migration failed. Your original stack directory was not modified. Check the error and try again.";
+
+function successDescription({backup, stopOldStack}: Pick<ConfirmMigrateParams, "backup" | "stopOldStack">): string | undefined {
+  const notes = [
+    backup ? "Backup saved to pre-migration-backup/ in the new stack directory." : null,
+    stopOldStack ? "The old stack was stopped." : null,
+  ].filter((note): note is string => note !== null);
+  return notes.length > 0 ? notes.join(" ") : undefined;
+}
+
 /**
  * Injected API surface so this component is agnostic about which endpoints
  * drive it — the setup wizard's BrownfieldStep wires it to `setup-api.ts`
@@ -109,7 +120,7 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
   // mounted for the whole background migration) instead of inside
   // MigrationWizard, which closes/unmounts as soon as the user confirms.
   const handleConfirmMigrate = ({stack, displayName, volumeSelections, namedVolumeSelections, backup, stopOldStack}: ConfirmMigrateParams) => {
-    toast.info(`Migrating ${displayName}...`);
+    toast.info(`Migrating ${displayName}\u2026`);
 
     api
       .executeMigration({
@@ -122,7 +133,9 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
       })
       .then((result) => {
         if (result.success && result.stackId) {
+          const description = successDescription({backup, stopOldStack});
           toast.success(`Migration complete! ${displayName} is now managed by Docktor`, {
+            ...(description && {description}),
             action: {
               label: "View stack",
               onClick: () => navigate(`/stacks/${result.stackId}`),
@@ -130,12 +143,11 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
           });
           setAdoptedIds((prev) => new Set([...prev, stack.path]));
         } else {
-          toast.error(result.error || "Migration failed");
+          toast.error(result.error || MIGRATION_ERROR_FALLBACK);
         }
       })
       .catch((err: unknown) => {
-        const message = err instanceof Error ? err.message : "Migration failed";
-        toast.error(message);
+        toast.error(err instanceof Error && err.message ? err.message : MIGRATION_ERROR_FALLBACK);
       });
   };
 
