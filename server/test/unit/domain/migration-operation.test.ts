@@ -3,6 +3,7 @@ import type {MigrationOperation} from "@docktor/shared";
 import {
     finishMigrationOperation,
     pruneFinishedOperations,
+    recordMigrationStep,
     startMigrationOperation,
 } from "../../../src/domain/migration-operation.js";
 
@@ -47,6 +48,29 @@ describe("startMigrationOperation", () => {
             result: null,
             startedAt: "2026-01-01T10:00:00.000Z",
         });
+    });
+});
+
+describe("recordMigrationStep", () => {
+    it("sets the step and its detail on a running operation without mutating the input", () => {
+        const operation = running("a", 0);
+
+        const next = recordMigrationStep(operation, "copying_named_volume", "pgdata");
+
+        expect(next).toEqual({...operation, step: "copying_named_volume", stepDetail: "pgdata"});
+        expect(operation.step).toBe("starting");
+    });
+
+    it("clears a previous detail when the next step has none", () => {
+        const withDetail = recordMigrationStep(running("a", 0), "copying_bind_mount", "./data");
+
+        expect(recordMigrationStep(withDetail, "deploying", null).stepDetail).toBeNull();
+    });
+
+    it("returns a finished operation unchanged", () => {
+        const done = finished("a", 0, 3);
+
+        expect(recordMigrationStep(done, "rolling_back", null)).toBe(done);
     });
 });
 

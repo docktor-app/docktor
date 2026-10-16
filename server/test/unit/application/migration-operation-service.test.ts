@@ -1,6 +1,11 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {MigrationOperationService} from "../../../src/application/migration-operation-service.js";
-import type {MigrationInput, MigrationPlan, MigrationResult} from "../../../src/application/migration-service.js";
+import type {
+    MigrationInput,
+    MigrationPlan,
+    MigrationProgressListener,
+    MigrationResult,
+} from "../../../src/application/migration-service.js";
 import type {MigrationOperation} from "@docktor/shared";
 import {BadRequestError, ConflictError, NotFoundError} from "../../../src/lib/errors.js";
 
@@ -52,7 +57,9 @@ const SUCCESS: MigrationResult = {success: true, stackId: "my-app", originalPath
 
 describe("MigrationOperationService", () => {
     let preflight: ReturnType<typeof vi.fn<(input: MigrationInput) => Promise<MigrationPlan>>>;
-    let execute: ReturnType<typeof vi.fn<(plan: MigrationPlan) => Promise<MigrationResult>>>;
+    let execute: ReturnType<
+        typeof vi.fn<(plan: MigrationPlan, onProgress?: MigrationProgressListener) => Promise<MigrationResult>>
+    >;
     let clock: Date;
     let counter: number;
     let service: MigrationOperationService;
@@ -168,6 +175,31 @@ describe("MigrationOperationService", () => {
             const finished = emit.mock.calls[1]?.[1].operation;
             expect(finished).toMatchObject({status: "succeeded", step: "finished"});
             expect(finished).toEqual(service.get("op-1"));
+        });
+
+        it("records and publishes each reported step, and get shows the latest step mid-run", async () => {
+            const pending = deferred();
+            const seenMidRun: Array<{step: string; stepDetail: string | null}> = [];
+            execute.mockImplementation(async (_plan, onProgress) => {
+                onProgress?.({step: "copying_named_volume", detail: "pgdata"});
+                const mid = service.get("op-1");
+                seenMidRun.push({step: mid.step, stepDetail: mid.stepDetail});
+                onProgress?.({step: "deploying", detail: null});
+                return pending.promise;
+            });
+
+            await service.start(inputFor("My App"));
+            await vi.waitFor(() => expect(emit).toHaveBeenCalledTimes(3));
+
+            expect(seenMidRun).toEqual([{step: "copying_named_volume", stepDetail: "pgdata"}]);
+            expect(service.get("op-1")).toMatchObject({status: "running", step: "deploying", stepDetail: null});
+
+            pending.resolve(SUCCESS);
+            await settle("op-1");
+
+            const steps = emit.mock.calls.map((call) => call[1].operation.step);
+            expect(steps).toEqual(["starting", "copying_named_volume", "deploying", "finished"]);
+            expect(emit.mock.calls[1]?.[1].operation.stepDetail).toBe("pgdata");
         });
 
         it("emits a failed operation when the migration fails", async () => {

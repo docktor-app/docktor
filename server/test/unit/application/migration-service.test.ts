@@ -536,6 +536,96 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         });
     });
 
+    describe("progress reporting (G-18-job)", () => {
+        function copyingInput(overrides: Partial<{backup: boolean; stopOldStack: boolean}> = {}) {
+            return {
+                ...input(overrides),
+                volumeSelections: [{originalPath: "./data", newPath: "./volumes/data", convert: true}],
+                namedVolumeSelections: new Map<string, boolean>([["pgdata", true]]),
+            };
+        }
+
+        it("reports every step of a separate migration in order, with the volume or path as detail", async () => {
+            mockDocker.up.mockResolvedValue(undefined);
+            const listener = vi.fn();
+
+            const result = await buildService().migrate(copyingInput(), listener);
+
+            expect(result.success).toBe(true);
+            expect(listener.mock.calls.map((call) => call[0])).toEqual([
+                {step: "stopping_old_stack", detail: null},
+                {step: "creating_directory", detail: null},
+                {step: "backing_up", detail: null},
+                {step: "copying_named_volume", detail: "pgdata"},
+                {step: "copying_bind_mount", detail: "./data"},
+                {step: "writing_compose", detail: null},
+                {step: "recording_stack", detail: null},
+                {step: "deploying", detail: null},
+            ]);
+        });
+
+        it("skips the steps a run does not perform", async () => {
+            mockDocker.up.mockResolvedValue(undefined);
+            const listener = vi.fn();
+
+            await buildService().migrate(input({backup: false, stopOldStack: false}), listener);
+
+            expect(listener.mock.calls.map((call) => call[0].step)).toEqual([
+                "creating_directory",
+                "writing_compose",
+                "recording_stack",
+                "deploying",
+            ]);
+        });
+
+        it("reports rolling_back last when a step fails, and still returns the rollback failure", async () => {
+            mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
+            const listener = vi.fn();
+
+            const result = await buildService().migrate(input(), listener);
+
+            expect(result.success).toBe(false);
+            expect(result.error).toContain("docker compose up failed");
+            expect(listener.mock.calls.at(-1)?.[0]).toEqual({step: "rolling_back", detail: null});
+            expect(listener.mock.calls.map((call) => call[0].step)).toContain("deploying");
+        });
+
+        it("is not affected by a listener that throws on every call", async () => {
+            mockDocker.up.mockResolvedValue(undefined);
+            const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+            const listener = vi.fn(() => {
+                throw new Error("listener exploded");
+            });
+
+            const result = await buildService().migrate(copyingInput(), listener);
+
+            expect(result).toEqual({success: true, stackId, originalPath: originalDir});
+            expect(mockDocker.up).toHaveBeenCalledTimes(1);
+            expect(consoleError).toHaveBeenCalled();
+        });
+
+        it("still rolls back and restarts the old stack when the listener throws during a failing run", async () => {
+            mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
+            vi.spyOn(console, "error").mockImplementation(() => undefined);
+            const listener = vi.fn(() => {
+                throw new Error("listener exploded");
+            });
+
+            const result = await buildService().migrate(input(), listener);
+
+            expect(result.success).toBe(false);
+            expect(result.error).toContain("The old stack was restarted.");
+            expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
+            expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+        });
+
+        it("runs without a listener", async () => {
+            mockDocker.up.mockResolvedValue(undefined);
+
+            await expect(buildService().migrate(copyingInput())).resolves.toMatchObject({success: true});
+        });
+    });
+
     describe("in-place migration (G-18-7)", () => {
         const ASIDE_COMPOSE = COMPOSE;
         const REWRITTEN = "services:\n  web:\n    image: nginx:1.27\n";
@@ -589,6 +679,23 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             const destinations = mockMigrator.copyDirectory.mock.calls.map((call) => String(call[1]));
             expect(destinations.some((dest) => dest.endsWith(BACKUP_DIR_NAME))).toBe(false);
             expect(mockStackRepo.create).toHaveBeenCalledWith(expect.objectContaining({hostPath: originalDir}));
+        });
+
+        it("reports moving_original_aside after stopping and before creating the directory, without a backup step", async () => {
+            mockDocker.up.mockResolvedValue(undefined);
+            const listener = vi.fn();
+
+            await buildService().migrate(inPlaceInput(), listener);
+
+            expect(listener.mock.calls.map((call) => call[0].step)).toEqual([
+                "stopping_old_stack",
+                "moving_original_aside",
+                "creating_directory",
+                "copying_bind_mount",
+                "writing_compose",
+                "recording_stack",
+                "deploying",
+            ]);
         });
 
         it("leaves the renamed original byte-identical and writes the new compose file and .env into the original path", async () => {
