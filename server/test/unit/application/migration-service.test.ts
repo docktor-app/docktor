@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {MigrationService} from "../../../src/application/migration-service.js";
+import {BadRequestError, ConflictError} from "../../../src/lib/errors.js";
 import {slugify} from "../../../src/lib/slugify.js";
 import type {DockerExecutorPort} from "../../../src/application/ports/docker-executor-port.js";
 import type {VolumeMigratorPort} from "../../../src/application/ports/volume-migrator-port.js";
@@ -26,12 +27,15 @@ function createMockRewriter() {
     return {rewrite: vi.fn().mockReturnValue({rewrittenCompose: COMPOSE, extractedEnv: ""})};
 }
 
-function createMockStackFs(newStackPath: string) {
+function createMockStackFs(stacksRoot: string) {
     return {
-        getStackDirectory: vi.fn(() => newStackPath),
-        createDirectory: vi.fn(async () => {
-            await fs.mkdir(newStackPath, {recursive: true});
-            return newStackPath;
+        getStackDirectory: vi.fn((id: string) => path.join(stacksRoot, id)),
+        // Real exclusive create: the leaf mkdir is not recursive, so an existing directory rejects (EEXIST).
+        createDirectoryExclusive: vi.fn(async (id: string) => {
+            await fs.mkdir(stacksRoot, {recursive: true});
+            const target = path.join(stacksRoot, id);
+            await fs.mkdir(target);
+            return target;
         }),
         removeDirectory: vi.fn().mockResolvedValue(undefined),
     };
@@ -77,7 +81,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         mockDocker = createMockDocker();
         mockMigrator = createMockMigrator();
         mockRewriter = createMockRewriter();
-        mockStackFs = createMockStackFs(newStackPath);
+        mockStackFs = createMockStackFs(path.join(tmpRoot, "stacks"));
         mockStackRepo = createMockStackRepo();
         mockOldStack = createMockOldStack();
     });
@@ -97,6 +101,13 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
     async function assertOriginalUntouched(): Promise<void> {
         expect(await fs.readFile(composePath, "utf-8")).toBe(COMPOSE);
         expect(await fs.readFile(path.join(originalDir, "data", "keep.txt"), "utf-8")).toBe("keep me");
+    }
+
+    function expectNoSideEffects(): void {
+        expect(mockOldStack.stop).not.toHaveBeenCalled();
+        expect(mockStackFs.createDirectoryExclusive).not.toHaveBeenCalled();
+        expect(mockMigrator.copyDirectory).not.toHaveBeenCalled();
+        expect(mockStackRepo.create).not.toHaveBeenCalled();
     }
 
     function buildService(): MigrationService {
@@ -134,7 +145,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         expect(mockOldStack.stop).toHaveBeenCalledTimes(1);
         expect(mockOldStack.stop).toHaveBeenCalledWith(composePath);
         expect(mockOldStack.stop.mock.invocationCallOrder[0]).toBeLessThan(
-            mockStackFs.createDirectory.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+            mockStackFs.createDirectoryExclusive.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
         );
         expect(mockMigrator.copyDirectory).toHaveBeenCalledWith(
             originalDir,
@@ -185,7 +196,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
 
         expect(result.success).toBe(false);
         expect(result.error).toContain("cannot connect to docker");
-        expect(mockStackFs.createDirectory).not.toHaveBeenCalled();
+        expect(mockStackFs.createDirectoryExclusive).not.toHaveBeenCalled();
         expect(mockMigrator.copyDirectory).not.toHaveBeenCalled();
         expect(mockMigrator.copyVolumeToBindMount).not.toHaveBeenCalled();
         expect(mockRewriter.rewrite).not.toHaveBeenCalled();
@@ -247,36 +258,93 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         await fs.mkdir(newStackPath, {recursive: true});
         await fs.writeFile(path.join(newStackPath, "marker.txt"), "mine", "utf-8");
 
-        const result = await buildService().migrate(input());
+        const refusal = buildService().migrate(input());
 
-        expect(result.success).toBe(false);
-        expect(result.error).toContain(newStackPath);
-        expect(result.error).toContain("already exists");
-        expect(mockOldStack.stop).not.toHaveBeenCalled();
-        expect(mockStackFs.createDirectory).not.toHaveBeenCalled();
-        expect(mockStackFs.removeDirectory).not.toHaveBeenCalled();
+        await expect(refusal).rejects.toBeInstanceOf(ConflictError);
+        await expect(refusal).rejects.toThrow(newStackPath);
+        await expect(refusal).rejects.toThrow("already exists");
+        expectNoSideEffects();
         expect(await fs.readFile(path.join(newStackPath, "marker.txt"), "utf-8")).toBe("mine");
     });
 
     it("refuses a target directory that overlaps the old directory (Pitfall 4)", async () => {
         mockStackFs.getStackDirectory.mockReturnValue(path.join(originalDir, "nested"));
 
-        const result = await buildService().migrate(input());
+        const refusal = buildService().migrate(input());
 
-        expect(result.success).toBe(false);
-        expect(result.error).toContain("overlap");
-        expect(mockOldStack.stop).not.toHaveBeenCalled();
-        expect(mockStackFs.createDirectory).not.toHaveBeenCalled();
+        await expect(refusal).rejects.toBeInstanceOf(ConflictError);
+        await expect(refusal).rejects.toThrow("overlap");
+        expectNoSideEffects();
     });
 
     it("refuses a target directory that contains the old directory (Pitfall 4)", async () => {
         mockStackFs.getStackDirectory.mockReturnValue(tmpRoot);
 
+        const refusal = buildService().migrate(input());
+
+        await expect(refusal).rejects.toBeInstanceOf(ConflictError);
+        await expect(refusal).rejects.toThrow("overlap");
+        expectNoSideEffects();
+    });
+
+    it("refuses an existing stack record with a ConflictError before any side effect", async () => {
+        mockStackRepo.exists.mockResolvedValue(true);
+
+        const refusal = buildService().migrate(input());
+
+        await expect(refusal).rejects.toBeInstanceOf(ConflictError);
+        await expect(refusal).rejects.toThrow(`Stack "${stackId}" already exists`);
+        expectNoSideEffects();
+    });
+
+    it("refuses a display name that produces an empty slug with a BadRequestError", async () => {
+        const refusal = buildService().migrate(input({displayName: "!!!"}));
+
+        await expect(refusal).rejects.toBeInstanceOf(BadRequestError);
+        expectNoSideEffects();
+    });
+
+    it("preflight is side-effect free and execute runs the preflighted plan", async () => {
+        mockDocker.up.mockResolvedValue(undefined);
+        const service = buildService();
+
+        const plan = await service.preflight(input());
+
+        expect(plan.stackId).toBe(stackId);
+        expect(plan.originalDir).toBe(originalDir);
+        expect(plan.targetDir).toBe(newStackPath);
+        expectNoSideEffects();
+
+        const result = await service.execute(plan);
+
+        expect(result).toEqual({success: true, stackId, originalPath: originalDir});
+        expect(mockStackFs.createDirectoryExclusive).toHaveBeenCalledTimes(1);
+    });
+
+    it("leaves a directory that appeared during the stop window untouched and restarts the old stack (CR-02)", async () => {
+        mockOldStack.stop.mockImplementation(async () => {
+            await fs.mkdir(newStackPath, {recursive: true});
+            await fs.writeFile(path.join(newStackPath, "marker.txt"), "theirs", "utf-8");
+        });
+
         const result = await buildService().migrate(input());
 
         expect(result.success).toBe(false);
-        expect(result.error).toContain("overlap");
-        expect(mockStackFs.createDirectory).not.toHaveBeenCalled();
+        expect(mockStackFs.removeDirectory).not.toHaveBeenCalled();
+        expect(mockStackRepo.delete).not.toHaveBeenCalled();
+        expect(await fs.readFile(path.join(newStackPath, "marker.txt"), "utf-8")).toBe("theirs");
+        expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+    });
+
+    it("never deletes a stack record this run did not create (CR-02)", async () => {
+        mockStackRepo.create.mockRejectedValue(new Error("Unique constraint failed on the fields: (`id`)"));
+
+        const result = await buildService().migrate(input());
+
+        expect(result.success).toBe(false);
+        expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
+        expect(mockStackRepo.delete).not.toHaveBeenCalled();
+        expect(mockOldStack.start).toHaveBeenCalledTimes(1);
     });
 
     it("fails the migration, removes its directory and restarts the old stack when a bind-mount copy fails (CR-01)", async () => {
@@ -295,6 +363,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         expect(mockOldStack.start).toHaveBeenCalledTimes(1);
         expect(mockOldStack.start).toHaveBeenCalledWith(composePath);
         expect(mockStackRepo.create).not.toHaveBeenCalled();
+        expect(mockStackRepo.delete).not.toHaveBeenCalled();
         expect(mockDocker.up).not.toHaveBeenCalled();
         await expect(fs.access(path.join(newStackPath, "volumes", "data"))).rejects.toThrow();
         await assertOriginalUntouched();
