@@ -39,7 +39,8 @@ import Fastify from "fastify";
 import {serializerCompiler, validatorCompiler, type ZodTypeProvider} from "fastify-type-provider-zod";
 import importRoutes from "../../../src/routes/imports.js";
 import setupRoutes from "../../../src/routes/setup.js";
-import {migrationService} from "../../../src/application/migration-service.js";
+import {migrationService, type MigrationPlan} from "../../../src/application/migration-service.js";
+import {ConflictError} from "../../../src/lib/errors.js";
 
 const COMPOSE_FIXTURE = [
     "services:",
@@ -261,28 +262,73 @@ describe("brownfield routes", () => {
         });
     });
 
-    describe.each(["/api/stacks/import/migrate", "/api/setup/migrate"])("POST %s", (url) => {
-        it("passes the validated body to migrationService.migrate with a Map for named volumes", async () => {
+    describe.each([
+        ["/api/stacks/import/migrate", "/api/stacks/import/migrations"],
+    ] as const)("POST %s", (url, operationsUrl) => {
+        function payload(overrides: Record<string, unknown> = {}) {
+            return {
+                composePath,
+                displayName: "My App",
+                volumeSelections: [],
+                namedVolumeSelections: {},
+                backup: true,
+                stopOldStack: false,
+                ...overrides,
+            };
+        }
+
+        function planFor(stackId: string): MigrationPlan {
+            return {
+                stackId,
+                displayName: "My App",
+                composePath,
+                originalDir: "/opt/app",
+                targetDir: "/data/stacks/my-app",
+                volumeSelections: [],
+                namedVolumeSelections: new Map(),
+                backup: true,
+                stopOldStack: false,
+                inPlace: null,
+            };
+        }
+
+        async function finishedOperation(id: string) {
+            let body: Record<string, unknown> = {};
+            await vi.waitFor(async () => {
+                const res = await app.inject({method: "GET", url: `${operationsUrl}/${id}`});
+                expect(res.statusCode).toBe(200);
+                body = res.json();
+                expect(body.status).not.toBe("running");
+            });
+            return body;
+        }
+
+        it("answers 202 with a running operation and hands the validated body to preflight with a Map for named volumes", async () => {
             const resolved = {success: true, stackId: "my-app", originalPath: "/opt/app"};
-            const spy = vi.spyOn(migrationService, "migrate").mockResolvedValue(resolved);
+            const preflight = vi.spyOn(migrationService, "preflight").mockResolvedValue(planFor("my-app"));
+            vi.spyOn(migrationService, "execute").mockResolvedValue(resolved);
             const volumeSelections = [{originalPath: "/srv/data", newPath: "./volumes/data", convert: true}];
 
             const res = await app.inject({
                 method: "POST",
                 url,
-                payload: {
-                    composePath,
-                    displayName: "My App",
-                    volumeSelections,
-                    namedVolumeSelections: {pgdata: true},
-                    backup: true,
-                    stopOldStack: false,
-                },
+                payload: payload({volumeSelections, namedVolumeSelections: {pgdata: true}}),
             });
 
-            expect(res.statusCode).toBe(200);
-            expect(spy).toHaveBeenCalledTimes(1);
-            const input = spy.mock.calls[0]?.[0];
+            expect(res.statusCode).toBe(202);
+            const body = res.json();
+            expect(typeof body.id).toBe("string");
+            expect(body).toMatchObject({
+                stackId: "my-app",
+                displayName: "My App",
+                composePath,
+                backup: true,
+                stopOldStack: false,
+                status: "running",
+                result: null,
+            });
+            expect(preflight).toHaveBeenCalledTimes(1);
+            const input = preflight.mock.calls[0]?.[0];
             expect(input?.composePath).toBe(composePath);
             expect(input?.displayName).toBe("My App");
             expect(input?.volumeSelections).toEqual(volumeSelections);
@@ -290,17 +336,58 @@ describe("brownfield routes", () => {
             expect([...(input?.namedVolumeSelections ?? [])]).toEqual([["pgdata", true]]);
             expect(input?.backup).toBe(true);
             expect(input?.stopOldStack).toBe(false);
-            expect(res.json()).toEqual(resolved);
+            await finishedOperation(body.id);
+        });
+
+        it("makes the final result readable by id once the background run ends", async () => {
+            vi.spyOn(migrationService, "preflight").mockResolvedValue(planFor("my-app"));
+            vi.spyOn(migrationService, "execute").mockResolvedValue({
+                success: true,
+                stackId: "my-app",
+                originalPath: "/opt/app",
+            });
+
+            const started = await app.inject({method: "POST", url, payload: payload()});
+            const finished = await finishedOperation(started.json().id);
+
+            expect(finished.status).toBe("succeeded");
+            expect(finished.step).toBe("finished");
+            expect(finished.result).toEqual({success: true, stackId: "my-app", originalPath: "/opt/app"});
+            expect(typeof finished.finishedAt).toBe("string");
+        });
+
+        it("ends as failed with the migration error when execute reports a failure", async () => {
+            vi.spyOn(migrationService, "preflight").mockResolvedValue(planFor("my-app"));
+            vi.spyOn(migrationService, "execute").mockResolvedValue({
+                success: false,
+                error: "Migration failed: boom.",
+                originalPath: "/opt/app",
+            });
+
+            const started = await app.inject({method: "POST", url, payload: payload()});
+            const finished = await finishedOperation(started.json().id);
+
+            expect(finished.status).toBe("failed");
+            expect(finished.result).toMatchObject({success: false, error: "Migration failed: boom."});
+        });
+
+        it("answers 409 for a preflight conflict and creates no operation", async () => {
+            vi.spyOn(migrationService, "preflight").mockRejectedValue(new ConflictError("Stack already exists"));
+            const execute = vi.spyOn(migrationService, "execute");
+
+            const res = await app.inject({method: "POST", url, payload: payload()});
+
+            expect(res.statusCode).toBe(409);
+            expect(execute).not.toHaveBeenCalled();
+            const lookup = await app.inject({method: "GET", url: `${operationsUrl}/unknown-id`});
+            expect(lookup.statusCode).toBe(404);
         });
 
         it.each([
             ["backup", {stopOldStack: true}],
             ["stopOldStack", {backup: true}],
-        ])("rejects a body without %s with 400 and never migrates (D-12)", async (_missing, flags) => {
-            const spy = vi.spyOn(migrationService, "migrate").mockResolvedValue({
-                success: true,
-                originalPath: "/unused",
-            });
+        ])("rejects a body without %s with 400 and never runs preflight (D-12)", async (_missing, flags) => {
+            const preflight = vi.spyOn(migrationService, "preflight").mockResolvedValue(planFor("my-app"));
 
             const res = await app.inject({
                 method: "POST",
@@ -315,31 +402,20 @@ describe("brownfield routes", () => {
             });
 
             expect(res.statusCode).toBe(400);
-            expect(spy).not.toHaveBeenCalled();
+            expect(preflight).not.toHaveBeenCalled();
         });
 
-        it("rejects a non-compose path with 400 and never migrates", async () => {
-            // Resolved stub so a validation regression can never reach the real migration.
-            const spy = vi.spyOn(migrationService, "migrate").mockResolvedValue({
-                success: true,
-                originalPath: "/unused",
-            });
+        it("rejects a non-compose path with 400 and never runs preflight", async () => {
+            const preflight = vi.spyOn(migrationService, "preflight").mockResolvedValue(planFor("my-app"));
 
             const res = await app.inject({
                 method: "POST",
                 url,
-                payload: {
-                    composePath: "/etc/passwd",
-                    displayName: "My App",
-                    volumeSelections: [],
-                    namedVolumeSelections: {},
-                    backup: true,
-                    stopOldStack: true,
-                },
+                payload: payload({composePath: "/etc/passwd", stopOldStack: true}),
             });
 
             expect(res.statusCode).toBe(400);
-            expect(spy).not.toHaveBeenCalled();
+            expect(preflight).not.toHaveBeenCalled();
         });
     });
 });
