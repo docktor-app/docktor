@@ -1,6 +1,7 @@
 import {CST, isMap, isScalar, isSeq, parseDocument, Scalar, type YAMLMap} from "yaml";
 import {AppError} from "../lib/errors.js";
 import type {ComposeRewriterPort} from "../application/ports/compose-rewriter-port.js";
+import {isVariableReference} from "./compose-analyzer.js";
 
 export interface VolumeSelection {
 	originalPath: string;
@@ -159,6 +160,8 @@ type VolumeEntry = YAMLMap["items"][number];
 /** Plans the edits for one compose document. */
 class ComposeEditPlan {
 	private readonly edits: SourceEdits;
+	// Insertion-ordered: a later duplicate key overwrites the value but keeps its first position.
+	private readonly envVars = new Map<string, string>();
 
 	constructor(
 		private readonly source: string,
@@ -182,6 +185,47 @@ class ComposeEditPlan {
 				this.rewriteLongForm(entry);
 			}
 		}
+	}
+
+	/**
+	 * Inline literal values of a map-form `environment` move to `.env`: each value scalar becomes
+	 * `${KEY}` in place. List-form entries, null values, values that already reference a variable
+	 * and block scalars stay as they are.
+	 */
+	extractServiceEnvironment(service: YAMLMap): void {
+		const environment = service.get("environment", true);
+		if (!isMap(environment)) {
+			return;
+		}
+		for (const pair of environment.items) {
+			if (!isScalar(pair.key) || !isScalar(pair.value)) {
+				continue;
+			}
+			const key = String(pair.key.value);
+			const literal = this.literalEnvValue(pair.value);
+			if (literal !== undefined) {
+				this.envVars.set(key, literal);
+				this.edits.replaceScalar(pair.value, `\${${key}}`);
+			}
+		}
+	}
+
+	private literalEnvValue(node: Scalar): string | undefined {
+		const range = node.range;
+		const isEditable = node.type === Scalar.PLAIN || node.type === Scalar.QUOTE_DOUBLE || node.type === Scalar.QUOTE_SINGLE;
+		if (!range || !isEditable || node.value === null || node.value === undefined) {
+			return undefined;
+		}
+		// A plain number or boolean keeps its source spelling (`0x1F`, `1e3`), not the parsed value.
+		const text = typeof node.value === "string" ? node.value : this.source.slice(range[0], range[1]);
+		return isVariableReference(text) ? undefined : text;
+	}
+
+	extractedEnv(): {extractedEnv: string; envVars: Record<string, string>} {
+		return {
+			extractedEnv: [...this.envVars].map(([key, value]) => `${key}=${value}`).join("\n"),
+			envVars: Object.fromEntries(this.envVars),
+		};
 	}
 
 	// CR-03: long-form entries ({type, source, target}) rewrite only their `source` (and `type`
@@ -302,6 +346,12 @@ export class ComposeRewriter implements ComposeRewriterPort {
 	 * Rewrite compose file:
 	 * 1. Update volume paths based on selections
 	 * 2. Mark unconverted named volumes as external
+	 * 3. Move inline literal `environment` values to `.env`
+	 *
+	 * Behaviour change (G-18-4 B): the previous implementation replaced a map-form `environment`
+	 * by a list of bare `${KEY}` entries, which Compose reads as interpolated values without keys.
+	 * The map form now stays and each value becomes `KEY: ${KEY}`, which Compose interpolates from
+	 * the stack's `.env`.
 	 *
 	 * A document that does not parse, or has no `services` map, is returned unchanged.
 	 */
@@ -325,11 +375,12 @@ export class ComposeRewriter implements ComposeRewriterPort {
 		for (const pair of services.items) {
 			if (isMap(pair.value)) {
 				plan.rewriteServiceVolumes(pair.value);
+				plan.extractServiceEnvironment(pair.value);
 			}
 		}
 		plan.rewriteTopLevelVolumes(root);
 
-		return {...unchanged, rewrittenCompose: plan.apply()};
+		return {rewrittenCompose: plan.apply(), ...plan.extractedEnv()};
 	}
 }
 
