@@ -9,3 +9,4 @@ export * from "./templates.js";
 export * from "./health.js";
 export * from "./environment.js";
 export * from "./brownfield.js";
+export * from "./migration-operation.js";

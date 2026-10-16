@@ -2,9 +2,11 @@ import type {FastifyPluginAsyncZod} from "fastify-type-provider-zod";
 import {requireAuth} from "../lib/auth-middleware.js";
 import {onboardingService} from "../application/onboarding-service.js";
 import {migrationService} from "../application/migration-service.js";
+import {migrationOperationService} from "../application/migration-operation-service.js";
 import {
     brownfieldAdoptSchema,
     migrationExecuteSchema,
+    migrationOperationParamsSchema,
     migrationPreviewSchema,
     wizardStep5Schema,
 } from "@docktor/shared";
@@ -65,7 +67,8 @@ const importRoutes: FastifyPluginAsyncZod = async (app) => {
         },
     );
 
-    // Execute migration
+    // Start a migration as a background operation (G-18-job): refusals answer
+    // synchronously, an accepted migration answers 202 with its operation.
     app.post(
         "/api/stacks/import/migrate",
         {
@@ -73,14 +76,25 @@ const importRoutes: FastifyPluginAsyncZod = async (app) => {
                 body: migrationExecuteSchema,
             },
         },
-        async (request) => {
+        async (request, reply) => {
             const {namedVolumeSelections, ...rest} = request.body;
-            const result = await migrationService.migrate({
+            const operation = await migrationOperationService.start({
                 ...rest,
                 namedVolumeSelections: new Map(Object.entries(namedVolumeSelections)),
             });
-            return result;
+            return reply.status(202).send(operation);
         },
+    );
+
+    // Read one operation, e.g. to resync after a reload
+    app.get(
+        "/api/stacks/import/migrations/:operationId",
+        {
+            schema: {
+                params: migrationOperationParamsSchema,
+            },
+        },
+        async (request) => migrationOperationService.get(request.params.operationId),
     );
 };
 
