@@ -1,4 +1,4 @@
-import type {ScanResult} from "../../infrastructure/brownfield-scanner.js";
+import type {ScanResult} from "@docktor/shared";
 
 /**
  * Port for the host-filesystem brownfield-import scanner dependency (D-07).

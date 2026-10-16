@@ -42,7 +42,41 @@ export const migrationExecuteSchema = migrationPreviewSchema.extend({
     stopOldStack: z.boolean(),
 });
 
+// Response shapes of the scan endpoints (/api/setup/scan, /api/stacks/import/scan).
+// Declared once here so the server scanner and the client agree on one contract.
+export const discoveredStackSchema = z.object({
+    path: z.string(),
+    directory: z.string(),
+    compatibility: z.enum(["green", "yellow", "red"]),
+    serviceCount: z.number().int().nonnegative(),
+    namedVolumes: z.array(z.string()),
+    absolutePaths: z.array(z.string()),
+    // Distinct relative bind-mount sources (for example "./data"), so the
+    // migration dialog can offer to copy them into the new stack directory.
+    relativePaths: z.array(z.string()),
+    inlineEnvVars: z.boolean(),
+    unsupportedFeatures: z.array(z.string()),
+});
+
+export const skippedDirectoryReasonSchema = z.enum(["not_found", "permission_denied", "system_directory"]);
+
+export const skippedDirectorySchema = z.object({
+    directory: z.string(),
+    reason: skippedDirectoryReasonSchema,
+});
+
+// `skippedDirectories` stays the count and always equals `skipped.length`.
+export const scanResultSchema = z.object({
+    stacks: z.array(discoveredStackSchema),
+    skippedDirectories: z.number().int().nonnegative(),
+    skipped: z.array(skippedDirectorySchema),
+});
+
 export type VolumeSelectionInput = z.infer<typeof volumeSelectionSchema>;
 export type MigrationPreviewInput = z.infer<typeof migrationPreviewSchema>;
 export type BrownfieldAdoptInput = z.infer<typeof brownfieldAdoptSchema>;
 export type MigrationExecuteInput = z.infer<typeof migrationExecuteSchema>;
+export type DiscoveredStack = z.infer<typeof discoveredStackSchema>;
+export type SkippedDirectoryReason = z.infer<typeof skippedDirectoryReasonSchema>;
+export type SkippedDirectory = z.infer<typeof skippedDirectorySchema>;
+export type ScanResult = z.infer<typeof scanResultSchema>;
