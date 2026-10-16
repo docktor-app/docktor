@@ -440,7 +440,7 @@ volumes:
             const result = rewriter.rewrite(ENV_APP, [], new Map());
 
             expect(result.rewrittenCompose).toBe(ENV_APP_REWRITTEN);
-            expect(result.extractedEnv).toBe("FOO=bar\nPASS=s3cr#t\nPORT=8080\nDEBUG=true");
+            expect(result.extractedEnv).toBe("FOO=bar\nPASS='s3cr#t'\nPORT=8080\nDEBUG=true");
             expect(result.envVars).toEqual({FOO: "bar", PASS: "s3cr#t", PORT: "8080", DEBUG: "true"});
         });
 
@@ -591,6 +591,61 @@ volumes:
                 } finally {
                     vi.unstubAllEnvs();
                 }
+            });
+        });
+
+        describe("only entries dotenv reads back unchanged are moved (WR-09)", () => {
+            const envService = (...entries: string[]): string =>
+                lines("services:", "  app:", "    environment:", ...entries.map((entry) => `      ${entry}`), "");
+
+            it.each([
+                ["a key that is not an interpolation name", ["spring.datasource.url: jdbc:postgresql://db/app", "my-key: x"]],
+                ["an escaped newline", ['MULTI: "line one\\nline two"']],
+                ["a doubled dollar sign", ["PRICE: cost$$5"]],
+                ["a single quote", ['QUOTE: "it\'s"']],
+                ["a backslash", ["WIN: C:\\temp"]],
+                ["a double quote", ["SAY: 'say \"hi\"'"]],
+            ])("leaves %s inline", (_label, entries) => {
+                const compose = envService(...entries);
+
+                const result = rewriter.rewrite(compose, [], new Map());
+
+                expect(result.rewrittenCompose).toBe(compose);
+                expect(result.extractedEnv).toBe("");
+                expect(result.envVars).toEqual({});
+            });
+
+            it("moves a value with a space and single-quotes it", () => {
+                const result = rewriter.rewrite(envService("GREETING: hello world"), [], new Map());
+
+                expect(result.rewrittenCompose).toBe(envService("GREETING: ${GREETING}"));
+                expect(result.extractedEnv).toBe("GREETING='hello world'");
+            });
+
+            it("moves canonical numbers and booleans with their spelling", () => {
+                const result = rewriter.rewrite(
+                    envService("PORT: 8080", "DEBUG: true", "OFF: false", "NEG: -5", "ZERO: 0"),
+                    [],
+                    new Map(),
+                );
+
+                expect(result.envVars).toEqual({PORT: "8080", DEBUG: "true", OFF: "false", NEG: "-5", ZERO: "0"});
+            });
+
+            it.each([
+                ["HEX: 0x1F"],
+                ["OCT: 0o17"],
+                ["LEAD: 007"],
+                ["FLOAT: 1.50"],
+                ["EXP: 1e3"],
+                ["CAPS: True"],
+            ])("leaves the non-canonical scalar %s inline", (entry) => {
+                const compose = envService(entry);
+
+                const result = rewriter.rewrite(compose, [], new Map());
+
+                expect(result.rewrittenCompose).toBe(compose);
+                expect(result.envVars).toEqual({});
             });
         });
 
