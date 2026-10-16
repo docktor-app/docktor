@@ -44,6 +44,13 @@ export const migrationExecuteSchema = migrationPreviewSchema.extend({
 
 // Response shapes of the scan endpoints (/api/setup/scan, /api/stacks/import/scan).
 // Declared once here so the server scanner and the client agree on one contract.
+
+// G-18-2: the Docktor stack that already manages a scanned compose file's directory.
+export const managedStackRefSchema = z.object({
+    id: z.string(),
+    displayName: z.string(),
+});
+
 export const discoveredStackSchema = z.object({
     path: z.string(),
     directory: z.string(),
@@ -56,6 +63,9 @@ export const discoveredStackSchema = z.object({
     relativePaths: z.array(z.string()),
     inlineEnvVars: z.boolean(),
     unsupportedFeatures: z.array(z.string()),
+    // G-18-2: set when Docktor already manages this directory; such rows stay
+    // listed but cannot be adopted or migrated again. null when unmanaged.
+    managedStack: managedStackRefSchema.nullable(),
 });
 
 export const skippedDirectoryReasonSchema = z.enum(["not_found", "permission_denied", "system_directory"]);
@@ -76,6 +86,7 @@ export type VolumeSelectionInput = z.infer<typeof volumeSelectionSchema>;
 export type MigrationPreviewInput = z.infer<typeof migrationPreviewSchema>;
 export type BrownfieldAdoptInput = z.infer<typeof brownfieldAdoptSchema>;
 export type MigrationExecuteInput = z.infer<typeof migrationExecuteSchema>;
+export type ManagedStackRef = z.infer<typeof managedStackRefSchema>;
 export type DiscoveredStack = z.infer<typeof discoveredStackSchema>;
 export type SkippedDirectoryReason = z.infer<typeof skippedDirectoryReasonSchema>;
 export type SkippedDirectory = z.infer<typeof skippedDirectorySchema>;

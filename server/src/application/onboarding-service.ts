@@ -12,7 +12,9 @@ import {createComposeConfig} from "../domain/compose-config.js";
 // so there is no circular dependency.
 import {proxyService} from "./index.js";
 import type {ProxyService} from "./proxy-service.js";
+import {annotateManagedStacks} from "../domain/managed-stack-paths.js";
 import {excludeOwnComposeFiles} from "../domain/self-stack-paths.js";
+import {assertNotManaged} from "./managed-stack-guard.js";
 import {assertNotOwnStack, lookupOwnComposeFiles} from "./own-stack-guard.js";
 import {brownfieldScanner} from "../infrastructure/brownfield-scanner.js";
 import {dockerSelfStack} from "../infrastructure/docker-self-stack.js";
@@ -221,16 +223,20 @@ export class OnboardingService {
      * never offered the stack that runs Docktor itself. Fail-open (D-02): when
      * the own stack cannot be identified nothing is excluded. The exclusion is
      * silent: skippedDirectories is left untouched.
+     *
+     * G-18-2: every remaining row carries `managedStack`, the Docktor stack
+     * that already manages its directory (or null). Managed rows stay listed
+     * so the user sees why they cannot be imported again; adopt and migrate
+     * refuse them server-side.
      */
     async scan(directories: string[]): Promise<ScanResult> {
-        const [result, ownPaths] = await Promise.all([
+        const [result, ownPaths, managed] = await Promise.all([
             this.scanner.scan(directories),
             lookupOwnComposeFiles(this.selfStack, "OnboardingService"),
+            this.stackRepo.listLocations(),
         ]);
-        if (ownPaths.length === 0) {
-            return result;
-        }
-        return {...result, stacks: excludeOwnComposeFiles(result.stacks, ownPaths)};
+        const candidates = ownPaths.length === 0 ? result.stacks : excludeOwnComposeFiles(result.stacks, ownPaths);
+        return {...result, stacks: annotateManagedStacks(candidates, managed)};
     }
 
     /**
@@ -242,6 +248,9 @@ export class OnboardingService {
      * anything is read or recorded, so a direct API call or a stale list cannot
      * adopt the stack Docktor runs in. Fail-open (D-02): when the own stack is
      * unknown nothing is refused.
+     *
+     * G-18-2: a compose file in the directory of a stack Docktor already
+     * manages is refused with a 409 next, before the record check and the read.
      */
     async adoptInPlace(
         composePath: string,
@@ -254,6 +263,7 @@ export class OnboardingService {
         }
 
         await assertNotOwnStack(this.selfStack, composePath, "OnboardingService");
+        await assertNotManaged(this.stackRepo, composePath);
 
         if (await this.stackRepo.exists(id)) {
             throw new ConflictError(`Stack "${id}" already exists`);

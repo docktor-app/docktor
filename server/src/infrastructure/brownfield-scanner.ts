@@ -2,10 +2,10 @@ import fg from "fast-glob";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import type {DiscoveredStack, ScanResult, SkippedDirectory, SkippedDirectoryReason} from "@docktor/shared";
+import type {SkippedDirectory, SkippedDirectoryReason} from "@docktor/shared";
 
 import {ComposeAnalyzer, composeAnalyzer, type BindMountInfo} from "./compose-analyzer.js";
-import type {BrownfieldScannerPort} from "../application/ports/brownfield-scanner-port.js";
+import type {BrownfieldScannerPort, DirectoryScanResult, ScannedStack} from "../application/ports/brownfield-scanner-port.js";
 
 const NOT_FOUND_CODES = new Set(["ENOENT", "ENOTDIR"]);
 const PERMISSION_DENIED_CODES = new Set(["EACCES", "EPERM"]);
@@ -101,7 +101,7 @@ export class BrownfieldScanner implements BrownfieldScannerPort {
         return files.map((f) => path.normalize(f));
     }
 
-    async scan(directories: string[]): Promise<ScanResult> {
+    async scan(directories: string[]): Promise<DirectoryScanResult> {
         const foundFiles: string[] = [];
         const skipped: SkippedDirectory[] = [];
 
@@ -135,7 +135,7 @@ export class BrownfieldScanner implements BrownfieldScannerPort {
         const uniqueFiles = Array.from(new Set(foundFiles));
 
         // Parse each compose file and assess compatibility
-        const stacks: DiscoveredStack[] = [];
+        const stacks: ScannedStack[] = [];
         for (const filePath of uniqueFiles) {
             try {
                 const content = await fs.readFile(filePath, "utf-8");
