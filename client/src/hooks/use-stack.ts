@@ -49,7 +49,8 @@ export function useStack(id: string) {
     }, [fetchStack]);
 
     useContainerEvents((event) => {
-        if (event.type === "notification_created") return;
+        // migration_progress belongs to a stack that does not exist yet (G-18-job)
+        if (event.type === "notification_created" || event.type === "migration_progress") return;
         if (event.stackId !== id) return;
         if (event.type === "container_state") {
             setStack(prev => {

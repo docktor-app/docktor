@@ -1,8 +1,9 @@
 import {apiFetch} from "./api";
 import type {MigrationExecuteInput, MigrationPreviewInput} from "@docktor/shared";
 import type {
+  MigrationOperation,
+  MigrationOperationList,
   MigrationPreview,
-  MigrationResult,
   ScanResult,
 } from "./brownfield-types";
 
@@ -31,9 +32,15 @@ export function previewMigration(input: MigrationPreviewInput) {
   });
 }
 
+// G-18-job: answers 202 with the background operation; progress and outcome
+// arrive through useMigrationOperations.
 export function executeMigration(input: MigrationExecuteInput) {
-  return apiFetch<MigrationResult>("/api/stacks/import/migrate", {
+  return apiFetch<MigrationOperation>("/api/stacks/import/migrate", {
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+export function listMigrationOperations() {
+  return apiFetch<MigrationOperationList>("/api/stacks/import/migrations");
 }

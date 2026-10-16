@@ -563,17 +563,83 @@ test.describe("Setup Wizard", () => {
             );
         }
 
-        /** Mocks POST /api/setup/migrate and records the JSON bodies it receives. */
-        async function mockMigrate(page: Page, response: unknown): Promise<unknown[]> {
-            const bodies: unknown[] = [];
-            await page.route("**/api/setup/migrate", (route) => {
-                bodies.push(route.request().postDataJSON());
-                return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(response)});
-            });
-            return bodies;
+        interface MigrationRun {
+            /** JSON bodies received by POST /api/setup/migrate. */
+            bodies: unknown[];
+            /** Lets the mocked event stream and operation list report the finished state. */
+            finish: () => void;
         }
 
-        const migrateOk = {success: true, stackId: "db", originalPath: yellowStack.directory};
+        type MigrationOutcome = {success: true} | {success: false; error: string};
+
+        /**
+         * G-18-job: POST /api/setup/migrate answers 202 with a running operation; the outcome
+         * arrives later as a migration_progress SSE frame (and through the operation list the
+         * client re-reads when the stream reopens). The run stays "running" until the test calls
+         * finish(), so the progress state can be asserted deterministically.
+         */
+        async function mockMigrationRun(
+            page: Page,
+            outcome: MigrationOutcome,
+            flags: {backup?: boolean; stopOldStack?: boolean} = {},
+        ): Promise<MigrationRun> {
+            const bodies: unknown[] = [];
+            let started = false;
+            let finished = false;
+            const running = {
+                id: "op-1",
+                stackId: "db",
+                displayName: "db",
+                composePath: yellowStack.path,
+                backup: flags.backup ?? false,
+                stopOldStack: flags.stopOldStack ?? true,
+                status: "running",
+                step: "copying_named_volume",
+                stepDetail: "pgdata",
+                startedAt: "2026-10-16T10:00:00.000Z",
+                finishedAt: null,
+                result: null,
+            };
+            const done = {
+                ...running,
+                status: outcome.success ? "succeeded" : "failed",
+                step: "finished",
+                stepDetail: null,
+                finishedAt: "2026-10-16T10:01:00.000Z",
+                result: outcome.success
+                    ? {success: true, stackId: "db", originalPath: yellowStack.directory}
+                    : {success: false, error: outcome.error, originalPath: yellowStack.directory},
+            };
+            const json = (body: unknown) => JSON.stringify(body);
+
+            await page.route("**/api/setup/migrate", (route) => {
+                bodies.push(route.request().postDataJSON());
+                started = true;
+                return route.fulfill({status: 202, contentType: "application/json", body: json(running)});
+            });
+            await page.route("**/api/setup/migrations", (route) =>
+                route.fulfill({
+                    status: 200,
+                    contentType: "application/json",
+                    body: json({operations: started ? [finished ? done : running] : []}),
+                }),
+            );
+            // Each (re)connect gets the current state; `retry: 100` makes the browser reconnect quickly.
+            await page.route("**/api/events", (route) =>
+                route.fulfill({
+                    status: 200,
+                    contentType: "text/event-stream",
+                    body: `retry: 100\n\n${finished ? `data: ${json({type: "migration_progress", operation: done})}\n\n` : ""}`,
+                }),
+            );
+
+            return {
+                bodies,
+                finish: () => {
+                    finished = true;
+                },
+            };
+        }
 
         /** From the scan result: open the dialog and step through to step 4. */
         async function openAndWalkToStep4(page: Page, options: {backupOn?: boolean} = {}) {
@@ -626,12 +692,17 @@ test.describe("Setup Wizard", () => {
             // BF-04: Background migration; G-18-7 default is no backup (original untouched), stop on
             await scanForYellowStack(page);
             await mockPreview(page);
-            const bodies = await mockMigrate(page, migrateOk);
+            const run = await mockMigrationRun(page, {success: true});
+            const {bodies} = run;
             await openAndWalkToStep4(page);
 
             await page.getByRole("button", {name: "Confirm & Migrate"}).click();
 
             await expect(page.getByText(/migrating db/i)).toBeVisible();
+            // G-18-job: the row stays locked and shows the step while the operation runs
+            await expect(page.getByRole("button", {name: "Migrating..."})).toBeDisabled();
+            await expect(page.getByRole("button", {name: "Adopt"})).toBeDisabled();
+            await expect(page.getByText("Copying volume pgdata", {exact: true})).toBeVisible();
             await expect.poll(() => bodies.length).toBe(1);
             expect(bodies[0]).toMatchObject({
                 composePath: yellowStack.path,
@@ -641,13 +712,18 @@ test.describe("Setup Wizard", () => {
                 stopOldStack: true,
             });
             expect(bodies[0]).not.toHaveProperty("inPlaceAsideName");
+
+            run.finish();
+
+            await expect(page.getByText(/migration complete/i)).toBeVisible();
+            await expect(page.getByText("Imported")).toBeVisible();
         });
 
         test("should send backup true and stopOldStack false when the backup is turned on and the stop off", async ({page}) => {
             // MIG-03 / MIG-04 / G-18-7: the explicit choices reach the server and the summary recaps them
             await scanForYellowStack(page);
             await mockPreview(page);
-            const bodies = await mockMigrate(page, migrateOk);
+            const {bodies} = await mockMigrationRun(page, {success: true}, {backup: true, stopOldStack: false});
             await page.getByRole("button", {name: "Migrate"}).click();
             await page.getByRole("button", {name: "Preview Changes"}).click();
             await page.getByRole("button", {name: "Choose Backup"}).click();
@@ -679,7 +755,7 @@ test.describe("Setup Wizard", () => {
                     body: JSON.stringify({...emptyPreview, target: inPlaceTarget}),
                 });
             });
-            const bodies = await mockMigrate(page, migrateOk);
+            const {bodies} = await mockMigrationRun(page, {success: true});
             await page.getByRole("button", {name: "Migrate"}).click();
             await page.getByRole("button", {name: "Preview Changes"}).click();
             await expect(page.getByRole("heading", {name: "Review Changes"})).toBeVisible();
@@ -736,10 +812,12 @@ test.describe("Setup Wizard", () => {
             // BF-04: Migration feedback
             await scanForYellowStack(page);
             await mockPreview(page);
-            await mockMigrate(page, migrateOk);
+            const run = await mockMigrationRun(page, {success: true}, {backup: true});
             await openAndWalkToStep4(page, {backupOn: true});
 
             await page.getByRole("button", {name: "Confirm & Migrate"}).click();
+            await expect(page.getByText(/migrating db/i)).toBeVisible();
+            run.finish();
 
             await expect(page.getByText(/migration complete/i)).toBeVisible();
             await expect(page.getByText(/backup saved to pre-migration-backup/i)).toBeVisible();
@@ -748,21 +826,23 @@ test.describe("Setup Wizard", () => {
 
         test("should show error toast on migration failure", async ({page}) => {
             // BF-05: Rollback on failure — the service performs the rollback
-            // server-side and reports it in `result.error`; the client surfaces
-            // that message via a toast rather than a separate "Rollback complete"
-            // element (adapted to the actual MigrationResult contract).
+            // server-side and reports it in the finished operation's `result.error`;
+            // the client surfaces that message via a toast rather than a separate
+            // "Rollback complete" element, and the row becomes actionable again.
             await scanForYellowStack(page);
             await mockPreview(page);
-            await mockMigrate(page, {
+            const run = await mockMigrationRun(page, {
                 success: false,
                 error: "Migration failed: disk full. Your original stack directory was not modified. The old stack was restarted.",
-                originalPath: yellowStack.directory,
             });
             await openAndWalkToStep4(page);
 
             await page.getByRole("button", {name: "Confirm & Migrate"}).click();
+            await expect(page.getByRole("button", {name: "Migrating..."})).toBeDisabled();
+            run.finish();
 
             await expect(page.getByText(/old stack was restarted/i)).toBeVisible();
+            await expect(page.getByRole("button", {name: "Migrate", exact: true})).toBeEnabled();
         });
 
         test("should fit a 360px viewport with the diff and the final action reachable", async ({page}) => {
