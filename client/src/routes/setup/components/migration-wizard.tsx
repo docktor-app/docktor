@@ -219,7 +219,11 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
 
           {step === 2 && preview && (
             <div className="py-4">
-              <MigrationReviewStep diff={preview.diff} extractedEnv={preview.extractedEnv} />
+              <MigrationReviewStep
+                diff={preview.diff}
+                extractedEnv={preview.extractedEnv}
+                emptySources={preview.emptySources}
+              />
             </div>
           )}
 

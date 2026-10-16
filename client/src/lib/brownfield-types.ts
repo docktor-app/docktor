@@ -30,5 +30,7 @@ export interface VolumeSelection {
 export interface MigrationPreview {
   diff: UnifiedDiff;
   extractedEnv: string;
+  // Selected bind-mount sources that do not exist; the new stack gets an empty folder for each.
+  emptySources: string[];
   target: MigrationTarget;
 }
