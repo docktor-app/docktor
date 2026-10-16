@@ -13,6 +13,7 @@ import {createComposeConfig} from "../domain/compose-config.js";
 import {proxyService} from "./index.js";
 import type {ProxyService} from "./proxy-service.js";
 import {excludeOwnComposeFiles} from "../domain/self-stack-paths.js";
+import {assertNotOwnStack, lookupOwnComposeFiles} from "./own-stack-guard.js";
 import {brownfieldScanner} from "../infrastructure/brownfield-scanner.js";
 import {dockerSelfStack} from "../infrastructure/docker-self-stack.js";
 import type {BrownfieldScannerPort, ScanResult} from "./ports/brownfield-scanner-port.js";
@@ -224,7 +225,7 @@ export class OnboardingService {
     async scan(directories: string[]): Promise<ScanResult> {
         const [result, ownPaths] = await Promise.all([
             this.scanner.scan(directories),
-            this.ownComposeFilePaths(),
+            lookupOwnComposeFiles(this.selfStack, "OnboardingService"),
         ]);
         if (ownPaths.length === 0) {
             return result;
@@ -232,21 +233,15 @@ export class OnboardingService {
         return {...result, stacks: excludeOwnComposeFiles(result.stacks, ownPaths)};
     }
 
-    // Defence in depth for D-02: even a faulty SelfStackPort must not fail a scan.
-    private async ownComposeFilePaths(): Promise<readonly string[]> {
-        try {
-            return await this.selfStack.composeFilePaths();
-        } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            console.warn(`[OnboardingService] self-stack lookup failed, every stack will be listed: ${message}`);
-            return [];
-        }
-    }
-
     /**
      * BF-03: Adopt stack in-place (no filesystem moves — the stack directory
      * stays where it is; only the compose file is read to build the config).
      * Creates Stack record pointing to existing directory.
+     *
+     * WR-09/STK-03: Docktor's own compose file is refused with a 400 before
+     * anything is read or recorded, so a direct API call or a stale list cannot
+     * adopt the stack Docktor runs in. Fail-open (D-02): when the own stack is
+     * unknown nothing is refused.
      */
     async adoptInPlace(
         composePath: string,
@@ -257,6 +252,8 @@ export class OnboardingService {
             // WR-03: an empty slug is a client input problem — 400, not 500.
             throw new BadRequestError("Display name produces an empty slug");
         }
+
+        await assertNotOwnStack(this.selfStack, composePath, "OnboardingService");
 
         if (await this.stackRepo.exists(id)) {
             throw new ConflictError(`Stack "${id}" already exists`);
