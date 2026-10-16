@@ -1,11 +1,12 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
-import {render, screen, waitFor, within} from "@testing-library/react";
+import {act, render, screen, waitFor, within} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {MemoryRouter} from "react-router";
-import type {MigrationTarget} from "@docktor/shared";
+import type {MigrationOperation, MigrationTarget} from "@docktor/shared";
 import {toast} from "sonner";
 import {BrownfieldImport, type BrownfieldImportApi} from "@/components/domain/stack/brownfield-import";
-import type {DiscoveredStack, MigrationResult, ScanResult} from "@/lib/brownfield-types";
+import {useContainerEvents, type StateEvent} from "@/hooks/use-container-events";
+import type {DiscoveredStack, ScanResult} from "@/lib/brownfield-types";
 import type {CodeEditorProps} from "@/components/common/code-editor";
 
 // CodeMirror itself is covered by its own tests.
@@ -16,8 +17,22 @@ vi.mock("@/components/common/code-editor", () => ({
 }));
 
 vi.mock("sonner", () => ({
-    toast: {error: vi.fn(), info: vi.fn(), success: vi.fn()},
+    toast: {error: vi.fn(), info: vi.fn(), success: vi.fn(), loading: vi.fn()},
 }));
+
+// The SSE connection is exercised by the hook's own tests; here the test
+// delivers migration_progress events through the handler the component registered.
+vi.mock("@/hooks/use-container-events", () => ({
+    useContainerEvents: vi.fn(),
+}));
+
+const mockedEvents = vi.mocked(useContainerEvents);
+
+function emit(event: StateEvent): void {
+    const handler = mockedEvents.mock.lastCall?.[0];
+    if (!handler) throw new Error("useContainerEvents was not called");
+    act(() => handler(event));
+}
 
 const FALLBACK = "Migration failed. Your original stack directory was not modified. Check the error and try again.";
 
@@ -50,7 +65,49 @@ const inPlaceTarget: MigrationTarget = {
     suggestedAsideName: "db-pre-migration",
 };
 
-const okResult: MigrationResult = {success: true, stackId: "db", originalPath: "/host/opt/db"};
+function makeOperation(overrides: Partial<MigrationOperation> = {}): MigrationOperation {
+    return {
+        id: "op-1",
+        stackId: "db",
+        displayName: "db",
+        composePath: stack.path,
+        backup: false,
+        stopOldStack: true,
+        status: "running",
+        step: "starting",
+        stepDetail: null,
+        startedAt: "2026-10-16T10:00:00.000Z",
+        finishedAt: null,
+        result: null,
+        ...overrides,
+    };
+}
+
+const runningOperation = makeOperation();
+
+function finished(overrides: Partial<MigrationOperation> = {}): MigrationOperation {
+    return makeOperation({
+        status: "succeeded",
+        step: "finished",
+        finishedAt: "2026-10-16T10:01:00.000Z",
+        result: {success: true, stackId: "db", originalPath: "/host/opt/db"},
+        ...overrides,
+    });
+}
+
+function failed(error: string | undefined, overrides: Partial<MigrationOperation> = {}): MigrationOperation {
+    return makeOperation({
+        status: "failed",
+        step: "finished",
+        finishedAt: "2026-10-16T10:01:00.000Z",
+        result: {success: false, originalPath: "/host/opt/db", ...(error !== undefined && {error})},
+        ...overrides,
+    });
+}
+
+function progress(operation: MigrationOperation): StateEvent {
+    return {type: "migration_progress", operation};
+}
 
 function createApi(
     executeMigration: BrownfieldImportApi["executeMigration"],
@@ -61,6 +118,7 @@ function createApi(
         adoptStack: vi.fn().mockResolvedValue({id: "db"}),
         previewMigration: vi.fn().mockResolvedValue({diff: {hunks: [], added: 0, removed: 0}, extractedEnv: "", target}),
         executeMigration,
+        listMigrationOperations: vi.fn().mockResolvedValue({operations: []}),
     };
 }
 
@@ -92,7 +150,7 @@ describe("BrownfieldImport migration flow", () => {
     });
 
     it("sends backup false and stopOldStack true by default and closes the dialog", async () => {
-        const executeMigration = vi.fn().mockResolvedValue(okResult);
+        const executeMigration = vi.fn().mockResolvedValue(runningOperation);
         const api = createApi(executeMigration);
         renderImport(api);
 
@@ -121,7 +179,7 @@ describe("BrownfieldImport migration flow", () => {
     });
 
     it("sends backup true and stopOldStack false when the backup is turned on and the stop off", async () => {
-        const executeMigration = vi.fn().mockResolvedValue(okResult);
+        const executeMigration = vi.fn().mockResolvedValue(runningOperation);
         renderImport(createApi(executeMigration));
 
         await walkToConfirm({backupOn: true, stopOff: true});
@@ -131,7 +189,7 @@ describe("BrownfieldImport migration flow", () => {
     });
 
     it("sends the aside name, the forced stop and no extra backup for an in-place migration", async () => {
-        const executeMigration = vi.fn().mockResolvedValue(okResult);
+        const executeMigration = vi.fn().mockResolvedValue(runningOperation);
         renderImport(createApi(executeMigration, inPlaceTarget));
 
         await walkToConfirm();
@@ -177,79 +235,127 @@ describe("BrownfieldImport migration flow", () => {
         expect(screen.getByText(/The old stack keeps running\./)).toBeInTheDocument();
     });
 
-    describe("toasts", () => {
+    describe("operation-driven toasts (G-18-job)", () => {
         const BACKUP_NOTE = "Backup saved to pre-migration-backup/ in the new stack directory.";
         const SUCCESS_TITLE = "Migration complete! db is now managed by Docktor";
 
         async function confirm(
-            makeResult: () => Promise<MigrationResult>,
+            execute: () => Promise<MigrationOperation>,
             options: {backupOn?: boolean; stopOff?: boolean} = {},
         ): Promise<void> {
-            renderImport(createApi(vi.fn().mockImplementation(makeResult)));
+            renderImport(createApi(vi.fn().mockImplementation(execute)));
             await walkToConfirm(options);
             await userEvent.click(screen.getByRole("button", {name: "Confirm & Migrate"}));
         }
 
-        it("describes the kept backup and the stopped old stack on success", async () => {
-            await confirm(() => Promise.resolve(okResult), {backupOn: true});
+        it("shows one persistent progress toast keyed by the operation id", async () => {
+            await confirm(() => Promise.resolve(runningOperation));
 
-            expect(toast.info).toHaveBeenCalledWith("Migrating db\u2026");
             await waitFor(() =>
-                expect(toast.success).toHaveBeenCalledWith(
-                    SUCCESS_TITLE,
-                    expect.objectContaining({
-                        description: `${BACKUP_NOTE} The old stack was stopped.`,
-                        action: expect.objectContaining({label: "View stack"}),
-                    }),
-                ),
+                expect(toast.loading).toHaveBeenCalledWith(expect.stringMatching(/^Migrating db/), {id: "op-1"}),
             );
+        });
+
+        it("follows a step change in the same toast", async () => {
+            await confirm(() => Promise.resolve(runningOperation));
+            await waitFor(() => expect(toast.loading).toHaveBeenCalled());
+
+            emit(progress(makeOperation({step: "copying_named_volume", stepDetail: "pgdata"})));
+
+            expect(toast.loading).toHaveBeenLastCalledWith(
+                expect.stringContaining("Copying volume pgdata"),
+                {id: "op-1"},
+            );
+        });
+
+        it("turns the toast into the success toast and marks the row imported", async () => {
+            await confirm(() => Promise.resolve(makeOperation({backup: true})), {backupOn: true});
+            await waitFor(() => expect(toast.loading).toHaveBeenCalled());
+
+            emit(progress(finished({backup: true})));
+
+            expect(toast.success).toHaveBeenCalledWith(
+                SUCCESS_TITLE,
+                expect.objectContaining({
+                    id: "op-1",
+                    description: `${BACKUP_NOTE} The old stack was stopped.`,
+                    action: expect.objectContaining({label: "View stack"}),
+                }),
+            );
+            expect(await screen.findByText("Imported")).toBeInTheDocument();
         });
 
         it("only mentions the backup when the old stack was left running", async () => {
-            await confirm(() => Promise.resolve(okResult), {backupOn: true, stopOff: true});
+            await confirm(() => Promise.resolve(makeOperation({backup: true, stopOldStack: false})));
+            await waitFor(() => expect(toast.loading).toHaveBeenCalled());
 
-            await waitFor(() =>
-                expect(toast.success).toHaveBeenCalledWith(SUCCESS_TITLE, expect.objectContaining({description: BACKUP_NOTE})),
-            );
+            emit(progress(finished({backup: true, stopOldStack: false})));
+
+            expect(toast.success).toHaveBeenCalledWith(SUCCESS_TITLE, expect.objectContaining({description: BACKUP_NOTE}));
         });
 
-        it("only mentions the stopped old stack when no backup was made", async () => {
-            await confirm(() => Promise.resolve(okResult));
+        it("names the kept original directory of an in-place migration", async () => {
+            await confirm(() => Promise.resolve(runningOperation));
+            await waitFor(() => expect(toast.loading).toHaveBeenCalled());
 
-            await waitFor(() =>
-                expect(toast.success).toHaveBeenCalledWith(
-                    SUCCESS_TITLE,
-                    expect.objectContaining({description: "The old stack was stopped."}),
+            emit(
+                progress(
+                    finished({
+                        result: {
+                            success: true,
+                            stackId: "db",
+                            originalPath: "/opt/docktor/stacks/db",
+                            keptOriginalAt: "/opt/docktor/stacks/db-pre-migration",
+                        },
+                    }),
                 ),
+            );
+
+            expect(toast.success).toHaveBeenCalledWith(
+                SUCCESS_TITLE,
+                expect.objectContaining({
+                    description: "The original directory is kept at /opt/docktor/stacks/db-pre-migration. The old stack was stopped.",
+                }),
             );
         });
 
         it("omits the description when neither a backup nor a stop was chosen", async () => {
-            await confirm(() => Promise.resolve(okResult), {stopOff: true});
+            await confirm(() => Promise.resolve(makeOperation({stopOldStack: false})));
+            await waitFor(() => expect(toast.loading).toHaveBeenCalled());
 
-            await waitFor(() => expect(vi.mocked(toast.success).mock.calls.some(([title]) => title === SUCCESS_TITLE)).toBe(true));
+            emit(progress(finished({stopOldStack: false})));
+
             const call = vi.mocked(toast.success).mock.calls.find(([title]) => title === SUCCESS_TITLE);
             expect(call?.[1]).not.toHaveProperty("description");
             expect(call?.[1]).toHaveProperty("action");
         });
 
-        it("shows the server's failure message verbatim", async () => {
+        it("shows the server's rollback message verbatim on failure", async () => {
             const error = "Migration failed: disk full. Your original stack directory was not modified. The old stack was restarted.";
-            await confirm(() => Promise.resolve({success: false, error, originalPath: "/host/opt/db"}));
+            await confirm(() => Promise.resolve(runningOperation));
+            await waitFor(() => expect(toast.loading).toHaveBeenCalled());
 
-            await waitFor(() => expect(toast.error).toHaveBeenCalledWith(error));
+            emit(progress(failed(error)));
+
+            expect(toast.error).toHaveBeenCalledWith(error, {id: "op-1"});
+            expect(screen.queryByText("Imported")).toBeNull();
         });
 
         it("falls back to the generic message when the failure carries no error text", async () => {
-            await confirm(() => Promise.resolve({success: false, originalPath: "/host/opt/db"}));
+            await confirm(() => Promise.resolve(runningOperation));
+            await waitFor(() => expect(toast.loading).toHaveBeenCalled());
 
-            await waitFor(() => expect(toast.error).toHaveBeenCalledWith(FALLBACK));
+            emit(progress(failed(undefined)));
+
+            expect(toast.error).toHaveBeenCalledWith(FALLBACK, {id: "op-1"});
         });
 
-        it("shows the message of an Error rejection", async () => {
-            await confirm(() => Promise.reject(new Error("Network down")));
+        it("shows the refusal of a start (for example the in-flight guard) and tracks nothing", async () => {
+            const message = 'A migration to stack "db" is already running';
+            await confirm(() => Promise.reject(new Error(message)));
 
-            await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Network down"));
+            await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message));
+            expect(toast.loading).not.toHaveBeenCalled();
         });
 
         it("falls back to the generic message when the request rejects with a non-Error", async () => {
