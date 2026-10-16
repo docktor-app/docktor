@@ -59,10 +59,15 @@ type PreviewFn = (
     namedVolumeSelections: Record<string, boolean>,
 ) => Promise<MigrationPreview>;
 
-function renderWizard(previewMigration: PreviewFn, onClose = vi.fn(), onConfirmMigrate = vi.fn()) {
+function renderWizard(
+    previewMigration: PreviewFn,
+    onClose = vi.fn(),
+    onConfirmMigrate = vi.fn(),
+    wizardStack: DiscoveredStack = stack,
+) {
     render(
         <MigrationWizard
-            stack={stack}
+            stack={wizardStack}
             open
             onClose={onClose}
             onConfirmMigrate={onConfirmMigrate}
@@ -350,6 +355,49 @@ describe("MigrationWizard", () => {
                 expect.objectContaining({displayName: "db", backup: true, stopOldStack: true}),
             );
             expect(onClose).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe("relative bind mounts (G-18-4)", () => {
+        const memosStack: DiscoveredStack = {...stack, namedVolumes: [], relativePaths: ["./data"]};
+        const DATA_SELECTION = [{originalPath: "./data", newPath: "./volumes/data", convert: true}];
+        const click = (name: string) => userEvent.click(screen.getByRole("button", {name}));
+
+        async function walkToStep4(onConfirmMigrate = vi.fn()) {
+            const previewMigration = vi.fn().mockImplementation(okPreview);
+            renderWizard(previewMigration, vi.fn(), onConfirmMigrate, memosStack);
+            await click("Preview Changes");
+            await screen.findByRole("heading", {name: "Review Changes"});
+            await click("Choose Backup");
+            await click("Choose Old Stack Action");
+            return previewMigration;
+        }
+
+        it("lists the relative mount in its own section, moved into ./volumes/ by default", () => {
+            renderWizard(vi.fn(), vi.fn(), vi.fn(), memosStack);
+
+            expect(screen.getByText("Relative Bind Mounts")).toBeInTheDocument();
+            expect(screen.getByRole("checkbox", {name: "./data"})).toBeChecked();
+        });
+
+        it("sends the mount as ./data -> ./volumes/data in the preview request", async () => {
+            const previewMigration = vi.fn().mockImplementation(okPreview);
+            renderWizard(previewMigration, vi.fn(), vi.fn(), memosStack);
+
+            await click("Preview Changes");
+
+            expect(previewMigration).toHaveBeenCalledWith("/host/opt/db/docker-compose.yml", DATA_SELECTION, {});
+        });
+
+        it("counts the mount in the summary and hands the same selections to the migrate request", async () => {
+            const onConfirmMigrate = vi.fn();
+            await walkToStep4(onConfirmMigrate);
+
+            expect(screen.getByRole("region", {name: "Migration summary"})).toHaveTextContent("Volumes to copy: 1");
+
+            await click("Confirm & Migrate");
+
+            expect(onConfirmMigrate).toHaveBeenCalledWith(expect.objectContaining({volumeSelections: DATA_SELECTION}));
         });
     });
 });
