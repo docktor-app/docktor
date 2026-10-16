@@ -88,7 +88,7 @@ Notes: server-side work (backup service and repository environment construction,
   4. The pre-migration backup is its own explicit step the user can opt out of: opting out creates no backup, opting in creates one whether or not the compose file is renamed
   5. The user can choose to stop (undeploy) the old stack as part of the migration, so the new draft stack does not run alongside it; if they decline, the old stack is left running
 
-**Plans:** 17/17 plans executed (12 gap-closure plans pending)
+**Plans:** 17/21 plans executed (4 gap-closure plans pending, round 2)
 
 Plans:
 **Wave 1**
@@ -127,6 +127,16 @@ Plans:
 *Gap wave 6*
 - [x] 18-16-PLAN.md — Migration steps streamed as migration_progress over the existing SSE/StateBroadcaster channel (G-18-job; after 18-14)
 - [x] 18-17-PLAN.md — Client follows operations: progress toast, disabled in-flight rows, resync after reload/reconnect (G-18-job; after 18-13, 18-14, 18-15)
+
+**Gap closure round 2** *(from the re-verification 18-VERIFICATION.md gaps 1-3 = 18-REVIEW.md CR-03, CR-01, CR-02, with WR-01 and WR-09 folded in; WR-02 deferred as a human security decision)*
+
+*Gap wave 1*
+- [ ] 18-18-PLAN.md — Faithful copies: bind-mount data and the opt-in backup keep ownership, modes, timestamps and symlinks via `cp -a`, merge into an existing stack directory, reject on failure (CR-01)
+- [ ] 18-19-PLAN.md — Bind-mount sources resolved through Docktor's own mounts (containerVisiblePaths), invisible sources refused before any side effect, vanished sources roll back, preview lists sources that start empty; all request paths validated in preflight (CR-03, WR-01)
+
+*Gap wave 2*
+- [ ] 18-20-PLAN.md — .env extraction keeps each service's value: per-value names (SERVICE_KEY), never a name Docktor's environment, COMPOSE_/DOCKER_, compose references or the old .env would change; only valid names and dotenv-safe values move (CR-02, WR-09; after 18-19)
+- [ ] 18-21-PLAN.md — Review step names every selected source that starts empty in the new stack (CR-03 client half; after 18-19)
 
 **UI hint**: yes
 
