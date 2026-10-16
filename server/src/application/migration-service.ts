@@ -8,11 +8,11 @@ import {StackFilesystem} from "../infrastructure/stack-filesystem.js";
 import {StackRepository, stackRepository} from "../repositories/stack-repository.js";
 import {slugify} from "../lib/slugify.js";
 import {createComposeConfig} from "../domain/compose-config.js";
-import {locateBindSource, needsOwnMounts, type OwnMountsView} from "../domain/bind-mount-sources.js";
+import {locateBindSource, needsOwnMounts, type BindSourceRefusal, type OwnMountsView} from "../domain/bind-mount-sources.js";
 import {asideNameCandidates, classifyMigrationTarget, type MigrationTargetKind} from "../domain/migration-target.js";
 import {computeUnifiedDiff, type UnifiedDiff} from "../lib/unified-diff.js";
 import {stackDirectoryNameSchema, type MigrationOperationStep, type MigrationTarget} from "@docktor/shared";
-import {BadRequestError, ConflictError, hasErrorCode} from "../lib/errors.js";
+import {AppError, BadRequestError, ConflictError, hasErrorCode} from "../lib/errors.js";
 import {dockerSelfStack} from "../infrastructure/docker-self-stack.js";
 import {assertNotOwnStack} from "./own-stack-guard.js";
 import {assertNotManaged} from "./managed-stack-guard.js";
@@ -68,6 +68,18 @@ async function sourceExists(srcPath: string): Promise<boolean> {
 	}
 }
 
+/** CR-03: why a selected bind-mount source cannot be migrated, and what to do about it. */
+function refusalMessage(originalPath: string, reason: BindSourceRefusal): string {
+	switch (reason) {
+		case "not-visible":
+			return `Bind mount source ${originalPath} is not visible inside the Docktor container. Mount that host path into Docktor (the default deployment mounts the host root at /host) or keep the mount outside Docktor.`;
+		case "mounts-unknown":
+			return `Bind mount source ${originalPath} cannot be migrated: Docktor could not determine which host paths it can see. Check that Docktor can reach the Docker daemon, or keep the mount outside Docktor.`;
+		case "home-relative":
+			return `Bind mount source ${originalPath} starts with ~ and cannot be migrated. Use an absolute path in the compose file, or keep the mount outside Docktor.`;
+	}
+}
+
 /** The first of `candidates` that exists, or `null` when none does. */
 async function firstExisting(candidates: readonly string[]): Promise<string | null> {
 	for (const candidate of candidates) {
@@ -115,6 +127,8 @@ export interface MigrationPreview {
 	diff: UnifiedDiff;
 	extractedEnv: string;
 	target: MigrationTarget;
+	/** CR-03: originalPaths of selected bind mounts whose source does not exist; each becomes an empty directory. */
+	emptySources: string[];
 }
 
 interface TargetAssessment {
@@ -210,6 +224,7 @@ export class MigrationService {
 	async previewMigration(request: MigrationPreviewRequest): Promise<MigrationPreview> {
 		const {composePath, displayName, volumeSelections, namedVolumeSelections} = request;
 		const assessment = await this.assessTarget(composePath, displayName);
+		const bindCopies = await this.planBindCopies(volumeSelections, assessment.originalDir);
 		const originalCompose = await fs.readFile(composePath, "utf-8");
 		const result = this.rewriter.rewrite(originalCompose, volumeSelections, namedVolumeSelections);
 		const diff = computeUnifiedDiff(originalCompose, result.rewrittenCompose);
@@ -224,7 +239,8 @@ export class MigrationService {
 			inPlace,
 			suggestedAsideName,
 		};
-		return {diff, extractedEnv: result.extractedEnv, target};
+		const emptySources = bindCopies.filter((copy) => copy.sourcePath === null).map((copy) => copy.originalPath);
+		return {diff, extractedEnv: result.extractedEnv, target, emptySources};
 	}
 
 	/**
@@ -250,7 +266,9 @@ export class MigrationService {
 	 * with the old directory (D-09, RESEARCH Pitfall 4: rollback removes the
 	 * target directory, so it must be one Docktor creates in this run). A target
 	 * equal to the old directory is the in-place case (G-18-7): it needs the
-	 * stop, and a free, valid aside name for the original. Nothing is stopped, created, copied or written.
+	 * stop, and a free, valid aside name for the original. A selected bind-mount
+	 * source Docktor cannot read (CR-03) is refused too. Nothing is stopped,
+	 * created, copied or written.
 	 * Advisory by design: the exclusive mkdir and the unique record id stay
 	 * the authoritative backstops inside {@link execute}.
 	 */
@@ -277,9 +295,11 @@ export class MigrationService {
 
 	/**
 	 * CR-03: decides, for every converted bind mount, the path its data is read
-	 * from. The first candidate that exists wins; none existing means the source
-	 * is absent and an empty directory will be created. Only a missing path
-	 * (ENOENT) counts as absent: any other access failure rejects the preflight.
+	 * from. A source Docktor cannot read at all is refused with a 400 naming it
+	 * (nothing has happened yet). Of the readable candidates the first that
+	 * exists wins; none existing means the source is genuinely absent and an
+	 * empty directory will be created. Only a missing path (ENOENT) counts as
+	 * absent: any other access failure rejects the preflight.
 	 */
 	private async planBindCopies(selections: readonly VolumeSelection[], originalDir: string): Promise<PlannedBindCopy[]> {
 		let view: OwnMountsView | undefined;
@@ -288,10 +308,13 @@ export class MigrationService {
 			if (!convert) {
 				continue;
 			}
-			if (view === undefined && needsOwnMounts(originalPath)) {
+			if (view === undefined && needsOwnMounts(originalPath, originalDir)) {
 				view = await this.ownMounts.ownMounts();
 			}
 			const located = locateBindSource(originalPath, originalDir, view ?? {kind: "host"});
+			if (located.kind === "refused") {
+				throw new BadRequestError(refusalMessage(originalPath, located.reason));
+			}
 			copies.push({originalPath, newPath, sourcePath: await firstExisting(located.paths)});
 		}
 		return copies;
@@ -540,9 +563,15 @@ export class MigrationService {
 
 			if (copy.sourcePath === null) {
 				await fs.mkdir(destPath, {recursive: true});
-			} else {
-				await this.migrator.copyDirectory(relocateIntoSource(copy.sourcePath, dirs), destPath);
+				continue;
 			}
+			// A source that existed at preflight must still exist: silently
+			// creating an empty directory here would lose the user's data.
+			const sourcePath = relocateIntoSource(copy.sourcePath, dirs);
+			if (!(await sourceExists(sourcePath))) {
+				throw new AppError(`Bind mount source ${copy.originalPath} (${sourcePath}) no longer exists; nothing was copied from it`);
+			}
+			await this.migrator.copyDirectory(sourcePath, destPath);
 		}
 	}
 

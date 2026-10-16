@@ -21,44 +21,117 @@ export type OwnMountsView =
     /** Docktor is containerized but the lookup failed. */
     | {readonly kind: "unknown"};
 
-export type BindSourceLocation = {readonly kind: "candidates"; readonly paths: readonly string[]};
+export type BindSourceRefusal =
+    /** Docktor is containerized and no own bind mount covers the source. */
+    | "not-visible"
+    /** Docktor is containerized but could not determine its mounts. */
+    | "mounts-unknown"
+    /** The source starts with `~`; it is never resolved. */
+    | "home-relative";
+
+export type BindSourceLocation =
+    | {readonly kind: "candidates"; readonly paths: readonly string[]}
+    | {readonly kind: "refused"; readonly reason: BindSourceRefusal};
 
 function isInside(child: string, parent: string): boolean {
     const relative = path.relative(parent, child);
     return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
+function isHomeRelative(declaredPath: string): boolean {
+    return declaredPath.startsWith("~");
+}
+
+function isAbsoluteSource(declaredPath: string): boolean {
+    return path.posix.isAbsolute(declaredPath) || path.isAbsolute(declaredPath);
+}
+
+function resolveRelative(declaredPath: string, composeDir: string): string {
+    return path.resolve(composeDir, declaredPath);
+}
+
 /** Candidates inside `composeDir` first, so an in-place relocation keeps working. */
 function insideFirst(candidates: readonly string[], composeDir: string): string[] {
     const unique = [...new Set(candidates)];
     const comparableDir = toComparablePath(path.resolve(composeDir));
-    const inside = (candidate: string): boolean =>
-        isInside(toComparablePath(candidate), comparableDir);
+    const inside = (candidate: string): boolean => isInside(toComparablePath(candidate), comparableDir);
     return [...unique.filter(inside), ...unique.filter((candidate) => !inside(candidate))];
 }
 
-/** True when locating `declaredPath` depends on what Docktor can see of the host. */
-export function needsOwnMounts(declaredPath: string): boolean {
-    return path.posix.isAbsolute(declaredPath) || path.isAbsolute(declaredPath);
+/**
+ * Paths at which Docktor reads the host path `hostPath` through its own bind
+ * mounts. `containerVisiblePaths` skips a mount whose source IS `hostPath`
+ * (right for a compose file, wrong for a data directory that is itself
+ * mounted), so those destinations are added here.
+ */
+function mountDerivedPaths(hostPath: string, mounts: readonly ContainerMount[]): string[] {
+    // Drop the leading identical-path entry: a same-path mount still yields
+    // the identical path through its own mount entry, the bare path is not host data.
+    const [, ...beneathMounts] = containerVisiblePaths(hostPath, mounts);
+    const exact = mounts
+        .filter((mount) => mount.type === "bind" && path.posix.normalize(mount.source) === path.posix.normalize(hostPath))
+        .map((mount) => mount.destination);
+    return [...exact, ...beneathMounts];
+}
+
+/** True when `resolved` lies within the destination of one of Docktor's own bind mounts. */
+function isWithinMountDestination(resolved: string, mounts: readonly ContainerMount[]): boolean {
+    const comparable = toComparablePath(resolved);
+    return mounts.some(
+        (mount) => mount.type === "bind" && isInside(comparable, path.posix.normalize(mount.destination)),
+    );
+}
+
+/**
+ * True when locating `declaredPath` depends on what Docktor can see of the
+ * host: an absolute source, or a relative one that leaves `composeDir`.
+ */
+export function needsOwnMounts(declaredPath: string, composeDir: string): boolean {
+    if (isHomeRelative(declaredPath)) {
+        return false;
+    }
+    if (isAbsoluteSource(declaredPath)) {
+        return true;
+    }
+    return !isInside(resolveRelative(declaredPath, composeDir), path.resolve(composeDir));
+}
+
+function locateRelative(resolved: string, composeDir: string, view: OwnMountsView): BindSourceLocation {
+    const candidate: BindSourceLocation = {kind: "candidates", paths: [resolved]};
+    if (view.kind === "host" || isInside(resolved, path.resolve(composeDir))) {
+        return candidate;
+    }
+    if (view.kind === "unknown") {
+        return {kind: "refused", reason: "mounts-unknown"};
+    }
+    return isWithinMountDestination(resolved, view.mounts) ? candidate : {kind: "refused", reason: "not-visible"};
+}
+
+function locateAbsolute(declaredPath: string, composeDir: string, view: OwnMountsView): BindSourceLocation {
+    if (view.kind === "host") {
+        return {kind: "candidates", paths: [declaredPath]};
+    }
+    if (view.kind === "unknown") {
+        return {kind: "refused", reason: "mounts-unknown"};
+    }
+    const paths = insideFirst(mountDerivedPaths(declaredPath, view.mounts), composeDir);
+    return paths.length === 0 ? {kind: "refused", reason: "not-visible"} : {kind: "candidates", paths};
 }
 
 /**
  * Locates `declaredPath` (exactly as the compose file spells it) for a compose
- * file in `composeDir`.
+ * file in `composeDir`: the candidate paths Docktor can read it at, or why it
+ * cannot.
  */
 export function locateBindSource(
     declaredPath: string,
     composeDir: string,
     view: OwnMountsView,
 ): BindSourceLocation {
-    if (!path.posix.isAbsolute(declaredPath) && !path.isAbsolute(declaredPath)) {
-        return {kind: "candidates", paths: [path.resolve(composeDir, declaredPath)]};
+    if (isHomeRelative(declaredPath)) {
+        return {kind: "refused", reason: "home-relative"};
     }
-    if (view.kind !== "container") {
-        return {kind: "candidates", paths: [declaredPath]};
-    }
-    // Drop the leading identical-path entry: a same-path mount still yields the
-    // identical path through its own mount entry, the bare path is not host data.
-    const [, ...mounted] = containerVisiblePaths(declaredPath, view.mounts);
-    return {kind: "candidates", paths: insideFirst(mounted, composeDir)};
+    return isAbsoluteSource(declaredPath)
+        ? locateAbsolute(declaredPath, composeDir, view)
+        : locateRelative(resolveRelative(declaredPath, composeDir), composeDir, view);
 }
