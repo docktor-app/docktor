@@ -112,6 +112,7 @@ describe("scan result schemas", () => {
         relativePaths: ["./data"],
         inlineEnvVars: false,
         unsupportedFeatures: [],
+        managedStack: null,
     };
 
     it("accepts a scan result with a stack and a not_found skipped root", () => {
@@ -134,6 +135,20 @@ describe("scan result schemas", () => {
     it("rejects a discovered stack without relativePaths", () => {
         const {relativePaths: _relativePaths, ...withoutRelative} = validStack;
         expect(discoveredStackSchema.safeParse(withoutRelative).success).toBe(false);
+    });
+
+    it("accepts a row managed by an existing stack", () => {
+        const managed = {...validStack, managedStack: {id: "app", displayName: "App"}};
+        expect(discoveredStackSchema.safeParse(managed).success).toBe(true);
+    });
+
+    it("rejects a discovered stack without managedStack", () => {
+        const {managedStack: _managedStack, ...withoutManaged} = validStack;
+        expect(discoveredStackSchema.safeParse(withoutManaged).success).toBe(false);
+    });
+
+    it("rejects a managedStack without a display name", () => {
+        expect(discoveredStackSchema.safeParse({...validStack, managedStack: {id: "app"}}).success).toBe(false);
     });
 
     it("rejects an unknown compatibility level", () => {
