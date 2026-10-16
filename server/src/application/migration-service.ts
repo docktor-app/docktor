@@ -9,10 +9,17 @@ import {StackRepository, stackRepository} from "../repositories/stack-repository
 import {slugify} from "../lib/slugify.js";
 import {createComposeConfig} from "../domain/compose-config.js";
 import {locateBindSource, needsOwnMounts, type BindSourceRefusal, type OwnMountsView} from "../domain/bind-mount-sources.js";
-import {asideNameCandidates, classifyMigrationTarget, type MigrationTargetKind} from "../domain/migration-target.js";
+import {
+	asideNameCandidates,
+	BACKUP_DIR_NAME,
+	classifyMigrationTarget,
+	copyDestinationViolations,
+	type MigrationTargetKind,
+} from "../domain/migration-target.js";
 import {computeUnifiedDiff, type UnifiedDiff} from "../lib/unified-diff.js";
 import {stackDirectoryNameSchema, type MigrationOperationStep, type MigrationTarget} from "@docktor/shared";
 import {AppError, BadRequestError, ConflictError, hasErrorCode} from "../lib/errors.js";
+import {composeAnalyzer} from "../infrastructure/compose-analyzer.js";
 import {dockerSelfStack} from "../infrastructure/docker-self-stack.js";
 import {assertNotOwnStack} from "./own-stack-guard.js";
 import {assertNotManaged} from "./managed-stack-guard.js";
@@ -23,16 +30,7 @@ import type {StackFilesystemPort} from "./ports/stack-filesystem-port.js";
 import type {ExternalStackControlPort} from "./ports/external-stack-control-port.js";
 import type {SelfStackPort} from "./ports/self-stack-port.js";
 import type {OwnMountsPort} from "./ports/own-mounts-port.js";
-
-// D-07/D-08: an opted-in backup is a plain copy of the old stack directory at
-// this fixed name inside the new stack directory; it is kept after success.
-const BACKUP_DIR_NAME = "pre-migration-backup";
-
-// CR-02: Docker volume names are also passed verbatim as the `-v` source to
-// `docker run`; a name containing `/` is interpreted by Docker as a host bind
-// path rather than a named volume, so names must be constrained to Docker's
-// own allowed volume-name character set before ever reaching the CLI.
-const VOLUME_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
+import type {ComposeAnalyzerPort} from "./ports/compose-analyzer-port.js";
 
 /**
  * CR-02: Resolve `target` against `base` and reject the result unless it is
@@ -211,6 +209,8 @@ export class MigrationService {
 		private readonly selfStack: SelfStackPort = dockerSelfStack,
 		// CR-03: which host paths Docktor can read through its own bind mounts.
 		private readonly ownMounts: OwnMountsPort = dockerSelfStack,
+		// WR-01: which bind sources the compose file declares.
+		private readonly analyzer: Pick<ComposeAnalyzerPort, "analyzeCompatibility"> = composeAnalyzer,
 	) {}
 
 	/**
@@ -224,7 +224,7 @@ export class MigrationService {
 	async previewMigration(request: MigrationPreviewRequest): Promise<MigrationPreview> {
 		const {composePath, displayName, volumeSelections, namedVolumeSelections} = request;
 		const assessment = await this.assessTarget(composePath, displayName);
-		const bindCopies = await this.planBindCopies(volumeSelections, assessment.originalDir);
+		const bindCopies = await this.planCopies(composePath, assessment, volumeSelections, namedVolumeSelections);
 		const originalCompose = await fs.readFile(composePath, "utf-8");
 		const result = this.rewriter.rewrite(originalCompose, volumeSelections, namedVolumeSelections);
 		const diff = computeUnifiedDiff(originalCompose, result.rewrittenCompose);
@@ -266,16 +266,19 @@ export class MigrationService {
 	 * with the old directory (D-09, RESEARCH Pitfall 4: rollback removes the
 	 * target directory, so it must be one Docktor creates in this run). A target
 	 * equal to the old directory is the in-place case (G-18-7): it needs the
-	 * stop, and a free, valid aside name for the original. A selected bind-mount
-	 * source Docktor cannot read (CR-03) is refused too. Nothing is stopped,
+	 * stop, and a free, valid aside name for the original. Preflight owns every
+	 * request-path refusal (WR-01): a converted source the compose file does not
+	 * declare, a bad or colliding destination or volume name, and a selected
+	 * bind-mount source Docktor cannot read (CR-03). Nothing is stopped,
 	 * created, copied or written.
 	 * Advisory by design: the exclusive mkdir and the unique record id stay
 	 * the authoritative backstops inside {@link execute}.
 	 */
 	async preflight(input: MigrationInput): Promise<MigrationPlan> {
 		const {composePath, displayName, volumeSelections, namedVolumeSelections, backup, stopOldStack} = input;
-		const {stackId, originalDir, targetDir, kind} = await this.assessTarget(composePath, displayName);
-		const bindCopies = await this.planBindCopies(volumeSelections, originalDir);
+		const assessment = await this.assessTarget(composePath, displayName);
+		const {stackId, originalDir, targetDir, kind} = assessment;
+		const bindCopies = await this.planCopies(composePath, assessment, volumeSelections, namedVolumeSelections);
 		const inPlace = kind === "in-place" ? {asideDir: await this.planInPlace(originalDir, stackId, input)} : null;
 
 		return {
@@ -291,6 +294,55 @@ export class MigrationService {
 			bindCopies,
 			inPlace,
 		};
+	}
+
+	/**
+	 * The request-path refusals preview and preflight share (WR-01, CR-03), all
+	 * before any side effect: a converted source must be declared by the compose
+	 * file, every destination must be valid, and every converted source must be
+	 * readable by Docktor. Returns where each converted bind mount is read from.
+	 */
+	private async planCopies(
+		composePath: string,
+		assessment: TargetAssessment,
+		volumeSelections: readonly VolumeSelection[],
+		namedVolumeSelections: ReadonlyMap<string, boolean>,
+	): Promise<PlannedBindCopy[]> {
+		const converted = volumeSelections.filter((selection) => selection.convert);
+		if (converted.length > 0) {
+			await this.assertDeclaredSources(composePath, converted);
+		}
+		const violations = copyDestinationViolations({
+			targetDir: assessment.targetDir,
+			composeDir: assessment.originalDir,
+			bindCopies: converted,
+			namedVolumes: [...namedVolumeSelections].filter(([, convert]) => convert).map(([name]) => name),
+		});
+		if (violations.length > 0) {
+			throw new BadRequestError(`Migration refused: ${violations.join("; ")}`);
+		}
+		return this.planBindCopies(volumeSelections, assessment.originalDir);
+	}
+
+	/**
+	 * WR-01/T-18-52: a converted `originalPath` must be a bind source the
+	 * compose file declares (the very strings the scanner offers), so a request
+	 * cannot make Docktor copy an arbitrary host path into a stack directory.
+	 */
+	private async assertDeclaredSources(composePath: string, converted: readonly VolumeSelection[]): Promise<void> {
+		const content = await fs.readFile(composePath, "utf-8");
+		let declared: Set<string>;
+		try {
+			declared = new Set(this.analyzer.analyzeCompatibility(content).bindMounts.map((mount) => mount.path));
+		} catch (err: unknown) {
+			const message = err instanceof Error ? err.message : String(err);
+			throw new BadRequestError(`The compose file could not be read to check the bind mounts: ${message}`);
+		}
+		for (const {originalPath} of converted) {
+			if (!declared.has(originalPath)) {
+				throw new BadRequestError(`Bind mount source ${originalPath} is not declared by the compose file`);
+			}
+		}
 	}
 
 	/**
@@ -365,7 +417,9 @@ export class MigrationService {
 	 * deleted (D-09 spirit). Never rejects for a step failure (returns
 	 * `success: false`). Only call it with a plan from {@link preflight};
 	 * concurrent same-slug starts are refused by the background operation start
-	 * (plan 18-14).
+	 * (plan 18-14). Every request-path refusal already happened in preflight
+	 * (WR-01); execute only fails for step failures, including a planned
+	 * bind-mount source that vanished since (CR-03).
 	 */
 	async execute(plan: MigrationPlan, onProgress?: MigrationProgressListener): Promise<MigrationResult> {
 		const {stackId, displayName, composePath, originalDir, volumeSelections, namedVolumeSelections, backup, stopOldStack, bindCopies, inPlace} = plan;
@@ -417,12 +471,8 @@ export class MigrationService {
 			// Step 4: Copy named volumes to bind mounts
 			for (const [volName, shouldConvert] of namedVolumeSelections) {
 				if (shouldConvert) {
-					// CR-02: volName is attacker-controlled (request body key) and is
-					// also used as the Docker `-v` source below — validate it against
-					// Docker's volume-name charset and confine destPath to volumesDir.
-					if (!VOLUME_NAME_PATTERN.test(volName)) {
-						throw new BadRequestError(`Invalid volume name: ${volName}`);
-					}
+					// CR-02: the name was validated in preflight (WR-01); confining
+					// destPath to volumesDir stays as a backstop.
 					const destPath = assertWithin(volumesDir, volName);
 					this.report(onProgress, "copying_named_volume", volName);
 					await this.migrator.copyVolumeToBindMount(volName, destPath);
