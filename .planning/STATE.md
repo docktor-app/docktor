@@ -5,16 +5,16 @@ milestone_name: Release Follow-ups
 current_phase: 18
 current_phase_name: Import and Migration Flow
 status: executing
-stopped_at: Completed 18-17-PLAN.md
-last_updated: "2026-10-16T10:53:22.452Z"
+stopped_at: Completed 18-18-PLAN.md
+last_updated: "2026-10-16T16:26:20.516Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 18 execution started
-state_head: 7541aa679be642ad864ed3ddd5ee8403d10d8787
+state_head: 4a4bfb15f8b2f97c828fd860874cab8446a977bd
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 20
-  completed_plans: 20
+  total_plans: 24
+  completed_plans: 21
   percent: 20
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-14)
 ## Current Position
 
 Phase: 18 (Import and Migration Flow) — EXECUTING
-Plan: 13 of 17
+Plan: 14 of 17
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 18 execution started
 
@@ -81,6 +81,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 18 P15 | 30 min | 3 tasks | 10 files |
 | Phase 18 P16 | 25 min | 2 tasks | 10 files |
 | Phase 18 P17 | 15 min | 3 tasks | 16 files |
+| Phase 18 P18 | 10min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -123,6 +124,7 @@ Roadmap decisions for v0.1.1:
 - [Phase 18]: 18-16: operation service takes the event bus as a trailing constructor parameter (default domainEventBus); rolling_back is reported first in the rollback catch; listener failures are isolated in MigrationService.report
 - [Phase 18]: 18-17: migration list is read on mount and on every EventSource open; stale/duplicate operation snapshots are dropped in useMigrationOperations (finished never back to running, running never to an earlier step)
 - [Phase 18]: 18-17: migration toasts are one sonner toast per operation id; description notes derive from the operation (backup, stopOldStack, keptOriginalAt) so they survive a reload
+- [Phase 18]: 18-18: copyDirectory uses archive-mode cp (merge form cp -a src/. dest for existing dirs); win32 fs.cp fallback only for CI
 
 ### Pending Todos
 
@@ -146,6 +148,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T10:53:22.300Z
-Stopped at: Completed 18-17-PLAN.md
+Last session: 2026-10-16T16:26:20.277Z
+Stopped at: Completed 18-18-PLAN.md
 Resume file: None
