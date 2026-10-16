@@ -1,7 +1,7 @@
 import {useState} from "react";
 import {useNavigate} from "react-router";
 import {toast} from "sonner";
-import type {MigrationExecuteInput, MigrationPreviewInput} from "@docktor/shared";
+import type {MigrationExecuteInput, MigrationOperation, MigrationPreviewInput} from "@docktor/shared";
 import {Search, FolderOpen} from "lucide-react";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
@@ -13,25 +13,15 @@ import {CompatibilityBadge} from "@/components/domain/stack/compatibility-badge"
 import {DiscoveredStackActions} from "@/components/domain/stack/discovered-stack-actions";
 import {ScanSkippedDirectories} from "@/components/domain/stack/scan-skipped-directories";
 import {MigrationWizard, type ConfirmMigrateParams} from "@/routes/setup/components/migration-wizard";
+import {useMigrationOperations} from "@/hooks/use-migration-operations";
 import {directoryDisplayName} from "@/lib/path-display";
+import {MIGRATION_ERROR_FALLBACK, showMigrationToast} from "@/lib/migration-progress";
 import type {
   DiscoveredStack,
   MigrationPreview,
-  MigrationResult,
   ScanResult,
   SkippedDirectory,
 } from "@/lib/brownfield-types";
-
-const MIGRATION_ERROR_FALLBACK =
-  "Migration failed. Your original stack directory was not modified. Check the error and try again.";
-
-function successDescription({backup, stopOldStack}: Pick<ConfirmMigrateParams, "backup" | "stopOldStack">): string | undefined {
-  const notes = [
-    backup ? "Backup saved to pre-migration-backup/ in the new stack directory." : null,
-    stopOldStack ? "The old stack was stopped." : null,
-  ].filter((note): note is string => note !== null);
-  return notes.length > 0 ? notes.join(" ") : undefined;
-}
 
 /**
  * Injected API surface so this component is agnostic about which endpoints
@@ -44,7 +34,9 @@ export interface BrownfieldImportApi {
   scanDirectories: (directories: string[]) => Promise<ScanResult>;
   adoptStack: (composePath: string, displayName: string) => Promise<{id: string}>;
   previewMigration: (input: MigrationPreviewInput) => Promise<MigrationPreview>;
-  executeMigration: (input: MigrationExecuteInput) => Promise<MigrationResult>;
+  // Answers 202 with the background operation, not the migration outcome.
+  executeMigration: (input: MigrationExecuteInput) => Promise<MigrationOperation>;
+  listMigrationOperations: () => Promise<{operations: MigrationOperation[]}>;
 }
 
 interface BrownfieldImportProps {
@@ -61,6 +53,15 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
   const [adoptingId, setAdoptingId] = useState<string | null>(null);
   const [migratingStack, setMigratingStack] = useState<DiscoveredStack | null>(null);
   const [adoptedIds, setAdoptedIds] = useState<Set<string>>(new Set());
+
+  const {track} = useMigrationOperations(api.listMigrationOperations, {
+    onUpdate: (operation) => {
+      showMigrationToast(operation, navigate);
+      if (operation.status === "succeeded") {
+        setAdoptedIds((prev) => new Set([...prev, operation.composePath]));
+      }
+    },
+  });
 
   const handleScan = async () => {
     const dirs = directories
@@ -118,9 +119,11 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
     }
   };
 
-  // WR-09: migration execution now runs here (in the parent, which stays
+  // WR-09: the migration request starts here (in the parent, which stays
   // mounted for the whole background migration) instead of inside
   // MigrationWizard, which closes/unmounts as soon as the user confirms.
+  // G-18-job: the request answers 202 with an operation; its progress and
+  // outcome arrive as toasts through useMigrationOperations.
   const handleConfirmMigrate = ({
     stack,
     displayName,
@@ -130,8 +133,6 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
     stopOldStack,
     inPlaceAsideName,
   }: ConfirmMigrateParams) => {
-    toast.info(`Migrating ${displayName}\u2026`);
-
     api
       .executeMigration({
         composePath: stack.path,
@@ -142,21 +143,7 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
         stopOldStack,
         ...(inPlaceAsideName !== null && {inPlaceAsideName}),
       })
-      .then((result) => {
-        if (result.success && result.stackId) {
-          const description = successDescription({backup, stopOldStack});
-          toast.success(`Migration complete! ${displayName} is now managed by Docktor`, {
-            ...(description && {description}),
-            action: {
-              label: "View stack",
-              onClick: () => navigate(`/stacks/${result.stackId}`),
-            },
-          });
-          setAdoptedIds((prev) => new Set([...prev, stack.path]));
-        } else {
-          toast.error(result.error || MIGRATION_ERROR_FALLBACK);
-        }
-      })
+      .then(track)
       .catch((err: unknown) => {
         toast.error(err instanceof Error && err.message ? err.message : MIGRATION_ERROR_FALLBACK);
       });

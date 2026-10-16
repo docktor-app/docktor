@@ -1,5 +1,7 @@
 import {useEffect, useRef} from "react"
 
+import type {MigrationOperation} from "@docktor/shared"
+
 export interface ContainerStateEvent {
     type: "container_state"
     stackId: string
@@ -62,7 +64,15 @@ export interface ProxyCertStatusEvent {
     message?: string
 }
 
-export type StateEvent = ContainerStateEvent | StackStatusEvent | ConfigChangedEvent | ConfigErrorEvent | UpdateAvailableEvent | NotificationCreatedEvent | ProxyCertStatusEvent
+// Structurally identical to server/src/lib/state-broadcaster.ts's
+// MigrationProgressEvent (G-18-job) — the operation is the shared
+// MigrationOperation snapshot, so the mirror cannot drift from the REST shape.
+export interface MigrationProgressEvent {
+    type: "migration_progress"
+    operation: MigrationOperation
+}
+
+export type StateEvent = ContainerStateEvent | StackStatusEvent | ConfigChangedEvent | ConfigErrorEvent | UpdateAvailableEvent | NotificationCreatedEvent | ProxyCertStatusEvent | MigrationProgressEvent
 
 const BASE = globalThis.location?.port === "5173" ? "http://localhost:3000" : ""
 
