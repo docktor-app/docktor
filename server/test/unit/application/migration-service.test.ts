@@ -2,6 +2,8 @@ import {describe, it, expect, vi, beforeEach, afterEach} from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import {ComposeRewriter} from "../../../src/infrastructure/compose-rewriter.js";
+import {parseEnvAssignments} from "../../../src/domain/host-ports.js";
 import {MigrationService} from "../../../src/application/migration-service.js";
 import {BadRequestError, ConflictError} from "../../../src/lib/errors.js";
 import {slugify} from "../../../src/lib/slugify.js";
@@ -1348,5 +1350,77 @@ describe("previewMigration (MIG-02, D-04, G-18-7)", () => {
                 }),
             ).rejects.toThrow(BadRequestError);
         });
+    });
+});
+
+describe("MigrationService environment extraction (CR-02)", () => {
+    const displayName = "Env Fixture";
+    const stackId = slugify(displayName);
+    const TWO_SERVICES = [
+        "services:",
+        "  web:",
+        "    image: nginx",
+        "    environment:",
+        '      PORT: "80"',
+        "  worker:",
+        "    image: busybox",
+        "    environment:",
+        '      PORT: "9000"',
+        "",
+    ].join("\n");
+
+    let tmpRoot: string;
+    let composePath: string;
+    let newStackPath: string;
+
+    beforeEach(async () => {
+        tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "docktor-env-"));
+        const originalDir = path.join(tmpRoot, "original");
+        composePath = path.join(originalDir, "docker-compose.yml");
+        newStackPath = path.join(tmpRoot, "stacks", stackId);
+        await fs.mkdir(originalDir, {recursive: true});
+        await fs.writeFile(composePath, TWO_SERVICES, "utf-8");
+    });
+
+    afterEach(async () => {
+        await fs.rm(tmpRoot, {recursive: true, force: true});
+    });
+
+    function buildRealRewriterService(): MigrationService {
+        const docker = createMockDocker();
+        docker.up.mockResolvedValue(undefined);
+        return new MigrationService(
+            docker as unknown as DockerExecutorPort,
+            createMockMigrator() as unknown as VolumeMigratorPort,
+            new ComposeRewriter(() => new Set()),
+            createMockStackFs(path.join(tmpRoot, "stacks")) as unknown as StackFilesystemPort,
+            createMockStackRepo() as unknown as StackRepository,
+            createMockOldStack() as unknown as ExternalStackControlPort,
+            createMockSelfStack() as unknown as SelfStackPort,
+            createMockOwnMounts() as unknown as OwnMountsPort,
+        );
+    }
+
+    function request() {
+        return {
+            composePath,
+            displayName,
+            volumeSelections: [],
+            namedVolumeSelections: new Map<string, boolean>(),
+            backup: false,
+            stopOldStack: false,
+        };
+    }
+
+    it("keeps each service's own PORT: web reads PORT, worker reads WORKER_PORT", async () => {
+        const result = await buildRealRewriterService().migrate(request());
+
+        expect(result.success).toBe(true);
+        const written = await fs.readFile(path.join(newStackPath, "docker-compose.yml"), "utf-8");
+        expect(written).toContain('PORT: "${PORT}"');
+        expect(written).toContain('PORT: "${WORKER_PORT}"');
+        const env = parseEnvAssignments(await fs.readFile(path.join(newStackPath, ".env"), "utf-8"));
+        expect(env.PORT).toBe("80");
+        expect(env.WORKER_PORT).toBe("9000");
     });
 });

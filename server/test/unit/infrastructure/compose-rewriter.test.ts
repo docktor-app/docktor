@@ -1,4 +1,4 @@
-import {describe, it, expect} from "vitest";
+import {describe, it, expect, vi} from "vitest";
 import {parse as parseYaml} from "yaml";
 import {ComposeRewriter} from "../../../src/infrastructure/compose-rewriter.js";
 import {computeUnifiedDiff} from "../../../src/lib/unified-diff.js";
@@ -404,7 +404,7 @@ volumes:
     });
 
     describe("rewrite (G-18-4 B: inline environment values move to .env)", () => {
-        const rewriter = new ComposeRewriter();
+        const rewriter = new ComposeRewriter(() => new Set());
 
         const ENV_APP = lines(
             "services:",
@@ -470,7 +470,7 @@ volumes:
             expect(result.envVars).toEqual({});
         });
 
-        it("collects the keys of several services in document order, a later duplicate wins", () => {
+        it("collects the keys of several services in document order", () => {
             const compose = lines(
                 "services:",
                 "  web:",
@@ -480,14 +480,118 @@ volumes:
                 "  worker:",
                 "    environment:",
                 "      C: three",
-                "      A: four",
                 "",
             );
 
             const result = rewriter.rewrite(compose, [], new Map());
 
-            expect(result.extractedEnv).toBe("A=four\nB=two\nC=three");
-            expect(result.envVars).toEqual({A: "four", B: "two", C: "three"});
+            expect(result.extractedEnv).toBe("A=one\nB=two\nC=three");
+            expect(result.envVars).toEqual({A: "one", B: "two", C: "three"});
+        });
+
+        describe("keys that several services share (CR-02)", () => {
+            const service = (name: string, ...entries: string[]): string[] => [
+                `  ${name}:`,
+                "    environment:",
+                ...entries.map((entry) => `      ${entry}`),
+            ];
+
+            it("keeps each service's own value when the same key has different values", () => {
+                const compose = lines(
+                    "services:",
+                    ...service("web", 'PORT: "80"', "DB_HOST: db1"),
+                    ...service("worker", 'PORT: "9000"', "DB_HOST: db2"),
+                    "",
+                );
+
+                const result = rewriter.rewrite(compose, [], new Map());
+
+                expect(result.rewrittenCompose).toBe(
+                    lines(
+                        "services:",
+                        ...service("web", 'PORT: "${PORT}"', "DB_HOST: ${DB_HOST}"),
+                        ...service("worker", 'PORT: "${WORKER_PORT}"', "DB_HOST: ${WORKER_DB_HOST}"),
+                        "",
+                    ),
+                );
+                expect(result.extractedEnv).toBe("PORT=80\nDB_HOST=db1\nWORKER_PORT=9000\nWORKER_DB_HOST=db2");
+                expect(result.envVars).toEqual({
+                    PORT: "80",
+                    DB_HOST: "db1",
+                    WORKER_PORT: "9000",
+                    WORKER_DB_HOST: "db2",
+                });
+            });
+
+            it("shares one .env entry when the same key has the same value", () => {
+                const compose = lines(
+                    "services:",
+                    ...service("web", "TZ: Europe/Berlin"),
+                    ...service("worker", "TZ: Europe/Berlin"),
+                    "",
+                );
+
+                const result = rewriter.rewrite(compose, [], new Map());
+
+                expect(result.rewrittenCompose).toBe(
+                    lines("services:", ...service("web", "TZ: ${TZ}"), ...service("worker", "TZ: ${TZ}"), ""),
+                );
+                expect(result.extractedEnv).toBe("TZ=Europe/Berlin");
+            });
+
+            it("moves to the next numbered name when the prefixed name is taken by another value", () => {
+                const compose = lines(
+                    "services:",
+                    ...service("web", 'PORT: "80"'),
+                    ...service("worker", 'PORT: "9000"'),
+                    ...service("batch", 'WORKER_PORT: "1"', 'PORT: "7"'),
+                    "",
+                );
+
+                const result = rewriter.rewrite(compose, [], new Map());
+
+                expect(result.envVars).toEqual({PORT: "80", WORKER_PORT: "9000", WORKER_PORT_2: "1", BATCH_PORT: "7"});
+            });
+
+            it.each([
+                ["my-app", "MY_APP_PORT"],
+                ["web.v2", "WEB_V2_PORT"],
+                ["1st", "_1ST_PORT"],
+            ])("sanitises the service name %s into %s", (name, expected) => {
+                const compose = lines(
+                    "services:",
+                    ...service("web", 'PORT: "80"'),
+                    ...service(name, 'PORT: "9000"'),
+                    "",
+                );
+
+                const result = rewriter.rewrite(compose, [], new Map());
+
+                expect(result.envVars).toEqual({PORT: "80", [expected]: "9000"});
+            });
+
+            it("never uses a reserved name", () => {
+                const reserved = new ComposeRewriter(() => new Set(["PORT"]));
+                const compose = lines("services:", ...service("web", 'PORT: "80"'), "");
+
+                const result = reserved.rewrite(compose, [], new Map());
+
+                expect(result.rewrittenCompose).toBe(lines("services:", ...service("web", 'PORT: "${WEB_PORT}"'), ""));
+                expect(result.extractedEnv).toBe("WEB_PORT=80");
+            });
+
+            it("reserves the variables of Docktor's own process environment by default", () => {
+                vi.stubEnv("DOCKTOR_TEST_SHADOW", "x");
+                try {
+                    const compose = lines("services:", ...service("web", "DOCKTOR_TEST_SHADOW: y"), "");
+
+                    const result = new ComposeRewriter().rewrite(compose, [], new Map());
+
+                    expect(result.envVars).toEqual({WEB_DOCKTOR_TEST_SHADOW: "y"});
+                } finally {
+                    vi.unstubAllEnvs();
+                }
+            });
         });
 
         it("applies the bind-mount conversion and the env extraction in one pass and nothing else", () => {
