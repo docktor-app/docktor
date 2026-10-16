@@ -9,7 +9,7 @@ import {StackRepository, stackRepository} from "../repositories/stack-repository
 import {slugify} from "../lib/slugify.js";
 import {createComposeConfig} from "../domain/compose-config.js";
 import {computeUnifiedDiff, type UnifiedDiff} from "../lib/unified-diff.js";
-import {BadRequestError} from "../lib/errors.js";
+import {BadRequestError, hasErrorCode} from "../lib/errors.js";
 import type {DockerExecutorPort} from "./ports/docker-executor-port.js";
 import type {VolumeMigratorPort} from "./ports/volume-migrator-port.js";
 import type {ComposeRewriterPort} from "./ports/compose-rewriter-port.js";
@@ -39,6 +39,22 @@ function assertWithin(base: string, target: string): string {
 		throw new BadRequestError(`Path escapes managed directory: ${target}`);
 	}
 	return resolved;
+}
+
+/**
+ * CR-01: only a missing source (ENOENT) counts as "does not exist". Any other
+ * access failure (EACCES, EIO, ...) is rethrown so the migration rolls back.
+ */
+async function sourceExists(srcPath: string): Promise<boolean> {
+	try {
+		await fs.access(srcPath);
+		return true;
+	} catch (err: unknown) {
+		if (hasErrorCode(err, "ENOENT")) {
+			return false;
+		}
+		throw err;
+	}
 }
 
 export interface MigrationInput {
@@ -158,24 +174,7 @@ export class MigrationService {
 			}
 
 			// Step 5: Copy bind mount data
-			for (const sel of volumeSelections) {
-				if (sel.convert) {
-					const srcPath = path.isAbsolute(sel.originalPath)
-						? sel.originalPath
-						: path.join(originalDir, sel.originalPath);
-					// CR-02: sel.newPath is fully attacker-controlled — confine the
-					// resolved destination to be a strict descendant of newStackPath.
-					const destPath = assertWithin(newStackPath, sel.newPath);
-
-					try {
-						await fs.access(srcPath);
-						await this.migrator.copyDirectory(srcPath, destPath);
-					} catch {
-						// Source might not exist yet (empty volume)
-						await fs.mkdir(destPath, {recursive: true});
-					}
-				}
-			}
+			await this.copyBindMounts(volumeSelections, originalDir, newStackPath);
 
 			// Step 6: Rewrite compose file
 			const originalCompose = await fs.readFile(composePath, "utf-8");
@@ -252,6 +251,35 @@ export class MigrationService {
 				error: `Migration failed: ${errMessage}. Your original stack directory was not modified.${restartNote}`,
 				originalPath: originalDir,
 			};
+		}
+	}
+
+	/**
+	 * Step 5: copy bind-mount data into the new stack directory. CR-01: only a
+	 * missing source (ENOENT) is an empty volume; any other failure must roll
+	 * back, because the old stack may already be stopped.
+	 */
+	private async copyBindMounts(
+		volumeSelections: VolumeSelection[],
+		originalDir: string,
+		newStackPath: string,
+	): Promise<void> {
+		for (const sel of volumeSelections) {
+			if (!sel.convert) {
+				continue;
+			}
+			const srcPath = path.isAbsolute(sel.originalPath)
+				? sel.originalPath
+				: path.join(originalDir, sel.originalPath);
+			// CR-02: sel.newPath is fully attacker-controlled — confine the
+			// resolved destination to be a strict descendant of newStackPath.
+			const destPath = assertWithin(newStackPath, sel.newPath);
+
+			if (await sourceExists(srcPath)) {
+				await this.migrator.copyDirectory(srcPath, destPath);
+			} else {
+				await fs.mkdir(destPath, {recursive: true});
+			}
 		}
 	}
 
