@@ -156,9 +156,13 @@ describe("architecture: layering", () => {
             return name.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
         }
 
+        // Pure function modules that hold no adapter and so implement no port. Each one is a
+        // deliberate, reviewed exception: it is imported only by the adapter that formats with it.
+        const PURE_FUNCTION_MODULES = new Set(["dotenv-format.ts"]);
+
         const infraFiles = fs
             .readdirSync(INFRASTRUCTURE_DIR)
-            .filter((f) => f.endsWith(".ts"))
+            .filter((f) => f.endsWith(".ts") && !PURE_FUNCTION_MODULES.has(f))
             .map((f) => path.join(INFRASTRUCTURE_DIR, f));
 
         for (const file of infraFiles) {

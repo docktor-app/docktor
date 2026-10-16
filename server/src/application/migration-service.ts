@@ -226,7 +226,13 @@ export class MigrationService {
 		const assessment = await this.assessTarget(composePath, displayName);
 		const bindCopies = await this.planCopies(composePath, assessment, volumeSelections, namedVolumeSelections);
 		const originalCompose = await fs.readFile(composePath, "utf-8");
-		const result = this.rewriter.rewrite(originalCompose, volumeSelections, namedVolumeSelections);
+		const existingEnv = await this.readOldEnv(path.dirname(composePath));
+		const result = this.rewriter.rewrite(
+			originalCompose,
+			volumeSelections,
+			namedVolumeSelections,
+			existingEnv ?? undefined,
+		);
 		const diff = computeUnifiedDiff(originalCompose, result.rewrittenCompose);
 		const inPlace = assessment.kind === "in-place";
 		const suggestedAsideName = inPlace
@@ -485,7 +491,13 @@ export class MigrationService {
 			// Step 6: Rewrite compose file
 			this.report(onProgress, "writing_compose");
 			const originalCompose = await fs.readFile(sourceComposePath, "utf-8");
-			const rewriteResult = this.rewriter.rewrite(originalCompose, volumeSelections, namedVolumeSelections);
+			const existingEnv = await this.readOldEnv(sourceDir);
+			const rewriteResult = this.rewriter.rewrite(
+				originalCompose,
+				volumeSelections,
+				namedVolumeSelections,
+				existingEnv ?? undefined,
+			);
 
 			// Write new compose file
 			await fs.writeFile(
@@ -494,30 +506,7 @@ export class MigrationService {
 				"utf-8",
 			);
 
-			// Write extracted env vars if any
-			if (rewriteResult.extractedEnv) {
-				// Merge with existing .env if present
-				let existingEnv = "";
-				try {
-					existingEnv = await fs.readFile(path.join(sourceDir, ".env"), "utf-8");
-				} catch {
-					// No existing .env
-				}
-				const newEnv = existingEnv
-					? `${existingEnv}\n\n# Extracted from docker-compose.yml\n${rewriteResult.extractedEnv}`
-					: rewriteResult.extractedEnv;
-				await fs.writeFile(path.join(newStackPath, ".env"), newEnv, "utf-8");
-			} else {
-				// Copy existing .env if present
-				try {
-					await fs.copyFile(
-						path.join(sourceDir, ".env"),
-						path.join(newStackPath, ".env"),
-					);
-				} catch {
-					// No .env to copy
-				}
-			}
+			await this.writeNewEnv(sourceDir, newStackPath, existingEnv, rewriteResult.extractedEnv);
 
 			// Step 7: Create stack record
 			this.report(onProgress, "recording_stack");
@@ -590,6 +579,44 @@ export class MigrationService {
 			onProgress({step, detail});
 		} catch (listenerError: unknown) {
 			console.error(`[MigrationService] Progress listener failed at step "${step}":`, listenerError);
+		}
+	}
+
+	/**
+	 * The old stack's `.env` text, or null when it has none. Only ENOENT means "none": any other
+	 * error (EACCES, EISDIR, ...) propagates, so an unreadable `.env` fails the migration (and
+	 * rolls it back) instead of silently dropping its content.
+	 */
+	private async readOldEnv(dir: string): Promise<string | null> {
+		try {
+			return await fs.readFile(path.join(dir, ".env"), "utf-8");
+		} catch (error: unknown) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+				return null;
+			}
+			throw error;
+		}
+	}
+
+	/**
+	 * Step 6b: the new stack's `.env`. The old content is kept as it is and the extracted block
+	 * is appended (every extracted name is new, so no key appears twice); with nothing extracted
+	 * the old file is copied byte for byte.
+	 */
+	private async writeNewEnv(
+		sourceDir: string,
+		newStackPath: string,
+		existingEnv: string | null,
+		extractedEnv: string,
+	): Promise<void> {
+		const target = path.join(newStackPath, ".env");
+		if (extractedEnv) {
+			const merged = existingEnv
+				? `${existingEnv}\n\n# Extracted from docker-compose.yml\n${extractedEnv}`
+				: extractedEnv;
+			await fs.writeFile(target, merged, "utf-8");
+		} else if (existingEnv !== null) {
+			await fs.copyFile(path.join(sourceDir, ".env"), target);
 		}
 	}
 

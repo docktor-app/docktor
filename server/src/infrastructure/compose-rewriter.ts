@@ -1,5 +1,6 @@
 import {CST, isMap, isScalar, isSeq, parseDocument, Scalar, type YAMLMap} from "yaml";
 import {AppError} from "../lib/errors.js";
+import {parseEnvAssignments} from "../domain/host-ports.js";
 import type {ComposeRewriterPort} from "../application/ports/compose-rewriter-port.js";
 import {isVariableReference} from "./compose-analyzer.js";
 import {formatDotenvLine, isDotenvSafeValue, isInterpolationName} from "./dotenv-format.js";
@@ -155,15 +156,34 @@ function variablePrefix(serviceName: string): string {
 	return /^[0-9]/.test(upper) ? `_${upper}` : upper;
 }
 
+/** Prefixes compose reads from `.env` to configure itself (project name, files, the daemon). */
+const COMPOSE_CONFIG_PREFIXES = ["COMPOSE_", "DOCKER_"];
+
+/** Variable names a compose file references (`$NAME`, `${NAME}`, `${NAME:-x}`). Over-matching is harmless. */
+function referencedNames(compose: string): Set<string> {
+	return new Set([...compose.matchAll(/\$\{?([A-Za-z_][A-Za-z0-9_]*)/g)].map(match => match[1]));
+}
+
+interface NameConstraints {
+	/** Names that can never carry an extracted value (Docktor's own process environment). */
+	reserved: ReadonlySet<string>;
+	/** The old stack's `.env` assignments: such a name is reusable only for the same value. */
+	existingEnv: Readonly<Record<string, string>>;
+	/** Names the original compose file already references: a new `.env` entry would change them. */
+	referenced: ReadonlySet<string>;
+}
+
 /**
  * Decides which `.env` name carries each extracted literal. A name is never reused for a
- * different value, so every `${NAME}` keeps resolving to the literal it replaced.
+ * different value and never changes how anything else resolves, so every `${NAME}` keeps
+ * resolving to the literal it replaced.
  */
 class EnvNameAllocator {
-	// Insertion-ordered: the order in which names were first emitted.
+	// Insertion-ordered: the order in which names were first emitted. Names reused from the
+	// old .env are not in here: their line already exists.
 	private readonly assigned = new Map<string, string>();
 
-	constructor(private readonly reserved: ReadonlySet<string>) {}
+	constructor(private readonly constraints: NameConstraints) {}
 
 	/** The name for `key`'s literal in `serviceName`, or undefined when no candidate is usable. */
 	allocate(serviceName: string, key: string, value: string): string | undefined {
@@ -173,7 +193,7 @@ class EnvNameAllocator {
 			candidates.push(`${prefixed}_${suffix}`);
 		}
 		const name = candidates.find(candidate => this.isUsable(candidate, value));
-		if (name !== undefined) {
+		if (name !== undefined && !this.isReusedFromExistingEnv(name)) {
 			this.assigned.set(name, value);
 		}
 		return name;
@@ -183,12 +203,23 @@ class EnvNameAllocator {
 		return this.assigned;
 	}
 
+	private isReusedFromExistingEnv(name: string): boolean {
+		return Object.hasOwn(this.constraints.existingEnv, name);
+	}
+
 	private isUsable(name: string, value: string): boolean {
-		if (this.reserved.has(name)) {
+		const {reserved, existingEnv, referenced} = this.constraints;
+		if (reserved.has(name) || COMPOSE_CONFIG_PREFIXES.some(prefix => name.startsWith(prefix))) {
 			return false;
 		}
-		const taken = this.assigned.get(name);
-		return taken === undefined || taken === value;
+		const emitted = this.assigned.get(name);
+		if (emitted !== undefined) {
+			return emitted === value;
+		}
+		if (this.isReusedFromExistingEnv(name)) {
+			return existingEnv[name] === value;
+		}
+		return !referenced.has(name);
 	}
 }
 
@@ -419,6 +450,7 @@ export class ComposeRewriter implements ComposeRewriterPort {
 		originalCompose: string,
 		volumeSelections: VolumeSelection[],
 		namedVolumeSelections: Map<string, boolean>, // volumeName -> convert (true = bind mount, false = keep as named)
+		existingEnv?: string,
 	): RewriteResult {
 		const unchanged: RewriteResult = {rewrittenCompose: originalCompose, extractedEnv: "", envVars: {}};
 		const doc = parseDocument(originalCompose, {keepSourceTokens: true});
@@ -434,7 +466,11 @@ export class ComposeRewriter implements ComposeRewriterPort {
 		const plan = new ComposeEditPlan(
 			originalCompose,
 			new VolumeRules(volumeSelections, namedVolumeSelections),
-			new EnvNameAllocator(this.reservedNames()),
+			new EnvNameAllocator({
+				reserved: this.reservedNames(),
+				existingEnv: parseEnvAssignments(existingEnv ?? ""),
+				referenced: referencedNames(originalCompose),
+			}),
 		);
 		for (const pair of services.items) {
 			if (isMap(pair.value)) {
