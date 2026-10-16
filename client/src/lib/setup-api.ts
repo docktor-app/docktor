@@ -1,6 +1,7 @@
 import {apiFetch} from "./api";
 import type {
   MigrationExecuteInput,
+  MigrationPreviewInput,
   WizardStep1Input,
   WizardStep2Input,
   WizardStep3Input,
@@ -11,7 +12,6 @@ import type {
   MigrationPreview,
   MigrationResult,
   ScanResult,
-  VolumeSelection,
 } from "./brownfield-types";
 
 export interface SetupStatus {
@@ -85,14 +85,10 @@ export function adoptStack(composePath: string, displayName: string) {
   });
 }
 
-export function previewMigration(
-  composePath: string,
-  volumeSelections: VolumeSelection[],
-  namedVolumeSelections: Record<string, boolean>,
-) {
+export function previewMigration(input: MigrationPreviewInput) {
   return apiFetch<MigrationPreview>("/api/setup/migrate/preview", {
     method: "POST",
-    body: JSON.stringify({composePath, volumeSelections, namedVolumeSelections}),
+    body: JSON.stringify(input),
   });
 }
 

@@ -1,7 +1,7 @@
 import {useState} from "react";
 import {useNavigate} from "react-router";
 import {toast} from "sonner";
-import type {MigrationExecuteInput} from "@docktor/shared";
+import type {MigrationExecuteInput, MigrationPreviewInput} from "@docktor/shared";
 import {Search, FolderOpen} from "lucide-react";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
@@ -20,7 +20,6 @@ import type {
   MigrationResult,
   ScanResult,
   SkippedDirectory,
-  VolumeSelection,
 } from "@/lib/brownfield-types";
 
 const MIGRATION_ERROR_FALLBACK =
@@ -44,11 +43,7 @@ function successDescription({backup, stopOldStack}: Pick<ConfirmMigrateParams, "
 export interface BrownfieldImportApi {
   scanDirectories: (directories: string[]) => Promise<ScanResult>;
   adoptStack: (composePath: string, displayName: string) => Promise<{id: string}>;
-  previewMigration: (
-    composePath: string,
-    volumeSelections: VolumeSelection[],
-    namedVolumeSelections: Record<string, boolean>,
-  ) => Promise<MigrationPreview>;
+  previewMigration: (input: MigrationPreviewInput) => Promise<MigrationPreview>;
   executeMigration: (input: MigrationExecuteInput) => Promise<MigrationResult>;
 }
 
@@ -126,7 +121,15 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
   // WR-09: migration execution now runs here (in the parent, which stays
   // mounted for the whole background migration) instead of inside
   // MigrationWizard, which closes/unmounts as soon as the user confirms.
-  const handleConfirmMigrate = ({stack, displayName, volumeSelections, namedVolumeSelections, backup, stopOldStack}: ConfirmMigrateParams) => {
+  const handleConfirmMigrate = ({
+    stack,
+    displayName,
+    volumeSelections,
+    namedVolumeSelections,
+    backup,
+    stopOldStack,
+    inPlaceAsideName,
+  }: ConfirmMigrateParams) => {
     toast.info(`Migrating ${displayName}\u2026`);
 
     api
@@ -137,6 +140,7 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
         namedVolumeSelections,
         backup,
         stopOldStack,
+        ...(inPlaceAsideName !== null && {inPlaceAsideName}),
       })
       .then((result) => {
         if (result.success && result.stackId) {
