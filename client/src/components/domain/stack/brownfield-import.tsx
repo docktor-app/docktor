@@ -10,6 +10,7 @@ import {Card, CardContent, CardDescription, CardHeader, CardTitle} from "@/compo
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from "@/components/ui/table";
 import {Skeleton} from "@/components/ui/skeleton";
 import {CompatibilityBadge} from "@/components/domain/stack/compatibility-badge";
+import {ScanSkippedDirectories} from "@/components/domain/stack/scan-skipped-directories";
 import {MigrationWizard, type ConfirmMigrateParams} from "@/routes/setup/components/migration-wizard";
 import {directoryDisplayName} from "@/lib/path-display";
 import type {
@@ -17,6 +18,7 @@ import type {
   MigrationPreview,
   MigrationResult,
   ScanResult,
+  SkippedDirectory,
   VolumeSelection,
 } from "@/lib/brownfield-types";
 
@@ -59,7 +61,7 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
   const [scanning, setScanning] = useState(false);
   const [scanned, setScanned] = useState(false);
   const [stacks, setStacks] = useState<DiscoveredStack[]>([]);
-  const [skippedDirs, setSkippedDirs] = useState(0);
+  const [skipped, setSkipped] = useState<readonly SkippedDirectory[]>([]);
   const [adoptingId, setAdoptingId] = useState<string | null>(null);
   const [migratingStack, setMigratingStack] = useState<DiscoveredStack | null>(null);
   const [adoptedIds, setAdoptedIds] = useState<Set<string>>(new Set());
@@ -79,11 +81,15 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
     try {
       const result = await api.scanDirectories(dirs);
       setStacks(result.stacks);
-      setSkippedDirs(result.skippedDirectories);
+      setSkipped(result.skipped);
       setScanned(true);
 
       if (result.stacks.length === 0) {
-        toast.info("No compose files found in the specified directories");
+        toast.info(
+          result.skipped.length > 0
+            ? "No compose files found. Some directories could not be scanned; see the list below."
+            : "No compose files found in the specified directories",
+        );
       } else {
         toast.success(`Found ${result.stacks.length} stack(s)`);
       }
@@ -183,7 +189,8 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Enter comma-separated paths. System directories (/proc, /sys, /dev) are automatically excluded.
+              Enter comma-separated paths as the Docktor container sees them (host directories are under /host with
+              the default compose file). System directories (/proc, /sys, /dev) are automatically excluded.
             </p>
           </div>
 
@@ -194,6 +201,8 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
               <Skeleton className="h-10 w-full" />
             </div>
           )}
+
+          {scanned && !scanning && <ScanSkippedDirectories skipped={skipped} />}
 
           {scanned && !scanning && stacks.length === 0 && (
             <div className="text-center py-8 border rounded-md">
@@ -208,14 +217,7 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
 
           {scanned && !scanning && stacks.length > 0 && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-medium">Discovered Stacks ({stacks.length})</h3>
-                {skippedDirs > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    {skippedDirs} director{skippedDirs === 1 ? "y" : "ies"} skipped (permission denied)
-                  </p>
-                )}
-              </div>
+              <h3 className="text-sm font-medium">Discovered Stacks ({stacks.length})</h3>
               <div className="border rounded-md">
                 <Table>
                   <TableHeader>
