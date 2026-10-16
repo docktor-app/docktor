@@ -11,6 +11,9 @@ import type {ComposeRewriterPort} from "../../../src/application/ports/compose-r
 import type {StackFilesystemPort} from "../../../src/application/ports/stack-filesystem-port.js";
 import type {ExternalStackControlPort} from "../../../src/application/ports/external-stack-control-port.js";
 import type {SelfStackPort} from "../../../src/application/ports/self-stack-port.js";
+import type {OwnMountsPort} from "../../../src/application/ports/own-mounts-port.js";
+import type {OwnMountsView} from "../../../src/domain/bind-mount-sources.js";
+import {toComparablePath} from "../../../src/domain/self-stack-paths.js";
 import type {StackRepository} from "../../../src/repositories/stack-repository.js";
 
 const COMPOSE = "services:\n  web:\n    image: nginx:latest\n";
@@ -59,6 +62,11 @@ function createMockSelfStack() {
     return {composeFilePaths: vi.fn().mockResolvedValue([] as string[])};
 }
 
+/** Docktor not containerized by default: a host path is a local path. */
+function createMockOwnMounts(view: OwnMountsView = {kind: "host"}) {
+    return {ownMounts: vi.fn().mockResolvedValue(view)};
+}
+
 describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
     const displayName = "Rollback Fixture";
     const stackId = slugify(displayName);
@@ -74,6 +82,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
     let mockStackRepo: ReturnType<typeof createMockStackRepo>;
     let mockOldStack: ReturnType<typeof createMockOldStack>;
     let mockSelfStack: ReturnType<typeof createMockSelfStack>;
+    let mockOwnMounts: ReturnType<typeof createMockOwnMounts>;
 
     beforeEach(async () => {
         tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "docktor-migrate-"));
@@ -92,6 +101,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         mockStackRepo = createMockStackRepo();
         mockOldStack = createMockOldStack();
         mockSelfStack = createMockSelfStack();
+        mockOwnMounts = createMockOwnMounts();
     });
 
     afterEach(async () => {
@@ -130,6 +140,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             mockStackRepo as unknown as StackRepository,
             mockOldStack as unknown as ExternalStackControlPort,
             mockSelfStack as unknown as SelfStackPort,
+            mockOwnMounts as unknown as OwnMountsPort,
         );
     }
 
@@ -452,6 +463,44 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         expect(result.error).toContain("managed directory");
         expect(mockOldStack.start).toHaveBeenCalledTimes(1);
         await assertOriginalUntouched();
+    });
+
+    describe("bind-mount sources through Docktor's own mounts (CR-03)", () => {
+        let hostRoot: string;
+
+        beforeEach(async () => {
+            // Stands for the host root that production mounts at /host.
+            hostRoot = path.join(tmpRoot, "host");
+            await fs.mkdir(path.join(hostRoot, "opt", "app", "data"), {recursive: true});
+            await fs.writeFile(path.join(hostRoot, "opt", "app", "data", "keep.txt"), "keep me", "utf-8");
+            await fs.writeFile(
+                composePath,
+                "services:\n  web:\n    image: nginx:latest\n    volumes:\n      - /opt/app/data:/var/lib/data\n",
+                "utf-8",
+            );
+            mockOwnMounts.ownMounts.mockResolvedValue({
+                kind: "container",
+                mounts: [{type: "bind", source: "/", destination: toComparablePath(hostRoot)}],
+            });
+        });
+
+        it.skipIf(process.platform === "win32")(
+            "copies an absolute source that is only visible under a host-root mount from there",
+            async () => {
+                mockDocker.up.mockResolvedValue(undefined);
+
+                const result = await buildService().migrate({
+                    ...input({backup: false}),
+                    volumeSelections: [{originalPath: "/opt/app/data", newPath: "./volumes/data", convert: true}],
+                });
+
+                expect(result.success).toBe(true);
+                expect(mockMigrator.copyDirectory).toHaveBeenCalledTimes(1);
+                const [source, destination] = mockMigrator.copyDirectory.mock.calls[0] as [string, string];
+                expect(toComparablePath(source)).toBe(toComparablePath(path.join(hostRoot, "opt", "app", "data")));
+                expect(destination).toBe(path.join(newStackPath, "volumes", "data"));
+            },
+        );
     });
 
     describe("own-stack refusal (WR-09, STK-03)", () => {
@@ -930,6 +979,7 @@ describe("previewMigration (MIG-02, D-04, G-18-7)", () => {
             mockStackRepo as unknown as StackRepository,
             createMockOldStack() as unknown as ExternalStackControlPort,
             mockSelfStack as unknown as SelfStackPort,
+            createMockOwnMounts() as unknown as OwnMountsPort,
         );
     }
 
