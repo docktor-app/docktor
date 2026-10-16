@@ -21,6 +21,20 @@ vi.mock("../../../src/application/onboarding-service.js", () => ({
     onboardingService: onboardingFake,
 }));
 
+// The preview now runs the same eligibility checks as migrate (G-18-7); give it
+// a record store with nothing in it and a self-stack lookup that finds nothing.
+vi.mock("../../../src/repositories/stack-repository.js", () => ({
+    StackRepository: class {},
+    stackRepository: {
+        exists: vi.fn(async () => false),
+        listLocations: vi.fn(async () => []),
+    },
+}));
+
+vi.mock("../../../src/infrastructure/docker-self-stack.js", () => ({
+    dockerSelfStack: {composeFilePaths: vi.fn(async () => [])},
+}));
+
 import Fastify from "fastify";
 import {serializerCompiler, validatorCompiler, type ZodTypeProvider} from "fastify-type-provider-zod";
 import importRoutes from "../../../src/routes/imports.js";
@@ -77,7 +91,7 @@ describe("brownfield routes", () => {
             const res = await app.inject({
                 method: "POST",
                 url,
-                payload: {composePath, volumeSelections: [], namedVolumeSelections: {pgdata: true}},
+                payload: {composePath, displayName: "My App", volumeSelections: [], namedVolumeSelections: {pgdata: true}},
             });
 
             expect(res.statusCode).toBe(200);
@@ -91,6 +105,18 @@ describe("brownfield routes", () => {
             );
             expect(lines.some((l) => l.kind === "added" && l.text.includes("./volumes/pgdata"))).toBe(true);
             expect(typeof body.extractedEnv).toBe("string");
+            expect(body.target.stackId).toBe("my-app");
+            expect(body.target.inPlace).toBe(false);
+        });
+
+        it("rejects a body without displayName with 400", async () => {
+            const res = await app.inject({
+                method: "POST",
+                url,
+                payload: {composePath, volumeSelections: [], namedVolumeSelections: {pgdata: true}},
+            });
+
+            expect(res.statusCode).toBe(400);
         });
 
         it.each([
@@ -101,7 +127,7 @@ describe("brownfield routes", () => {
             const res = await app.inject({
                 method: "POST",
                 url,
-                payload: {composePath: badPath, volumeSelections: [], namedVolumeSelections: {}},
+                payload: {composePath: badPath, displayName: "My App", volumeSelections: [], namedVolumeSelections: {}},
             });
 
             expect(res.statusCode).toBe(400);
@@ -111,7 +137,7 @@ describe("brownfield routes", () => {
             const res = await app.inject({
                 method: "POST",
                 url,
-                payload: {composePath, volumeSelections: []},
+                payload: {composePath, displayName: "My App", volumeSelections: []},
             });
 
             expect(res.statusCode).toBe(400);
@@ -123,7 +149,7 @@ describe("brownfield routes", () => {
             const res = await app.inject({
                 method: "POST",
                 url: "/api/setup/migrate/preview",
-                payload: {composePath, volumeSelections: [], namedVolumeSelections: {pgdata: true}},
+                payload: {composePath, displayName: "My App", volumeSelections: [], namedVolumeSelections: {pgdata: true}},
             });
 
             expect(res.statusCode).toBe(200);
@@ -131,6 +157,17 @@ describe("brownfield routes", () => {
             expect(body.diff.hunks.length).toBeGreaterThan(0);
             expect(typeof body.diff.added).toBe("number");
             expect(typeof body.diff.removed).toBe("number");
+            expect(body.target.stackId).toBe("my-app");
+        });
+
+        it("rejects a body without displayName with 400", async () => {
+            const res = await app.inject({
+                method: "POST",
+                url: "/api/setup/migrate/preview",
+                payload: {composePath, volumeSelections: [], namedVolumeSelections: {pgdata: true}},
+            });
+
+            expect(res.statusCode).toBe(400);
         });
 
         it("answers 410 once the wizard is complete (T-05-09 gate unchanged)", async () => {
@@ -139,7 +176,7 @@ describe("brownfield routes", () => {
             const res = await app.inject({
                 method: "POST",
                 url: "/api/setup/migrate/preview",
-                payload: {composePath, volumeSelections: [], namedVolumeSelections: {}},
+                payload: {composePath, displayName: "My App", volumeSelections: [], namedVolumeSelections: {}},
             });
 
             expect(res.statusCode).toBe(410);
@@ -187,7 +224,7 @@ describe("brownfield routes", () => {
         const res = await app.inject({
             method: "POST",
             url: "/api/stacks/import/migrate/preview",
-            payload: {composePath, volumeSelections: [], namedVolumeSelections: {pgdata: true}},
+            payload: {composePath, displayName: "My App", volumeSelections: [], namedVolumeSelections: {pgdata: true}},
         });
 
         expect(res.statusCode).toBe(200);

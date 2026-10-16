@@ -782,28 +782,58 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
     });
 });
 
-describe("previewMigration (MIG-02, D-04)", () => {
+describe("previewMigration (MIG-02, D-04, G-18-7)", () => {
+    const displayName = "Preview Fixture";
+    const stackId = slugify(displayName);
+
     let tmpDir: string;
+    let stacksRoot: string;
+    let composeDir: string;
     let composePath: string;
+    let mockStackFs: ReturnType<typeof createMockStackFs>;
+    let mockStackRepo: ReturnType<typeof createMockStackRepo>;
+    let mockSelfStack: ReturnType<typeof createMockSelfStack>;
 
     beforeEach(async () => {
         tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "docktor-preview-"));
-        composePath = path.join(tmpDir, "docker-compose.yml");
+        stacksRoot = path.join(tmpDir, "stacks");
+        composeDir = path.join(tmpDir, "original");
+        composePath = path.join(composeDir, "docker-compose.yml");
+        await fs.mkdir(composeDir, {recursive: true});
         await fs.writeFile(composePath, COMPOSE, "utf-8");
+        mockStackFs = createMockStackFs(stacksRoot);
+        mockStackRepo = createMockStackRepo();
+        mockSelfStack = createMockSelfStack();
     });
 
     afterEach(async () => {
         await fs.rm(tmpDir, {recursive: true, force: true});
     });
 
-    function buildPreviewService(rewriter: Pick<ComposeRewriterPort, "rewrite">): MigrationService {
+    function buildPreviewService(
+        rewriter: Pick<ComposeRewriterPort, "rewrite"> = {
+            rewrite: vi.fn().mockReturnValue({rewrittenCompose: COMPOSE, extractedEnv: "", envVars: {}}),
+        },
+    ): MigrationService {
         return new MigrationService(
             createMockDocker() as unknown as DockerExecutorPort,
             createMockMigrator() as unknown as VolumeMigratorPort,
             rewriter as ComposeRewriterPort,
-            createMockStackFs(tmpDir) as unknown as StackFilesystemPort,
-            createMockStackRepo() as unknown as StackRepository,
+            mockStackFs as unknown as StackFilesystemPort,
+            mockStackRepo as unknown as StackRepository,
+            createMockOldStack() as unknown as ExternalStackControlPort,
+            mockSelfStack as unknown as SelfStackPort,
         );
+    }
+
+    function request(overrides: Partial<{composePath: string; displayName: string}> = {}) {
+        return {
+            composePath,
+            displayName,
+            volumeSelections: [],
+            namedVolumeSelections: new Map<string, boolean>(),
+            ...overrides,
+        };
     }
 
     it("returns a UnifiedDiff with individually marked added and removed lines", async () => {
@@ -815,7 +845,7 @@ describe("previewMigration (MIG-02, D-04)", () => {
             }),
         };
 
-        const result = await buildPreviewService(rewriter).previewMigration(composePath, [], new Map());
+        const result = await buildPreviewService(rewriter).previewMigration(request());
 
         expect(result.diff.added).toBe(1);
         expect(result.diff.removed).toBe(1);
@@ -826,12 +856,89 @@ describe("previewMigration (MIG-02, D-04)", () => {
     });
 
     it("returns the empty diff when the rewrite leaves the content unchanged", async () => {
-        const rewriter = {
-            rewrite: vi.fn().mockReturnValue({rewrittenCompose: COMPOSE, extractedEnv: "", envVars: {}}),
-        };
-
-        const result = await buildPreviewService(rewriter).previewMigration(composePath, [], new Map());
+        const result = await buildPreviewService().previewMigration(request());
 
         expect(result.diff).toEqual({hunks: [], added: 0, removed: 0});
+    });
+
+    it("reports a separate target for a stack that moves into a new directory", async () => {
+        const result = await buildPreviewService().previewMigration(request());
+
+        expect(result.target).toEqual({
+            stackId,
+            directory: path.join(stacksRoot, stackId),
+            originalDirectory: composeDir,
+            inPlace: false,
+            suggestedAsideName: null,
+        });
+    });
+
+    describe("a stack already in the stacks folder under the same name", () => {
+        let inPlaceCompose: string;
+
+        beforeEach(async () => {
+            const inPlaceDir = path.join(stacksRoot, stackId);
+            inPlaceCompose = path.join(inPlaceDir, "docker-compose.yml");
+            await fs.mkdir(inPlaceDir, {recursive: true});
+            await fs.writeFile(inPlaceCompose, COMPOSE, "utf-8");
+        });
+
+        it("reports an in-place target with a free suggested aside name", async () => {
+            const result = await buildPreviewService().previewMigration(request({composePath: inPlaceCompose}));
+
+            expect(result.target).toEqual({
+                stackId,
+                directory: path.join(stacksRoot, stackId),
+                originalDirectory: path.join(stacksRoot, stackId),
+                inPlace: true,
+                suggestedAsideName: `${stackId}-pre-migration`,
+            });
+        });
+
+        it("suggests the next numbered name when the default is taken", async () => {
+            await fs.mkdir(path.join(stacksRoot, `${stackId}-pre-migration`));
+
+            const result = await buildPreviewService().previewMigration(request({composePath: inPlaceCompose}));
+
+            expect(result.target.suggestedAsideName).toBe(`${stackId}-pre-migration-2`);
+        });
+    });
+
+    describe("refuses what migrate would refuse", () => {
+        it("a target nested inside the original directory (ConflictError)", async () => {
+            mockStackFs.getStackDirectory.mockReturnValue(path.join(composeDir, "nested"));
+
+            await expect(buildPreviewService().previewMigration(request())).rejects.toBeInstanceOf(ConflictError);
+        });
+
+        it("a separate target directory that already exists (ConflictError)", async () => {
+            await fs.mkdir(path.join(stacksRoot, stackId), {recursive: true});
+
+            await expect(buildPreviewService().previewMigration(request())).rejects.toBeInstanceOf(ConflictError);
+        });
+
+        it("an existing stack record (ConflictError)", async () => {
+            mockStackRepo.exists.mockResolvedValue(true);
+
+            await expect(buildPreviewService().previewMigration(request())).rejects.toBeInstanceOf(ConflictError);
+        });
+
+        it("a compose file in a managed stack's directory (ConflictError)", async () => {
+            mockStackRepo.listLocations.mockResolvedValue([{id: "legacy", displayName: "Legacy", hostPath: composeDir}]);
+
+            await expect(buildPreviewService().previewMigration(request())).rejects.toBeInstanceOf(ConflictError);
+        });
+
+        it("a display name that produces an empty slug (BadRequestError)", async () => {
+            await expect(buildPreviewService().previewMigration(request({displayName: "!!!"}))).rejects.toBeInstanceOf(
+                BadRequestError,
+            );
+        });
+
+        it("Docktor's own compose file (BadRequestError)", async () => {
+            mockSelfStack.composeFilePaths.mockResolvedValue([composePath]);
+
+            await expect(buildPreviewService().previewMigration(request())).rejects.toBeInstanceOf(BadRequestError);
+        });
     });
 });

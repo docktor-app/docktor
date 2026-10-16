@@ -5,6 +5,7 @@ import {
     discoveredStackSchema,
     migrationExecuteSchema,
     migrationPreviewSchema,
+    migrationTargetSchema,
     scanResultSchema,
     skippedDirectorySchema,
     stackDirectoryNameSchema,
@@ -39,6 +40,7 @@ describe("composeFilePathSchema (T-18-05)", () => {
 
 const validPreview = {
     composePath: "/opt/app/docker-compose.yml",
+    displayName: "My App",
     volumeSelections: [{originalPath: "/srv/data", newPath: "./volumes/data", convert: true}],
     namedVolumeSelections: {pgdata: true},
 };
@@ -46,6 +48,15 @@ const validPreview = {
 describe("migrationPreviewSchema", () => {
     it("accepts a full valid body", () => {
         expect(migrationPreviewSchema.safeParse(validPreview).success).toBe(true);
+    });
+
+    it("rejects a body without displayName (G-18-7)", () => {
+        const {displayName: _displayName, ...body} = validPreview;
+        expect(migrationPreviewSchema.safeParse(body).success).toBe(false);
+    });
+
+    it("rejects an empty displayName (G-18-7)", () => {
+        expect(migrationPreviewSchema.safeParse({...validPreview, displayName: ""}).success).toBe(false);
     });
 
     it("rejects a non-boolean convert", () => {
@@ -131,6 +142,31 @@ describe("stackDirectoryNameSchema (T-18-33)", () => {
 
     it("accepts exactly 100 characters", () => {
         expect(stackDirectoryNameSchema.safeParse("a".repeat(100)).success).toBe(true);
+    });
+});
+
+describe("migrationTargetSchema (G-18-7)", () => {
+    const target = {
+        stackId: "memos",
+        directory: "/opt/docktor/stacks/memos",
+        originalDirectory: "/opt/docktor/stacks/memos",
+        inPlace: true,
+        suggestedAsideName: "memos-pre-migration",
+    };
+
+    it("accepts an in-place target with a suggested aside name", () => {
+        expect(migrationTargetSchema.safeParse(target).success).toBe(true);
+    });
+
+    it("accepts a separate target without a suggested aside name", () => {
+        expect(
+            migrationTargetSchema.safeParse({...target, inPlace: false, suggestedAsideName: null}).success,
+        ).toBe(true);
+    });
+
+    it("rejects a target with a missing suggestedAsideName", () => {
+        const {suggestedAsideName: _suggested, ...body} = target;
+        expect(migrationTargetSchema.safeParse(body).success).toBe(false);
     });
 });
 
