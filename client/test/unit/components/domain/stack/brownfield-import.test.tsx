@@ -275,4 +275,53 @@ describe("BrownfieldImport migration flow", () => {
             expect(screen.getByText(/host directories are under \/host/)).toBeInTheDocument();
         });
     });
+
+    describe("already-managed rows (G-18-2)", () => {
+        const managedStack: DiscoveredStack = {
+            ...stack,
+            path: "/host/opt/blog/docker-compose.yml",
+            directory: "/host/opt/blog",
+            managedStack: {id: "blog", displayName: "Blog"},
+        };
+
+        async function scanBoth(): Promise<{managedRow: HTMLElement; unmanagedRow: HTMLElement}> {
+            const api = createApi(vi.fn());
+            vi.mocked(api.scanDirectories).mockResolvedValue({
+                stacks: [stack, managedStack],
+                skippedDirectories: 0,
+                skipped: [],
+            });
+            renderImport(api);
+            await userEvent.click(screen.getByRole("button", {name: "Scan"}));
+            return {
+                managedRow: await screen.findByRole("row", {name: /\/host\/opt\/blog/}),
+                unmanagedRow: screen.getByRole("row", {name: /\/host\/opt\/db/}),
+            };
+        }
+
+        it("marks the managed row as already managed and links to its stack", async () => {
+            const {managedRow, unmanagedRow} = await scanBoth();
+
+            expect(within(managedRow).getByText("Already managed")).toBeInTheDocument();
+            expect(within(managedRow).getByRole("link", {name: "View Blog"})).toHaveAttribute("href", "/stacks/blog");
+            expect(within(unmanagedRow).queryByText("Already managed")).toBeNull();
+        });
+
+        it("disables Migrate and Adopt on the managed row only", async () => {
+            const {managedRow, unmanagedRow} = await scanBoth();
+
+            expect(within(managedRow).getByRole("button", {name: "Migrate"})).toBeDisabled();
+            expect(within(managedRow).getByRole("button", {name: "Adopt"})).toBeDisabled();
+            expect(within(unmanagedRow).getByRole("button", {name: "Migrate"})).toBeEnabled();
+            expect(within(unmanagedRow).getByRole("button", {name: "Adopt"})).toBeEnabled();
+        });
+
+        it("does not open the migration dialog from the managed row", async () => {
+            const {managedRow} = await scanBoth();
+
+            await userEvent.click(within(managedRow).getByRole("button", {name: "Migrate"}));
+
+            expect(screen.queryByRole("dialog")).toBeNull();
+        });
+    });
 });
