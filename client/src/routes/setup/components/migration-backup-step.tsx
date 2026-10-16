@@ -1,5 +1,4 @@
-import {AlertTriangle} from "lucide-react";
-import {Alert, AlertDescription} from "@/components/ui/alert";
+import {Info} from "lucide-react";
 import {Input} from "@/components/ui/input";
 import {Label} from "@/components/ui/label";
 import {Switch} from "@/components/ui/switch";
@@ -16,7 +15,8 @@ export interface MigrationBackupStepProps {
 
 // Step 3 of the migration dialog (MIG-03, G-18-7). In place, the original
 // directory is renamed aside and is the backup, so the user only names it.
-// Otherwise the original is untouched and a backup copy is an explicit choice.
+// Otherwise the original is untouched and a backup copy is an explicit,
+// default-off choice (G-18-7 supersedes D-07's default-on).
 export function MigrationBackupStep({
   mode,
   originalDirectory,
@@ -70,12 +70,12 @@ export function MigrationBackupStep({
       </div>
 
       {!checked && (
-        <Alert>
-          <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
-          <AlertDescription>
-            No backup will be created. Your original directory is never modified, but the new stack will not contain a copy of the original files.
-          </AlertDescription>
-        </Alert>
+        <p className="flex items-start gap-2 text-xs text-muted-foreground">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="break-all">
+            {`Your original stack stays untouched at ${originalDirectory}, so it remains available as it is. Turn this on to also keep a copy in pre-migration-backup/ inside the new stack directory.`}
+          </span>
+        </p>
       )}
     </div>
   );

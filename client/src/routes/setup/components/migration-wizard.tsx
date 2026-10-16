@@ -1,6 +1,6 @@
 import {useEffect, useRef, useState} from "react";
 import {toast} from "sonner";
-import type {MigrationPreviewInput} from "@docktor/shared";
+import {stackDirectoryNameSchema, type MigrationPreviewInput} from "@docktor/shared";
 import {Button} from "@/components/ui/button";
 import {Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle} from "@/components/ui/dialog";
 import {MigrationSelectStep} from "./migration-select-step";
@@ -11,6 +11,15 @@ import {MigrationOldStackStep} from "./migration-old-stack-step";
 import {directoryDisplayName} from "@/lib/path-display";
 import {buildBindMountChoices, countVolumesToCopy, toVolumeSelections, type BindMountChoice} from "@/lib/migration-volume-paths";
 import type {DiscoveredStack, MigrationPreview, VolumeSelection} from "@/lib/brownfield-types";
+
+const ASIDE_NAME_FORMAT_ERROR = "Use letters, digits, dots, dashes and underscores; start with a letter or digit.";
+const ASIDE_NAME_SAME_ERROR = "Choose a name different from the current directory name.";
+
+// Convenience check only: the server re-validates the name and checks that it is free.
+function validateAsideName(name: string, originalDirectory: string): string | null {
+  if (!stackDirectoryNameSchema.safeParse(name).success) return ASIDE_NAME_FORMAT_ERROR;
+  return name === directoryDisplayName(originalDirectory) ? ASIDE_NAME_SAME_ERROR : null;
+}
 
 const PREVIEW_ERROR_FALLBACK = "Failed to generate preview. Check that the compose file is still readable and try again.";
 
@@ -84,7 +93,9 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
   const [bindMounts, setBindMounts] = useState<BindMountChoice[]>(() => buildBindMountChoices(stack));
 
   const [preview, setPreview] = useState<MigrationPreview | null>(null);
-  const [backupChoice, setBackupChoice] = useState(true);
+  // null = not chosen yet; the effective default is "no backup" and a user
+  // toggle is an explicit boolean that later previews never override.
+  const [backupChoice, setBackupChoice] = useState<boolean | null>(null);
   const [stopChoice, setStopChoice] = useState(true);
   // null = not edited, so the server's suggestion shows (and follows new previews).
   const [asideNameEdit, setAsideNameEdit] = useState<string | null>(null);
@@ -94,8 +105,9 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
   const target = preview?.target;
   const inPlace = target ? target.inPlace : false;
   const asideName = asideNameEdit ?? target?.suggestedAsideName ?? "";
-  const backup = !inPlace && backupChoice;
+  const backup = !inPlace && (backupChoice ?? false);
   const stopOldStack = inPlace || stopChoice;
+  const asideNameError = target && inPlace ? validateAsideName(asideName, target.originalDirectory) : null;
 
   // RESEARCH Pitfall 7: a preview response that arrives after the dialog was
   // cancelled or closed must not advance (or toast into) a dead session.
@@ -219,7 +231,7 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
               onCheckedChange={setBackupChoice}
               asideName={asideName}
               onAsideNameChange={setAsideNameEdit}
-              asideNameError={null}
+              asideNameError={asideNameError}
             />
           )}
 
@@ -247,7 +259,11 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
               {step === 4 ? (
                 <Button className="w-full sm:w-auto" onClick={handleMigrate}>Confirm & Migrate</Button>
               ) : (
-                <Button className="w-full sm:w-auto" onClick={() => setStep(NEXT_STEP[step])}>
+                <Button
+                  className="w-full sm:w-auto"
+                  onClick={() => setStep(NEXT_STEP[step])}
+                  disabled={step === 3 && asideNameError !== null}
+                >
                   {NEXT_LABELS[step]}
                 </Button>
               )}
