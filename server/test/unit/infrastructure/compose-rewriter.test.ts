@@ -332,6 +332,64 @@ volumes:
             expect(result.rewrittenCompose).toBe(compose);
         });
 
+        it("keeps an inline comment on an unconverted empty top-level entry", () => {
+            const compose = lines(
+                "services:",
+                "  app:",
+                "    volumes:",
+                "      - cache:/cache",
+                "volumes:",
+                "  cache: # keep me",
+                "",
+            );
+
+            const result = rewriter.rewrite(compose, [], new Map());
+
+            expect(result.rewrittenCompose).toBe(compose.replace("cache: #", "cache: {external: true} #"));
+        });
+
+        it("rebuilds a flow-style top-level volumes map", () => {
+            const compose = lines(
+                "services:",
+                "  app:",
+                "    volumes:",
+                "      - pgdata:/data",
+                "      - cache:/cache",
+                "volumes: {pgdata: {}, cache: {}}",
+                "",
+            );
+
+            const result = rewriter.rewrite(compose, [], new Map([["pgdata", true]]));
+
+            expect(result.rewrittenCompose).toBe(
+                lines(
+                    "services:",
+                    "  app:",
+                    "    volumes:",
+                    "      - ./volumes/pgdata:/data",
+                    "      - cache:/cache",
+                    "volumes: {cache: {external: true}}",
+                    "",
+                ),
+            );
+        });
+
+        it("keeps the declared name of a legacy external volume", () => {
+            const compose = lines(
+                "services:",
+                "  app:",
+                "    volumes:",
+                "      - shared:/shared",
+                "volumes:",
+                "  shared:",
+                "    external:",
+                "      name: other",
+                "",
+            );
+
+            expect(rewriter.rewrite(compose, [], new Map()).rewrittenCompose).toBe(compose);
+        });
+
         it.each([
             ["an empty document", ""],
             ["a null services node", "services:\n"],
