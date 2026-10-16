@@ -186,7 +186,7 @@ describe("brownfield routes", () => {
 
     describe.each([
         ["/api/setup/migrate/preview", "previewMigration"],
-        ["/api/setup/migrate", "migrate"],
+        ["/api/setup/migrate", "preflight"],
     ] as const)("POST %s before an admin account exists (WR-03)", (url, method) => {
         function payload() {
             return {
@@ -264,6 +264,7 @@ describe("brownfield routes", () => {
 
     describe.each([
         ["/api/stacks/import/migrate", "/api/stacks/import/migrations"],
+        ["/api/setup/migrate", "/api/setup/migrations"],
     ] as const)("POST %s", (url, operationsUrl) => {
         function payload(overrides: Record<string, unknown> = {}) {
             return {
@@ -416,6 +417,96 @@ describe("brownfield routes", () => {
 
             expect(res.statusCode).toBe(400);
             expect(preflight).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("migration operation lists", () => {
+        function startPayload(displayName: string) {
+            return {
+                composePath,
+                displayName,
+                volumeSelections: [],
+                namedVolumeSelections: {},
+                backup: true,
+                stopOldStack: false,
+            };
+        }
+
+        function stubMigration(stackId: string): void {
+            vi.spyOn(migrationService, "preflight").mockResolvedValue({
+                stackId,
+                displayName: stackId,
+                composePath,
+                originalDir: "/opt/app",
+                targetDir: "/data/stacks/new",
+                volumeSelections: [],
+                namedVolumeSelections: new Map(),
+                backup: true,
+                stopOldStack: false,
+                inPlace: null,
+            });
+            vi.spyOn(migrationService, "execute").mockResolvedValue({
+                success: true,
+                stackId,
+                originalPath: "/opt/app",
+            });
+        }
+
+        it.each(["/api/stacks/import/migrations", "/api/setup/migrations"])(
+            "GET %s lists an operation started through either route family",
+            async (listUrl) => {
+                stubMigration("listed-app");
+                const startUrl =
+                    listUrl === "/api/setup/migrations" ? "/api/stacks/import/migrate" : "/api/setup/migrate";
+                const started = await app.inject({
+                    method: "POST",
+                    url: startUrl,
+                    payload: startPayload("Listed App"),
+                });
+                const {id} = started.json();
+                await vi.waitFor(async () => {
+                    const one = await app.inject({method: "GET", url: `${listUrl}/${id}`});
+                    expect(one.json().status).toBe("succeeded");
+                });
+
+                const res = await app.inject({method: "GET", url: listUrl});
+
+                expect(res.statusCode).toBe(200);
+                const ids: string[] = res.json().operations.map((operation: {id: string}) => operation.id);
+                expect(ids).toContain(id);
+            },
+        );
+
+        it.each(["/api/setup/migrations", "/api/setup/migrations/some-id"])(
+            "GET %s answers 400 before an admin account exists (18-07 guard)",
+            async (url) => {
+                onboardingFake.hasAnyUser.mockResolvedValue(false);
+
+                const res = await app.inject({method: "GET", url});
+
+                expect(res.statusCode).toBe(400);
+            },
+        );
+
+        it.each(["/api/setup/migrations", "/api/setup/migrations/some-id"])(
+            "GET %s answers 410 once the wizard is complete",
+            async (url) => {
+                onboardingFake.isWizardComplete.mockResolvedValue(true);
+
+                const res = await app.inject({method: "GET", url});
+
+                expect(res.statusCode).toBe(410);
+            },
+        );
+
+        it("leaves the import operation routes unaffected by both setup gates", async () => {
+            onboardingFake.hasAnyUser.mockResolvedValue(false);
+            onboardingFake.isWizardComplete.mockResolvedValue(true);
+
+            const res = await app.inject({method: "GET", url: "/api/stacks/import/migrations"});
+
+            expect(res.statusCode).toBe(200);
+            expect(Array.isArray(res.json().operations)).toBe(true);
         });
     });
 });
