@@ -1,4 +1,5 @@
 import {spawn} from "node:child_process";
+import type {Stats} from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {AppError, hasErrorCode} from "../lib/errors.js";
@@ -31,6 +32,18 @@ function runCommand(command: string, args: readonly string[], purpose: string): 
 	});
 }
 
+/** `lstat` that reports a missing path as `null` instead of throwing. */
+async function lstatIfExists(target: string): Promise<Stats | null> {
+	try {
+		return await fs.lstat(target);
+	} catch (err: unknown) {
+		if (hasErrorCode(err, "ENOENT")) {
+			return null;
+		}
+		throw err;
+	}
+}
+
 export class VolumeMigrator implements VolumeMigratorPort {
 	/**
 	 * Copy data from Docker named volume to bind mount directory
@@ -55,12 +68,28 @@ export class VolumeMigrator implements VolumeMigratorPort {
 	/**
 	 * Copy a directory (or file) faithfully with archive-mode `cp`: ownership when
 	 * privileged, modes, timestamps and symlinks (verbatim, never dereferenced) survive.
+	 * An existing destination directory receives the source's contents (merge, no nesting).
 	 */
 	async copyDirectory(srcPath: string, destPath: string): Promise<void> {
 		// A missing or unreadable source rejects with its errno code before anything is created.
-		await fs.lstat(srcPath);
-		await fs.mkdir(path.dirname(destPath), {recursive: true});
-		await runCommand("cp", ["-a", "--", srcPath, destPath], `Copy of ${srcPath} to ${destPath}`);
+		const source = await fs.lstat(srcPath);
+		const purpose = `Copy of ${srcPath} to ${destPath}`;
+
+		if (process.platform === "win32") {
+			// Windows has no cp; this branch only serves the CI unit job (Docktor runs in a Linux container).
+			await fs.cp(srcPath, destPath, {recursive: true, verbatimSymlinks: true, preserveTimestamps: true});
+			return;
+		}
+
+		const destination = await lstatIfExists(destPath);
+		if (destination === null) {
+			await fs.mkdir(path.dirname(destPath), {recursive: true});
+			await runCommand("cp", ["-a", "--", srcPath, destPath], purpose);
+		} else if (destination.isDirectory() && source.isDirectory()) {
+			await runCommand("cp", ["-a", "--", `${srcPath}/.`, destPath], purpose);
+		} else {
+			throw new AppError(`${purpose} failed: ${destPath} already exists and is not a directory to merge into`);
+		}
 	}
 
 	/**
