@@ -399,5 +399,50 @@ describe("MigrationWizard", () => {
 
             expect(onConfirmMigrate).toHaveBeenCalledWith(expect.objectContaining({volumeSelections: DATA_SELECTION}));
         });
+
+        const KEPT_WARNING =
+            "Stays at ./data in the new stack directory, outside Docktor's managed ./volumes/ layout, so Storage does not count it. It is still copied, and stack backups include it.";
+
+        it("warns when a relative mount is kept, and then previews it at its own path while still counting it", async () => {
+            const previewMigration = vi.fn().mockImplementation(okPreview);
+            renderWizard(previewMigration, vi.fn(), vi.fn(), memosStack);
+            expect(screen.queryByText(KEPT_WARNING)).toBeNull();
+
+            await userEvent.click(screen.getByRole("checkbox", {name: "./data"}));
+
+            expect(screen.getByText(KEPT_WARNING)).toBeInTheDocument();
+            await click("Preview Changes");
+            expect(previewMigration).toHaveBeenCalledWith(
+                "/host/opt/db/docker-compose.yml",
+                [{originalPath: "./data", newPath: "./data", convert: true}],
+                {},
+            );
+            await screen.findByRole("heading", {name: "Review Changes"});
+            await click("Choose Backup");
+            await click("Choose Old Stack Action");
+            expect(screen.getByRole("region", {name: "Migration summary"})).toHaveTextContent("Volumes to copy: 1");
+        });
+
+        it("only lets a mount outside the stack directory move into ./volumes/", () => {
+            renderWizard(vi.fn(), vi.fn(), vi.fn(), {...memosStack, relativePaths: ["../shared"]});
+
+            const checkbox = screen.getByRole("checkbox", {name: "../shared"});
+            expect(checkbox).toBeChecked();
+            expect(checkbox).toBeDisabled();
+            expect(
+                screen.getByText("Points outside the stack directory, so it is moved to ./volumes/shared."),
+            ).toBeInTheDocument();
+        });
+
+        it("only lets the stack directory itself be kept, copying its files into the new stack directory", () => {
+            renderWizard(vi.fn(), vi.fn(), vi.fn(), {...memosStack, relativePaths: ["."]});
+
+            const checkbox = screen.getByRole("checkbox", {name: "."});
+            expect(checkbox).not.toBeChecked();
+            expect(checkbox).toBeDisabled();
+            expect(
+                screen.getByText("This is the stack directory itself; its files are copied into the new stack directory."),
+            ).toBeInTheDocument();
+        });
     });
 });
