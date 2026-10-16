@@ -520,7 +520,7 @@ test.describe("Setup Wizard", () => {
             inPlace: true,
             suggestedAsideName: "db-pre-migration",
         };
-        const emptyPreview = {diff: {hunks: [], added: 0, removed: 0}, extractedEnv: "", target: separateTarget};
+        const emptyPreview = {diff: {hunks: [], added: 0, removed: 0}, extractedEnv: "", emptySources: [], target: separateTarget};
         const diffPreview = {
             diff: {
                 added: 1,
@@ -540,6 +540,7 @@ test.describe("Setup Wizard", () => {
                 ],
             },
             extractedEnv: "",
+            emptySources: [],
             target: separateTarget,
         };
 
@@ -686,6 +687,20 @@ test.describe("Setup Wizard", () => {
             await expect(page.getByRole("region", {name: "Migration compose diff"})).toBeVisible();
             await expect(page.getByText("./volumes/pgdata")).toBeVisible();
             await expect(page.getByText("Compose file changes")).toBeVisible();
+        });
+
+        test("should name a bind-mount source that starts empty on the review step", async ({page}) => {
+            // CR-03: a selected source that does not exist is surfaced before anything is stopped
+            await scanForYellowStack(page);
+            await page.getByRole("button", {name: "Migrate"}).click();
+            await mockPreview(page, {...emptyPreview, emptySources: ["./missing"]});
+
+            await page.getByRole("button", {name: "Preview Changes"}).click();
+
+            await expect(page.getByRole("heading", {name: "Review Changes"})).toBeVisible();
+            const note = page.getByRole("alert").filter({hasText: "starts with an empty folder"});
+            await expect(note).toBeVisible();
+            await expect(note.getByText("./missing")).toBeVisible();
         });
 
         test("should start background migration on confirm", async ({page}) => {
