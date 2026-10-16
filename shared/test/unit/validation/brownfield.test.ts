@@ -7,6 +7,7 @@ import {
     migrationPreviewSchema,
     scanResultSchema,
     skippedDirectorySchema,
+    stackDirectoryNameSchema,
 } from "../../../src/validation/brownfield.js";
 
 describe("composeFilePathSchema (T-18-05)", () => {
@@ -98,6 +99,38 @@ describe("migrationExecuteSchema", () => {
 
     it("rejects a non-boolean backup", () => {
         expect(migrationExecuteSchema.safeParse({...validExecute, backup: "true"}).success).toBe(false);
+    });
+
+    it("accepts an optional valid inPlaceAsideName (G-18-7)", () => {
+        expect(migrationExecuteSchema.safeParse({...validExecute, inPlaceAsideName: "memos-old"}).success).toBe(true);
+        expect(migrationExecuteSchema.safeParse(validExecute).success).toBe(true);
+    });
+
+    it("rejects a traversing inPlaceAsideName (T-18-33)", () => {
+        expect(migrationExecuteSchema.safeParse({...validExecute, inPlaceAsideName: "../x"}).success).toBe(false);
+    });
+});
+
+describe("stackDirectoryNameSchema (T-18-33)", () => {
+    it.each(["memos-pre-migration", "a.b_c", "a", "7zip"])("accepts %s", (value) => {
+        expect(stackDirectoryNameSchema.safeParse(value).success).toBe(true);
+    });
+
+    it.each([
+        ["an empty name", ""],
+        ["a single dot", "."],
+        ["a double dot", ".."],
+        ["a forward slash", "a/b"],
+        ["a backslash", "a\\b"],
+        ["a leading dot", ".hidden"],
+        ["a space", "a b"],
+        ["101 characters", "a".repeat(101)],
+    ])("rejects %s", (_label, value) => {
+        expect(stackDirectoryNameSchema.safeParse(value).success).toBe(false);
+    });
+
+    it("accepts exactly 100 characters", () => {
+        expect(stackDirectoryNameSchema.safeParse("a".repeat(100)).success).toBe(true);
     });
 });
 

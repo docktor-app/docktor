@@ -631,6 +631,154 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             expect(result.keptOriginalAt).toBeUndefined();
             expect(mockMigrator.moveDirectory).not.toHaveBeenCalled();
         });
+
+        it("reads an absolute bind-mount source inside the original directory from the renamed directory", async () => {
+            mockDocker.up.mockResolvedValue(undefined);
+
+            const result = await buildService().migrate({
+                ...inPlaceInput(),
+                volumeSelections: [{originalPath: path.join(originalDir, "data"), newPath: "./volumes/data", convert: true}],
+            });
+
+            expect(result.success).toBe(true);
+            expect(mockMigrator.copyDirectory).toHaveBeenCalledWith(
+                path.join(asideDir, "data"),
+                path.join(originalDir, "volumes", "data"),
+            );
+        });
+
+        describe("refusals before any side effect", () => {
+            function expectNothingMoved(): void {
+                expectNoSideEffects();
+                expect(mockMigrator.moveDirectory).not.toHaveBeenCalled();
+            }
+
+            it("refuses an in-place migration that does not stop the old stack (T-18-35)", async () => {
+                const refusal = buildService().migrate(inPlaceInput({stopOldStack: false}));
+
+                await expect(refusal).rejects.toBeInstanceOf(BadRequestError);
+                await expect(refusal).rejects.toThrow("must stop the old stack");
+                expectNothingMoved();
+            });
+
+            it.each([
+                ["a traversing name", "../evil"],
+                ["a name with a separator", "a/b"],
+                ["a name with a backslash", "a\\b"],
+                ["a dot name", ".."],
+                ["the original directory's own name", stackId],
+            ])("refuses %s as the aside name (T-18-33)", async (_label, name) => {
+                await expect(buildService().migrate(inPlaceInput({inPlaceAsideName: name}))).rejects.toBeInstanceOf(
+                    BadRequestError,
+                );
+                expectNothingMoved();
+            });
+
+            it("refuses an aside directory that already exists and leaves it untouched", async () => {
+                await fs.mkdir(asideDir);
+                await fs.writeFile(path.join(asideDir, "marker.txt"), "mine", "utf-8");
+
+                const refusal = buildService().migrate(inPlaceInput({inPlaceAsideName: path.basename(asideDir)}));
+
+                await expect(refusal).rejects.toBeInstanceOf(ConflictError);
+                await expect(refusal).rejects.toThrow(asideDir);
+                expectNothingMoved();
+                expect(await fs.readFile(path.join(asideDir, "marker.txt"), "utf-8")).toBe("mine");
+            });
+
+            it("falls back to the next free default aside name when <slug>-pre-migration exists", async () => {
+                await fs.mkdir(asideDir);
+
+                const plan = await buildService().preflight(inPlaceInput());
+
+                expect(plan.inPlace?.asideDir).toBe(`${asideDir}-2`);
+                expectNothingMoved();
+            });
+
+            it("still refuses a target that nests inside the original directory", async () => {
+                mockStackFs.getStackDirectory.mockReturnValue(path.join(originalDir, "nested"));
+
+                const refusal = buildService().migrate(inPlaceInput());
+
+                await expect(refusal).rejects.toBeInstanceOf(ConflictError);
+                await expect(refusal).rejects.toThrow("overlap");
+                expectNothingMoved();
+            });
+        });
+
+        describe("rollback", () => {
+            it("removes the new directory, moves the original back and restarts the old stack", async () => {
+                mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
+
+                const result = await buildService().migrate(inPlaceInput());
+
+                expect(result.success).toBe(false);
+                expect(result.error).toContain("docker compose up failed");
+                expect(result.error).toContain("moved back");
+                expect(result.error).toContain("The old stack was restarted.");
+                expect(result.keptOriginalAt).toBeUndefined();
+                expect(mockMigrator.moveDirectory).toHaveBeenLastCalledWith(asideDir, originalDir);
+                expect(await fs.readFile(composePath, "utf-8")).toBe(ASIDE_COMPOSE);
+                expect(await fs.readFile(path.join(originalDir, ".env"), "utf-8")).toBe("SECRET=1\n");
+                expect(await fs.readFile(path.join(originalDir, "data", "keep.txt"), "utf-8")).toBe("keep me");
+                await expect(fs.access(path.join(originalDir, "volumes"))).rejects.toThrow();
+                await expect(fs.access(asideDir)).rejects.toThrow();
+                expect(mockStackRepo.delete).toHaveBeenCalledWith(stackId);
+                expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+                expect(mockOldStack.start).toHaveBeenCalledWith(composePath);
+                const moveBack = mockMigrator.moveDirectory.mock.invocationCallOrder[1] ?? Number.NaN;
+                expect(moveBack).toBeLessThan(mockOldStack.start.mock.invocationCallOrder[0] ?? Number.NaN);
+            });
+
+            it("leaves everything in place and explains how to restore it when the original path is still occupied", async () => {
+                mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
+                // The new directory cannot be removed, so the original path stays taken.
+                mockStackFs.removeDirectory.mockResolvedValue(undefined);
+
+                const result = await buildService().migrate(inPlaceInput());
+
+                expect(result.success).toBe(false);
+                expect(result.error).toContain(asideDir);
+                expect(result.error).toContain(originalDir);
+                expect(result.error).toContain("by hand");
+                expect(result.error).not.toContain("The old stack was restarted.");
+                expect(mockMigrator.moveDirectory).toHaveBeenCalledTimes(1);
+                expect(mockOldStack.start).not.toHaveBeenCalled();
+                expect(await fs.readFile(path.join(asideDir, "docker-compose.yml"), "utf-8")).toBe(ASIDE_COMPOSE);
+                expect(await fs.readFile(path.join(asideDir, ".env"), "utf-8")).toBe("SECRET=1\n");
+                expect(await fs.readFile(path.join(asideDir, "data", "keep.txt"), "utf-8")).toBe("keep me");
+            });
+
+            it("gives the same manual instructions when the rename back fails", async () => {
+                mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
+                mockMigrator.moveDirectory
+                    .mockImplementationOnce((src: string, dest: string) => fs.rename(src, dest))
+                    .mockRejectedValueOnce(new Error("EBUSY: resource busy"));
+
+                const result = await buildService().migrate(inPlaceInput());
+
+                expect(result.success).toBe(false);
+                expect(result.error).toContain("by hand");
+                expect(result.error).toContain(asideDir);
+                expect(mockOldStack.start).not.toHaveBeenCalled();
+                expect(await fs.readFile(path.join(asideDir, "data", "keep.txt"), "utf-8")).toBe("keep me");
+            });
+
+            it("restarts the old stack and creates nothing when the rename aside itself fails", async () => {
+                mockMigrator.moveDirectory.mockRejectedValue(new Error("EXDEV: cross-device link not permitted"));
+
+                const result = await buildService().migrate(inPlaceInput());
+
+                expect(result.success).toBe(false);
+                expect(result.error).toContain("EXDEV");
+                expect(mockStackFs.createDirectoryExclusive).not.toHaveBeenCalled();
+                expect(mockStackFs.removeDirectory).not.toHaveBeenCalled();
+                expect(mockStackRepo.create).not.toHaveBeenCalled();
+                expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+                expect(await fs.readFile(composePath, "utf-8")).toBe(ASIDE_COMPOSE);
+                expect(await fs.readFile(path.join(originalDir, "data", "keep.txt"), "utf-8")).toBe("keep me");
+            });
+        });
     });
 });
 
