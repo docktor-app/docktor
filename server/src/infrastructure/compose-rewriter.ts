@@ -2,6 +2,7 @@ import {CST, isMap, isScalar, isSeq, parseDocument, Scalar, type YAMLMap} from "
 import {AppError} from "../lib/errors.js";
 import type {ComposeRewriterPort} from "../application/ports/compose-rewriter-port.js";
 import {isVariableReference} from "./compose-analyzer.js";
+import {formatDotenvLine, isDotenvSafeValue, isInterpolationName} from "./dotenv-format.js";
 
 export interface VolumeSelection {
 	originalPath: string;
@@ -23,6 +24,9 @@ interface Splice {
 }
 
 const EXTERNAL_FLOW = "{external: true}";
+
+/** Plain scalars compose reads back with the same text: booleans and canonical decimal integers. */
+const CANONICAL_PLAIN_SCALAR = /^(?:true|false|-?(?:0|[1-9][0-9]*))$/;
 
 /** Offset of the first character of the line that contains `offset`. */
 function lineStart(source: string, offset: number): number {
@@ -247,7 +251,7 @@ class ComposeEditPlan {
 				continue;
 			}
 			const key = String(pair.key.value);
-			const literal = this.literalEnvValue(pair.value);
+			const literal = this.literalEnvValue(key, pair.value);
 			const name = literal === undefined ? undefined : this.names.allocate(serviceName, key, literal);
 			if (name !== undefined) {
 				this.edits.replaceScalar(pair.value, `\${${name}}`);
@@ -255,21 +259,24 @@ class ComposeEditPlan {
 		}
 	}
 
-	private literalEnvValue(node: Scalar): string | undefined {
+	/** The text to move to `.env`, or undefined when the entry must stay inline (see dotenv-format.ts). */
+	private literalEnvValue(key: string, node: Scalar): string | undefined {
 		const range = node.range;
 		const isEditable = node.type === Scalar.PLAIN || node.type === Scalar.QUOTE_DOUBLE || node.type === Scalar.QUOTE_SINGLE;
-		if (!range || !isEditable || node.value === null || node.value === undefined) {
+		if (!range || !isEditable || node.value === null || node.value === undefined || !isInterpolationName(key)) {
 			return undefined;
 		}
 		// A plain number or boolean keeps its source spelling (`0x1F`, `1e3`), not the parsed value.
 		const text = typeof node.value === "string" ? node.value : this.source.slice(range[0], range[1]);
-		return isVariableReference(text) ? undefined : text;
+		const readsBackUnchanged =
+			typeof node.value === "string" ? isDotenvSafeValue(text) : CANONICAL_PLAIN_SCALAR.test(text);
+		return readsBackUnchanged && !isVariableReference(text) ? text : undefined;
 	}
 
 	extractedEnv(): {extractedEnv: string; envVars: Record<string, string>} {
 		const entries = this.names.entries();
 		return {
-			extractedEnv: [...entries].map(([key, value]) => `${key}=${value}`).join("\n"),
+			extractedEnv: [...entries].map(([name, value]) => formatDotenvLine(name, value)).join("\n"),
 			envVars: Object.fromEntries(entries),
 		};
 	}
