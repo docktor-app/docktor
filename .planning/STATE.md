@@ -5,16 +5,16 @@ milestone_name: Release Follow-ups
 current_phase: 18
 current_phase_name: Import and Migration Flow
 status: executing
-stopped_at: Completed 18-15-PLAN.md
-last_updated: "2026-10-16T10:35:29.939Z"
+stopped_at: Completed 18-16-PLAN.md
+last_updated: "2026-10-16T10:41:14.717Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 18 execution started
-state_head: 55eff115b9f1827b88bfcd164e938943c2ee2865
+state_head: 5e754e99f67450a69b145a0e7f876afcb33cd5db
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 20
-  completed_plans: 18
+  completed_plans: 19
   percent: 20
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-14)
 ## Current Position
 
 Phase: 18 (Import and Migration Flow) — EXECUTING
-Plan: 11 of 17
+Plan: 12 of 17
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 18 execution started
 
@@ -79,6 +79,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 18 P12 | 10 min | 3 tasks | 13 files |
 | Phase 18 P14 | 14 min | 3 tasks | 10 files |
 | Phase 18 P15 | 30 min | 3 tasks | 10 files |
+| Phase 18 P16 | 25 min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -118,6 +119,7 @@ Roadmap decisions for v0.1.1:
 - [Phase 18]: 18-15: Aside name and backup choice held as nullable user edits (string|null, boolean|null) with derived effective values; Back and re-previews never clobber an explicit choice
 - [Phase 18]: 18-15: Separate migrations default backup off (G-18-7 supersedes D-07 default-on); off-state warning replaced by a neutral note naming the untouched original path
 - [Phase 18]: 18-15: In-place confirms with backup false and stopOldStack true; renamed original is the backup, no extra copy
+- [Phase 18]: 18-16: operation service takes the event bus as a trailing constructor parameter (default domainEventBus); rolling_back is reported first in the rollback catch; listener failures are isolated in MigrationService.report
 
 ### Pending Todos
 
@@ -141,6 +143,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T10:35:29.789Z
-Stopped at: Completed 18-15-PLAN.md
+Last session: 2026-10-16T10:41:14.553Z
+Stopped at: Completed 18-16-PLAN.md
 Resume file: None

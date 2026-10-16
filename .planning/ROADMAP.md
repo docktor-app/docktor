@@ -88,7 +88,7 @@ Notes: server-side work (backup service and repository environment construction,
   4. The pre-migration backup is its own explicit step the user can opt out of: opting out creates no backup, opting in creates one whether or not the compose file is renamed
   5. The user can choose to stop (undeploy) the old stack as part of the migration, so the new draft stack does not run alongside it; if they decline, the old stack is left running
 
-**Plans:** 15/17 plans executed (12 gap-closure plans pending)
+**Plans:** 16/17 plans executed (12 gap-closure plans pending)
 
 Plans:
 **Wave 1**
@@ -125,7 +125,7 @@ Plans:
 - [x] 18-15-PLAN.md — Dialog adapts to in-place vs new directory: aside-name step, forced stop, backup default off with original-path note (G-18-7; after 18-10, 18-12, 18-13)
 
 *Gap wave 6*
-- [ ] 18-16-PLAN.md — Migration steps streamed as migration_progress over the existing SSE/StateBroadcaster channel (G-18-job; after 18-14)
+- [x] 18-16-PLAN.md — Migration steps streamed as migration_progress over the existing SSE/StateBroadcaster channel (G-18-job; after 18-14)
 - [ ] 18-17-PLAN.md — Client follows operations: progress toast, disabled in-flight rows, resync after reload/reconnect (G-18-job; after 18-13, 18-14, 18-15)
 
 **UI hint**: yes
@@ -190,7 +190,7 @@ Phases execute in numeric order: 17 → 18 → 19 → 20 → 21
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 17. Backup Repository and Port-Check Fixes | 3/3 | Complete    | 2026-10-14 |
-| 18. Import and Migration Flow | 15/17 | In Progress | - |
+| 18. Import and Migration Flow | 16/17 | In Progress | - |
 | 19. Sidebar, Templates and Version Block | 0/TBD | Not started | - |
 | 20. Visual Consistency, Dashboard Clarity and Touch Targets | 0/TBD | Not started | - |
 | 21. Release v0.1.1 | 0/TBD | Not started | - |
