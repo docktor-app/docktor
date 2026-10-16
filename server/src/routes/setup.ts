@@ -1,6 +1,7 @@
 import type {FastifyPluginAsyncZod} from "fastify-type-provider-zod";
 import {onboardingService} from "../application/onboarding-service.js";
 import {migrationService} from "../application/migration-service.js";
+import {BadRequestError} from "../lib/errors.js";
 import {
     brownfieldAdoptSchema,
     migrationExecuteSchema,
@@ -12,6 +13,19 @@ import {
     wizardStep5Schema,
     wizardStep6Schema,
 } from "@docktor/shared";
+
+/**
+ * WR-03: the setup migrate routes can stop compose projects and read compose
+ * files, so they are closed until the admin account exists (mirrors step6's
+ * hasAnyUser guard). Requiring the step-1 session on the setup brownfield
+ * routes after the admin exists is out of scope and tracked as residual risk
+ * (T-18-23).
+ */
+async function requireAdminAccount(): Promise<void> {
+    if (!(await onboardingService.hasAnyUser())) {
+        throw new BadRequestError("Create the admin account before previewing or running a migration");
+    }
+}
 
 const setupRoutes: FastifyPluginAsyncZod = async (app) => {
     // CR-01/T-05-09: every /api/setup/* route beyond step 1 must stop being
@@ -137,6 +151,7 @@ const setupRoutes: FastifyPluginAsyncZod = async (app) => {
     app.post(
         "/api/setup/migrate/preview",
         {
+            preHandler: requireAdminAccount,
             schema: {
                 body: migrationPreviewSchema,
             },
@@ -153,6 +168,7 @@ const setupRoutes: FastifyPluginAsyncZod = async (app) => {
     app.post(
         "/api/setup/migrate",
         {
+            preHandler: requireAdminAccount,
             schema: {
                 body: migrationExecuteSchema,
             },
