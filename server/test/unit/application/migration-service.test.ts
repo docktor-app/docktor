@@ -502,6 +502,105 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         );
     });
 
+    describe("sources Docktor cannot read fail closed (CR-03)", () => {
+        const invisible = (originalPath: string) => ({
+            ...input({backup: false}),
+            volumeSelections: [{originalPath, newPath: "./volumes/data", convert: true}],
+        });
+
+        it.each([
+            ["Docktor sees no host path", {kind: "container", mounts: []} as OwnMountsView],
+            ["Docktor's mounts are unknown", {kind: "unknown"} as OwnMountsView],
+        ])("refuses a selected absolute source when %s, before anything happens", async (_label, view) => {
+            mockOwnMounts.ownMounts.mockResolvedValue(view);
+            const service = buildService();
+
+            await expect(service.migrate(invisible("/opt/app/data"))).rejects.toThrow(BadRequestError);
+            await expect(service.migrate(invisible("/opt/app/data"))).rejects.toThrow("/opt/app/data");
+            await expect(service.preflight(invisible("/opt/app/data"))).rejects.toThrow("/opt/app/data");
+
+            expectNoSideEffects();
+            expect(mockMigrator.moveDirectory).not.toHaveBeenCalled();
+            await assertOriginalUntouched();
+        });
+
+        it("refuses a selected ~ source, before anything happens", async () => {
+            await expect(buildService().migrate(invisible("~/data"))).rejects.toThrow(BadRequestError);
+            await expect(buildService().migrate(invisible("~/data"))).rejects.toThrow("~/data");
+
+            expectNoSideEffects();
+        });
+
+        it("does not refuse an unselected source Docktor cannot read", async () => {
+            mockOwnMounts.ownMounts.mockResolvedValue({kind: "unknown"});
+            mockDocker.up.mockResolvedValue(undefined);
+
+            const result = await buildService().migrate({
+                ...input({backup: false}),
+                volumeSelections: [{originalPath: "/opt/app/data", newPath: "/opt/app/data", convert: false}],
+            });
+
+            expect(result.success).toBe(true);
+        });
+
+        it("fails the migration, removes its directory and restarts the old stack when a planned source vanished", async () => {
+            const service = buildService();
+            const plan = await service.preflight({
+                ...input({backup: false}),
+                volumeSelections: [{originalPath: "data", newPath: "./volumes/data", convert: true}],
+            });
+            await fs.rm(path.join(originalDir, "data"), {recursive: true});
+
+            const result = await service.execute(plan);
+
+            expect(result.success).toBe(false);
+            expect(result.error).toContain("data");
+            expect(result.error).toContain("no longer exists");
+            expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
+            expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+            expect(mockStackRepo.create).not.toHaveBeenCalled();
+            expect(mockDocker.up).not.toHaveBeenCalled();
+            expect(mockMigrator.copyDirectory).not.toHaveBeenCalled();
+        });
+
+        it("rolls back and restarts the old stack on an access error raised only at execute time", async () => {
+            const service = buildService();
+            const plan = await service.preflight({
+                ...input({backup: false}),
+                volumeSelections: [{originalPath: "data", newPath: "./volumes/data", convert: true}],
+            });
+            const realAccess = fs.access.bind(fs);
+            const blockedSource = path.join(originalDir, "data");
+            vi.spyOn(fs, "access").mockImplementation(async (target, mode) => {
+                if (String(target) === blockedSource) {
+                    throw Object.assign(new Error("EACCES: permission denied, access"), {code: "EACCES"});
+                }
+                return realAccess(target, mode);
+            });
+
+            const result = await service.execute(plan);
+
+            expect(result.success).toBe(false);
+            expect(result.error).toContain("EACCES");
+            expect(mockMigrator.copyDirectory).not.toHaveBeenCalled();
+            expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
+            expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+        });
+
+        it("turns a declared but genuinely absent relative source into an empty directory", async () => {
+            mockDocker.up.mockResolvedValue(undefined);
+
+            const result = await buildService().migrate({
+                ...input({backup: false}),
+                volumeSelections: [{originalPath: "./missing", newPath: "./volumes/missing", convert: true}],
+            });
+
+            expect(result.success).toBe(true);
+            expect(mockMigrator.copyDirectory).not.toHaveBeenCalled();
+            expect((await fs.stat(path.join(newStackPath, "volumes", "missing"))).isDirectory()).toBe(true);
+        });
+    });
+
     describe("own-stack refusal (WR-09, STK-03)", () => {
         function expectNothingTouched(): void {
             expectNoSideEffects();
@@ -969,6 +1068,7 @@ describe("previewMigration (MIG-02, D-04, G-18-7)", () => {
         rewriter: Pick<ComposeRewriterPort, "rewrite"> = {
             rewrite: vi.fn().mockReturnValue({rewrittenCompose: COMPOSE, extractedEnv: "", envVars: {}}),
         },
+        ownMounts: OwnMountsPort = createMockOwnMounts(),
     ): MigrationService {
         return new MigrationService(
             createMockDocker() as unknown as DockerExecutorPort,
@@ -978,7 +1078,7 @@ describe("previewMigration (MIG-02, D-04, G-18-7)", () => {
             mockStackRepo as unknown as StackRepository,
             createMockOldStack() as unknown as ExternalStackControlPort,
             mockSelfStack as unknown as SelfStackPort,
-            createMockOwnMounts() as unknown as OwnMountsPort,
+            ownMounts,
         );
     }
 
@@ -1095,6 +1195,42 @@ describe("previewMigration (MIG-02, D-04, G-18-7)", () => {
             mockSelfStack.composeFilePaths.mockResolvedValue([composePath]);
 
             await expect(buildPreviewService().previewMigration(request())).rejects.toBeInstanceOf(BadRequestError);
+        });
+    });
+
+    describe("bind-mount sources (CR-03)", () => {
+        it("lists a selected source that does not exist in emptySources and omits a present one", async () => {
+            await fs.mkdir(path.join(composeDir, "present"));
+
+            const preview = await buildPreviewService().previewMigration({
+                ...request(),
+                volumeSelections: [
+                    {originalPath: "./missing", newPath: "./volumes/missing", convert: true},
+                    {originalPath: "./present", newPath: "./volumes/present", convert: true},
+                ],
+            });
+
+            expect(preview.emptySources).toEqual(["./missing"]);
+        });
+
+        it("returns no emptySources when nothing is selected", async () => {
+            const preview = await buildPreviewService().previewMigration(request());
+
+            expect(preview.emptySources).toEqual([]);
+        });
+
+        it.each([
+            ["Docktor sees no host path", {kind: "container", mounts: []} as OwnMountsView],
+            ["Docktor's mounts are unknown", {kind: "unknown"} as OwnMountsView],
+        ])("refuses a selected absolute source when %s", async (_label, view) => {
+            const service = buildPreviewService(undefined, createMockOwnMounts(view));
+
+            await expect(
+                service.previewMigration({
+                    ...request(),
+                    volumeSelections: [{originalPath: "/opt/app/data", newPath: "./volumes/data", convert: true}],
+                }),
+            ).rejects.toThrow(BadRequestError);
         });
     });
 });

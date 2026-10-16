@@ -107,4 +107,45 @@ describe("DockerSelfStack", () => {
         ]);
         expect(docker.inspectContainer).toHaveBeenCalledWith("abc123", expect.any(AbortSignal));
     });
+
+    describe("ownMounts (CR-03)", () => {
+        it("resolves host and never inspects when Docktor is not containerized", async () => {
+            const docker = {inspectContainer: vi.fn()};
+            const selfStack = new DockerSelfStack(docker, {containerId: async () => null});
+
+            await expect(selfStack.ownMounts()).resolves.toEqual({kind: "host"});
+            expect(docker.inspectContainer).not.toHaveBeenCalled();
+        });
+
+        it("maps the inspected mounts", async () => {
+            const docker = {inspectContainer: vi.fn().mockResolvedValue(inspectInfo({Mounts: [ROOT_MOUNT]}))};
+            const selfStack = new DockerSelfStack(docker, {containerId: async () => "abc123"});
+
+            await expect(selfStack.ownMounts()).resolves.toEqual({
+                kind: "container",
+                mounts: [{type: "bind", source: "/", destination: "/host"}],
+            });
+        });
+
+        it("resolves unknown and warns once when inspect rejects, without mount or label values", async () => {
+            const docker = {inspectContainer: vi.fn().mockRejectedValue(new Error("docker unreachable"))};
+            const selfStack = new DockerSelfStack(docker, {containerId: async () => "abc123"});
+
+            await expect(selfStack.ownMounts()).resolves.toEqual({kind: "unknown"});
+            expect(warn).toHaveBeenCalledTimes(1);
+            expect(String(warn.mock.calls[0]?.[0])).toContain("docker unreachable");
+            expect(String(warn.mock.calls[0]?.[0])).not.toContain("/host");
+        });
+
+        it("resolves unknown and warns once when the container id lookup rejects", async () => {
+            const docker = {inspectContainer: vi.fn()};
+            const selfStack = new DockerSelfStack(docker, {
+                containerId: vi.fn().mockRejectedValue(new Error("no hostname")),
+            });
+
+            await expect(selfStack.ownMounts()).resolves.toEqual({kind: "unknown"});
+            expect(warn).toHaveBeenCalledTimes(1);
+            expect(docker.inspectContainer).not.toHaveBeenCalled();
+        });
+    });
 });
