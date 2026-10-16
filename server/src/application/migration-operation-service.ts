@@ -6,9 +6,11 @@ import {
     pruneFinishedOperations,
     startMigrationOperation,
 } from "../domain/migration-operation.js";
+import {domainEventBus} from "../infrastructure/event-bus.js";
 import {ConflictError, NotFoundError} from "../lib/errors.js";
 import {toComparablePath} from "../domain/self-stack-paths.js";
 import {slugify} from "../lib/slugify.js";
+import type {EventBusPort} from "./ports/event-bus-port.js";
 import {
     migrationService,
     type MigrationInput,
@@ -49,6 +51,7 @@ export class MigrationOperationService {
         private readonly migrations: MigrationRunner = migrationService,
         private readonly newId: () => string = randomUUID,
         private readonly now: () => Date = () => new Date(),
+        private readonly events: Pick<EventBusPort, "emit"> = domainEventBus,
     ) {}
 
     async start(input: MigrationInput): Promise<MigrationOperation> {
@@ -70,7 +73,7 @@ export class MigrationOperationService {
             stopOldStack: input.stopOldStack,
             startedAt: this.now(),
         });
-        this.operations.set(operation.id, operation);
+        this.save(operation);
         void this.run(operation.id, plan, heldKeys);
         return operation;
     }
@@ -121,6 +124,12 @@ export class MigrationOperationService {
         }
     }
 
+    /** Stores the operation and publishes it, so the stored and the published state never differ. */
+    private save(operation: MigrationOperation): void {
+        this.operations.set(operation.id, operation);
+        this.events.emit("migration.progressed", {operation});
+    }
+
     private prune(): void {
         const kept = pruneFinishedOperations(
             [...this.operations.values()],
@@ -139,7 +148,7 @@ export class MigrationOperationService {
             const result = await this.execute(plan);
             const operation = this.operations.get(operationId);
             if (operation) {
-                this.operations.set(operationId, finishMigrationOperation(operation, result, this.now()));
+                this.save(finishMigrationOperation(operation, result, this.now()));
             }
         } finally {
             this.releaseInFlight(heldKeys);

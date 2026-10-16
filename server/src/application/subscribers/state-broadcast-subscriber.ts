@@ -1,3 +1,5 @@
+import type {MigrationOperationResult} from "@docktor/shared"
+
 import type {EventBusPort} from "../ports/event-bus-port.js"
 import type {StateBroadcaster, StateEvent} from "../../lib/state-broadcaster.js"
 
@@ -16,6 +18,7 @@ import type {StateBroadcaster, StateEvent} from "../../lib/state-broadcaster.js"
  *   stack.update_available        -> update_available
  *   notification.created          -> notification_created
  *   proxy.cert_status_changed     -> proxy_cert_status
+ *   migration.progressed          -> migration_progress
  *
  * Every handler runs to completion synchronously — nothing here waits on a
  * promise — so an event emitted inside a publisher's method reaches the
@@ -122,11 +125,48 @@ export function subscribeStateBroadcast(
         }),
     )
 
+    unsubscribers.push(
+        bus.subscribe("migration.progressed", (payload) => {
+            const {operation} = payload
+            publish(broadcaster, {
+                type: "migration_progress",
+                operation: {
+                    id: operation.id,
+                    stackId: operation.stackId,
+                    displayName: operation.displayName,
+                    composePath: operation.composePath,
+                    backup: operation.backup,
+                    stopOldStack: operation.stopOldStack,
+                    status: operation.status,
+                    step: operation.step,
+                    stepDetail: operation.stepDetail,
+                    startedAt: operation.startedAt,
+                    finishedAt: operation.finishedAt,
+                    result: operation.result === null ? null : mapMigrationResult(operation.result),
+                },
+            })
+        }),
+    )
+
     return () => {
         for (const unsubscribe of unsubscribers) {
             unsubscribe()
         }
     }
+}
+
+function mapMigrationResult(result: MigrationOperationResult): MigrationOperationResult {
+    const mapped: MigrationOperationResult = {success: result.success, originalPath: result.originalPath}
+    if (result.stackId !== undefined) {
+        mapped.stackId = result.stackId
+    }
+    if (result.error !== undefined) {
+        mapped.error = result.error
+    }
+    if (result.keptOriginalAt !== undefined) {
+        mapped.keptOriginalAt = result.keptOriginalAt
+    }
+    return mapped
 }
 
 /**
