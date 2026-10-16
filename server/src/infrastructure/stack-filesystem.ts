@@ -1,4 +1,6 @@
 import fs from "node:fs/promises";
+import path from "node:path";
+import {AppError, ConflictError, hasErrorCode} from "../lib/errors.js";
 import {getComposePath, getEnvPath, getStackPath,} from "../lib/stacks-dir.js";
 import type {StackFilesystemPort} from "../application/ports/stack-filesystem-port.js";
 
@@ -10,6 +12,22 @@ export class StackFilesystem implements StackFilesystemPort {
     async createDirectory(stackId: string): Promise<string> {
         const hostPath = getStackPath(stackId);
         await fs.mkdir(hostPath, {recursive: true});
+        return hostPath;
+    }
+
+    async createDirectoryExclusive(stackId: string): Promise<string> {
+        const hostPath = getStackPath(stackId);
+        await fs.mkdir(path.dirname(hostPath), {recursive: true});
+        try {
+            // Not recursive: an existing leaf must fail with EEXIST instead of being adopted.
+            await fs.mkdir(hostPath);
+        } catch (err: unknown) {
+            if (hasErrorCode(err, "EEXIST")) {
+                throw Object.assign(new ConflictError(`Stack directory ${hostPath} already exists`), {cause: err});
+            }
+            const message = err instanceof Error ? err.message : String(err);
+            throw Object.assign(new AppError(`Failed to create stack directory ${hostPath}: ${message}`), {cause: err});
+        }
         return hostPath;
     }
 

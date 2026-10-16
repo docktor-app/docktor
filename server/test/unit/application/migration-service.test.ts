@@ -245,12 +245,14 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
     it("still backs up when the stack is not renamed and the compose file is unchanged (D-07)", async () => {
         mockDocker.up.mockResolvedValue(undefined);
 
+        const sameNameStackPath = path.join(tmpRoot, "stacks", path.basename(originalDir));
+
         const result = await buildService().migrate(input({displayName: path.basename(originalDir)}));
 
         expect(result.success).toBe(true);
         expect(mockMigrator.copyDirectory).toHaveBeenCalledWith(
             originalDir,
-            path.join(newStackPath, BACKUP_DIR_NAME),
+            path.join(sameNameStackPath, BACKUP_DIR_NAME),
         );
     });
 

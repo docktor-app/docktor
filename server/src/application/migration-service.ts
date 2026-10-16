@@ -9,7 +9,7 @@ import {StackRepository, stackRepository} from "../repositories/stack-repository
 import {slugify} from "../lib/slugify.js";
 import {createComposeConfig} from "../domain/compose-config.js";
 import {computeUnifiedDiff, type UnifiedDiff} from "../lib/unified-diff.js";
-import {BadRequestError, hasErrorCode} from "../lib/errors.js";
+import {BadRequestError, ConflictError, hasErrorCode} from "../lib/errors.js";
 import type {DockerExecutorPort} from "./ports/docker-executor-port.js";
 import type {VolumeMigratorPort} from "./ports/volume-migrator-port.js";
 import type {ComposeRewriterPort} from "./ports/compose-rewriter-port.js";
@@ -68,6 +68,22 @@ export interface MigrationInput {
 	stopOldStack: boolean;
 }
 
+/**
+ * The outcome of a successful {@link MigrationService.preflight}: every
+ * refusal has been ruled out, nothing has been stopped or created yet.
+ */
+export interface MigrationPlan {
+	readonly stackId: string;
+	readonly displayName: string;
+	readonly composePath: string;
+	readonly originalDir: string;
+	readonly targetDir: string;
+	readonly volumeSelections: VolumeSelection[];
+	readonly namedVolumeSelections: Map<string, boolean>;
+	readonly backup: boolean;
+	readonly stopOldStack: boolean;
+}
+
 export interface MigrationResult {
 	success: boolean;
 	stackId?: string;
@@ -101,41 +117,74 @@ export class MigrationService {
 	}
 
 	/**
-	 * Execute full migration: stop (optional) -> create -> backup (optional) ->
-	 * copy -> rewrite -> record -> deploy.
+	 * Execute full migration: preflight, then stop (optional) -> create ->
+	 * backup (optional) -> copy -> rewrite -> record -> deploy.
 	 * BF-04: Full migration wizard
 	 * BF-05: Rollback on failure
 	 *
-	 * The original directory is only ever read (and its stack optionally
-	 * stopped), never modified. Rollback (D-09/D-11) removes only the new
-	 * stack directory and record Docktor created and restarts the old stack
-	 * with `docker compose start` iff Docktor stopped it.
+	 * Refusals reject with 400/409 typed errors before any side effect; step
+	 * failures resolve with `success: false` after the rollback.
 	 */
 	async migrate(input: MigrationInput): Promise<MigrationResult> {
+		return this.execute(await this.preflight(input));
+	}
+
+	/**
+	 * Decides every refusal that needs no side effect: an empty slug, an
+	 * existing stack record, and a target directory that exists or overlaps
+	 * the old directory (D-09, RESEARCH Pitfall 4: rollback removes the target
+	 * directory, so it must be one Docktor creates in this run and must not
+	 * overlap the old stack). Nothing is stopped, created, copied or written.
+	 * Advisory by design: the exclusive mkdir and the unique record id stay
+	 * the authoritative backstops inside {@link execute}.
+	 */
+	async preflight(input: MigrationInput): Promise<MigrationPlan> {
 		const {composePath, displayName, volumeSelections, namedVolumeSelections, backup, stopOldStack} = input;
 		const originalDir = path.dirname(composePath);
 		const stackId = slugify(displayName);
 
 		if (!stackId) {
-			return {success: false, error: "Display name produces an empty slug", originalPath: originalDir};
+			throw new BadRequestError("Display name produces an empty slug");
 		}
 
-		// Check if stack already exists
 		if (await this.stackRepo.exists(stackId)) {
-			return {success: false, error: `Stack "${stackId}" already exists`, originalPath: originalDir};
+			throw new ConflictError(`Stack "${stackId}" already exists`);
 		}
 
-		// D-09 / RESEARCH Pitfall 4: rollback removes the target directory, so it
-		// must be one Docktor creates in this run and must not overlap the old
-		// stack (a recursive copy into its own subdirectory fails, and the
-		// rollback would then delete the original). Checked before any side effect.
-		const targetGuardError = await this.checkTargetDirectory(this.stackFs.getStackDirectory(stackId), originalDir);
+		const targetDir = this.stackFs.getStackDirectory(stackId);
+		const targetGuardError = await this.checkTargetDirectory(targetDir, originalDir);
 		if (targetGuardError) {
-			return {success: false, error: targetGuardError, originalPath: originalDir};
+			throw new ConflictError(targetGuardError);
 		}
+
+		return {
+			stackId,
+			displayName,
+			composePath,
+			originalDir,
+			targetDir,
+			volumeSelections,
+			namedVolumeSelections,
+			backup,
+			stopOldStack,
+		};
+	}
+
+	/**
+	 * Runs the side-effecting steps of a preflighted plan and, on any step
+	 * failure, the rollback: it removes only the directory and the stack record
+	 * this run created (CR-02, D-09) and restarts the old stack iff Docktor
+	 * stopped it (D-11). The original directory is only ever read. Never
+	 * rejects for a step failure (returns `success: false`). Only call it with
+	 * a plan from {@link preflight}; concurrent same-slug starts are refused by
+	 * the background operation start (plan 18-14).
+	 */
+	async execute(plan: MigrationPlan): Promise<MigrationResult> {
+		const {stackId, displayName, composePath, originalDir, volumeSelections, namedVolumeSelections, backup, stopOldStack} = plan;
 
 		let oldStackStopped = false;
 		let createdStackDir = false;
+		let recordCreated = false;
 
 		try {
 			// Step 1: Stop the old stack first (D-10). The flag is set before the
@@ -146,8 +195,9 @@ export class MigrationService {
 				await this.oldStack.stop(composePath);
 			}
 
-			// Step 2: Create new stack directory
-			const newStackPath = await this.stackFs.createDirectory(stackId);
+			// Step 2: Create the new stack directory exclusively. An EEXIST rejection
+			// leaves createdStackDir false, so rollback never removes a foreign directory.
+			const newStackPath = await this.stackFs.createDirectoryExclusive(stackId);
 			createdStackDir = true;
 
 			// Step 3: Keep a copy of the old stack directory when opted in (D-07),
@@ -221,6 +271,7 @@ export class MigrationService {
 				hostPath: newStackPath,
 				composeConfig,
 			});
+			recordCreated = true;
 
 			// Step 8: Deploy new stack
 			await this.docker.up(stackId);
@@ -241,8 +292,10 @@ export class MigrationService {
 				}
 			}
 
-			// Delete incomplete stack record if created
-			await this.stackRepo.delete(stackId).catch(() => {});
+			// Only a record this run created is ever deleted (CR-02, D-09).
+			if (recordCreated) {
+				await this.stackRepo.delete(stackId).catch(() => {});
+			}
 
 			const restartNote = oldStackStopped ? await this.restartOldStack(composePath, originalDir) : "";
 
