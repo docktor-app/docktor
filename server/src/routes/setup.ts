@@ -1,10 +1,12 @@
 import type {FastifyPluginAsyncZod} from "fastify-type-provider-zod";
 import {onboardingService} from "../application/onboarding-service.js";
 import {migrationService} from "../application/migration-service.js";
+import {migrationOperationService} from "../application/migration-operation-service.js";
 import {BadRequestError} from "../lib/errors.js";
 import {
     brownfieldAdoptSchema,
     migrationExecuteSchema,
+    migrationOperationParamsSchema,
     migrationPreviewSchema,
     wizardStep1Schema,
     wizardStep2Schema,
@@ -165,7 +167,7 @@ const setupRoutes: FastifyPluginAsyncZod = async (app) => {
         },
     );
 
-    // Execute migration
+    // Start a migration as a background operation (G-18-job)
     app.post(
         "/api/setup/migrate",
         {
@@ -174,14 +176,31 @@ const setupRoutes: FastifyPluginAsyncZod = async (app) => {
                 body: migrationExecuteSchema,
             },
         },
-        async (request) => {
+        async (request, reply) => {
             const {namedVolumeSelections, ...rest} = request.body;
-            const result = await migrationService.migrate({
+            const operation = await migrationOperationService.start({
                 ...rest,
                 namedVolumeSelections: new Map(Object.entries(namedVolumeSelections)),
             });
-            return result;
+            return reply.status(202).send(operation);
         },
+    );
+
+    // List running and recent operations, e.g. to resync after a reload
+    app.get("/api/setup/migrations", {preHandler: requireAdminAccount}, async () => ({
+        operations: migrationOperationService.list(),
+    }));
+
+    // Read one operation
+    app.get(
+        "/api/setup/migrations/:operationId",
+        {
+            preHandler: requireAdminAccount,
+            schema: {
+                params: migrationOperationParamsSchema,
+            },
+        },
+        async (request) => migrationOperationService.get(request.params.operationId),
     );
 
     // Step 6: Deploy the managed proxy stack (optional, terminal step — D-09/D-10)

@@ -86,6 +86,11 @@ const importRoutes: FastifyPluginAsyncZod = async (app) => {
         },
     );
 
+    // List running and recent operations, e.g. to resync after a reload
+    app.get("/api/stacks/import/migrations", async () => ({
+        operations: migrationOperationService.list(),
+    }));
+
     // Read one operation, e.g. to resync after a reload
     app.get(
         "/api/stacks/import/migrations/:operationId",
