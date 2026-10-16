@@ -8,6 +8,7 @@ import {StackFilesystem} from "../infrastructure/stack-filesystem.js";
 import {StackRepository, stackRepository} from "../repositories/stack-repository.js";
 import {slugify} from "../lib/slugify.js";
 import {createComposeConfig} from "../domain/compose-config.js";
+import {locateBindSource, needsOwnMounts, type OwnMountsView} from "../domain/bind-mount-sources.js";
 import {asideNameCandidates, classifyMigrationTarget, type MigrationTargetKind} from "../domain/migration-target.js";
 import {computeUnifiedDiff, type UnifiedDiff} from "../lib/unified-diff.js";
 import {stackDirectoryNameSchema, type MigrationOperationStep, type MigrationTarget} from "@docktor/shared";
@@ -21,6 +22,7 @@ import type {ComposeRewriterPort} from "./ports/compose-rewriter-port.js";
 import type {StackFilesystemPort} from "./ports/stack-filesystem-port.js";
 import type {ExternalStackControlPort} from "./ports/external-stack-control-port.js";
 import type {SelfStackPort} from "./ports/self-stack-port.js";
+import type {OwnMountsPort} from "./ports/own-mounts-port.js";
 
 // D-07/D-08: an opted-in backup is a plain copy of the old stack directory at
 // this fixed name inside the new stack directory; it is kept after success.
@@ -64,6 +66,16 @@ async function sourceExists(srcPath: string): Promise<boolean> {
 		}
 		throw err;
 	}
+}
+
+/** The first of `candidates` that exists, or `null` when none does. */
+async function firstExisting(candidates: readonly string[]): Promise<string | null> {
+	for (const candidate of candidates) {
+		if (await sourceExists(candidate)) {
+			return candidate;
+		}
+	}
+	return null;
 }
 
 /**
@@ -146,8 +158,21 @@ export interface MigrationPlan {
 	readonly namedVolumeSelections: Map<string, boolean>;
 	readonly backup: boolean;
 	readonly stopOldStack: boolean;
+	/** CR-03: where every converted bind-mount source is read from, decided before anything happens. */
+	readonly bindCopies: readonly PlannedBindCopy[];
 	/** G-18-7: set when the target directory is the original directory; the original moves to `asideDir`. */
 	readonly inPlace: {readonly asideDir: string} | null;
+}
+
+/**
+ * CR-03: one converted bind mount. `sourcePath` is the path Docktor reads the
+ * data from (as seen before an in-place rename); `null` means the source does
+ * not exist and an empty directory is created instead.
+ */
+export interface PlannedBindCopy {
+	readonly originalPath: string;
+	readonly newPath: string;
+	readonly sourcePath: string | null;
 }
 
 export interface MigrationResult {
@@ -170,6 +195,8 @@ export class MigrationService {
 		// WR-09/STK-03: last position so every existing positional call keeps
 		// compiling. Lets preflight refuse Docktor's own compose file.
 		private readonly selfStack: SelfStackPort = dockerSelfStack,
+		// CR-03: which host paths Docktor can read through its own bind mounts.
+		private readonly ownMounts: OwnMountsPort = dockerSelfStack,
 	) {}
 
 	/**
@@ -230,6 +257,7 @@ export class MigrationService {
 	async preflight(input: MigrationInput): Promise<MigrationPlan> {
 		const {composePath, displayName, volumeSelections, namedVolumeSelections, backup, stopOldStack} = input;
 		const {stackId, originalDir, targetDir, kind} = await this.assessTarget(composePath, displayName);
+		const bindCopies = await this.planBindCopies(volumeSelections, originalDir);
 		const inPlace = kind === "in-place" ? {asideDir: await this.planInPlace(originalDir, stackId, input)} : null;
 
 		return {
@@ -242,8 +270,31 @@ export class MigrationService {
 			namedVolumeSelections,
 			backup,
 			stopOldStack,
+			bindCopies,
 			inPlace,
 		};
+	}
+
+	/**
+	 * CR-03: decides, for every converted bind mount, the path its data is read
+	 * from. The first candidate that exists wins; none existing means the source
+	 * is absent and an empty directory will be created. Only a missing path
+	 * (ENOENT) counts as absent: any other access failure rejects the preflight.
+	 */
+	private async planBindCopies(selections: readonly VolumeSelection[], originalDir: string): Promise<PlannedBindCopy[]> {
+		let view: OwnMountsView | undefined;
+		const copies: PlannedBindCopy[] = [];
+		for (const {originalPath, newPath, convert} of selections) {
+			if (!convert) {
+				continue;
+			}
+			if (view === undefined && needsOwnMounts(originalPath)) {
+				view = await this.ownMounts.ownMounts();
+			}
+			const located = locateBindSource(originalPath, originalDir, view ?? {kind: "host"});
+			copies.push({originalPath, newPath, sourcePath: await firstExisting(located.paths)});
+		}
+		return copies;
 	}
 
 	/**
@@ -294,7 +345,7 @@ export class MigrationService {
 	 * (plan 18-14).
 	 */
 	async execute(plan: MigrationPlan, onProgress?: MigrationProgressListener): Promise<MigrationResult> {
-		const {stackId, displayName, composePath, originalDir, volumeSelections, namedVolumeSelections, backup, stopOldStack, inPlace} = plan;
+		const {stackId, displayName, composePath, originalDir, volumeSelections, namedVolumeSelections, backup, stopOldStack, bindCopies, inPlace} = plan;
 		// Where the old stack's files are read from: the original directory, or
 		// (in place) the directory it was renamed to.
 		const sourceDir = inPlace?.asideDir ?? originalDir;
@@ -356,7 +407,7 @@ export class MigrationService {
 			}
 
 			// Step 5: Copy bind mount data
-			await this.copyBindMounts(volumeSelections, {originalDir, sourceDir}, newStackPath, onProgress);
+			await this.copyBindMounts(bindCopies, {originalDir, sourceDir}, newStackPath, onProgress);
 
 			// Step 6: Rewrite compose file
 			this.report(onProgress, "writing_compose");
@@ -470,32 +521,27 @@ export class MigrationService {
 	}
 
 	/**
-	 * Step 5: copy bind-mount data into the new stack directory. CR-01: only a
-	 * missing source (ENOENT) is an empty volume; any other failure must roll
-	 * back, because the old stack may already be stopped.
+	 * Step 5: copy bind-mount data into the new stack directory from the paths
+	 * preflight planned (CR-03). A planned source is relocated if an in-place
+	 * rename moved it; a source planned as absent becomes an empty directory.
+	 * Any failure rolls back, because the old stack may already be stopped.
 	 */
 	private async copyBindMounts(
-		volumeSelections: VolumeSelection[],
+		bindCopies: readonly PlannedBindCopy[],
 		dirs: {originalDir: string; sourceDir: string},
 		newStackPath: string,
 		onProgress?: MigrationProgressListener,
 	): Promise<void> {
-		for (const sel of volumeSelections) {
-			if (!sel.convert) {
-				continue;
-			}
-			this.report(onProgress, "copying_bind_mount", sel.originalPath);
-			const srcPath = path.isAbsolute(sel.originalPath)
-				? relocateIntoSource(sel.originalPath, dirs)
-				: path.join(dirs.sourceDir, sel.originalPath);
-			// CR-02: sel.newPath is fully attacker-controlled — confine the
+		for (const copy of bindCopies) {
+			this.report(onProgress, "copying_bind_mount", copy.originalPath);
+			// CR-02: copy.newPath is fully attacker-controlled — confine the
 			// resolved destination to be a strict descendant of newStackPath.
-			const destPath = assertWithin(newStackPath, sel.newPath);
+			const destPath = assertWithin(newStackPath, copy.newPath);
 
-			if (await sourceExists(srcPath)) {
-				await this.migrator.copyDirectory(srcPath, destPath);
-			} else {
+			if (copy.sourcePath === null) {
 				await fs.mkdir(destPath, {recursive: true});
+			} else {
+				await this.migrator.copyDirectory(relocateIntoSource(copy.sourcePath, dirs), destPath);
 			}
 		}
 	}

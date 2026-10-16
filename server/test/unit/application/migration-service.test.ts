@@ -391,7 +391,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         await assertOriginalUntouched();
     });
 
-    it("fails the migration on a non-ENOENT access error instead of creating an empty volume (CR-01)", async () => {
+    it("refuses the migration in preflight on a non-ENOENT access error instead of creating an empty volume (CR-01)", async () => {
         const realAccess = fs.access.bind(fs);
         const blockedSource = path.join(originalDir, "data");
         vi.spyOn(fs, "access").mockImplementation(async (target, mode) => {
@@ -401,16 +401,15 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             return realAccess(target, mode);
         });
 
-        const result = await buildService().migrate({
-            ...input({backup: false}),
-            volumeSelections: [{originalPath: "data", newPath: "./volumes/data", convert: true}],
-        });
+        await expect(
+            buildService().migrate({
+                ...input({backup: false}),
+                volumeSelections: [{originalPath: "data", newPath: "./volumes/data", convert: true}],
+            }),
+        ).rejects.toThrow("EACCES");
 
-        expect(result.success).toBe(false);
-        expect(result.error).toContain("EACCES");
-        expect(mockMigrator.copyDirectory).not.toHaveBeenCalled();
-        expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
-        expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+        expectNoSideEffects();
+        expect(mockMigrator.moveDirectory).not.toHaveBeenCalled();
     });
 
     it("keeps a missing bind-mount source as an empty destination directory (CR-01)", async () => {
