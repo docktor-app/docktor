@@ -26,6 +26,7 @@ const stack: DiscoveredStack = {
     serviceCount: 1,
     namedVolumes: ["pgdata"],
     absolutePaths: [],
+    relativePaths: [],
     inlineEnvVars: false,
     unsupportedFeatures: [],
 };

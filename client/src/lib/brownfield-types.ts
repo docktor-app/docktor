@@ -2,25 +2,12 @@
 // wizard (client/src/lib/setup-api.ts, driving /api/setup/*) and the
 // post-setup import page (client/src/lib/import-api.ts, driving
 // /api/stacks/import/*) depend on these — this module has no opinion about
-// which endpoints produced them.
+// which endpoints produced them. The scan result shapes come from the shared
+// workspace contract; the migration shapes below are client-only.
 
 import type {UnifiedDiff} from "./stacks-api";
 
-export interface ScanResult {
-  stacks: DiscoveredStack[];
-  skippedDirectories: number;
-}
-
-export interface DiscoveredStack {
-  path: string;
-  directory: string;
-  compatibility: "green" | "yellow" | "red";
-  serviceCount: number;
-  namedVolumes: string[];
-  absolutePaths: string[];
-  inlineEnvVars: boolean;
-  unsupportedFeatures: string[];
-}
+export type {DiscoveredStack, ScanResult, SkippedDirectory} from "@docktor/shared";
 
 export interface VolumeSelection {
   originalPath: string;

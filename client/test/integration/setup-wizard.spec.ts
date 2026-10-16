@@ -11,6 +11,7 @@ const greenStack = {
     serviceCount: 1,
     namedVolumes: [] as string[],
     absolutePaths: [] as string[],
+    relativePaths: [] as string[],
     inlineEnvVars: false,
     unsupportedFeatures: [] as string[],
 };
@@ -22,6 +23,7 @@ const yellowStack = {
     serviceCount: 1,
     namedVolumes: ["pgdata"],
     absolutePaths: [] as string[],
+    relativePaths: [] as string[],
     inlineEnvVars: false,
     unsupportedFeatures: [] as string[],
 };
@@ -33,6 +35,7 @@ const redStack = {
     serviceCount: 1,
     namedVolumes: [] as string[],
     absolutePaths: [] as string[],
+    relativePaths: [] as string[],
     inlineEnvVars: false,
     unsupportedFeatures: ["configs"],
 };

@@ -62,6 +62,7 @@ function discoveredStack(path: string): ScanResult["stacks"][number] {
         serviceCount: 1,
         namedVolumes: [],
         absolutePaths: [],
+        relativePaths: [],
         inlineEnvVars: false,
         unsupportedFeatures: [],
     };

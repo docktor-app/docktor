@@ -16,6 +16,7 @@ const greenStack = {
     serviceCount: 1,
     namedVolumes: [] as string[],
     absolutePaths: [] as string[],
+    relativePaths: [] as string[],
     inlineEnvVars: false,
     unsupportedFeatures: [] as string[],
 };

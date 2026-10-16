@@ -144,9 +144,11 @@ describe("Imports API (post-setup brownfield scan/adopt/migrate)", () => {
         expect(res.statusCode).toBe(200);
         const body = res.json();
         expect(body.skippedDirectories).toBe(0);
+        expect(body.skipped).toEqual([]);
         expect(body.stacks).toHaveLength(1);
         expect(body.stacks[0].directory).toBe(scanDir);
         expect(body.stacks[0].serviceCount).toBe(1);
+        expect(Array.isArray(body.stacks[0].relativePaths)).toBe(true);
     });
 
     it("POST /api/stacks/import/adopt → registers a stack visible via GET /api/stacks (T-05.1-35 slug guarantee)", async () => {
