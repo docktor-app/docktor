@@ -3,7 +3,7 @@ import {Alert, AlertDescription} from "@/components/ui/alert";
 import {Checkbox} from "@/components/ui/checkbox";
 import {Input} from "@/components/ui/input";
 import {Label} from "@/components/ui/label";
-import type {VolumeSelection} from "@/lib/brownfield-types";
+import type {BindMountChoice} from "@/lib/migration-volume-paths";
 
 export interface MigrationSelectStepProps {
   readonly displayName: string;
@@ -11,8 +11,8 @@ export interface MigrationSelectStepProps {
   readonly namedVolumes: readonly string[];
   readonly namedVolumeSelections: Readonly<Record<string, boolean>>;
   readonly onVolumeToggle: (volume: string, checked: boolean) => void;
-  readonly bindMountSelections: readonly VolumeSelection[];
-  readonly onBindMountToggle: (index: number, checked: boolean) => void;
+  readonly bindMounts: readonly BindMountChoice[];
+  readonly onBindMountToggle: (index: number, moveIntoVolumes: boolean) => void;
   readonly inlineEnvVars: boolean;
 }
 
@@ -26,10 +26,15 @@ export function MigrationSelectStep({
   namedVolumes,
   namedVolumeSelections,
   onVolumeToggle,
-  bindMountSelections,
+  bindMounts,
   onBindMountToggle,
   inlineEnvVars,
 }: Readonly<MigrationSelectStepProps>): React.JSX.Element {
+  // Keep each choice's index in the full list: the wizard toggles by that index.
+  const indexed = bindMounts.map((choice, index) => ({choice, index}));
+  const absoluteMounts = indexed.filter(({choice}) => choice.kind === "absolute");
+  const relativeMounts = indexed.filter(({choice}) => choice.kind === "relative");
+
   return (
     <div className="space-y-6 py-4">
       <div className="space-y-2">
@@ -68,19 +73,19 @@ export function MigrationSelectStep({
         </div>
       )}
 
-      {bindMountSelections.length > 0 && (
+      {absoluteMounts.length > 0 && (
         <div className="space-y-3">
           <Label>Absolute Bind Mounts</Label>
-          {bindMountSelections.map((sel, i) => (
-            <div key={sel.originalPath} className={ROW_CLASS}>
+          {absoluteMounts.map(({choice, index}) => (
+            <div key={`${index}-${choice.originalPath}`} className={ROW_CLASS}>
               <Checkbox
-                id={`bind-${i}`}
-                checked={sel.convert}
-                onCheckedChange={(checked) => onBindMountToggle(i, !!checked)}
+                id={`bind-${index}`}
+                checked={choice.moveIntoVolumes}
+                onCheckedChange={(checked) => onBindMountToggle(index, !!checked)}
               />
               <div className="min-w-0 space-y-1">
-                <Label htmlFor={`bind-${i}`} className="cursor-pointer break-all font-normal">
-                  {sel.originalPath}
+                <Label htmlFor={`bind-${index}`} className="cursor-pointer break-all font-normal">
+                  {choice.originalPath}
                 </Label>
                 <Alert className="px-2 py-1">
                   <AlertDescription className="flex items-center gap-1 text-xs">
@@ -88,6 +93,29 @@ export function MigrationSelectStep({
                     Absolute path - not recommended for Docktor
                   </AlertDescription>
                 </Alert>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {relativeMounts.length > 0 && (
+        <div className="space-y-3">
+          <Label>Relative Bind Mounts</Label>
+          {relativeMounts.map(({choice, index}) => (
+            <div key={`${index}-${choice.originalPath}`} className={ROW_CLASS}>
+              <Checkbox
+                id={`rel-${index}`}
+                checked={choice.moveIntoVolumes}
+                onCheckedChange={(checked) => onBindMountToggle(index, !!checked)}
+              />
+              <div className="min-w-0 space-y-1">
+                <Label htmlFor={`rel-${index}`} className="cursor-pointer break-all font-normal">
+                  {choice.originalPath}
+                </Label>
+                {choice.moveIntoVolumes && (
+                  <p className="text-xs text-muted-foreground">Moves to {choice.volumesPath}</p>
+                )}
               </div>
             </div>
           ))}

@@ -8,6 +8,7 @@ import {MigrationStepIndicator, MIGRATION_STEP_LABELS} from "./migration-step-in
 import {MigrationBackupStep} from "./migration-backup-step";
 import {MigrationOldStackStep} from "./migration-old-stack-step";
 import {directoryDisplayName} from "@/lib/path-display";
+import {buildBindMountChoices, countVolumesToCopy, toVolumeSelections, type BindMountChoice} from "@/lib/migration-volume-paths";
 import type {DiscoveredStack, MigrationPreview, VolumeSelection} from "@/lib/brownfield-types";
 
 const PREVIEW_ERROR_FALLBACK = "Failed to generate preview. Check that the compose file is still readable and try again.";
@@ -78,14 +79,7 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
     return selections;
   });
 
-  const [bindMountSelections, setBindMountSelections] = useState<VolumeSelection[]>(() => {
-    // For absolute paths, default to convert
-    return stack.absolutePaths.map((path) => ({
-      originalPath: path,
-      newPath: `./volumes/${directoryDisplayName(path) || "data"}`,
-      convert: true,
-    }));
-  });
+  const [bindMounts, setBindMounts] = useState<BindMountChoice[]>(() => buildBindMountChoices(stack));
 
   const [preview, setPreview] = useState<MigrationPreview | null>(null);
   const [backup, setBackup] = useState(true);
@@ -111,20 +105,16 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
     }
   }, [step]);
 
-  const volumesToCopy =
-    Object.values(namedVolumeSelections).filter(Boolean).length +
-    bindMountSelections.filter((sel) => sel.convert).length;
+  const volumesToCopy = countVolumesToCopy(namedVolumeSelections, bindMounts);
 
   const handleVolumeToggle = (volName: string, checked: boolean) => {
     setNamedVolumeSelections((prev) => ({...prev, [volName]: checked}));
   };
 
-  const handleBindMountToggle = (index: number, checked: boolean) => {
-    setBindMountSelections((prev) => {
-      const updated = [...prev];
-      updated[index] = {...updated[index], convert: checked};
-      return updated;
-    });
+  const handleBindMountToggle = (index: number, moveIntoVolumes: boolean) => {
+    setBindMounts((prev) =>
+      prev.map((choice, i) => (i === index && !choice.mustMove && !choice.mustKeep ? {...choice, moveIntoVolumes} : choice)),
+    );
   };
 
   const handleNextToPreview = async () => {
@@ -134,7 +124,7 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
     try {
       const result = await previewMigration(
         stack.path,
-        bindMountSelections,
+        toVolumeSelections(bindMounts),
         namedVolumeSelections,
       );
       if (requestId !== previewRequestId.current) return;
@@ -156,7 +146,7 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
     onConfirmMigrate({
       stack,
       displayName,
-      volumeSelections: bindMountSelections,
+      volumeSelections: toVolumeSelections(bindMounts),
       namedVolumeSelections,
       backup,
       stopOldStack,
@@ -195,7 +185,7 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
               namedVolumes={stack.namedVolumes}
               namedVolumeSelections={namedVolumeSelections}
               onVolumeToggle={handleVolumeToggle}
-              bindMountSelections={bindMountSelections}
+              bindMounts={bindMounts}
               onBindMountToggle={handleBindMountToggle}
               inlineEnvVars={stack.inlineEnvVars}
             />
