@@ -19,6 +19,7 @@ const greenStack = {
     relativePaths: [] as string[],
     inlineEnvVars: false,
     unsupportedFeatures: [] as string[],
+    managedStack: null,
 };
 
 async function mockAuthenticated(page: Page) {

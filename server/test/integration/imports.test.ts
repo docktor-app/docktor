@@ -149,6 +149,7 @@ describe("Imports API (post-setup brownfield scan/adopt/migrate)", () => {
         expect(body.stacks[0].directory).toBe(scanDir);
         expect(body.stacks[0].serviceCount).toBe(1);
         expect(Array.isArray(body.stacks[0].relativePaths)).toBe(true);
+        expect(body.stacks[0].managedStack).toBeNull();
     });
 
     it("POST /api/stacks/import/adopt → registers a stack visible via GET /api/stacks (T-05.1-35 slug guarantee)", async () => {
@@ -175,6 +176,53 @@ describe("Imports API (post-setup brownfield scan/adopt/migrate)", () => {
         expect(listRes.statusCode).toBe(200);
         const stacks = listRes.json();
         expect(stacks.map((s: {id: string}) => s.id)).toContain("my-imported-app");
+    });
+
+    it("marks an adopted stack as managed on the next scan and refuses to adopt or migrate it again (G-18-2)", async () => {
+        const composePath = path.join(scanDir, "docker-compose.yml");
+        const adoptRes = await app.inject({
+            method: "POST",
+            url: "/api/stacks/import/adopt",
+            headers: {cookie},
+            payload: {composePath, displayName: "Managed Once"},
+        });
+        expect(adoptRes.statusCode).toBe(200);
+
+        const scanRes = await app.inject({
+            method: "POST",
+            url: "/api/stacks/import/scan",
+            headers: {cookie},
+            payload: {directories: [scanDir]},
+        });
+        expect(scanRes.statusCode).toBe(200);
+        expect(scanRes.json().stacks[0].managedStack).toEqual({id: "managed-once", displayName: "Managed Once"});
+
+        const readoptRes = await app.inject({
+            method: "POST",
+            url: "/api/stacks/import/adopt",
+            headers: {cookie},
+            payload: {composePath, displayName: "Managed Twice"},
+        });
+        expect(readoptRes.statusCode).toBe(409);
+
+        // Only the status code is asserted: the migrate route shape may change in plan 18-14.
+        const migrateRes = await app.inject({
+            method: "POST",
+            url: "/api/stacks/import/migrate",
+            headers: {cookie},
+            payload: {
+                composePath,
+                displayName: "Managed Thrice",
+                volumeSelections: [],
+                namedVolumeSelections: {},
+                backup: false,
+                stopOldStack: false,
+            },
+        });
+        expect(migrateRes.statusCode).toBe(409);
+
+        const listRes = await app.inject({method: "GET", url: "/api/stacks", headers: {cookie}});
+        expect(listRes.json().map((stack: {id: string}) => stack.id)).toEqual(["managed-once"]);
     });
 
     describe("Regression guard: T-05-09's /api/setup/* 410 gate stays closed (T-05.1-36)", () => {

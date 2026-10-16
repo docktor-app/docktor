@@ -14,6 +14,7 @@ const greenStack = {
     relativePaths: [] as string[],
     inlineEnvVars: false,
     unsupportedFeatures: [] as string[],
+    managedStack: null,
 };
 
 const yellowStack = {
@@ -26,6 +27,7 @@ const yellowStack = {
     relativePaths: [] as string[],
     inlineEnvVars: false,
     unsupportedFeatures: [] as string[],
+    managedStack: null,
 };
 
 const redStack = {
@@ -38,6 +40,7 @@ const redStack = {
     relativePaths: [] as string[],
     inlineEnvVars: false,
     unsupportedFeatures: ["configs"],
+    managedStack: null,
 };
 
 /** GET /api/setup/status — no admin user exists yet, wizard should render. */

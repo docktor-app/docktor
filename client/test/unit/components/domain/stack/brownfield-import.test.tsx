@@ -30,6 +30,7 @@ const stack: DiscoveredStack = {
     relativePaths: [],
     inlineEnvVars: false,
     unsupportedFeatures: [],
+    managedStack: null,
 };
 
 const okResult: MigrationResult = {success: true, stackId: "db", originalPath: "/host/opt/db"};

@@ -29,6 +29,7 @@ const stack: DiscoveredStack = {
     relativePaths: [],
     inlineEnvVars: false,
     unsupportedFeatures: [],
+    managedStack: null,
 };
 
 const sampleDiff: UnifiedDiff = {
