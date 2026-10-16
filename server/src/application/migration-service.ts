@@ -8,6 +8,7 @@ import {StackFilesystem} from "../infrastructure/stack-filesystem.js";
 import {StackRepository, stackRepository} from "../repositories/stack-repository.js";
 import {slugify} from "../lib/slugify.js";
 import {createComposeConfig} from "../domain/compose-config.js";
+import {asideNameCandidates, classifyMigrationTarget} from "../domain/migration-target.js";
 import {computeUnifiedDiff, type UnifiedDiff} from "../lib/unified-diff.js";
 import {BadRequestError, ConflictError, hasErrorCode} from "../lib/errors.js";
 import {dockerSelfStack} from "../infrastructure/docker-self-stack.js";
@@ -45,6 +46,9 @@ function assertWithin(base: string, target: string): string {
 	return resolved;
 }
 
+// How many "<id>-pre-migration[-N]" names are tried before giving up (G-18-7).
+const ASIDE_NAME_ATTEMPTS = 100;
+
 /**
  * CR-01: only a missing source (ENOENT) counts as "does not exist". Any other
  * access failure (EACCES, EIO, ...) is rethrown so the migration rolls back.
@@ -61,6 +65,33 @@ async function sourceExists(srcPath: string): Promise<boolean> {
 	}
 }
 
+/**
+ * True when anything (even a dangling symlink) occupies `target`. Only ENOENT
+ * means free; any other failure is rethrown rather than guessed at.
+ */
+async function pathIsTaken(target: string): Promise<boolean> {
+	try {
+		await fs.lstat(target);
+		return true;
+	} catch (err: unknown) {
+		if (hasErrorCode(err, "ENOENT")) {
+			return false;
+		}
+		throw err;
+	}
+}
+
+/**
+ * G-18-7: after an in-place rename, an absolute bind-mount source that pointed
+ * into the original directory now lives in the renamed directory. Anything
+ * outside the original directory is left alone.
+ */
+function relocateIntoSource(srcPath: string, dirs: {originalDir: string; sourceDir: string}): string {
+	const relative = path.relative(dirs.originalDir, srcPath);
+	const insideOriginal = relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+	return insideOriginal ? path.join(dirs.sourceDir, relative) : srcPath;
+}
+
 export interface MigrationInput {
 	composePath: string;
 	displayName: string;
@@ -70,6 +101,12 @@ export interface MigrationInput {
 	backup: boolean;
 	/** D-10: run `docker compose stop` on the old stack before anything is copied. */
 	stopOldStack: boolean;
+	/**
+	 * G-18-7: only for an in-place migration (the new stack takes the old stack's
+	 * directory): the directory name, next to the original, the original is
+	 * renamed to. Defaults to the first free `<id>-pre-migration[-N]`.
+	 */
+	inPlaceAsideName?: string;
 }
 
 /**
@@ -86,6 +123,8 @@ export interface MigrationPlan {
 	readonly namedVolumeSelections: Map<string, boolean>;
 	readonly backup: boolean;
 	readonly stopOldStack: boolean;
+	/** G-18-7: set when the target directory is the original directory; the original moves to `asideDir`. */
+	readonly inPlace: {readonly asideDir: string} | null;
 }
 
 export interface MigrationResult {
@@ -93,6 +132,8 @@ export interface MigrationResult {
 	stackId?: string;
 	error?: string;
 	originalPath: string;
+	/** G-18-7: where the renamed original directory of an in-place migration was kept. */
+	keptOriginalAt?: string;
 }
 
 export class MigrationService {
@@ -166,10 +207,19 @@ export class MigrationService {
 		}
 
 		const targetDir = this.stackFs.getStackDirectory(stackId);
-		const targetGuardError = await this.checkTargetDirectory(targetDir, originalDir);
-		if (targetGuardError) {
-			throw new ConflictError(targetGuardError);
+		const targetKind = classifyMigrationTarget(targetDir, originalDir);
+		if (targetKind === "nested") {
+			throw new ConflictError(
+				`Migration refused: the new stack directory ${path.resolve(targetDir)} and the old stack directory ${path.resolve(originalDir)} overlap.`,
+			);
 		}
+		if (targetKind === "separate" && (await pathIsTaken(targetDir))) {
+			throw new ConflictError(`Migration refused: the new stack directory ${path.resolve(targetDir)} already exists.`);
+		}
+		const inPlace =
+			targetKind === "in-place"
+				? {asideDir: await this.resolveAsideDir(originalDir, stackId, input.inPlaceAsideName)}
+				: null;
 
 		return {
 			stackId,
@@ -181,6 +231,7 @@ export class MigrationService {
 			namedVolumeSelections,
 			backup,
 			stopOldStack,
+			inPlace,
 		};
 	}
 
@@ -194,9 +245,14 @@ export class MigrationService {
 	 * the background operation start (plan 18-14).
 	 */
 	async execute(plan: MigrationPlan): Promise<MigrationResult> {
-		const {stackId, displayName, composePath, originalDir, volumeSelections, namedVolumeSelections, backup, stopOldStack} = plan;
+		const {stackId, displayName, composePath, originalDir, volumeSelections, namedVolumeSelections, backup, stopOldStack, inPlace} = plan;
+		// Where the old stack's files are read from: the original directory, or
+		// (in place) the directory it was renamed to.
+		const sourceDir = inPlace?.asideDir ?? originalDir;
+		const sourceComposePath = inPlace ? path.join(sourceDir, path.basename(composePath)) : composePath;
 
 		let oldStackStopped = false;
+		let movedAside = false;
 		let createdStackDir = false;
 		let recordCreated = false;
 
@@ -209,14 +265,22 @@ export class MigrationService {
 				await this.oldStack.stop(composePath);
 			}
 
+			// Step 1b (G-18-7): in place, the original is renamed aside so the new
+			// stack can take its directory; the renamed original is the backup.
+			if (inPlace) {
+				await this.migrator.moveDirectory(originalDir, inPlace.asideDir);
+				movedAside = true;
+			}
+
 			// Step 2: Create the new stack directory exclusively. An EEXIST rejection
 			// leaves createdStackDir false, so rollback never removes a foreign directory.
 			const newStackPath = await this.stackFs.createDirectoryExclusive(stackId);
 			createdStackDir = true;
 
 			// Step 3: Keep a copy of the old stack directory when opted in (D-07),
-			// independent of renames or compose changes.
-			if (backup) {
+			// independent of renames or compose changes. In place, the renamed
+			// original already is that backup, so no second copy is made.
+			if (backup && !inPlace) {
 				await this.migrator.copyDirectory(originalDir, path.join(newStackPath, BACKUP_DIR_NAME));
 			}
 
@@ -238,10 +302,10 @@ export class MigrationService {
 			}
 
 			// Step 5: Copy bind mount data
-			await this.copyBindMounts(volumeSelections, originalDir, newStackPath);
+			await this.copyBindMounts(volumeSelections, {originalDir, sourceDir}, newStackPath);
 
 			// Step 6: Rewrite compose file
-			const originalCompose = await fs.readFile(composePath, "utf-8");
+			const originalCompose = await fs.readFile(sourceComposePath, "utf-8");
 			const rewriteResult = this.rewriter.rewrite(originalCompose, volumeSelections, namedVolumeSelections);
 
 			// Write new compose file
@@ -256,7 +320,7 @@ export class MigrationService {
 				// Merge with existing .env if present
 				let existingEnv = "";
 				try {
-					existingEnv = await fs.readFile(path.join(originalDir, ".env"), "utf-8");
+					existingEnv = await fs.readFile(path.join(sourceDir, ".env"), "utf-8");
 				} catch {
 					// No existing .env
 				}
@@ -268,7 +332,7 @@ export class MigrationService {
 				// Copy existing .env if present
 				try {
 					await fs.copyFile(
-						path.join(originalDir, ".env"),
+						path.join(sourceDir, ".env"),
 						path.join(newStackPath, ".env"),
 					);
 				} catch {
@@ -281,7 +345,9 @@ export class MigrationService {
 			await this.stackRepo.create({
 				id: stackId,
 				displayName,
-				description: `Migrated from ${originalDir}`,
+				description: inPlace
+					? `Migrated in place; original kept at ${inPlace.asideDir}`
+					: `Migrated from ${originalDir}`,
 				hostPath: newStackPath,
 				composeConfig,
 			});
@@ -290,7 +356,9 @@ export class MigrationService {
 			// Step 8: Deploy new stack
 			await this.docker.up(stackId);
 
-			return {success: true, stackId, originalPath: originalDir};
+			return inPlace
+				? {success: true, stackId, originalPath: originalDir, keptOriginalAt: inPlace.asideDir}
+				: {success: true, stackId, originalPath: originalDir};
 
 		} catch (err: unknown) {
 			// Rollback on failure
@@ -328,7 +396,7 @@ export class MigrationService {
 	 */
 	private async copyBindMounts(
 		volumeSelections: VolumeSelection[],
-		originalDir: string,
+		dirs: {originalDir: string; sourceDir: string},
 		newStackPath: string,
 	): Promise<void> {
 		for (const sel of volumeSelections) {
@@ -336,8 +404,8 @@ export class MigrationService {
 				continue;
 			}
 			const srcPath = path.isAbsolute(sel.originalPath)
-				? sel.originalPath
-				: path.join(originalDir, sel.originalPath);
+				? relocateIntoSource(sel.originalPath, dirs)
+				: path.join(dirs.sourceDir, sel.originalPath);
 			// CR-02: sel.newPath is fully attacker-controlled — confine the
 			// resolved destination to be a strict descendant of newStackPath.
 			const destPath = assertWithin(newStackPath, sel.newPath);
@@ -350,20 +418,22 @@ export class MigrationService {
 		}
 	}
 
-	/** Returns a user-facing refusal when the target directory is unsafe to create and later remove. */
-	private async checkTargetDirectory(targetDir: string, originalDir: string): Promise<string | null> {
-		const target = path.resolve(targetDir);
-		const original = path.resolve(originalDir);
-		const isInside = (child: string, parent: string): boolean => child.startsWith(parent + path.sep);
-		if (target === original || isInside(target, original) || isInside(original, target)) {
-			return `Migration refused: the new stack directory ${target} and the old stack directory ${original} overlap.`;
+	/**
+	 * G-18-7: the sibling directory an in-place migration renames the original
+	 * to: the name the user chose, or the first free `<id>-pre-migration[-N]`.
+	 */
+	private async resolveAsideDir(originalDir: string, stackId: string, requestedName?: string): Promise<string> {
+		const parent = path.dirname(path.resolve(originalDir));
+		if (requestedName !== undefined) {
+			return path.join(parent, requestedName);
 		}
-		try {
-			await fs.access(target);
-		} catch {
-			return null;
+		for (const name of asideNameCandidates(stackId, ASIDE_NAME_ATTEMPTS)) {
+			const candidate = path.join(parent, name);
+			if (!(await pathIsTaken(candidate))) {
+				return candidate;
+			}
 		}
-		return `Migration refused: the new stack directory ${target} already exists.`;
+		throw new ConflictError(`No free name for the original directory next to ${originalDir}. Choose one explicitly.`);
 	}
 
 	/**

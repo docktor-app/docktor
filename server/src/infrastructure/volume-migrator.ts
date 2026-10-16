@@ -1,5 +1,6 @@
 import {spawn} from "node:child_process";
 import fs from "node:fs/promises";
+import {hasErrorCode} from "../lib/errors.js";
 import type {VolumeMigratorPort} from "../application/ports/volume-migrator-port.js";
 
 export class VolumeMigrator implements VolumeMigratorPort {
@@ -47,6 +48,24 @@ export class VolumeMigrator implements VolumeMigratorPort {
 	 */
 	async copyDirectory(srcPath: string, destPath: string): Promise<void> {
 		await fs.cp(srcPath, destPath, {recursive: true});
+	}
+
+	/**
+	 * Rename a directory. `fs.rename` would silently replace an empty destination
+	 * directory on POSIX, so the destination is checked first and a taken name is
+	 * refused instead.
+	 */
+	async moveDirectory(srcPath: string, destPath: string): Promise<void> {
+		try {
+			await fs.lstat(destPath);
+		} catch (err: unknown) {
+			if (hasErrorCode(err, "ENOENT")) {
+				await fs.rename(srcPath, destPath);
+				return;
+			}
+			throw err;
+		}
+		throw new Error(`Cannot move ${srcPath}: ${destPath} already exists`);
 	}
 }
 

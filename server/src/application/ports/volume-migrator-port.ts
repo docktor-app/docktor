@@ -9,4 +9,10 @@ export interface VolumeMigratorPort {
     copyVolumeToBindMount(volumeName: string, destPath: string): Promise<void>;
 
     copyDirectory(srcPath: string, destPath: string): Promise<void>;
+
+    /**
+     * Renames a directory (G-18-7). Rejects when the destination already exists;
+     * it never merges into or replaces anything.
+     */
+    moveDirectory(srcPath: string, destPath: string): Promise<void>;
 }
