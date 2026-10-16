@@ -649,6 +649,83 @@ volumes:
             });
         });
 
+        describe("an extracted name never changes another resolution", () => {
+            const appService = (...entries: string[]): string[] => [
+                "  app:",
+                "    image: app:${TAG:-latest}",
+                "    environment:",
+                ...entries.map((entry) => `      ${entry}`),
+            ];
+
+            it("never uses a COMPOSE_ or DOCKER_ name", () => {
+                const compose = lines(
+                    "services:",
+                    "  app:",
+                    "    environment:",
+                    "      COMPOSE_PROJECT_NAME: foo",
+                    "      DOCKER_HOST: tcp://x:2375",
+                    "",
+                );
+
+                const result = rewriter.rewrite(compose, [], new Map());
+
+                expect(result.rewrittenCompose).toContain("COMPOSE_PROJECT_NAME: ${APP_COMPOSE_PROJECT_NAME}");
+                expect(result.rewrittenCompose).toContain("DOCKER_HOST: ${APP_DOCKER_HOST}");
+                expect(result.envVars).toEqual({
+                    APP_COMPOSE_PROJECT_NAME: "foo",
+                    APP_DOCKER_HOST: "tcp://x:2375",
+                });
+            });
+
+            it("never uses a name the compose file already references", () => {
+                const compose = lines("services:", ...appService('TAG: "2.0"'), "");
+
+                const result = rewriter.rewrite(compose, [], new Map());
+
+                expect(result.rewrittenCompose).toContain('TAG: "${APP_TAG}"');
+                expect(result.extractedEnv).toBe("APP_TAG=2.0");
+            });
+
+            it("reuses an old .env key that holds the same value without a second line", () => {
+                const compose = lines("services:", "  app:", "    environment:", '      PORT: "80"', "");
+
+                const result = rewriter.rewrite(compose, [], new Map(), "PORT=80\n");
+
+                expect(result.rewrittenCompose).toContain('PORT: "${PORT}"');
+                expect(result.extractedEnv).toBe("");
+            });
+
+            it("prefixes the name when the old .env holds a different value for the key", () => {
+                const compose = lines("services:", "  app:", "    environment:", '      PORT: "80"', "");
+
+                const result = rewriter.rewrite(compose, [], new Map(), "PORT=8080\n");
+
+                expect(result.rewrittenCompose).toContain('PORT: "${APP_PORT}"');
+                expect(result.extractedEnv).toBe("APP_PORT=80");
+            });
+
+            it("reuses a referenced name when the old .env holds the same value", () => {
+                const compose = lines("services:", ...appService('TAG: "2.0"'), "");
+
+                const result = rewriter.rewrite(compose, [], new Map(), "TAG=2.0\n");
+
+                expect(result.rewrittenCompose).toContain('TAG: "${TAG}"');
+                expect(result.extractedEnv).toBe("");
+            });
+
+            it("leaves the literal inline when no candidate name is usable", () => {
+                const taken = ["PORT", "APP_PORT", ...Array.from({length: 98}, (_, index) => `APP_PORT_${index + 2}`)];
+                const exhausted = new ComposeRewriter(() => new Set(taken));
+                const compose = lines("services:", "  app:", "    environment:", '      PORT: "80"', "");
+
+                const result = exhausted.rewrite(compose, [], new Map());
+
+                expect(result.rewrittenCompose).toBe(compose);
+                expect(result.extractedEnv).toBe("");
+                expect(result.envVars).toEqual({});
+            });
+        });
+
         it("applies the bind-mount conversion and the env extraction in one pass and nothing else", () => {
             const compose = lines(
                 "services:",

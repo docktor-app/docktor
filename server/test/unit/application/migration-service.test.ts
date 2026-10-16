@@ -1211,6 +1211,17 @@ describe("previewMigration (MIG-02, D-04, G-18-7)", () => {
         expect(result.extractedEnv).toBe("FOO=bar");
     });
 
+    it("hands the old .env text to the rewrite, or undefined when there is none", async () => {
+        const rewriter = {rewrite: vi.fn().mockReturnValue({rewrittenCompose: COMPOSE, extractedEnv: "", envVars: {}})};
+        const service = buildPreviewService(rewriter);
+
+        await service.previewMigration(request());
+        await fs.writeFile(path.join(composeDir, ".env"), "OLD=1\n", "utf-8");
+        await service.previewMigration(request());
+
+        expect(rewriter.rewrite.mock.calls.map((call) => call[3])).toEqual([undefined, "OLD=1\n"]);
+    });
+
     it("returns the empty diff when the rewrite leaves the content unchanged", async () => {
         const result = await buildPreviewService().previewMigration(request());
 
@@ -1368,21 +1379,29 @@ describe("MigrationService environment extraction (CR-02)", () => {
         '      PORT: "9000"',
         "",
     ].join("\n");
+    const ONE_SERVICE = ["services:", "  app:", "    image: nginx", "    environment:", '      PORT: "80"', ""].join("\n");
+    const EXTRACTED_HEADER = "\n\n# Extracted from docker-compose.yml\n";
 
     let tmpRoot: string;
+    let originalDir: string;
     let composePath: string;
     let newStackPath: string;
+    let mockStackFs: ReturnType<typeof createMockStackFs>;
+    let mockOldStack: ReturnType<typeof createMockOldStack>;
 
     beforeEach(async () => {
         tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "docktor-env-"));
-        const originalDir = path.join(tmpRoot, "original");
+        originalDir = path.join(tmpRoot, "original");
         composePath = path.join(originalDir, "docker-compose.yml");
         newStackPath = path.join(tmpRoot, "stacks", stackId);
         await fs.mkdir(originalDir, {recursive: true});
         await fs.writeFile(composePath, TWO_SERVICES, "utf-8");
+        mockStackFs = createMockStackFs(path.join(tmpRoot, "stacks"));
+        mockOldStack = createMockOldStack();
     });
 
     afterEach(async () => {
+        vi.restoreAllMocks();
         await fs.rm(tmpRoot, {recursive: true, force: true});
     });
 
@@ -1393,9 +1412,9 @@ describe("MigrationService environment extraction (CR-02)", () => {
             docker as unknown as DockerExecutorPort,
             createMockMigrator() as unknown as VolumeMigratorPort,
             new ComposeRewriter(() => new Set()),
-            createMockStackFs(path.join(tmpRoot, "stacks")) as unknown as StackFilesystemPort,
+            mockStackFs as unknown as StackFilesystemPort,
             createMockStackRepo() as unknown as StackRepository,
-            createMockOldStack() as unknown as ExternalStackControlPort,
+            mockOldStack as unknown as ExternalStackControlPort,
             createMockSelfStack() as unknown as SelfStackPort,
             createMockOwnMounts() as unknown as OwnMountsPort,
         );
@@ -1412,6 +1431,18 @@ describe("MigrationService environment extraction (CR-02)", () => {
         };
     }
 
+    const readNewEnv = (): Promise<string> => fs.readFile(path.join(newStackPath, ".env"), "utf-8");
+
+    function failReadingOldEnv(): void {
+        const realReadFile = fs.readFile.bind(fs) as (...args: unknown[]) => Promise<unknown>;
+        vi.spyOn(fs, "readFile").mockImplementation((async (target: unknown, ...rest: unknown[]) => {
+            if (String(target) === path.join(originalDir, ".env")) {
+                throw Object.assign(new Error("EACCES: permission denied, open"), {code: "EACCES"});
+            }
+            return realReadFile(target, ...rest);
+        }) as typeof fs.readFile);
+    }
+
     it("keeps each service's own PORT: web reads PORT, worker reads WORKER_PORT", async () => {
         const result = await buildRealRewriterService().migrate(request());
 
@@ -1419,8 +1450,76 @@ describe("MigrationService environment extraction (CR-02)", () => {
         const written = await fs.readFile(path.join(newStackPath, "docker-compose.yml"), "utf-8");
         expect(written).toContain('PORT: "${PORT}"');
         expect(written).toContain('PORT: "${WORKER_PORT}"');
-        const env = parseEnvAssignments(await fs.readFile(path.join(newStackPath, ".env"), "utf-8"));
+        const env = parseEnvAssignments(await readNewEnv());
         expect(env.PORT).toBe("80");
         expect(env.WORKER_PORT).toBe("9000");
+    });
+
+    describe("with an old .env", () => {
+        beforeEach(async () => {
+            await fs.writeFile(composePath, ONE_SERVICE, "utf-8");
+        });
+
+        it("appends the extracted block to the old content and writes every key on one line", async () => {
+            await fs.writeFile(path.join(originalDir, ".env"), "PORT=8080\n", "utf-8");
+
+            const result = await buildRealRewriterService().migrate(request());
+
+            expect(result.success).toBe(true);
+            const env = await readNewEnv();
+            expect(env).toBe(`PORT=8080\n${EXTRACTED_HEADER}APP_PORT=80`);
+            const keys = env.split("\n").filter((line) => /^[A-Z_]+=/.test(line)).map((line) => line.split("=")[0]);
+            expect(new Set(keys).size).toBe(keys.length);
+        });
+
+        it("shows the preview the block execute appends", async () => {
+            await fs.writeFile(path.join(originalDir, ".env"), "PORT=8080\n", "utf-8");
+            const service = buildRealRewriterService();
+
+            const preview = await service.previewMigration(request());
+            await service.migrate(request());
+
+            expect(preview.extractedEnv).toBe("APP_PORT=80");
+            expect(await readNewEnv()).toContain(`${EXTRACTED_HEADER}${preview.extractedEnv}`);
+        });
+
+        it("copies the old .env byte for byte when nothing is extracted", async () => {
+            await fs.writeFile(composePath, "services:\n  app:\n    image: nginx\n", "utf-8");
+            const bytes = Buffer.from([0x41, 0x3d, 0x31, 0x0d, 0x0a, 0xff, 0x0a]);
+            await fs.writeFile(path.join(originalDir, ".env"), bytes);
+
+            const result = await buildRealRewriterService().migrate(request());
+
+            expect(result.success).toBe(true);
+            expect(Buffer.compare(await fs.readFile(path.join(newStackPath, ".env")), bytes)).toBe(0);
+        });
+
+        it("fails the migration with rollback when the old .env cannot be read", async () => {
+            await fs.writeFile(path.join(originalDir, ".env"), "PORT=8080\n", "utf-8");
+            failReadingOldEnv();
+
+            const result = await buildRealRewriterService().migrate({...request(), stopOldStack: true});
+
+            expect(result.success).toBe(false);
+            expect(result.error).toContain("EACCES");
+            expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
+            expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+        });
+
+        it("rejects the preview when the old .env cannot be read", async () => {
+            await fs.writeFile(path.join(originalDir, ".env"), "PORT=8080\n", "utf-8");
+            failReadingOldEnv();
+
+            await expect(buildRealRewriterService().previewMigration(request())).rejects.toThrow("EACCES");
+        });
+    });
+
+    it("writes only the extracted block when there is no old .env", async () => {
+        await fs.writeFile(composePath, ONE_SERVICE, "utf-8");
+
+        const result = await buildRealRewriterService().migrate(request());
+
+        expect(result.success).toBe(true);
+        expect(await readNewEnv()).toBe("PORT=80");
     });
 });
