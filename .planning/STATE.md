@@ -5,16 +5,16 @@ milestone_name: Release Follow-ups
 current_phase: 18
 current_phase_name: Import and Migration Flow
 status: executing
-stopped_at: Completed 18-16-PLAN.md
-last_updated: "2026-10-16T10:41:14.717Z"
+stopped_at: Completed 18-17-PLAN.md
+last_updated: "2026-10-16T10:53:22.452Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 18 execution started
-state_head: 5e754e99f67450a69b145a0e7f876afcb33cd5db
+state_head: 7541aa679be642ad864ed3ddd5ee8403d10d8787
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 20
-  completed_plans: 19
+  completed_plans: 20
   percent: 20
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-14)
 ## Current Position
 
 Phase: 18 (Import and Migration Flow) — EXECUTING
-Plan: 12 of 17
+Plan: 13 of 17
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 18 execution started
 
@@ -80,6 +80,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 18 P14 | 14 min | 3 tasks | 10 files |
 | Phase 18 P15 | 30 min | 3 tasks | 10 files |
 | Phase 18 P16 | 25 min | 2 tasks | 10 files |
+| Phase 18 P17 | 15 min | 3 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -120,6 +121,8 @@ Roadmap decisions for v0.1.1:
 - [Phase 18]: 18-15: Separate migrations default backup off (G-18-7 supersedes D-07 default-on); off-state warning replaced by a neutral note naming the untouched original path
 - [Phase 18]: 18-15: In-place confirms with backup false and stopOldStack true; renamed original is the backup, no extra copy
 - [Phase 18]: 18-16: operation service takes the event bus as a trailing constructor parameter (default domainEventBus); rolling_back is reported first in the rollback catch; listener failures are isolated in MigrationService.report
+- [Phase 18]: 18-17: migration list is read on mount and on every EventSource open; stale/duplicate operation snapshots are dropped in useMigrationOperations (finished never back to running, running never to an earlier step)
+- [Phase 18]: 18-17: migration toasts are one sonner toast per operation id; description notes derive from the operation (backup, stopOldStack, keptOriginalAt) so they survive a reload
 
 ### Pending Todos
 
@@ -143,6 +146,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T10:41:14.553Z
-Stopped at: Completed 18-16-PLAN.md
+Last session: 2026-10-16T10:53:22.300Z
+Stopped at: Completed 18-17-PLAN.md
 Resume file: None
