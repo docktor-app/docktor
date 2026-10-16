@@ -2,8 +2,11 @@ import {describe, expect, it} from "vitest";
 import {
     brownfieldAdoptSchema,
     composeFilePathSchema,
+    discoveredStackSchema,
     migrationExecuteSchema,
     migrationPreviewSchema,
+    scanResultSchema,
+    skippedDirectorySchema,
 } from "../../../src/validation/brownfield.js";
 
 describe("composeFilePathSchema (T-18-05)", () => {
@@ -95,5 +98,45 @@ describe("migrationExecuteSchema", () => {
 
     it("rejects a non-boolean backup", () => {
         expect(migrationExecuteSchema.safeParse({...validExecute, backup: "true"}).success).toBe(false);
+    });
+});
+
+describe("scan result schemas", () => {
+    const validStack = {
+        path: "/opt/app/docker-compose.yml",
+        directory: "/opt/app",
+        compatibility: "yellow",
+        serviceCount: 1,
+        namedVolumes: [],
+        absolutePaths: [],
+        relativePaths: ["./data"],
+        inlineEnvVars: false,
+        unsupportedFeatures: [],
+    };
+
+    it("accepts a scan result with a stack and a not_found skipped root", () => {
+        const result = {
+            stacks: [validStack],
+            skippedDirectories: 1,
+            skipped: [{directory: "/run/desktop/mnt/host/c/stacks", reason: "not_found"}],
+        };
+        expect(scanResultSchema.safeParse(result).success).toBe(true);
+    });
+
+    it.each(["not_found", "permission_denied", "system_directory"])("accepts the skip reason %s", (reason) => {
+        expect(skippedDirectorySchema.safeParse({directory: "/x", reason}).success).toBe(true);
+    });
+
+    it("rejects an unknown skip reason", () => {
+        expect(skippedDirectorySchema.safeParse({directory: "/x", reason: "missing"}).success).toBe(false);
+    });
+
+    it("rejects a discovered stack without relativePaths", () => {
+        const {relativePaths: _relativePaths, ...withoutRelative} = validStack;
+        expect(discoveredStackSchema.safeParse(withoutRelative).success).toBe(false);
+    });
+
+    it("rejects an unknown compatibility level", () => {
+        expect(discoveredStackSchema.safeParse({...validStack, compatibility: "blue"}).success).toBe(false);
     });
 });

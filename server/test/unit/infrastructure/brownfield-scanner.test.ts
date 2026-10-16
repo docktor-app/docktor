@@ -1,4 +1,4 @@
-import {describe, it, expect, vi, beforeEach} from "vitest";
+import {describe, it, expect, vi, beforeEach, afterEach} from "vitest";
 import {BrownfieldScanner} from "../../../src/infrastructure/brownfield-scanner.js";
 import {ComposeAnalyzer} from "../../../src/infrastructure/compose-analyzer.js";
 import type {ComposeAnalyzer as ComposeAnalyzerType} from "../../../src/infrastructure/compose-analyzer.js";
@@ -220,6 +220,102 @@ describe("BrownfieldScanner", () => {
         });
     });
 
+    describe("scan — skipped roots with reasons (G-18-3-scan)", () => {
+        let mockFg: ReturnType<typeof vi.fn>;
+        let mockAccess: ReturnType<typeof vi.fn>;
+
+        beforeEach(async () => {
+            vi.clearAllMocks();
+            const fg = await import("fast-glob");
+            mockFg = fg.default as unknown as ReturnType<typeof vi.fn>;
+            const fs = await import("node:fs/promises");
+            mockAccess = fs.default.access as ReturnType<typeof vi.fn>;
+            mockAccess.mockResolvedValue(undefined);
+            mockFg.mockResolvedValue([]);
+            vi.spyOn(console, "warn").mockImplementation(() => undefined);
+        });
+
+        afterEach(() => {
+            vi.restoreAllMocks();
+        });
+
+        function failAccessFor(dir: string, code: string): void {
+            const error = Object.assign(new Error(code), {code});
+            mockAccess.mockImplementation((target: string) =>
+                target === dir ? Promise.reject(error) : Promise.resolve(undefined),
+            );
+        }
+
+        it("reports a root that does not exist in the container as not_found", async () => {
+            failAccessFor("/run/desktop/mnt/host/c/stacks", "ENOENT");
+
+            const result = await new BrownfieldScanner(createMockAnalyzer()).scan(["/run/desktop/mnt/host/c/stacks"]);
+
+            expect(result.skipped).toEqual([{directory: "/run/desktop/mnt/host/c/stacks", reason: "not_found"}]);
+            expect(result.skippedDirectories).toBe(1);
+        });
+
+        it("reports ENOTDIR as not_found", async () => {
+            failAccessFor("/opt/file.txt", "ENOTDIR");
+
+            const result = await new BrownfieldScanner(createMockAnalyzer()).scan(["/opt/file.txt"]);
+
+            expect(result.skipped).toEqual([{directory: "/opt/file.txt", reason: "not_found"}]);
+        });
+
+        it.each(["EACCES", "EPERM"])("reports %s as permission_denied", async (code) => {
+            failAccessFor("/root/protected", code);
+
+            const result = await new BrownfieldScanner(createMockAnalyzer()).scan(["/root/protected"]);
+
+            expect(result.skipped).toEqual([{directory: "/root/protected", reason: "permission_denied"}]);
+            expect(result.skippedDirectories).toBe(1);
+        });
+
+        it("reports a system directory root as system_directory and still scans the others", async () => {
+            const result = await new BrownfieldScanner(createMockAnalyzer()).scan(["/proc", "/opt"]);
+
+            expect(result.skipped).toEqual([{directory: "/proc", reason: "system_directory"}]);
+            expect(result.skippedDirectories).toBe(1);
+            expect(mockFg).toHaveBeenCalledTimes(1);
+        });
+
+        it("keeps request order across mixed reasons and keeps the count equal to the list length", async () => {
+            mockAccess.mockImplementation((target: string) => {
+                if (target === "/missing") return Promise.reject(Object.assign(new Error("x"), {code: "ENOENT"}));
+                if (target === "/locked") return Promise.reject(Object.assign(new Error("x"), {code: "EACCES"}));
+                return Promise.resolve(undefined);
+            });
+
+            const result = await new BrownfieldScanner(createMockAnalyzer()).scan(["/missing", "/sys", "/ok", "/locked"]);
+
+            expect(result.skipped.map((s) => s.reason)).toEqual(["not_found", "system_directory", "permission_denied"]);
+            expect(result.skipped.map((s) => s.directory)).toEqual(["/missing", "/sys", "/locked"]);
+            expect(result.skippedDirectories).toBe(result.skipped.length);
+        });
+
+        it("reports the root exactly as the caller sent it", async () => {
+            failAccessFor("/srv//stacks/", "ENOENT");
+
+            const result = await new BrownfieldScanner(createMockAnalyzer()).scan(["/srv//stacks/"]);
+
+            expect(result.skipped[0].directory).toBe("/srv//stacks/");
+        });
+
+        it("rethrows an unexpected filesystem error", async () => {
+            failAccessFor("/boom", "EIO");
+
+            await expect(new BrownfieldScanner(createMockAnalyzer()).scan(["/boom"])).rejects.toThrow("EIO");
+        });
+
+        it("returns an empty skipped list when every root is readable", async () => {
+            const result = await new BrownfieldScanner(createMockAnalyzer()).scan(["/opt"]);
+
+            expect(result.skipped).toEqual([]);
+            expect(result.skippedDirectories).toBe(0);
+        });
+    });
+
     describe("scan — compatibility classification integration", () => {
         let mockFg: ReturnType<typeof vi.fn>;
         let mockAccess: ReturnType<typeof vi.fn>;
@@ -321,6 +417,65 @@ secrets:
             const result = await scanner.scan(["/stacks/a", "/stacks/b"]);
 
             expect(result.stacks).toHaveLength(2);
+        });
+
+        // G-18-4: the UAT memos stack mounts only ./data, which the scan never reported.
+        it("reports a relative bind mount in relativePaths and not in absolutePaths", async () => {
+            mockFg.mockResolvedValue(["/stacks/memos/docker-compose.yml"]);
+            mockReadFile.mockResolvedValue(`
+services:
+  memos:
+    image: neosmemo/memos:stable
+    volumes:
+      - ./data:/var/opt/memos
+`);
+            const result = await new BrownfieldScanner(new ComposeAnalyzer()).scan(["/stacks"]);
+
+            expect(result.stacks[0].relativePaths).toEqual(["./data"]);
+            expect(result.stacks[0].absolutePaths).toEqual([]);
+            expect(result.stacks[0].namedVolumes).toEqual([]);
+        });
+
+        it("lists distinct relative sources in first-seen order across short and long form and services", async () => {
+            mockFg.mockResolvedValue(["/stacks/mixed/docker-compose.yml"]);
+            mockReadFile.mockResolvedValue(`
+services:
+  web:
+    image: nginx
+    volumes:
+      - ./data:/a
+      - /srv/media:/b
+      - type: bind
+        source: ./config
+        target: /etc/app
+  worker:
+    image: nginx
+    volumes:
+      - ./data:/c
+`);
+            const result = await new BrownfieldScanner(new ComposeAnalyzer()).scan(["/stacks"]);
+
+            expect(result.stacks[0].relativePaths).toEqual(["./data", "./config"]);
+            expect(result.stacks[0].absolutePaths).toEqual(["/srv/media"]);
+        });
+
+        // WR-04: a duplicate absolute path used to surface twice and collide as a React key.
+        it("lists an absolute mount used by two services once", async () => {
+            mockFg.mockResolvedValue(["/stacks/shared/docker-compose.yml"]);
+            mockReadFile.mockResolvedValue(`
+services:
+  a:
+    image: nginx
+    volumes:
+      - /srv/media:/media
+  b:
+    image: nginx
+    volumes:
+      - /srv/media:/other
+`);
+            const result = await new BrownfieldScanner(new ComposeAnalyzer()).scan(["/stacks"]);
+
+            expect(result.stacks[0].absolutePaths).toEqual(["/srv/media"]);
         });
     });
 });
