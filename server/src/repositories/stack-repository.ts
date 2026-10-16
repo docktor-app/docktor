@@ -3,6 +3,7 @@ import {NotFoundError} from "../lib/errors.js";
 import type {StackStatus} from "../generated/prisma/enums.js";
 import type {ComposeConfig} from "../domain/compose-config.js";
 import type {TemplatePin} from "../domain/template-pin.js";
+import type {ManagedStackLocation} from "../domain/managed-stack-paths.js";
 import path from "node:path";
 
 export class StackRepository {
@@ -38,6 +39,11 @@ export class StackRepository {
             include: {services: true},
             orderBy: {createdAt: "desc"},
         });
+    }
+
+    /** Id, display name and directory of every stack, for recognising already-managed compose files (G-18-2). */
+    async listLocations(): Promise<ManagedStackLocation[]> {
+        return prisma.stack.findMany({select: {id: true, displayName: true, hostPath: true}});
     }
 
     async exists(id: string): Promise<boolean> {

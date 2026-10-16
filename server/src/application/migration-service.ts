@@ -12,6 +12,7 @@ import {computeUnifiedDiff, type UnifiedDiff} from "../lib/unified-diff.js";
 import {BadRequestError, ConflictError, hasErrorCode} from "../lib/errors.js";
 import {dockerSelfStack} from "../infrastructure/docker-self-stack.js";
 import {assertNotOwnStack} from "./own-stack-guard.js";
+import {assertNotManaged} from "./managed-stack-guard.js";
 import type {DockerExecutorPort} from "./ports/docker-executor-port.js";
 import type {VolumeMigratorPort} from "./ports/volume-migrator-port.js";
 import type {ComposeRewriterPort} from "./ports/compose-rewriter-port.js";
@@ -139,8 +140,9 @@ export class MigrationService {
 	/**
 	 * Decides every refusal that needs no side effect: an empty slug, Docktor's
 	 * own compose file (WR-09, STK-03: never stop or re-home Docktor itself;
-	 * fail-open when the own stack is unknown, D-02), an existing stack
-	 * record, and a target directory that exists or overlaps
+	 * fail-open when the own stack is unknown, D-02), a compose file in the
+	 * directory of a stack Docktor already manages (G-18-2, ConflictError), an
+	 * existing stack record, and a target directory that exists or overlaps
 	 * the old directory (D-09, RESEARCH Pitfall 4: rollback removes the target
 	 * directory, so it must be one Docktor creates in this run and must not
 	 * overlap the old stack). Nothing is stopped, created, copied or written.
@@ -157,6 +159,7 @@ export class MigrationService {
 		}
 
 		await assertNotOwnStack(this.selfStack, composePath, "MigrationService");
+		await assertNotManaged(this.stackRepo, composePath);
 
 		if (await this.stackRepo.exists(stackId)) {
 			throw new ConflictError(`Stack "${stackId}" already exists`);
