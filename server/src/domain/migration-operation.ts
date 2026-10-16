@@ -44,3 +44,28 @@ export function finishMigrationOperation(
         result,
     };
 }
+
+function byStartedAtDescending(a: MigrationOperation, b: MigrationOperation): number {
+    return Date.parse(b.startedAt) - Date.parse(a.startedAt);
+}
+
+/**
+ * The operations worth keeping, newest first by start time: every running one,
+ * plus finished ones that ended no longer than `maxAgeMs` ago, at most
+ * `maxFinished` of them (the newest). Running operations are never dropped, so
+ * a slow migration stays readable for as long as it runs.
+ */
+export function pruneFinishedOperations(
+    operations: readonly MigrationOperation[],
+    now: Date,
+    maxAgeMs: number,
+    maxFinished: number,
+): MigrationOperation[] {
+    const sorted = [...operations].sort(byStartedAtDescending);
+    const recent = (operation: MigrationOperation): boolean =>
+        operation.finishedAt === null || now.getTime() - Date.parse(operation.finishedAt) <= maxAgeMs;
+    const finishedKept = new Set(
+        sorted.filter((operation) => operation.status !== "running" && recent(operation)).slice(0, maxFinished),
+    );
+    return sorted.filter((operation) => operation.status === "running" || finishedKept.has(operation));
+}
