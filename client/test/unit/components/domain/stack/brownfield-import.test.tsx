@@ -1,10 +1,10 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
-import {render, screen, waitFor} from "@testing-library/react";
+import {render, screen, waitFor, within} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {MemoryRouter} from "react-router";
 import {toast} from "sonner";
 import {BrownfieldImport, type BrownfieldImportApi} from "@/components/domain/stack/brownfield-import";
-import type {DiscoveredStack, MigrationResult} from "@/lib/brownfield-types";
+import type {DiscoveredStack, MigrationResult, ScanResult} from "@/lib/brownfield-types";
 import type {CodeEditorProps} from "@/components/common/code-editor";
 
 // CodeMirror itself is covered by its own tests.
@@ -37,7 +37,7 @@ const okResult: MigrationResult = {success: true, stackId: "db", originalPath: "
 
 function createApi(executeMigration: BrownfieldImportApi["executeMigration"]): BrownfieldImportApi {
     return {
-        scanDirectories: vi.fn().mockResolvedValue({stacks: [stack], skippedDirectories: 0}),
+        scanDirectories: vi.fn().mockResolvedValue({stacks: [stack], skippedDirectories: 0, skipped: []}),
         adoptStack: vi.fn().mockResolvedValue({id: "db"}),
         previewMigration: vi.fn().mockResolvedValue({diff: {hunks: [], added: 0, removed: 0}, extractedEnv: ""}),
         executeMigration,
@@ -208,6 +208,71 @@ describe("BrownfieldImport migration flow", () => {
             await confirm(() => Promise.reject("boom"));
 
             await waitFor(() => expect(toast.error).toHaveBeenCalledWith(FALLBACK));
+        });
+    });
+
+    describe("skipped scan roots (G-18-3-scan)", () => {
+        const NOT_FOUND_PATH = "/run/desktop/mnt/host/c/stacks";
+
+        async function scanWith(result: ScanResult): Promise<void> {
+            const api = createApi(vi.fn());
+            vi.mocked(api.scanDirectories).mockResolvedValue(result);
+            renderImport(api);
+            await userEvent.click(screen.getByRole("button", {name: "Scan"}));
+        }
+
+        it("lists a not-found root with the /host hint even when no stack was found", async () => {
+            await scanWith({
+                stacks: [],
+                skippedDirectories: 1,
+                skipped: [{directory: NOT_FOUND_PATH, reason: "not_found"}],
+            });
+
+            expect(await screen.findByText("No stacks found")).toBeInTheDocument();
+            const region = screen.getByRole("region", {name: "Skipped directories"});
+            expect(within(region).getByText(NOT_FOUND_PATH)).toBeInTheDocument();
+            expect(within(region).getByText("Not found inside the Docktor container")).toBeInTheDocument();
+            expect(region).toHaveTextContent("/host");
+            expect(screen.queryByText(/permission denied/i)).toBeNull();
+        });
+
+        it("labels permission-denied and system-directory roots", async () => {
+            await scanWith({
+                stacks: [],
+                skippedDirectories: 2,
+                skipped: [
+                    {directory: "/root", reason: "permission_denied"},
+                    {directory: "/proc", reason: "system_directory"},
+                ],
+            });
+
+            const region = await screen.findByRole("region", {name: "Skipped directories"});
+            expect(within(region).getByText("Permission denied")).toBeInTheDocument();
+            expect(within(region).getByText("System directory, never scanned")).toBeInTheDocument();
+        });
+
+        it("renders both the table and the skipped list when stacks were found", async () => {
+            await scanWith({
+                stacks: [stack],
+                skippedDirectories: 1,
+                skipped: [{directory: NOT_FOUND_PATH, reason: "not_found"}],
+            });
+
+            expect(await screen.findByRole("table")).toBeInTheDocument();
+            expect(screen.getByRole("region", {name: "Skipped directories"})).toBeInTheDocument();
+        });
+
+        it("renders no skipped region when nothing was skipped", async () => {
+            await scanWith({stacks: [stack], skippedDirectories: 0, skipped: []});
+
+            expect(await screen.findByRole("table")).toBeInTheDocument();
+            expect(screen.queryByRole("region", {name: "Skipped directories"})).toBeNull();
+        });
+
+        it("explains container-visible paths in the directories help text", () => {
+            renderImport(createApi(vi.fn()));
+
+            expect(screen.getByText(/host directories are under \/host/)).toBeInTheDocument();
         });
     });
 });
