@@ -20,25 +20,76 @@ export interface BindMountChoice {
 
 type ScanMounts = Pick<DiscoveredStack, "namedVolumes" | "absolutePaths" | "relativePaths">;
 
-function volumesPathFor(originalPath: string): string {
-  return `./volumes/${directoryDisplayName(originalPath) || "data"}`;
+const FALLBACK_NAME = "data";
+
+interface ResolvedRelativePath {
+  // The path leaves the stack directory, so the new stack could not find it.
+  readonly escapes: boolean;
+  // The path is the stack directory itself.
+  readonly isStackRoot: boolean;
+  readonly name: string;
 }
 
-function toChoice(kind: BindMountChoice["kind"], originalPath: string): BindMountChoice {
+// Resolves "." and ".." segments lexically (no node:path in the browser);
+// backslash and slash separators are treated alike.
+function resolveRelativePath(path: string): ResolvedRelativePath {
+  const kept: string[] = [];
+  let escapes = false;
+  for (const segment of path.replaceAll("\\", "/").split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment !== "..") {
+      kept.push(segment);
+    } else if (kept.length > 0) {
+      kept.pop();
+    } else {
+      escapes = true;
+    }
+  }
+  return {escapes, isStackRoot: !escapes && kept.length === 0, name: kept.at(-1) ?? FALLBACK_NAME};
+}
+
+function volumesPathFor(name: string, taken: Set<string>): string {
+  let candidate = `./volumes/${name}`;
+  for (let suffix = 2; taken.has(candidate); suffix += 1) {
+    candidate = `./volumes/${name}-${suffix}`;
+  }
+  taken.add(candidate);
+  return candidate;
+}
+
+function toAbsoluteChoice(originalPath: string, taken: Set<string>): BindMountChoice {
   return {
-    kind,
+    kind: "absolute",
     originalPath,
-    volumesPath: volumesPathFor(originalPath),
+    volumesPath: volumesPathFor(directoryDisplayName(originalPath) || FALLBACK_NAME, taken),
     moveIntoVolumes: true,
     mustMove: false,
     mustKeep: false,
   };
 }
 
+function toRelativeChoice(originalPath: string, taken: Set<string>): BindMountChoice {
+  const resolved = resolveRelativePath(originalPath);
+  if (resolved.isStackRoot) {
+    // The stack directory cannot move into ./volumes/ and consumes no target name.
+    return {kind: "relative", originalPath, volumesPath: originalPath, moveIntoVolumes: false, mustMove: false, mustKeep: true};
+  }
+  return {
+    kind: "relative",
+    originalPath,
+    volumesPath: volumesPathFor(resolved.name, taken),
+    moveIntoVolumes: true,
+    mustMove: resolved.escapes,
+    mustKeep: false,
+  };
+}
+
 export function buildBindMountChoices(stack: ScanMounts): BindMountChoice[] {
+  // Named volumes are converted to ./volumes/<name> too, so their names are taken first.
+  const taken = new Set(stack.namedVolumes.map((name) => `./volumes/${name}`));
   return [
-    ...stack.absolutePaths.map((path) => toChoice("absolute", path)),
-    ...stack.relativePaths.map((path) => toChoice("relative", path)),
+    ...stack.absolutePaths.map((path) => toAbsoluteChoice(path, taken)),
+    ...stack.relativePaths.map((path) => toRelativeChoice(path, taken)),
   ];
 }
 

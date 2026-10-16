@@ -32,7 +32,7 @@ const STEP_TITLES: Record<MigrationStep, string> = {
 };
 
 const STEP_DESCRIPTIONS: Record<MigrationStep, string> = {
-  1: "Choose which volumes and bind mounts to copy into Docktor's managed directory. Unchecked items will remain at their current location (not backed up).",
+  1: "Choose which volumes and bind mounts move into Docktor's managed ./volumes/ directory. Unchecked named volumes and absolute paths stay where they are and are not backed up; unchecked relative paths are copied as they are.",
   2: "Review the changes to your compose file and environment variables before migration.",
   3: "Choose whether to keep a copy of the old stack's files before anything is migrated.",
   4: "Choose what happens to the old stack while its data is copied.",

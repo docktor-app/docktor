@@ -18,6 +18,39 @@ export interface MigrationSelectStepProps {
 
 const ROW_CLASS = "flex min-h-11 items-start gap-3 md:min-h-0";
 
+interface RelativeMountNoteProps {
+  readonly choice: BindMountChoice;
+}
+
+// The helper line under a relative mount row: where it goes, or why the
+// checkbox is locked, or the warning shown when the mount is kept.
+function RelativeMountNote({choice}: Readonly<RelativeMountNoteProps>): React.JSX.Element {
+  if (choice.mustKeep) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        This is the stack directory itself; its files are copied into the new stack directory.
+      </p>
+    );
+  }
+  if (choice.mustMove) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Points outside the stack directory, so it is moved to {choice.volumesPath}.
+      </p>
+    );
+  }
+  if (choice.moveIntoVolumes) {
+    return <p className="text-xs text-muted-foreground">Moves to {choice.volumesPath}</p>;
+  }
+  return (
+    <p className="flex items-start gap-1 text-xs text-yellow-600 dark:text-yellow-400">
+      <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+      Stays at {choice.originalPath} in the new stack directory, outside Docktor's managed ./volumes/ layout, so
+      Storage does not count it. It is still copied, and stack backups include it.
+    </p>
+  );
+}
+
 // Step 1 of the migration dialog: stack name plus which volumes and bind
 // mounts are copied into Docktor's managed directory.
 export function MigrationSelectStep({
@@ -107,15 +140,14 @@ export function MigrationSelectStep({
               <Checkbox
                 id={`rel-${index}`}
                 checked={choice.moveIntoVolumes}
+                disabled={choice.mustMove || choice.mustKeep}
                 onCheckedChange={(checked) => onBindMountToggle(index, !!checked)}
               />
               <div className="min-w-0 space-y-1">
                 <Label htmlFor={`rel-${index}`} className="cursor-pointer break-all font-normal">
                   {choice.originalPath}
                 </Label>
-                {choice.moveIntoVolumes && (
-                  <p className="text-xs text-muted-foreground">Moves to {choice.volumesPath}</p>
-                )}
+                <RelativeMountNote choice={choice} />
               </div>
             </div>
           ))}
