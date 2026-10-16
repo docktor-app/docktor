@@ -5,16 +5,16 @@ milestone_name: Release Follow-ups
 current_phase: 18
 current_phase_name: Import and Migration Flow
 status: executing
-stopped_at: Completed 18-06-PLAN.md
-last_updated: "2026-10-16T07:10:31.339Z"
+stopped_at: Completed 18-08-PLAN.md
+last_updated: "2026-10-16T07:17:32.118Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 18 execution started
-state_head: 80d35222a5e605527087beae549f51aab802be2d
+state_head: 681d5e7e78ee7abbbb56da90d5bbd987fa38cccb
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 20
-  completed_plans: 9
+  completed_plans: 10
   percent: 20
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-14)
 ## Current Position
 
 Phase: 18 (Import and Migration Flow) — EXECUTING
-Plan: 2 of 17
+Plan: 3 of 17
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 18 execution started
 
@@ -71,6 +71,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 18 P04 | 3 min | 2 tasks | 9 files |
 | Phase 18 P05 | 8 min | 3 tasks | 11 files |
 | Phase 18 P06 | 28 min | 2 tasks | 8 files |
+| Phase 18 P08 | 8 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,7 @@ Roadmap decisions for v0.1.1:
 - [Phase 18]: 18-05: Migration step transitions use PREVIOUS_STEP/NEXT_STEP records; stale previews guarded by a request-id ref (bumped on request, close, open=false, unmount)
 - [Phase 18]: 18-06: Only ENOENT on a bind-mount source means an empty volume; copy and other access errors roll back the migration
 - [Phase 18]: 18-06: migrate() = execute(await preflight()); refusals are typed BadRequestError/ConflictError, step failures stay success:false; target dir created exclusively and record deleted only when recordCreated
+- [Phase 18]: 18-08: ComposeRewriter edits the original text through yaml node-range splices (never stringify); env keeps map form with KEY: ${KEY}
 
 ### Pending Todos
 
@@ -118,6 +120,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T07:10:31.194Z
-Stopped at: Completed 18-06-PLAN.md
+Last session: 2026-10-16T07:17:31.939Z
+Stopped at: Completed 18-08-PLAN.md
 Resume file: None
