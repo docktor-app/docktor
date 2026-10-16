@@ -4,6 +4,7 @@ import type {MigrationOperation, MigrationOperationResult} from "@docktor/shared
 import {
     finishMigrationOperation,
     pruneFinishedOperations,
+    recordMigrationStep,
     startMigrationOperation,
 } from "../domain/migration-operation.js";
 import {domainEventBus} from "../infrastructure/event-bus.js";
@@ -15,6 +16,7 @@ import {
     migrationService,
     type MigrationInput,
     type MigrationPlan,
+    type MigrationProgressListener,
     type MigrationResult,
     type MigrationService,
 } from "./migration-service.js";
@@ -124,6 +126,13 @@ export class MigrationOperationService {
         }
     }
 
+    private recordStep(operationId: string, progress: Parameters<MigrationProgressListener>[0]): void {
+        const current = this.operations.get(operationId);
+        if (current) {
+            this.save(recordMigrationStep(current, progress.step, progress.detail));
+        }
+    }
+
     /** Stores the operation and publishes it, so the stored and the published state never differ. */
     private save(operation: MigrationOperation): void {
         this.operations.set(operation.id, operation);
@@ -145,7 +154,7 @@ export class MigrationOperationService {
 
     private async run(operationId: string, plan: MigrationPlan, heldKeys: readonly string[]): Promise<void> {
         try {
-            const result = await this.execute(plan);
+            const result = await this.execute(plan, operationId);
             const operation = this.operations.get(operationId);
             if (operation) {
                 this.save(finishMigrationOperation(operation, result, this.now()));
@@ -155,9 +164,11 @@ export class MigrationOperationService {
         }
     }
 
-    private async execute(plan: MigrationPlan): Promise<MigrationOperationResult> {
+    private async execute(plan: MigrationPlan, operationId: string): Promise<MigrationOperationResult> {
         try {
-            return toOperationResult(await this.migrations.execute(plan));
+            return toOperationResult(
+                await this.migrations.execute(plan, (progress) => this.recordStep(operationId, progress)),
+            );
         } catch (error) {
             // execute reports step failures as results; a rejection is a bug or
             // an infrastructure fault, and must still end the operation.

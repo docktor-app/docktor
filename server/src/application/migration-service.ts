@@ -10,7 +10,7 @@ import {slugify} from "../lib/slugify.js";
 import {createComposeConfig} from "../domain/compose-config.js";
 import {asideNameCandidates, classifyMigrationTarget, type MigrationTargetKind} from "../domain/migration-target.js";
 import {computeUnifiedDiff, type UnifiedDiff} from "../lib/unified-diff.js";
-import {stackDirectoryNameSchema, type MigrationTarget} from "@docktor/shared";
+import {stackDirectoryNameSchema, type MigrationOperationStep, type MigrationTarget} from "@docktor/shared";
 import {BadRequestError, ConflictError, hasErrorCode} from "../lib/errors.js";
 import {dockerSelfStack} from "../infrastructure/docker-self-stack.js";
 import {assertNotOwnStack} from "./own-stack-guard.js";
@@ -129,6 +129,9 @@ export interface MigrationInput {
 	inPlaceAsideName?: string;
 }
 
+/** Told which step of a migration starts; `detail` names the volume or path being copied. */
+export type MigrationProgressListener = (progress: {step: MigrationOperationStep; detail: string | null}) => void;
+
 /**
  * The outcome of a successful {@link MigrationService.preflight}: every
  * refusal has been ruled out, nothing has been stopped or created yet.
@@ -207,8 +210,8 @@ export class MigrationService {
 	 * errors before any side effect; step failures resolve with
 	 * `success: false` after the rollback.
 	 */
-	async migrate(input: MigrationInput): Promise<MigrationResult> {
-		return this.execute(await this.preflight(input));
+	async migrate(input: MigrationInput, onProgress?: MigrationProgressListener): Promise<MigrationResult> {
+		return this.execute(await this.preflight(input), onProgress);
 	}
 
 	/**
@@ -290,7 +293,7 @@ export class MigrationService {
 	 * concurrent same-slug starts are refused by the background operation start
 	 * (plan 18-14).
 	 */
-	async execute(plan: MigrationPlan): Promise<MigrationResult> {
+	async execute(plan: MigrationPlan, onProgress?: MigrationProgressListener): Promise<MigrationResult> {
 		const {stackId, displayName, composePath, originalDir, volumeSelections, namedVolumeSelections, backup, stopOldStack, inPlace} = plan;
 		// Where the old stack's files are read from: the original directory, or
 		// (in place) the directory it was renamed to.
@@ -307,6 +310,7 @@ export class MigrationService {
 			// call so a partial stop is still undone; a rejection is fail-closed
 			// and aborts before anything is created.
 			if (stopOldStack) {
+				this.report(onProgress, "stopping_old_stack");
 				oldStackStopped = true;
 				await this.oldStack.stop(composePath);
 			}
@@ -314,12 +318,14 @@ export class MigrationService {
 			// Step 1b (G-18-7): in place, the original is renamed aside so the new
 			// stack can take its directory; the renamed original is the backup.
 			if (inPlace) {
+				this.report(onProgress, "moving_original_aside");
 				await this.migrator.moveDirectory(originalDir, inPlace.asideDir);
 				movedAside = true;
 			}
 
 			// Step 2: Create the new stack directory exclusively. An EEXIST rejection
 			// leaves createdStackDir false, so rollback never removes a foreign directory.
+			this.report(onProgress, "creating_directory");
 			const newStackPath = await this.stackFs.createDirectoryExclusive(stackId);
 			createdStackDir = true;
 
@@ -327,6 +333,7 @@ export class MigrationService {
 			// independent of renames or compose changes. In place, the renamed
 			// original already is that backup, so no second copy is made.
 			if (backup && !inPlace) {
+				this.report(onProgress, "backing_up");
 				await this.migrator.copyDirectory(originalDir, path.join(newStackPath, BACKUP_DIR_NAME));
 			}
 
@@ -343,14 +350,16 @@ export class MigrationService {
 						throw new BadRequestError(`Invalid volume name: ${volName}`);
 					}
 					const destPath = assertWithin(volumesDir, volName);
+					this.report(onProgress, "copying_named_volume", volName);
 					await this.migrator.copyVolumeToBindMount(volName, destPath);
 				}
 			}
 
 			// Step 5: Copy bind mount data
-			await this.copyBindMounts(volumeSelections, {originalDir, sourceDir}, newStackPath);
+			await this.copyBindMounts(volumeSelections, {originalDir, sourceDir}, newStackPath, onProgress);
 
 			// Step 6: Rewrite compose file
+			this.report(onProgress, "writing_compose");
 			const originalCompose = await fs.readFile(sourceComposePath, "utf-8");
 			const rewriteResult = this.rewriter.rewrite(originalCompose, volumeSelections, namedVolumeSelections);
 
@@ -387,6 +396,7 @@ export class MigrationService {
 			}
 
 			// Step 7: Create stack record
+			this.report(onProgress, "recording_stack");
 			const composeConfig = createComposeConfig(rewriteResult.rewrittenCompose);
 			await this.stackRepo.create({
 				id: stackId,
@@ -400,6 +410,7 @@ export class MigrationService {
 			recordCreated = true;
 
 			// Step 8: Deploy new stack
+			this.report(onProgress, "deploying");
 			await this.docker.up(stackId);
 
 			return inPlace
@@ -408,6 +419,7 @@ export class MigrationService {
 
 		} catch (err: unknown) {
 			// Rollback on failure
+			this.report(onProgress, "rolling_back");
 			const errMessage = err instanceof Error ? err.message : String(err);
 			console.error(`[MigrationService] Migration failed, rolling back: ${errMessage}`);
 
@@ -442,6 +454,22 @@ export class MigrationService {
 	}
 
 	/**
+	 * Tells the listener which step starts. A listener is not part of the
+	 * migration: whatever it throws is logged and never changes the outcome or
+	 * the rollback (T-18-45).
+	 */
+	private report(onProgress: MigrationProgressListener | undefined, step: MigrationOperationStep, detail: string | null = null): void {
+		if (!onProgress) {
+			return;
+		}
+		try {
+			onProgress({step, detail});
+		} catch (listenerError: unknown) {
+			console.error(`[MigrationService] Progress listener failed at step "${step}":`, listenerError);
+		}
+	}
+
+	/**
 	 * Step 5: copy bind-mount data into the new stack directory. CR-01: only a
 	 * missing source (ENOENT) is an empty volume; any other failure must roll
 	 * back, because the old stack may already be stopped.
@@ -450,11 +478,13 @@ export class MigrationService {
 		volumeSelections: VolumeSelection[],
 		dirs: {originalDir: string; sourceDir: string},
 		newStackPath: string,
+		onProgress?: MigrationProgressListener,
 	): Promise<void> {
 		for (const sel of volumeSelections) {
 			if (!sel.convert) {
 				continue;
 			}
+			this.report(onProgress, "copying_bind_mount", sel.originalPath);
 			const srcPath = path.isAbsolute(sel.originalPath)
 				? relocateIntoSource(sel.originalPath, dirs)
 				: path.join(dirs.sourceDir, sel.originalPath);

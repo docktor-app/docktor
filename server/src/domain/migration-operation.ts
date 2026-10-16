@@ -1,4 +1,4 @@
-import type {MigrationOperation, MigrationOperationResult} from "@docktor/shared";
+import type {MigrationOperation, MigrationOperationResult, MigrationOperationStep} from "@docktor/shared";
 
 /** What identifies a migration run; all of it is known once preflight passed. */
 export interface MigrationOperationStart {
@@ -27,6 +27,18 @@ export function startMigrationOperation(start: MigrationOperationStart): Migrati
         finishedAt: null,
         result: null,
     };
+}
+
+/** The operation at its next step; a finished operation is returned unchanged. */
+export function recordMigrationStep(
+    operation: MigrationOperation,
+    step: MigrationOperationStep,
+    detail: string | null,
+): MigrationOperation {
+    if (operation.status !== "running") {
+        return operation;
+    }
+    return {...operation, step, stepDetail: detail};
 }
 
 /** The terminal state of an operation; the status follows the migration result. */
