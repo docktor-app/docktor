@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {AppError, BadRequestError, ConflictError, ForbiddenError, NotFoundError, UnauthorizedError} from "../../../src/lib/errors.js";
+import {AppError, BadRequestError, ConflictError, ForbiddenError, hasErrorCode, NotFoundError, UnauthorizedError} from "../../../src/lib/errors.js";
 
 describe("AppError", () => {
     it("has default status code 500", () => {
@@ -104,5 +104,26 @@ describe("error codes", () => {
     it("leaves other AppError subclasses without a code", () => {
         expect(new BadRequestError().code).toBeUndefined();
         expect(new AppError("x", 418).code).toBeUndefined();
+    });
+});
+
+describe("hasErrorCode", () => {
+    it("is true for an error carrying the requested code", () => {
+        const err = Object.assign(new Error("missing"), {code: "ENOENT"});
+
+        expect(hasErrorCode(err, "ENOENT")).toBe(true);
+    });
+
+    it("is false for an error carrying a different code", () => {
+        const err = Object.assign(new Error("denied"), {code: "EACCES"});
+
+        expect(hasErrorCode(err, "ENOENT")).toBe(false);
+    });
+
+    it("is false for values that are not errno-shaped objects", () => {
+        expect(hasErrorCode(null, "ENOENT")).toBe(false);
+        expect(hasErrorCode("ENOENT", "ENOENT")).toBe(false);
+        expect(hasErrorCode(new Error("no code"), "ENOENT")).toBe(false);
+        expect(hasErrorCode({code: 2}, "ENOENT")).toBe(false);
     });
 });

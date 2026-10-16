@@ -83,6 +83,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
     });
 
     afterEach(async () => {
+        vi.restoreAllMocks();
         await fs.rm(tmpRoot, {recursive: true, force: true});
     });
 
@@ -276,6 +277,77 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         expect(result.success).toBe(false);
         expect(result.error).toContain("overlap");
         expect(mockStackFs.createDirectory).not.toHaveBeenCalled();
+    });
+
+    it("fails the migration, removes its directory and restarts the old stack when a bind-mount copy fails (CR-01)", async () => {
+        mockMigrator.copyDirectory.mockRejectedValue(new Error("ENOSPC: no space left on device, write"));
+
+        const result = await buildService().migrate({
+            ...input({backup: false}),
+            volumeSelections: [{originalPath: "data", newPath: "./volumes/data", convert: true}],
+        });
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain("ENOSPC");
+        expect(result.error).toContain("Your original stack directory was not modified.");
+        expect(result.error).toContain("The old stack was restarted.");
+        expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
+        expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+        expect(mockOldStack.start).toHaveBeenCalledWith(composePath);
+        expect(mockStackRepo.create).not.toHaveBeenCalled();
+        expect(mockDocker.up).not.toHaveBeenCalled();
+        await expect(fs.access(path.join(newStackPath, "volumes", "data"))).rejects.toThrow();
+        await assertOriginalUntouched();
+    });
+
+    it("fails the migration on a non-ENOENT access error instead of creating an empty volume (CR-01)", async () => {
+        const realAccess = fs.access.bind(fs);
+        const blockedSource = path.join(originalDir, "data");
+        vi.spyOn(fs, "access").mockImplementation(async (target, mode) => {
+            if (String(target) === blockedSource) {
+                throw Object.assign(new Error("EACCES: permission denied, access"), {code: "EACCES"});
+            }
+            return realAccess(target, mode);
+        });
+
+        const result = await buildService().migrate({
+            ...input({backup: false}),
+            volumeSelections: [{originalPath: "data", newPath: "./volumes/data", convert: true}],
+        });
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain("EACCES");
+        expect(mockMigrator.copyDirectory).not.toHaveBeenCalled();
+        expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
+        expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps a missing bind-mount source as an empty destination directory (CR-01)", async () => {
+        mockDocker.up.mockResolvedValue(undefined);
+
+        const result = await buildService().migrate({
+            ...input({backup: false}),
+            volumeSelections: [{originalPath: "missing", newPath: "./volumes/missing", convert: true}],
+        });
+
+        expect(result.success).toBe(true);
+        expect(mockMigrator.copyDirectory).not.toHaveBeenCalled();
+        expect((await fs.stat(path.join(newStackPath, "volumes", "missing"))).isDirectory()).toBe(true);
+    });
+
+    it("copies an existing bind-mount source into the new stack directory (CR-01)", async () => {
+        mockDocker.up.mockResolvedValue(undefined);
+
+        const result = await buildService().migrate({
+            ...input({backup: false}),
+            volumeSelections: [{originalPath: "data", newPath: "./volumes/data", convert: true}],
+        });
+
+        expect(result.success).toBe(true);
+        expect(mockMigrator.copyDirectory).toHaveBeenCalledWith(
+            path.join(originalDir, "data"),
+            path.join(newStackPath, "volumes", "data"),
+        );
     });
 
     it("keeps rejecting a traversing named volume name and restarts the stopped stack (CR-02)", async () => {
