@@ -402,4 +402,112 @@ volumes:
             expect(result.envVars).toEqual({});
         });
     });
+
+    describe("rewrite (G-18-4 B: inline environment values move to .env)", () => {
+        const rewriter = new ComposeRewriter();
+
+        const ENV_APP = lines(
+            "services:",
+            "  app:",
+            "    image: nginx",
+            "    environment:",
+            "      FOO: bar",
+            "      PASS: \"s3cr#t\"",
+            "      PORT: 8080",
+            "      DEBUG: true",
+            "      REF: ${REF}",
+            "      EMPTY:",
+            "      # keep this comment",
+            "",
+        );
+
+        const ENV_APP_REWRITTEN = lines(
+            "services:",
+            "  app:",
+            "    image: nginx",
+            "    environment:",
+            "      FOO: ${FOO}",
+            "      PASS: \"${PASS}\"",
+            "      PORT: ${PORT}",
+            "      DEBUG: ${DEBUG}",
+            "      REF: ${REF}",
+            "      EMPTY:",
+            "      # keep this comment",
+            "",
+        );
+
+        it("replaces literal values by ${KEY}, keeps the map form and lists the values for .env", () => {
+            const result = rewriter.rewrite(ENV_APP, [], new Map());
+
+            expect(result.rewrittenCompose).toBe(ENV_APP_REWRITTEN);
+            expect(result.extractedEnv).toBe("FOO=bar\nPASS=s3cr#t\nPORT=8080\nDEBUG=true");
+            expect(result.envVars).toEqual({FOO: "bar", PASS: "s3cr#t", PORT: "8080", DEBUG: "true"});
+        });
+
+        it("keeps CRLF on every line", () => {
+            const result = rewriter.rewrite(toCrlf(ENV_APP), [], new Map());
+
+            expect(result.rewrittenCompose).toBe(toCrlf(ENV_APP_REWRITTEN));
+        });
+
+        it("keeps a trailing comment next to a replaced value", () => {
+            const compose = lines("services:", "  app:", "    environment:", "      FOO: bar # the foo", "");
+
+            const result = rewriter.rewrite(compose, [], new Map());
+
+            expect(result.rewrittenCompose).toBe(
+                lines("services:", "  app:", "    environment:", "      FOO: ${FOO} # the foo", ""),
+            );
+        });
+
+        it("leaves list-form environment untouched and extracts nothing from it", () => {
+            const compose = lines("services:", "  app:", "    environment:", "      - FOO=bar", "      - BAZ", "");
+
+            const result = rewriter.rewrite(compose, [], new Map());
+
+            expect(result.rewrittenCompose).toBe(compose);
+            expect(result.extractedEnv).toBe("");
+            expect(result.envVars).toEqual({});
+        });
+
+        it("collects the keys of several services in document order, a later duplicate wins", () => {
+            const compose = lines(
+                "services:",
+                "  web:",
+                "    environment:",
+                "      A: one",
+                "      B: two",
+                "  worker:",
+                "    environment:",
+                "      C: three",
+                "      A: four",
+                "",
+            );
+
+            const result = rewriter.rewrite(compose, [], new Map());
+
+            expect(result.extractedEnv).toBe("A=four\nB=two\nC=three");
+            expect(result.envVars).toEqual({A: "four", B: "two", C: "three"});
+        });
+
+        it("applies the bind-mount conversion and the env extraction in one pass and nothing else", () => {
+            const compose = lines(
+                "services:",
+                "  memos:",
+                "    image: neosmemo/memos:stable",
+                "    volumes:",
+                "      - ./data:/var/opt/memos",
+                "    environment:",
+                "      MEMOS_MODE: prod",
+                "",
+            );
+
+            const result = rewriter.rewrite(compose, CONVERT_DATA, new Map());
+
+            expect(result.rewrittenCompose).toBe(
+                compose.replace("./data:", "./volumes/data:").replace("MEMOS_MODE: prod", "MEMOS_MODE: ${MEMOS_MODE}"),
+            );
+            expect(result.extractedEnv).toBe("MEMOS_MODE=prod");
+        });
+    });
 });
