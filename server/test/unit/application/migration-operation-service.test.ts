@@ -1,6 +1,7 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {MigrationOperationService} from "../../../src/application/migration-operation-service.js";
 import type {MigrationInput, MigrationPlan, MigrationResult} from "../../../src/application/migration-service.js";
+import type {MigrationOperation} from "@docktor/shared";
 import {BadRequestError, ConflictError, NotFoundError} from "../../../src/lib/errors.js";
 
 const HOUR = 60 * 60_000;
@@ -55,16 +56,19 @@ describe("MigrationOperationService", () => {
     let clock: Date;
     let counter: number;
     let service: MigrationOperationService;
+    let emit: ReturnType<typeof vi.fn<(event: "migration.progressed", payload: {operation: MigrationOperation}) => void>>;
 
     beforeEach(() => {
         clock = new Date("2026-01-01T10:00:00.000Z");
         counter = 0;
         preflight = vi.fn(async (input: MigrationInput) => planFor(input));
         execute = vi.fn(async () => SUCCESS);
+        emit = vi.fn();
         service = new MigrationOperationService(
             {preflight, execute},
             () => `op-${++counter}`,
             () => clock,
+            {emit},
         );
     });
 
@@ -143,6 +147,46 @@ describe("MigrationOperationService", () => {
             await expect(service.start(inputFor("My App"))).resolves.toMatchObject({status: "running"});
             expect(preflight).toHaveBeenCalledTimes(2);
             await settle("op-1");
+        });
+    });
+
+    describe("progress events", () => {
+        it("emits migration.progressed for the running operation before start returns, and again when it finishes", async () => {
+            const pending = deferred();
+            execute.mockReturnValue(pending.promise);
+
+            const started = await service.start(inputFor("My App"));
+
+            expect(emit).toHaveBeenCalledTimes(1);
+            expect(emit).toHaveBeenLastCalledWith("migration.progressed", {operation: started});
+            expect(started).toMatchObject({status: "running", step: "starting"});
+
+            pending.resolve(SUCCESS);
+            await settle("op-1");
+
+            expect(emit).toHaveBeenCalledTimes(2);
+            const finished = emit.mock.calls[1]?.[1].operation;
+            expect(finished).toMatchObject({status: "succeeded", step: "finished"});
+            expect(finished).toEqual(service.get("op-1"));
+        });
+
+        it("emits a failed operation when the migration fails", async () => {
+            execute.mockResolvedValue({success: false, error: "boom", originalPath: "/opt/old"});
+
+            await service.start(inputFor("My App"));
+            await settle("op-1");
+
+            expect(emit).toHaveBeenLastCalledWith("migration.progressed", {
+                operation: expect.objectContaining({status: "failed", step: "finished"}),
+            });
+        });
+
+        it("emits nothing when preflight refuses the migration", async () => {
+            preflight.mockRejectedValueOnce(new BadRequestError("nested target"));
+
+            await expect(service.start(inputFor("My App"))).rejects.toBeInstanceOf(BadRequestError);
+
+            expect(emit).not.toHaveBeenCalled();
         });
     });
 
