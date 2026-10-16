@@ -8,9 +8,9 @@ import {StackFilesystem} from "../infrastructure/stack-filesystem.js";
 import {StackRepository, stackRepository} from "../repositories/stack-repository.js";
 import {slugify} from "../lib/slugify.js";
 import {createComposeConfig} from "../domain/compose-config.js";
-import {asideNameCandidates, classifyMigrationTarget} from "../domain/migration-target.js";
+import {asideNameCandidates, classifyMigrationTarget, type MigrationTargetKind} from "../domain/migration-target.js";
 import {computeUnifiedDiff, type UnifiedDiff} from "../lib/unified-diff.js";
-import {stackDirectoryNameSchema} from "@docktor/shared";
+import {stackDirectoryNameSchema, type MigrationTarget} from "@docktor/shared";
 import {BadRequestError, ConflictError, hasErrorCode} from "../lib/errors.js";
 import {dockerSelfStack} from "../infrastructure/docker-self-stack.js";
 import {assertNotOwnStack} from "./own-stack-guard.js";
@@ -93,6 +93,25 @@ function relocateIntoSource(srcPath: string, dirs: {originalDir: string; sourceD
 	return insideOriginal ? path.join(dirs.sourceDir, relative) : srcPath;
 }
 
+/** What the preview needs to know about a migration request (G-18-7). */
+export type MigrationPreviewRequest = Pick<
+	MigrationInput,
+	"composePath" | "displayName" | "volumeSelections" | "namedVolumeSelections"
+>;
+
+export interface MigrationPreview {
+	diff: UnifiedDiff;
+	extractedEnv: string;
+	target: MigrationTarget;
+}
+
+interface TargetAssessment {
+	readonly stackId: string;
+	readonly originalDir: string;
+	readonly targetDir: string;
+	readonly kind: MigrationTargetKind;
+}
+
 export interface MigrationInput {
 	composePath: string;
 	displayName: string;
@@ -153,16 +172,29 @@ export class MigrationService {
 	/**
 	 * Preview migration changes without executing. The diff is a real line diff
 	 * (D-04, MIG-02) in the same UnifiedDiff shape the stack-edit review renders.
+	 * The target (G-18-7) tells the dialog whether the stack is migrated in place
+	 * and, if so, which free name the original can be renamed to. The request is
+	 * refused exactly like {@link migrate} refuses it, except for the in-place
+	 * stop and aside-name checks, which depend on choices made later.
 	 */
-	async previewMigration(
-		composePath: string,
-		volumeSelections: VolumeSelection[],
-		namedVolumeSelections: Map<string, boolean>,
-	): Promise<{diff: UnifiedDiff; extractedEnv: string}> {
+	async previewMigration(request: MigrationPreviewRequest): Promise<MigrationPreview> {
+		const {composePath, displayName, volumeSelections, namedVolumeSelections} = request;
+		const assessment = await this.assessTarget(composePath, displayName);
 		const originalCompose = await fs.readFile(composePath, "utf-8");
 		const result = this.rewriter.rewrite(originalCompose, volumeSelections, namedVolumeSelections);
 		const diff = computeUnifiedDiff(originalCompose, result.rewrittenCompose);
-		return {diff, extractedEnv: result.extractedEnv};
+		const inPlace = assessment.kind === "in-place";
+		const suggestedAsideName = inPlace
+			? path.basename(await this.firstFreeAsideDir(assessment.originalDir, assessment.stackId))
+			: null;
+		const target: MigrationTarget = {
+			stackId: assessment.stackId,
+			directory: path.resolve(assessment.targetDir),
+			originalDirectory: path.resolve(assessment.originalDir),
+			inPlace,
+			suggestedAsideName,
+		};
+		return {diff, extractedEnv: result.extractedEnv, target};
 	}
 
 	/**
@@ -194,6 +226,31 @@ export class MigrationService {
 	 */
 	async preflight(input: MigrationInput): Promise<MigrationPlan> {
 		const {composePath, displayName, volumeSelections, namedVolumeSelections, backup, stopOldStack} = input;
+		const {stackId, originalDir, targetDir, kind} = await this.assessTarget(composePath, displayName);
+		const inPlace = kind === "in-place" ? {asideDir: await this.planInPlace(originalDir, stackId, input)} : null;
+
+		return {
+			stackId,
+			displayName,
+			composePath,
+			originalDir,
+			targetDir,
+			volumeSelections,
+			namedVolumeSelections,
+			backup,
+			stopOldStack,
+			inPlace,
+		};
+	}
+
+	/**
+	 * The refusals preview and migrate share, so the two cannot drift: an empty
+	 * slug, Docktor's own compose file (WR-09), an already-managed directory
+	 * (G-18-2), an existing stack record, a target nested with the old directory
+	 * and a separate target that already exists. Returns where the new stack
+	 * goes and how that relates to the old directory.
+	 */
+	private async assessTarget(composePath: string, displayName: string): Promise<TargetAssessment> {
 		const originalDir = path.dirname(composePath);
 		const stackId = slugify(displayName);
 
@@ -209,32 +266,16 @@ export class MigrationService {
 		}
 
 		const targetDir = this.stackFs.getStackDirectory(stackId);
-		const targetKind = classifyMigrationTarget(targetDir, originalDir);
-		if (targetKind === "nested") {
+		const kind = classifyMigrationTarget(targetDir, originalDir);
+		if (kind === "nested") {
 			throw new ConflictError(
 				`Migration refused: the new stack directory ${path.resolve(targetDir)} and the old stack directory ${path.resolve(originalDir)} overlap.`,
 			);
 		}
-		if (targetKind === "separate" && (await pathIsTaken(targetDir))) {
+		if (kind === "separate" && (await pathIsTaken(targetDir))) {
 			throw new ConflictError(`Migration refused: the new stack directory ${path.resolve(targetDir)} already exists.`);
 		}
-		const inPlace =
-			targetKind === "in-place"
-				? {asideDir: await this.planInPlace(originalDir, stackId, input)}
-				: null;
-
-		return {
-			stackId,
-			displayName,
-			composePath,
-			originalDir,
-			targetDir,
-			volumeSelections,
-			namedVolumeSelections,
-			backup,
-			stopOldStack,
-			inPlace,
-		};
+		return {stackId, originalDir, targetDir, kind};
 	}
 
 	/**
@@ -445,7 +486,7 @@ export class MigrationService {
 		const parent = path.dirname(path.resolve(originalDir));
 		const requestedName = input.inPlaceAsideName;
 		if (requestedName === undefined) {
-			return this.firstFreeAsideDir(parent, originalDir, stackId);
+			return this.firstFreeAsideDir(originalDir, stackId);
 		}
 		if (!stackDirectoryNameSchema.safeParse(requestedName).success || requestedName === path.basename(originalDir)) {
 			throw new BadRequestError(
@@ -460,7 +501,8 @@ export class MigrationService {
 	}
 
 	/** The first free `<id>-pre-migration[-N]` sibling of the original directory. */
-	private async firstFreeAsideDir(parent: string, originalDir: string, stackId: string): Promise<string> {
+	private async firstFreeAsideDir(originalDir: string, stackId: string): Promise<string> {
+		const parent = path.dirname(path.resolve(originalDir));
 		for (const name of asideNameCandidates(stackId, ASIDE_NAME_ATTEMPTS)) {
 			const candidate = path.join(parent, name);
 			if (!(await pathIsTaken(candidate))) {

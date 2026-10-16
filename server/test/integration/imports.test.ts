@@ -71,6 +71,7 @@ describe("Imports API (post-setup brownfield scan/adopt/migrate)", () => {
                 url: "/api/stacks/import/migrate/preview",
                 payload: {
                     composePath: path.join(scanDir, "docker-compose.yml"),
+                    displayName: "Preview Stack",
                     volumeSelections: [],
                     namedVolumeSelections: {},
                 },
@@ -102,6 +103,7 @@ describe("Imports API (post-setup brownfield scan/adopt/migrate)", () => {
             headers: {cookie},
             payload: {
                 composePath: path.join(scanDir, "docker-compose.yml"),
+                displayName: "Preview Stack",
                 volumeSelections: [],
                 namedVolumeSelections: {},
             },
@@ -111,6 +113,9 @@ describe("Imports API (post-setup brownfield scan/adopt/migrate)", () => {
         const body = res.json();
         // Shape only: the exact hunks depend on the rewriter and are covered by unit tests.
         expect(Array.isArray(body.diff.hunks)).toBe(true);
+        // G-18-7: the preview also reports where the new stack would go.
+        expect(body.target.stackId).toBe("preview-stack");
+        expect(body.target.inPlace).toBe(false);
         expect(typeof body.diff.added).toBe("number");
         expect(typeof body.diff.removed).toBe("number");
         expect(typeof body.extractedEnv).toBe("string");

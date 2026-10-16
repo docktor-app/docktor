@@ -157,10 +157,11 @@ const setupRoutes: FastifyPluginAsyncZod = async (app) => {
             },
         },
         async (request) => {
-            const {composePath, volumeSelections, namedVolumeSelections} = request.body;
-            const namedVolMap = new Map(Object.entries(namedVolumeSelections));
-            const result = await migrationService.previewMigration(composePath, volumeSelections, namedVolMap);
-            return result;
+            const {namedVolumeSelections, ...rest} = request.body;
+            return migrationService.previewMigration({
+                ...rest,
+                namedVolumeSelections: new Map(Object.entries(namedVolumeSelections)),
+            });
         },
     );
 

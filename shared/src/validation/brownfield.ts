@@ -22,8 +22,11 @@ export const volumeSelectionSchema = z.object({
     convert: z.boolean(),
 });
 
+// G-18-7: the preview takes the stack name, because the name decides the target
+// directory and so whether the migration happens in place.
 export const migrationPreviewSchema = z.object({
     composePath: composeFilePathSchema,
+    displayName: z.string().min(1),
     volumeSelections: z.array(volumeSelectionSchema),
     namedVolumeSelections: z.record(z.string(), z.boolean()),
 });
@@ -47,11 +50,21 @@ export const stackDirectoryNameSchema = z
 // old or buggy client can never let the server decide whether a backup is
 // kept or the old stack is stopped on the user's behalf.
 export const migrationExecuteSchema = migrationPreviewSchema.extend({
-    displayName: z.string().min(1),
     backup: z.boolean(),
     stopOldStack: z.boolean(),
     // G-18-7: only meaningful when the new stack takes the old stack's directory.
     inPlaceAsideName: stackDirectoryNameSchema.optional(),
+});
+
+// G-18-7: where the migration builds the new stack. `inPlace` means the target
+// is the old stack's own directory, so the original is renamed aside first;
+// `suggestedAsideName` is then a free name for it, and null otherwise.
+export const migrationTargetSchema = z.object({
+    stackId: z.string(),
+    directory: z.string(),
+    originalDirectory: z.string(),
+    inPlace: z.boolean(),
+    suggestedAsideName: z.string().nullable(),
 });
 
 // Response shapes of the scan endpoints (/api/setup/scan, /api/stacks/import/scan).
@@ -98,6 +111,7 @@ export type VolumeSelectionInput = z.infer<typeof volumeSelectionSchema>;
 export type MigrationPreviewInput = z.infer<typeof migrationPreviewSchema>;
 export type BrownfieldAdoptInput = z.infer<typeof brownfieldAdoptSchema>;
 export type MigrationExecuteInput = z.infer<typeof migrationExecuteSchema>;
+export type MigrationTarget = z.infer<typeof migrationTargetSchema>;
 export type ManagedStackRef = z.infer<typeof managedStackRefSchema>;
 export type DiscoveredStack = z.infer<typeof discoveredStackSchema>;
 export type SkippedDirectoryReason = z.infer<typeof skippedDirectoryReasonSchema>;
