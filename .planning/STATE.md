@@ -5,16 +5,16 @@ milestone_name: Release Follow-ups
 current_phase: 18
 current_phase_name: Import and Migration Flow
 status: executing
-stopped_at: Completed 18-08-PLAN.md
-last_updated: "2026-10-16T07:17:32.118Z"
+stopped_at: Completed 18-09-PLAN.md
+last_updated: "2026-10-16T07:23:33.983Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 18 execution started
-state_head: 681d5e7e78ee7abbbb56da90d5bbd987fa38cccb
+state_head: 267dcb4d5b788d2ccf7a9cf5850597a1170e295e
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 20
-  completed_plans: 10
+  completed_plans: 11
   percent: 20
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-14)
 ## Current Position
 
 Phase: 18 (Import and Migration Flow) — EXECUTING
-Plan: 3 of 17
+Plan: 4 of 17
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 18 execution started
 
@@ -72,6 +72,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 18 P05 | 8 min | 3 tasks | 11 files |
 | Phase 18 P06 | 28 min | 2 tasks | 8 files |
 | Phase 18 P08 | 8 min | 2 tasks | 3 files |
+| Phase 18 P09 | 8 min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -97,6 +98,8 @@ Roadmap decisions for v0.1.1:
 - [Phase 18]: 18-06: Only ENOENT on a bind-mount source means an empty volume; copy and other access errors roll back the migration
 - [Phase 18]: 18-06: migrate() = execute(await preflight()); refusals are typed BadRequestError/ConflictError, step failures stay success:false; target dir created exclusively and record deleted only when recordCreated
 - [Phase 18]: 18-08: ComposeRewriter edits the original text through yaml node-range splices (never stringify); env keeps map form with KEY: ${KEY}
+- [Phase 18]: 18-09: skippedDirectories stays the count and always equals skipped.length; per-root reasons (not_found incl. ENOTDIR, permission_denied, system_directory) live in skipped[]
+- [Phase 18]: 18-09: scan DTOs (DiscoveredStack with relativePaths, SkippedDirectory, ScanResult) declared once as Zod schemas in @docktor/shared; server scanner, port and client re-export them
 
 ### Pending Todos
 
@@ -120,6 +123,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T07:17:31.939Z
-Stopped at: Completed 18-08-PLAN.md
+Last session: 2026-10-16T07:23:33.841Z
+Stopped at: Completed 18-09-PLAN.md
 Resume file: None
