@@ -84,7 +84,7 @@ function renderWizard(
     return {onClose, onConfirmMigrate};
 }
 
-const okPreview = (): Promise<MigrationPreview> => Promise.resolve({diff: emptyDiff, extractedEnv: "", target: separateTarget});
+const okPreview = (): Promise<MigrationPreview> => Promise.resolve({diff: emptyDiff, extractedEnv: "", emptySources: [], target: separateTarget});
 
 describe("MigrationWizard", () => {
     beforeEach(() => {
@@ -108,7 +108,7 @@ describe("MigrationWizard", () => {
     });
 
     it("renders the preview as a real line diff with +N / -N counters", async () => {
-        const previewMigration = vi.fn().mockResolvedValue({diff: sampleDiff, extractedEnv: "", target: separateTarget});
+        const previewMigration = vi.fn().mockResolvedValue({diff: sampleDiff, extractedEnv: "", emptySources: [], target: separateTarget});
         renderWizard(previewMigration);
 
         await userEvent.click(screen.getByRole("button", {name: "Preview Changes"}));
@@ -134,7 +134,7 @@ describe("MigrationWizard", () => {
     });
 
     it("shows the empty state with +0 / -0 counters when there are no hunks", async () => {
-        renderWizard(vi.fn().mockResolvedValue({diff: emptyDiff, extractedEnv: "", target: separateTarget}));
+        renderWizard(vi.fn().mockResolvedValue({diff: emptyDiff, extractedEnv: "", emptySources: [], target: separateTarget}));
 
         await userEvent.click(screen.getByRole("button", {name: "Preview Changes"}));
 
@@ -143,6 +143,31 @@ describe("MigrationWizard", () => {
         expect(screen.getByText("+0")).toBeInTheDocument();
         expect(screen.getByText("−0")).toBeInTheDocument();
         expect(screen.queryByRole("region", {name: "Migration compose diff"})).toBeNull();
+    });
+
+    it("names every source that starts empty in a warning alert on the review step", async () => {
+        renderWizard(vi.fn().mockResolvedValue({
+            diff: emptyDiff,
+            extractedEnv: "",
+            emptySources: ["./missing", "/srv/app/cache"],
+            target: separateTarget,
+        }));
+
+        await userEvent.click(screen.getByRole("button", {name: "Preview Changes"}));
+
+        const alert = await screen.findByRole("alert");
+        expect(alert).toHaveTextContent("The new stack starts with an empty folder for each");
+        expect(within(alert).getByText("./missing")).toBeInTheDocument();
+        expect(within(alert).getByText("/srv/app/cache")).toBeInTheDocument();
+    });
+
+    it("shows no empty-source alert when the preview reports none", async () => {
+        renderWizard(vi.fn().mockImplementation(okPreview));
+
+        await userEvent.click(screen.getByRole("button", {name: "Preview Changes"}));
+
+        expect(await screen.findByRole("heading", {name: "Review Changes"})).toBeInTheDocument();
+        expect(screen.queryByRole("alert")).toBeNull();
     });
 
     it("disables the button and stays on step 1 while the preview is in flight", async () => {
@@ -179,7 +204,7 @@ describe("MigrationWizard", () => {
         const MASKED_ENV = "DB_PASSWORD=\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\nPORT=8080";
 
         async function previewWithEnv(extractedEnv: string, onClose = vi.fn()) {
-            renderWizard(vi.fn().mockResolvedValue({diff: emptyDiff, extractedEnv, target: separateTarget}), onClose);
+            renderWizard(vi.fn().mockResolvedValue({diff: emptyDiff, extractedEnv, emptySources: [], target: separateTarget}), onClose);
             await userEvent.click(screen.getByRole("button", {name: "Preview Changes"}));
             await screen.findByRole("heading", {name: "Review Changes"});
         }
@@ -208,7 +233,7 @@ describe("MigrationWizard", () => {
 
         it("restores the mask after the dialog is closed and reopened", async () => {
             const onClose = vi.fn();
-            const previewMigration = vi.fn().mockResolvedValue({diff: emptyDiff, extractedEnv: SECRET_ENV, target: separateTarget});
+            const previewMigration = vi.fn().mockResolvedValue({diff: emptyDiff, extractedEnv: SECRET_ENV, emptySources: [], target: separateTarget});
             const props = {stack, onClose, onConfirmMigrate: vi.fn(), previewMigration};
             const {rerender} = render(<MigrationWizard {...props} open />);
             await userEvent.click(screen.getByRole("button", {name: "Preview Changes"}));
@@ -337,7 +362,7 @@ describe("MigrationWizard", () => {
             await click("Preview Changes");
             await click("Cancel Migration");
             expect(onClose).toHaveBeenCalled();
-            resolvePreview({diff: emptyDiff, extractedEnv: "", target: separateTarget});
+            resolvePreview({diff: emptyDiff, extractedEnv: "", emptySources: [], target: separateTarget});
             await deferred;
 
             await waitFor(() => expect(screen.getByRole("heading", {name: "Select Data to Migrate"})).toBeInTheDocument());
@@ -404,7 +429,7 @@ describe("MigrationWizard", () => {
             suggestedAsideName: "db-pre-migration",
         };
         const inPlacePreview = (): Promise<MigrationPreview> =>
-            Promise.resolve({diff: emptyDiff, extractedEnv: "", target: inPlaceTarget});
+            Promise.resolve({diff: emptyDiff, extractedEnv: "", emptySources: [], target: inPlaceTarget});
         const click = (name: string) => userEvent.click(screen.getByRole("button", {name}));
 
         async function walkTo(target: 3 | 4, onConfirmMigrate = vi.fn()) {
