@@ -10,6 +10,7 @@ import {Card, CardContent, CardDescription, CardHeader, CardTitle} from "@/compo
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from "@/components/ui/table";
 import {Skeleton} from "@/components/ui/skeleton";
 import {CompatibilityBadge} from "@/components/domain/stack/compatibility-badge";
+import {DiscoveredStackActions} from "@/components/domain/stack/discovered-stack-actions";
 import {ScanSkippedDirectories} from "@/components/domain/stack/scan-skipped-directories";
 import {MigrationWizard, type ConfirmMigrateParams} from "@/routes/setup/components/migration-wizard";
 import {directoryDisplayName} from "@/lib/path-display";
@@ -246,29 +247,13 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
                             />
                           </TableCell>
                           <TableCell className="text-right">
-                            {isAdopted ? (
-                              <span className="text-sm text-green-600 dark:text-green-400">
-                                Imported
-                              </span>
-                            ) : (
-                              <div className="flex justify-end gap-2">
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => setMigratingStack(stack)}
-                                  disabled={isAdopting}
-                                >
-                                  Migrate
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleAdopt(stack)}
-                                  disabled={isAdopting}
-                                >
-                                  {isAdopting ? "Adopting..." : "Adopt"}
-                                </Button>
-                              </div>
-                            )}
+                            <DiscoveredStackActions
+                              stack={stack}
+                              isAdopted={isAdopted}
+                              isAdopting={isAdopting}
+                              onMigrate={() => setMigratingStack(stack)}
+                              onAdopt={() => handleAdopt(stack)}
+                            />
                           </TableCell>
                         </TableRow>
                       );
