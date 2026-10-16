@@ -15,16 +15,16 @@ Patch release on branch `release/v0.1.1`: bug fixes and interface polish only, n
 
 ### Migration (MIG)
 
-- [x] **MIG-01**: User sees the migration diff in a larger dialog that is readable ([#72](https://github.com/docktor-app/docktor/issues/72))
-- [x] **MIG-02**: User sees a real line diff of the compose changes, rendered with the shared code editor ([#72](https://github.com/docktor-app/docktor/issues/72))
-- [x] **MIG-03**: User can opt out of the pre-migration backup, which is its own explicit step rather than an implicit copy made only on rename ([#72](https://github.com/docktor-app/docktor/issues/72))
-- [x] **MIG-04**: User can stop/undeploy the old stack as part of migration, so the new draft stack does not run alongside it ([#72](https://github.com/docktor-app/docktor/issues/72))
+- [ ] **MIG-01**: User sees the migration diff in a larger dialog that is readable ([#72](https://github.com/docktor-app/docktor/issues/72))
+- [ ] **MIG-02**: User sees a real line diff of the compose changes, rendered with the shared code editor ([#72](https://github.com/docktor-app/docktor/issues/72))
+- [ ] **MIG-03**: User can opt out of the pre-migration backup, which is its own explicit step rather than an implicit copy made only on rename ([#72](https://github.com/docktor-app/docktor/issues/72))
+- [ ] **MIG-04**: User can stop/undeploy the old stack as part of migration, so the new draft stack does not run alongside it ([#72](https://github.com/docktor-app/docktor/issues/72))
 
 ### Stacks and Compose (STK)
 
 - [x] **STK-01**: Deploying or redeploying a stack shows no port warning when the only user of the port is the stack's own container ([#76](https://github.com/docktor-app/docktor/issues/76))
 - [x] **STK-02**: A port held by another stack or an external process still produces the warning ([#76](https://github.com/docktor-app/docktor/issues/76))
-- [x] **STK-03**: "Import existing stack" does not offer Docktor's own stack ([#13](https://github.com/docktor-app/docktor/issues/13))
+- [ ] **STK-03**: "Import existing stack" does not offer Docktor's own stack ([#13](https://github.com/docktor-app/docktor/issues/13))
 
 ### Dashboard (DASH)
 
@@ -79,11 +79,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BKP-03 | Phase 17 | Complete |
 | STK-01 | Phase 17 | Complete |
 | STK-02 | Phase 17 | Complete |
-| STK-03 | Phase 18 | Complete |
-| MIG-01 | Phase 18 | Complete |
-| MIG-02 | Phase 18 | Complete |
-| MIG-03 | Phase 18 | Complete |
-| MIG-04 | Phase 18 | Complete |
+| STK-03 | Phase 18 | Gaps Found |
+| MIG-01 | Phase 18 | Gaps Found |
+| MIG-02 | Phase 18 | Gaps Found |
+| MIG-03 | Phase 18 | Gaps Found |
+| MIG-04 | Phase 18 | Gaps Found |
 | UI-01 | Phase 19 | Pending |
 | UI-06 | Phase 19 | Pending |
 | UI-07 | Phase 19 | Pending |
