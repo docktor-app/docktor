@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import {toast} from "sonner";
 import {MigrationWizard} from "@/routes/setup/components/migration-wizard";
 import type {DiscoveredStack, MigrationPreview} from "@/lib/brownfield-types";
+import type {MigrationPreviewInput, MigrationTarget} from "@docktor/shared";
 import type {CodeEditorProps} from "@/components/common/code-editor";
 import type {UnifiedDiff} from "@/lib/stacks-api";
 
@@ -54,11 +55,16 @@ const emptyDiff: UnifiedDiff = {hunks: [], added: 0, removed: 0};
 
 const PREVIEW_FALLBACK = "Failed to generate preview. Check that the compose file is still readable and try again.";
 
-type PreviewFn = (
-    composePath: string,
-    volumeSelections: unknown[],
-    namedVolumeSelections: Record<string, boolean>,
-) => Promise<MigrationPreview>;
+type PreviewFn = (input: MigrationPreviewInput) => Promise<MigrationPreview>;
+
+// Not in place: the scanned directory is outside Docktor's stacks folder.
+const separateTarget: MigrationTarget = {
+    stackId: "db",
+    directory: "/opt/docktor/stacks/db",
+    originalDirectory: "/host/opt/db",
+    inPlace: false,
+    suggestedAsideName: null,
+};
 
 function renderWizard(
     previewMigration: PreviewFn,
@@ -78,7 +84,7 @@ function renderWizard(
     return {onClose, onConfirmMigrate};
 }
 
-const okPreview = (): Promise<MigrationPreview> => Promise.resolve({diff: emptyDiff, extractedEnv: ""});
+const okPreview = (): Promise<MigrationPreview> => Promise.resolve({diff: emptyDiff, extractedEnv: "", target: separateTarget});
 
 describe("MigrationWizard", () => {
     beforeEach(() => {
@@ -102,13 +108,18 @@ describe("MigrationWizard", () => {
     });
 
     it("renders the preview as a real line diff with +N / -N counters", async () => {
-        const previewMigration = vi.fn().mockResolvedValue({diff: sampleDiff, extractedEnv: ""});
+        const previewMigration = vi.fn().mockResolvedValue({diff: sampleDiff, extractedEnv: "", target: separateTarget});
         renderWizard(previewMigration);
 
         await userEvent.click(screen.getByRole("button", {name: "Preview Changes"}));
 
         expect(previewMigration).toHaveBeenCalledTimes(1);
-        expect(previewMigration).toHaveBeenCalledWith("/host/opt/db/docker-compose.yml", [], {pgdata: true});
+        expect(previewMigration).toHaveBeenCalledWith({
+            composePath: "/host/opt/db/docker-compose.yml",
+            displayName: "db",
+            volumeSelections: [],
+            namedVolumeSelections: {pgdata: true},
+        });
 
         expect(await screen.findByRole("heading", {name: "Review Changes"})).toBeInTheDocument();
         const region = screen.getByRole("region", {name: "Migration compose diff"});
@@ -123,7 +134,7 @@ describe("MigrationWizard", () => {
     });
 
     it("shows the empty state with +0 / -0 counters when there are no hunks", async () => {
-        renderWizard(vi.fn().mockResolvedValue({diff: emptyDiff, extractedEnv: ""}));
+        renderWizard(vi.fn().mockResolvedValue({diff: emptyDiff, extractedEnv: "", target: separateTarget}));
 
         await userEvent.click(screen.getByRole("button", {name: "Preview Changes"}));
 
@@ -168,7 +179,7 @@ describe("MigrationWizard", () => {
         const MASKED_ENV = "DB_PASSWORD=\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\nPORT=8080";
 
         async function previewWithEnv(extractedEnv: string, onClose = vi.fn()) {
-            renderWizard(vi.fn().mockResolvedValue({diff: emptyDiff, extractedEnv}), onClose);
+            renderWizard(vi.fn().mockResolvedValue({diff: emptyDiff, extractedEnv, target: separateTarget}), onClose);
             await userEvent.click(screen.getByRole("button", {name: "Preview Changes"}));
             await screen.findByRole("heading", {name: "Review Changes"});
         }
@@ -197,7 +208,7 @@ describe("MigrationWizard", () => {
 
         it("restores the mask after the dialog is closed and reopened", async () => {
             const onClose = vi.fn();
-            const previewMigration = vi.fn().mockResolvedValue({diff: emptyDiff, extractedEnv: SECRET_ENV});
+            const previewMigration = vi.fn().mockResolvedValue({diff: emptyDiff, extractedEnv: SECRET_ENV, target: separateTarget});
             const props = {stack, onClose, onConfirmMigrate: vi.fn(), previewMigration};
             const {rerender} = render(<MigrationWizard {...props} open />);
             await userEvent.click(screen.getByRole("button", {name: "Preview Changes"}));
@@ -288,7 +299,12 @@ describe("MigrationWizard", () => {
 
             expect(screen.getByRole("checkbox", {name: "pgdata"})).not.toBeChecked();
             expect(previewMigration).toHaveBeenCalledTimes(2);
-            expect(previewMigration).toHaveBeenLastCalledWith("/host/opt/db/docker-compose.yml", [], {pgdata: false});
+            expect(previewMigration).toHaveBeenLastCalledWith({
+                composePath: "/host/opt/db/docker-compose.yml",
+                displayName: "db",
+                volumeSelections: [],
+                namedVolumeSelections: {pgdata: false},
+            });
         });
 
         it("keeps the backup choice across Back and forward", async () => {
@@ -311,7 +327,7 @@ describe("MigrationWizard", () => {
             await click("Preview Changes");
             await click("Cancel Migration");
             expect(onClose).toHaveBeenCalled();
-            resolvePreview({diff: emptyDiff, extractedEnv: ""});
+            resolvePreview({diff: emptyDiff, extractedEnv: "", target: separateTarget});
             await deferred;
 
             await waitFor(() => expect(screen.getByRole("heading", {name: "Select Data to Migrate"})).toBeInTheDocument());
@@ -353,9 +369,94 @@ describe("MigrationWizard", () => {
 
             expect(onConfirmMigrate).toHaveBeenCalledTimes(1);
             expect(onConfirmMigrate).toHaveBeenCalledWith(
-                expect.objectContaining({displayName: "db", backup: true, stopOldStack: true}),
+                expect.objectContaining({displayName: "db", backup: true, stopOldStack: true, inPlaceAsideName: null}),
             );
             expect(onClose).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe("in-place migration (G-18-7)", () => {
+        const inPlaceTarget: MigrationTarget = {
+            stackId: "db",
+            directory: "/opt/docktor/stacks/db",
+            originalDirectory: "/opt/docktor/stacks/db",
+            inPlace: true,
+            suggestedAsideName: "db-pre-migration",
+        };
+        const inPlacePreview = (): Promise<MigrationPreview> =>
+            Promise.resolve({diff: emptyDiff, extractedEnv: "", target: inPlaceTarget});
+        const click = (name: string) => userEvent.click(screen.getByRole("button", {name}));
+
+        async function walkTo(target: 3 | 4, onConfirmMigrate = vi.fn()) {
+            const previewMigration = vi.fn().mockImplementation(inPlacePreview);
+            renderWizard(previewMigration, vi.fn(), onConfirmMigrate);
+            await click("Preview Changes");
+            await screen.findByRole("heading", {name: "Review Changes"});
+            await click("Choose Backup");
+            if (target === 4) await click("Choose Old Stack Action");
+            return previewMigration;
+        }
+
+        it("sends the stack name with the preview request", async () => {
+            const previewMigration = await walkTo(3);
+
+            expect(previewMigration).toHaveBeenCalledWith({
+                composePath: "/host/opt/db/docker-compose.yml",
+                displayName: "db",
+                volumeSelections: [],
+                namedVolumeSelections: {pgdata: true},
+            });
+        });
+
+        it("asks for a name for the original directory instead of offering a backup switch", async () => {
+            await walkTo(3);
+
+            expect(screen.getByRole("textbox", {name: "Name for the original directory"})).toHaveValue("db-pre-migration");
+            expect(
+                screen.getByText(/\/opt\/docktor\/stacks\/db is renamed to db-pre-migration and kept as your backup/),
+            ).toBeInTheDocument();
+            expect(screen.queryByRole("switch", {name: "Back up the old stack first"})).toBeNull();
+            expect(screen.getByText("The original directory is kept under a new name as your backup.")).toBeInTheDocument();
+        });
+
+        it("forces the old stack to be stopped and summarises the kept original", async () => {
+            await walkTo(4);
+
+            const stop = screen.getByRole("switch", {name: "Stop the old stack before migrating"});
+            expect(stop).toBeChecked();
+            expect(stop).toBeDisabled();
+            expect(screen.getByText(/Required for an in-place migration/)).toBeInTheDocument();
+            expect(screen.getByRole("region", {name: "Migration summary"})).toHaveTextContent(
+                "Backup: Original kept as db-pre-migration",
+            );
+        });
+
+        it("confirms with the edited aside name, the forced stop and no extra backup copy", async () => {
+            const onConfirmMigrate = vi.fn();
+            await walkTo(3, onConfirmMigrate);
+            const input = screen.getByRole("textbox", {name: "Name for the original directory"});
+            await userEvent.clear(input);
+            await userEvent.type(input, "db-old");
+            await click("Choose Old Stack Action");
+
+            expect(screen.getByRole("region", {name: "Migration summary"})).toHaveTextContent("Backup: Original kept as db-old");
+            await click("Confirm & Migrate");
+
+            expect(onConfirmMigrate).toHaveBeenCalledWith(
+                expect.objectContaining({inPlaceAsideName: "db-old", stopOldStack: true, backup: false}),
+            );
+        });
+
+        it("keeps the edited aside name across Back and forward", async () => {
+            await walkTo(3);
+            const input = screen.getByRole("textbox", {name: "Name for the original directory"});
+            await userEvent.clear(input);
+            await userEvent.type(input, "db-old");
+
+            await click("Back");
+            await click("Choose Backup");
+
+            expect(screen.getByRole("textbox", {name: "Name for the original directory"})).toHaveValue("db-old");
         });
     });
 
@@ -387,7 +488,12 @@ describe("MigrationWizard", () => {
 
             await click("Preview Changes");
 
-            expect(previewMigration).toHaveBeenCalledWith("/host/opt/db/docker-compose.yml", DATA_SELECTION, {});
+            expect(previewMigration).toHaveBeenCalledWith({
+                composePath: "/host/opt/db/docker-compose.yml",
+                displayName: "db",
+                volumeSelections: DATA_SELECTION,
+                namedVolumeSelections: {},
+            });
         });
 
         it("counts the mount in the summary and hands the same selections to the migrate request", async () => {
@@ -413,11 +519,12 @@ describe("MigrationWizard", () => {
 
             expect(screen.getByText(KEPT_WARNING)).toBeInTheDocument();
             await click("Preview Changes");
-            expect(previewMigration).toHaveBeenCalledWith(
-                "/host/opt/db/docker-compose.yml",
-                [{originalPath: "./data", newPath: "./data", convert: true}],
-                {},
-            );
+            expect(previewMigration).toHaveBeenCalledWith({
+                composePath: "/host/opt/db/docker-compose.yml",
+                displayName: "db",
+                volumeSelections: [{originalPath: "./data", newPath: "./data", convert: true}],
+                namedVolumeSelections: {},
+            });
             await screen.findByRole("heading", {name: "Review Changes"});
             await click("Choose Backup");
             await click("Choose Old Stack Action");
