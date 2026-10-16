@@ -307,14 +307,24 @@ describe("MigrationWizard", () => {
             });
         });
 
-        it("keeps the backup choice across Back and forward", async () => {
+        it("defaults the backup off with a note naming the untouched original path", async () => {
+            await toStep(3);
+
+            expect(screen.getByRole("switch", {name: "Back up the old stack first"})).not.toBeChecked();
+            expect(screen.getByText(/Your original stack stays untouched at \/host\/opt\/db/)).toBeInTheDocument();
+        });
+
+        it("keeps the backup choice across Back, a regenerated preview and forward", async () => {
             await toStep(3);
             await userEvent.click(screen.getByRole("switch", {name: "Back up the old stack first"}));
 
             await click("Back");
+            await click("Back");
+            await click("Preview Changes");
+            await screen.findByRole("heading", {name: "Review Changes"});
             await click("Choose Backup");
 
-            expect(screen.getByRole("switch", {name: "Back up the old stack first"})).not.toBeChecked();
+            expect(screen.getByRole("switch", {name: "Back up the old stack first"})).toBeChecked();
         });
 
         it("ignores a preview that arrives after the dialog was cancelled", async () => {
@@ -340,12 +350,12 @@ describe("MigrationWizard", () => {
 
             expect(summary).toHaveTextContent("Stack name: db");
             expect(summary).toHaveTextContent("Volumes to copy: 1");
-            expect(summary).toHaveTextContent("Backup: Yes");
+            expect(summary).toHaveTextContent("Backup: No");
             expect(summary).toHaveTextContent("Stop old stack: Yes");
             expect(within(summary).queryByText(/Nothing to copy/)).toBeNull();
         });
 
-        it("explains the zero-volume summary and reflects both switches turned off", async () => {
+        it("explains the zero-volume summary and reflects the backup on and the stop off", async () => {
             renderWizard(vi.fn().mockImplementation(okPreview));
             await userEvent.click(screen.getByRole("checkbox", {name: "pgdata"}));
             await click("Preview Changes");
@@ -358,18 +368,28 @@ describe("MigrationWizard", () => {
             const summary = screen.getByRole("region", {name: "Migration summary"});
             expect(summary).toHaveTextContent("Volumes to copy: 0");
             expect(summary).toHaveTextContent("Nothing to copy. Only the compose file and .env are migrated.");
-            expect(summary).toHaveTextContent("Backup: No");
+            expect(summary).toHaveTextContent("Backup: Yes");
             expect(summary).toHaveTextContent("Stop old stack: No");
         });
 
-        it("hands off to the parent once with both flags and closes once", async () => {
+        it("sends backup true once the user turns the backup on", async () => {
+            const {onConfirmMigrate} = await toStep(3);
+            await userEvent.click(screen.getByRole("switch", {name: "Back up the old stack first"}));
+            await click("Choose Old Stack Action");
+
+            await click("Confirm & Migrate");
+
+            expect(onConfirmMigrate).toHaveBeenCalledWith(expect.objectContaining({backup: true, inPlaceAsideName: null}));
+        });
+
+        it("hands off to the parent once with the default flags and closes once", async () => {
             const {onClose, onConfirmMigrate} = await toStep(4);
 
             await click("Confirm & Migrate");
 
             expect(onConfirmMigrate).toHaveBeenCalledTimes(1);
             expect(onConfirmMigrate).toHaveBeenCalledWith(
-                expect.objectContaining({displayName: "db", backup: true, stopOldStack: true, inPlaceAsideName: null}),
+                expect.objectContaining({displayName: "db", backup: false, stopOldStack: true, inPlaceAsideName: null}),
             );
             expect(onClose).toHaveBeenCalledTimes(1);
         });
@@ -457,6 +477,44 @@ describe("MigrationWizard", () => {
             await click("Choose Backup");
 
             expect(screen.getByRole("textbox", {name: "Name for the original directory"})).toHaveValue("db-old");
+        });
+
+        it.each([
+            ["", "Use letters, digits, dots, dashes and underscores; start with a letter or digit."],
+            ["../x", "Use letters, digits, dots, dashes and underscores; start with a letter or digit."],
+            ["a/b", "Use letters, digits, dots, dashes and underscores; start with a letter or digit."],
+            ["db", "Choose a name different from the current directory name."],
+        ])("blocks continuing while the aside name %j is invalid", async (name, message) => {
+            await walkTo(3);
+            const input = screen.getByRole("textbox", {name: "Name for the original directory"});
+            await userEvent.clear(input);
+            if (name) await userEvent.type(input, name);
+
+            expect(screen.getByText(message)).toBeInTheDocument();
+            expect(screen.getByRole("button", {name: "Choose Old Stack Action"})).toBeDisabled();
+
+            await userEvent.clear(input);
+            await userEvent.type(input, "db-old");
+
+            expect(screen.queryByText(message)).toBeNull();
+            expect(screen.getByRole("button", {name: "Choose Old Stack Action"})).toBeEnabled();
+        });
+
+        it("shows the backup switch instead of the name field when a new preview is no longer in place", async () => {
+            const previewMigration = vi
+                .fn()
+                .mockImplementationOnce(inPlacePreview)
+                .mockImplementationOnce(okPreview);
+            renderWizard(previewMigration);
+            await click("Preview Changes");
+            await screen.findByRole("heading", {name: "Review Changes"});
+            await click("Back");
+            await click("Preview Changes");
+            await screen.findByRole("heading", {name: "Review Changes"});
+            await click("Choose Backup");
+
+            expect(screen.queryByRole("textbox", {name: "Name for the original directory"})).toBeNull();
+            expect(screen.getByRole("switch", {name: "Back up the old stack first"})).not.toBeChecked();
         });
     });
 
