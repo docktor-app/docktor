@@ -1,5 +1,6 @@
 import {useEffect, useRef, useState} from "react";
 import {toast} from "sonner";
+import type {MigrationPreviewInput} from "@docktor/shared";
 import {Button} from "@/components/ui/button";
 import {Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle} from "@/components/ui/dialog";
 import {MigrationSelectStep} from "./migration-select-step";
@@ -20,6 +21,9 @@ export interface ConfirmMigrateParams {
   namedVolumeSelections: Record<string, boolean>;
   backup: boolean;
   stopOldStack: boolean;
+  // G-18-7: the name the original directory is renamed to; null unless the
+  // migration is in place.
+  inPlaceAsideName: string | null;
 }
 
 type MigrationStep = 1 | 2 | 3 | 4;
@@ -30,6 +34,8 @@ const STEP_TITLES: Record<MigrationStep, string> = {
   3: "Back Up Before Migrating",
   4: "Old Stack",
 };
+
+const IN_PLACE_BACKUP_DESCRIPTION = "The original directory is kept under a new name as your backup.";
 
 const STEP_DESCRIPTIONS: Record<MigrationStep, string> = {
   1: "Choose which volumes and bind mounts move into Docktor's managed ./volumes/ directory. Unchecked named volumes and absolute paths stay where they are and are not backed up; unchecked relative paths are copied as they are.",
@@ -58,11 +64,7 @@ interface MigrationWizardProps {
   // Injected rather than imported directly, so this component is agnostic
   // about whether it's driven by the wizard's setup-api or the post-setup
   // page's import-api.
-  previewMigration: (
-    composePath: string,
-    volumeSelections: VolumeSelection[],
-    namedVolumeSelections: Record<string, boolean>,
-  ) => Promise<MigrationPreview>;
+  previewMigration: (input: MigrationPreviewInput) => Promise<MigrationPreview>;
 }
 
 export function MigrationWizard({stack, open, onClose, onConfirmMigrate, previewMigration}: Readonly<MigrationWizardProps>) {
@@ -82,8 +84,18 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
   const [bindMounts, setBindMounts] = useState<BindMountChoice[]>(() => buildBindMountChoices(stack));
 
   const [preview, setPreview] = useState<MigrationPreview | null>(null);
-  const [backup, setBackup] = useState(true);
-  const [stopOldStack, setStopOldStack] = useState(true);
+  const [backupChoice, setBackupChoice] = useState(true);
+  const [stopChoice, setStopChoice] = useState(true);
+  // null = not edited, so the server's suggestion shows (and follows new previews).
+  const [asideNameEdit, setAsideNameEdit] = useState<string | null>(null);
+
+  // G-18-7: when the new stack takes the old stack's own directory, the
+  // original is renamed aside and is the backup; the old stack must be stopped.
+  const target = preview?.target;
+  const inPlace = target ? target.inPlace : false;
+  const asideName = asideNameEdit ?? target?.suggestedAsideName ?? "";
+  const backup = !inPlace && backupChoice;
+  const stopOldStack = inPlace || stopChoice;
 
   // RESEARCH Pitfall 7: a preview response that arrives after the dialog was
   // cancelled or closed must not advance (or toast into) a dead session.
@@ -122,11 +134,12 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
     const requestId = previewRequestId.current;
     setLoading(true);
     try {
-      const result = await previewMigration(
-        stack.path,
-        toVolumeSelections(bindMounts),
+      const result = await previewMigration({
+        composePath: stack.path,
+        displayName,
+        volumeSelections: toVolumeSelections(bindMounts),
         namedVolumeSelections,
-      );
+      });
       if (requestId !== previewRequestId.current) return;
       setPreview(result);
       setStep(2);
@@ -150,6 +163,7 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
       namedVolumeSelections,
       backup,
       stopOldStack,
+      inPlaceAsideName: inPlace ? asideName : null,
     });
     handleClose();
   };
@@ -166,7 +180,7 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
       <DialogContent className="flex flex-col gap-4 p-4 sm:p-6 max-h-[90dvh] sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle>{STEP_TITLES[step]}</DialogTitle>
-          <DialogDescription>{STEP_DESCRIPTIONS[step]}</DialogDescription>
+          <DialogDescription>{step === 3 && inPlace ? IN_PLACE_BACKUP_DESCRIPTION : STEP_DESCRIPTIONS[step]}</DialogDescription>
         </DialogHeader>
 
         <MigrationStepIndicator step={step} />
@@ -197,13 +211,24 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
             </div>
           )}
 
-          {step === 3 && <MigrationBackupStep checked={backup} onCheckedChange={setBackup} />}
+          {step === 3 && (
+            <MigrationBackupStep
+              mode={inPlace ? "in-place" : "separate"}
+              originalDirectory={target?.originalDirectory ?? stack.directory}
+              checked={backup}
+              onCheckedChange={setBackupChoice}
+              asideName={asideName}
+              onAsideNameChange={setAsideNameEdit}
+              asideNameError={null}
+            />
+          )}
 
           {step === 4 && (
             <MigrationOldStackStep
               checked={stopOldStack}
-              onCheckedChange={setStopOldStack}
-              summary={{displayName, volumesToCopy, backup}}
+              onCheckedChange={setStopChoice}
+              stopRequired={inPlace}
+              summary={{displayName, volumesToCopy, backup, keptOriginalAs: inPlace ? asideName : null}}
             />
           )}
         </div>

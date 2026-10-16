@@ -1,16 +1,56 @@
 import {AlertTriangle} from "lucide-react";
 import {Alert, AlertDescription} from "@/components/ui/alert";
+import {Input} from "@/components/ui/input";
 import {Label} from "@/components/ui/label";
 import {Switch} from "@/components/ui/switch";
 
 export interface MigrationBackupStepProps {
+  readonly mode: "in-place" | "separate";
+  readonly originalDirectory: string;
   readonly checked: boolean;
   readonly onCheckedChange: (checked: boolean) => void;
+  readonly asideName: string;
+  readonly onAsideNameChange: (name: string) => void;
+  readonly asideNameError: string | null;
 }
 
-// Step 3 of the migration dialog (MIG-03, D-07): an explicit, default-on,
-// opt-out backup of the old stack's directory.
-export function MigrationBackupStep({checked, onCheckedChange}: Readonly<MigrationBackupStepProps>): React.JSX.Element {
+// Step 3 of the migration dialog (MIG-03, G-18-7). In place, the original
+// directory is renamed aside and is the backup, so the user only names it.
+// Otherwise the original is untouched and a backup copy is an explicit choice.
+export function MigrationBackupStep({
+  mode,
+  originalDirectory,
+  checked,
+  onCheckedChange,
+  asideName,
+  onAsideNameChange,
+  asideNameError,
+}: Readonly<MigrationBackupStepProps>): React.JSX.Element {
+  if (mode === "in-place") {
+    return (
+      <div className="flex flex-col gap-4 py-4">
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="aside-name" className="font-semibold">Name for the original directory</Label>
+          <Input
+            id="aside-name"
+            value={asideName}
+            onChange={(event) => onAsideNameChange(event.target.value)}
+            aria-invalid={asideNameError !== null}
+            aria-describedby={asideNameError ? "aside-name-help aside-name-error" : "aside-name-help"}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <p id="aside-name-help" className="text-xs text-muted-foreground break-all">
+            {`This stack already lives in Docktor's stacks folder under this name. ${originalDirectory} is renamed to ${asideName} and kept as your backup; the new stack is built in ${originalDirectory}. No extra copy is made.`}
+          </p>
+          {asideNameError && (
+            <p id="aside-name-error" className="text-xs text-red-600 dark:text-red-400">{asideNameError}</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4 py-4">
       <div className="flex min-h-11 items-start gap-3 md:min-h-0">
