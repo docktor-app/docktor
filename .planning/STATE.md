@@ -5,16 +5,16 @@ milestone_name: Release Follow-ups
 current_phase: 18
 current_phase_name: Import and Migration Flow
 status: executing
-stopped_at: Completed 18-10-PLAN.md
-last_updated: "2026-10-16T07:34:33.700Z"
+stopped_at: Completed 18-11-PLAN.md
+last_updated: "2026-10-16T07:41:00.882Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 18 execution started
-state_head: 5105b531215891d26dc88d6423b8cc9dc4642437
+state_head: 32681b2bc63b1aa7af11b94abd3148c29057b603
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 20
-  completed_plans: 13
+  completed_plans: 14
   percent: 20
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-14)
 ## Current Position
 
 Phase: 18 (Import and Migration Flow) — EXECUTING
-Plan: 6 of 17
+Plan: 7 of 17
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 18 execution started
 
@@ -75,6 +75,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 18 P09 | 8 min | 2 tasks | 12 files |
 | Phase 18 P07 | 8 min | 3 tasks | 9 files |
 | Phase 18 P10 | 5 min | 3 tasks | 6 files |
+| Phase 18 P11 | 18 min | 3 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -106,6 +107,7 @@ Roadmap decisions for v0.1.1:
 - [Phase 18]: 18-07: setup migrate routes use requireAdminAccount preHandler throwing BadRequestError; full session requirement after admin creation accepted as residual risk T-18-23
 - [Phase 18]: 18-10: kept relative mounts are copied to their own relative path (newPath = originalPath, convert true); warning wording avoids claiming backups miss kept data because restic backs up the whole stack directory
 - [Phase 18]: 18-10: stack directory mounts ('.') are keep-only and consume no ./volumes/ name; named volume names are reserved before bind-mount targets get -2/-3 suffixes
+- [Phase 18]: 18-11: a compose file is already managed when its directory equals a stack's hostPath (separator-normalised, exact); scan rows always carry managedStack and adopt/migrate refuse them with ConflictError after the own-stack check
 
 ### Pending Todos
 
@@ -129,6 +131,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T07:34:33.535Z
-Stopped at: Completed 18-10-PLAN.md
+Last session: 2026-10-16T07:41:00.653Z
+Stopped at: Completed 18-11-PLAN.md
 Resume file: None

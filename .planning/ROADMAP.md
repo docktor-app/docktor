@@ -88,7 +88,7 @@ Notes: server-side work (backup service and repository environment construction,
   4. The pre-migration backup is its own explicit step the user can opt out of: opting out creates no backup, opting in creates one whether or not the compose file is renamed
   5. The user can choose to stop (undeploy) the old stack as part of the migration, so the new draft stack does not run alongside it; if they decline, the old stack is left running
 
-**Plans:** 10/17 plans executed (12 gap-closure plans pending)
+**Plans:** 11/17 plans executed (12 gap-closure plans pending)
 
 Plans:
 **Wave 1**
@@ -114,7 +114,7 @@ Plans:
 - [x] 18-10-PLAN.md — Migration dialog offers relative bind mounts (default ./volumes/<name>, per-mount keep with warning), counts and sends them, collision-free targets (G-18-4; after 18-09)
 
 *Gap wave 3*
-- [ ] 18-11-PLAN.md — Scan marks already-managed stacks; adopt and migrate of a managed compose path answer 409 (G-18-2; after 18-07, 18-09, 18-10)
+- [x] 18-11-PLAN.md — Scan marks already-managed stacks; adopt and migrate of a managed compose path answer 409 (G-18-2; after 18-07, 18-09, 18-10)
 
 *Gap wave 4*
 - [ ] 18-12-PLAN.md — In-place migration: rename original aside (editable name), build in place, forced stop, full rollback; preview returns the target (G-18-7; after 18-11)
@@ -190,7 +190,7 @@ Phases execute in numeric order: 17 → 18 → 19 → 20 → 21
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 17. Backup Repository and Port-Check Fixes | 3/3 | Complete    | 2026-10-14 |
-| 18. Import and Migration Flow | 10/17 | In Progress | - |
+| 18. Import and Migration Flow | 11/17 | In Progress | - |
 | 19. Sidebar, Templates and Version Block | 0/TBD | Not started | - |
 | 20. Visual Consistency, Dashboard Clarity and Touch Targets | 0/TBD | Not started | - |
 | 21. Release v0.1.1 | 0/TBD | Not started | - |
