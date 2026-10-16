@@ -335,7 +335,7 @@ test.describe("Setup Wizard", () => {
                 route.fulfill({
                     status: 200,
                     contentType: "application/json",
-                    body: JSON.stringify({stacks: [greenStack], skippedDirectories: 0}),
+                    body: JSON.stringify({stacks: [greenStack], skippedDirectories: 0, skipped: []}),
                 }),
             );
 
@@ -354,7 +354,7 @@ test.describe("Setup Wizard", () => {
                 route.fulfill({
                     status: 200,
                     contentType: "application/json",
-                    body: JSON.stringify({stacks: [greenStack, yellowStack, redStack], skippedDirectories: 0}),
+                    body: JSON.stringify({stacks: [greenStack, yellowStack, redStack], skippedDirectories: 0, skipped: []}),
                 }),
             );
 
@@ -366,22 +366,59 @@ test.describe("Setup Wizard", () => {
             await expect(page.getByText("Unsupported")).toBeVisible();
         });
 
-        test("should show skipped directories count when permission errors occur", async ({page}) => {
-            // BF-01: Permission handling
+        test("should list every skipped directory with its reason and the /host hint", async ({page}) => {
+            // G-18-3-scan: skip reasons are always visible
             await reachBrownfieldStep(page);
 
             await page.route("**/api/setup/scan", (route) =>
                 route.fulfill({
                     status: 200,
                     contentType: "application/json",
-                    body: JSON.stringify({stacks: [greenStack], skippedDirectories: 2}),
+                    body: JSON.stringify({
+                        stacks: [greenStack],
+                        skippedDirectories: 2,
+                        skipped: [
+                            {directory: "/root", reason: "permission_denied"},
+                            {directory: "/run/desktop/mnt/host/c/stacks", reason: "not_found"},
+                        ],
+                    }),
                 }),
             );
 
-            await page.getByLabel(/directories to scan/i).fill("/home/user, /root");
+            await page.getByLabel(/directories to scan/i).fill("/home/user, /root, /run/desktop/mnt/host/c/stacks");
             await page.getByRole("button", {name: /scan/i}).click();
 
-            await expect(page.getByText(/2 directories skipped \(permission denied\)/i)).toBeVisible();
+            const skipped = page.getByRole("region", {name: "Skipped directories"});
+            await expect(skipped).toContainText("/root");
+            await expect(skipped).toContainText("Permission denied");
+            await expect(skipped).toContainText("/run/desktop/mnt/host/c/stacks");
+            await expect(skipped).toContainText("Not found inside the Docktor container");
+            await expect(skipped).toContainText("/host");
+        });
+
+        test("should keep an already-managed stack listed with disabled actions and a link", async ({page}) => {
+            // G-18-2: managed rows cannot be adopted or migrated again
+            await reachBrownfieldStep(page);
+
+            await page.route("**/api/setup/scan", (route) =>
+                route.fulfill({
+                    status: 200,
+                    contentType: "application/json",
+                    body: JSON.stringify({
+                        stacks: [{...greenStack, managedStack: {id: "blog", displayName: "Blog"}}],
+                        skippedDirectories: 0,
+                        skipped: [],
+                    }),
+                }),
+            );
+
+            await page.getByLabel(/directories to scan/i).fill("/home/user");
+            await page.getByRole("button", {name: /scan/i}).click();
+
+            await expect(page.getByText("Already managed")).toBeVisible();
+            await expect(page.getByRole("button", {name: "Migrate"})).toBeDisabled();
+            await expect(page.getByRole("button", {name: "Adopt"})).toBeDisabled();
+            await expect(page.getByRole("link", {name: "View Blog"})).toHaveAttribute("href", "/stacks/blog");
         });
     });
 
@@ -392,7 +429,7 @@ test.describe("Setup Wizard", () => {
                 route.fulfill({
                     status: 200,
                     contentType: "application/json",
-                    body: JSON.stringify({stacks: [greenStack], skippedDirectories: 0}),
+                    body: JSON.stringify({stacks: [greenStack], skippedDirectories: 0, skipped: []}),
                 }),
             );
             await page.getByLabel(/directories to scan/i).fill("/home/user");
@@ -495,7 +532,7 @@ test.describe("Setup Wizard", () => {
                 route.fulfill({
                     status: 200,
                     contentType: "application/json",
-                    body: JSON.stringify({stacks: [stack], skippedDirectories: 0}),
+                    body: JSON.stringify({stacks: [stack], skippedDirectories: 0, skipped: []}),
                 }),
             );
             await page.getByLabel(/directories to scan/i).fill("/home/user");

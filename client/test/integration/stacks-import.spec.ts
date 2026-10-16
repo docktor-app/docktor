@@ -59,7 +59,7 @@ test.describe("Stacks - Import Existing Stack entry point", () => {
             route.fulfill({
                 status: 200,
                 contentType: "application/json",
-                body: JSON.stringify({stacks: [greenStack], skippedDirectories: 0}),
+                body: JSON.stringify({stacks: [greenStack], skippedDirectories: 0, skipped: []}),
             }),
         );
         await page.route("**/api/stacks/import/adopt", (route) =>
@@ -77,5 +77,32 @@ test.describe("Stacks - Import Existing Stack entry point", () => {
 
         await expect(page.getByText(/adopted successfully/i)).toBeVisible();
         await expect(page.getByText("Imported")).toBeVisible();
+    });
+
+    test("import page keeps an already-managed stack listed with disabled actions and a link", async ({page}) => {
+        await mockAuthenticated(page);
+        await mockStacksList(page);
+
+        await page.route("**/api/stacks/import/scan", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({
+                    stacks: [{...greenStack, managedStack: {id: "blog", displayName: "Blog"}}],
+                    skippedDirectories: 0,
+                    skipped: [],
+                }),
+            }),
+        );
+
+        await page.goto("/stacks/import");
+
+        await page.getByLabel(/directories to scan/i).fill("/home/user");
+        await page.getByRole("button", {name: /scan/i}).click();
+
+        await expect(page.getByText("Already managed")).toBeVisible();
+        await expect(page.getByRole("button", {name: "Migrate"})).toBeDisabled();
+        await expect(page.getByRole("button", {name: "Adopt"})).toBeDisabled();
+        await expect(page.getByRole("link", {name: "View Blog"})).toHaveAttribute("href", "/stacks/blog");
     });
 });
