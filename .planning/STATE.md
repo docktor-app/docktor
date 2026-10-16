@@ -5,16 +5,16 @@ milestone_name: Release Follow-ups
 current_phase: 18
 current_phase_name: Import and Migration Flow
 status: executing
-stopped_at: Completed 18-11-PLAN.md
-last_updated: "2026-10-16T07:41:00.882Z"
+stopped_at: Completed 18-12-PLAN.md
+last_updated: "2026-10-16T07:49:46.350Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 18 execution started
-state_head: 32681b2bc63b1aa7af11b94abd3148c29057b603
+state_head: d21df0975535a7ad2c89e837027300b810787d1f
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 20
-  completed_plans: 14
+  completed_plans: 15
   percent: 20
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-14)
 ## Current Position
 
 Phase: 18 (Import and Migration Flow) — EXECUTING
-Plan: 7 of 17
+Plan: 8 of 17
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 18 execution started
 
@@ -76,6 +76,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 18 P07 | 8 min | 3 tasks | 9 files |
 | Phase 18 P10 | 5 min | 3 tasks | 6 files |
 | Phase 18 P11 | 18 min | 3 tasks | 17 files |
+| Phase 18 P12 | 10 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -108,6 +109,8 @@ Roadmap decisions for v0.1.1:
 - [Phase 18]: 18-10: kept relative mounts are copied to their own relative path (newPath = originalPath, convert true); warning wording avoids claiming backups miss kept data because restic backs up the whole stack directory
 - [Phase 18]: 18-10: stack directory mounts ('.') are keep-only and consume no ./volumes/ name; named volume names are reserved before bind-mount targets get -2/-3 suffixes
 - [Phase 18]: 18-11: a compose file is already managed when its directory equals a stack's hostPath (separator-normalised, exact); scan rows always carry managedStack and adopt/migrate refuse them with ConflictError after the own-stack check
+- [Phase 18]: 18-12: in-place migration forces the old-stack stop, renames the original aside (validated single-segment name, must not exist) and keeps it as the backup; rollback renames it back only into a free path, otherwise leaves it untouched with manual instructions
+- [Phase 18]: 18-12: migration preview now requires displayName and returns target; client previewMigration callers must send it (plan 18-15)
 
 ### Pending Todos
 
@@ -131,6 +134,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T07:41:00.653Z
-Stopped at: Completed 18-11-PLAN.md
+Last session: 2026-10-16T07:49:46.204Z
+Stopped at: Completed 18-12-PLAN.md
 Resume file: None
