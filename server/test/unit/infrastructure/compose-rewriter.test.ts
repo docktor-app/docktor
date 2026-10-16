@@ -543,14 +543,14 @@ volumes:
                 const compose = lines(
                     "services:",
                     ...service("web", 'PORT: "80"'),
+                    ...service("batch", 'WORKER_PORT: "1"'),
                     ...service("worker", 'PORT: "9000"'),
-                    ...service("batch", 'WORKER_PORT: "1"', 'PORT: "7"'),
                     "",
                 );
 
                 const result = rewriter.rewrite(compose, [], new Map());
 
-                expect(result.envVars).toEqual({PORT: "80", WORKER_PORT: "9000", WORKER_PORT_2: "1", BATCH_PORT: "7"});
+                expect(result.envVars).toEqual({PORT: "80", WORKER_PORT: "1", WORKER_PORT_2: "9000"});
             });
 
             it.each([

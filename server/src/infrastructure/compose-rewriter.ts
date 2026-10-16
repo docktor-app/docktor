@@ -142,6 +142,52 @@ class VolumeRules {
 	}
 }
 
+/** Highest numeric suffix tried for a name (`<SERVICE>_KEY_2` ... `<SERVICE>_KEY_99`). */
+const MAX_NAME_SUFFIX = 99;
+
+/** `web.v2` -> `WEB_V2`, `1st` -> `_1ST`: a service name made usable inside a variable name. */
+function variablePrefix(serviceName: string): string {
+	const upper = serviceName.toUpperCase().replaceAll(/[^A-Z0-9_]/g, "_");
+	return /^[0-9]/.test(upper) ? `_${upper}` : upper;
+}
+
+/**
+ * Decides which `.env` name carries each extracted literal. A name is never reused for a
+ * different value, so every `${NAME}` keeps resolving to the literal it replaced.
+ */
+class EnvNameAllocator {
+	// Insertion-ordered: the order in which names were first emitted.
+	private readonly assigned = new Map<string, string>();
+
+	constructor(private readonly reserved: ReadonlySet<string>) {}
+
+	/** The name for `key`'s literal in `serviceName`, or undefined when no candidate is usable. */
+	allocate(serviceName: string, key: string, value: string): string | undefined {
+		const prefixed = `${variablePrefix(serviceName)}_${key}`;
+		const candidates = [key, prefixed];
+		for (let suffix = 2; suffix <= MAX_NAME_SUFFIX; suffix++) {
+			candidates.push(`${prefixed}_${suffix}`);
+		}
+		const name = candidates.find(candidate => this.isUsable(candidate, value));
+		if (name !== undefined) {
+			this.assigned.set(name, value);
+		}
+		return name;
+	}
+
+	entries(): ReadonlyMap<string, string> {
+		return this.assigned;
+	}
+
+	private isUsable(name: string, value: string): boolean {
+		if (this.reserved.has(name)) {
+			return false;
+		}
+		const taken = this.assigned.get(name);
+		return taken === undefined || taken === value;
+	}
+}
+
 /** Position of the `:` that follows a mapping key, as the offset just past it. */
 function colonEnd(source: string, keyEnd: number): number {
 	return source.indexOf(":", keyEnd) + 1;
@@ -160,12 +206,11 @@ type VolumeEntry = YAMLMap["items"][number];
 /** Plans the edits for one compose document. */
 class ComposeEditPlan {
 	private readonly edits: SourceEdits;
-	// Insertion-ordered: a later duplicate key overwrites the value but keeps its first position.
-	private readonly envVars = new Map<string, string>();
 
 	constructor(
 		private readonly source: string,
 		private readonly rules: VolumeRules,
+		private readonly names: EnvNameAllocator,
 	) {
 		this.edits = new SourceEdits(source);
 	}
@@ -189,10 +234,10 @@ class ComposeEditPlan {
 
 	/**
 	 * Inline literal values of a map-form `environment` move to `.env`: each value scalar becomes
-	 * `${KEY}` in place. List-form entries, null values, values that already reference a variable
+	 * `${NAME}` in place, where NAME is the key unless another value already owns it. List-form entries, null values, values that already reference a variable
 	 * and block scalars stay as they are.
 	 */
-	extractServiceEnvironment(service: YAMLMap): void {
+	extractServiceEnvironment(serviceName: string, service: YAMLMap): void {
 		const environment = service.get("environment", true);
 		if (!isMap(environment)) {
 			return;
@@ -203,9 +248,9 @@ class ComposeEditPlan {
 			}
 			const key = String(pair.key.value);
 			const literal = this.literalEnvValue(pair.value);
-			if (literal !== undefined) {
-				this.envVars.set(key, literal);
-				this.edits.replaceScalar(pair.value, `\${${key}}`);
+			const name = literal === undefined ? undefined : this.names.allocate(serviceName, key, literal);
+			if (name !== undefined) {
+				this.edits.replaceScalar(pair.value, `\${${name}}`);
 			}
 		}
 	}
@@ -222,9 +267,10 @@ class ComposeEditPlan {
 	}
 
 	extractedEnv(): {extractedEnv: string; envVars: Record<string, string>} {
+		const entries = this.names.entries();
 		return {
-			extractedEnv: [...this.envVars].map(([key, value]) => `${key}=${value}`).join("\n"),
-			envVars: Object.fromEntries(this.envVars),
+			extractedEnv: [...entries].map(([key, value]) => `${key}=${value}`).join("\n"),
+			envVars: Object.fromEntries(entries),
 		};
 	}
 
@@ -343,6 +389,13 @@ class ComposeEditPlan {
  */
 export class ComposeRewriter implements ComposeRewriterPort {
 	/**
+	 * @param reservedNames names that can never carry an extracted value, read once per rewrite.
+	 *   Docker compose is run with Docktor's own environment and shell variables override `.env`,
+	 *   so every variable of this process is reserved by default.
+	 */
+	constructor(private readonly reservedNames: () => ReadonlySet<string> = () => new Set(Object.keys(process.env))) {}
+
+	/**
 	 * Rewrite compose file:
 	 * 1. Update volume paths based on selections
 	 * 2. Mark unconverted named volumes as external
@@ -371,11 +424,15 @@ export class ComposeRewriter implements ComposeRewriterPort {
 			return unchanged;
 		}
 
-		const plan = new ComposeEditPlan(originalCompose, new VolumeRules(volumeSelections, namedVolumeSelections));
+		const plan = new ComposeEditPlan(
+			originalCompose,
+			new VolumeRules(volumeSelections, namedVolumeSelections),
+			new EnvNameAllocator(this.reservedNames()),
+		);
 		for (const pair of services.items) {
 			if (isMap(pair.value)) {
 				plan.rewriteServiceVolumes(pair.value);
-				plan.extractServiceEnvironment(pair.value);
+				plan.extractServiceEnvironment(String(isScalar(pair.key) ? pair.key.value : ""), pair.value);
 			}
 		}
 		plan.rewriteTopLevelVolumes(root);
