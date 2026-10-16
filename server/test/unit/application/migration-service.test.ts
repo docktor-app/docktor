@@ -16,7 +16,14 @@ import type {OwnMountsView} from "../../../src/domain/bind-mount-sources.js";
 import {toComparablePath} from "../../../src/domain/self-stack-paths.js";
 import type {StackRepository} from "../../../src/repositories/stack-repository.js";
 
-const COMPOSE = "services:\n  web:\n    image: nginx:latest\n";
+/** A compose file whose `web` service declares each given bind source (short syntax). */
+function composeDeclaring(sources: readonly string[]): string {
+    const volumes = sources.map((source, index) => `      - ${source}:/mnt/${index}\n`).join("");
+    return `services:\n  web:\n    image: nginx:latest\n    volumes:\n${volumes}`;
+}
+
+// The bind sources the tests below convert; a converted source must be declared (WR-01).
+const COMPOSE = composeDeclaring(["./data", "./missing", "./present"]);
 const BACKUP_DIR_NAME = "pre-migration-backup";
 
 function createMockDocker() {
@@ -374,7 +381,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
 
         const result = await buildService().migrate({
             ...input({backup: false}),
-            volumeSelections: [{originalPath: "data", newPath: "./volumes/data", convert: true}],
+            volumeSelections: [{originalPath: "./data", newPath: "./volumes/data", convert: true}],
         });
 
         expect(result.success).toBe(false);
@@ -404,7 +411,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         await expect(
             buildService().migrate({
                 ...input({backup: false}),
-                volumeSelections: [{originalPath: "data", newPath: "./volumes/data", convert: true}],
+                volumeSelections: [{originalPath: "./data", newPath: "./volumes/data", convert: true}],
             }),
         ).rejects.toThrow("EACCES");
 
@@ -417,7 +424,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
 
         const result = await buildService().migrate({
             ...input({backup: false}),
-            volumeSelections: [{originalPath: "missing", newPath: "./volumes/missing", convert: true}],
+            volumeSelections: [{originalPath: "./missing", newPath: "./volumes/missing", convert: true}],
         });
 
         expect(result.success).toBe(true);
@@ -430,7 +437,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
 
         const result = await buildService().migrate({
             ...input({backup: false}),
-            volumeSelections: [{originalPath: "data", newPath: "./volumes/data", convert: true}],
+            volumeSelections: [{originalPath: "./data", newPath: "./volumes/data", convert: true}],
         });
 
         expect(result.success).toBe(true);
@@ -440,28 +447,105 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         );
     });
 
-    it("keeps rejecting a traversing named volume name and restarts the stopped stack (CR-02)", async () => {
-        const result = await buildService().migrate({
-            ...input(),
-            namedVolumeSelections: new Map([["../escape", true]]),
-        });
+    it("refuses a traversing named volume name before anything is stopped (CR-02, WR-01)", async () => {
+        await expect(
+            buildService().migrate({...input(), namedVolumeSelections: new Map([["../escape", true]])}),
+        ).rejects.toThrow(BadRequestError);
 
-        expect(result.success).toBe(false);
-        expect(result.error).toContain("Invalid volume name");
+        expectNoSideEffects();
         expect(mockMigrator.copyVolumeToBindMount).not.toHaveBeenCalled();
-        expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+        expect(mockOldStack.start).not.toHaveBeenCalled();
+        await assertOriginalUntouched();
     });
 
-    it("keeps confining a bind-mount newPath to the managed directory (CR-02)", async () => {
-        const result = await buildService().migrate({
-            ...input(),
-            volumeSelections: [{originalPath: "data", newPath: "../../outside", convert: true}],
+    it("refuses a bind-mount newPath escaping the managed directory before anything is stopped (CR-02, WR-01)", async () => {
+        await expect(
+            buildService().migrate({
+                ...input(),
+                volumeSelections: [{originalPath: "./data", newPath: "../../outside", convert: true}],
+            }),
+        ).rejects.toThrow(/escapes/);
+
+        expectNoSideEffects();
+        expect(mockOldStack.start).not.toHaveBeenCalled();
+        await assertOriginalUntouched();
+    });
+
+    describe("request paths are validated in preflight (WR-01)", () => {
+        const converting = (originalPath: string, newPath = "./volumes/data") => ({
+            ...input({backup: false}),
+            volumeSelections: [{originalPath, newPath, convert: true}],
         });
 
-        expect(result.success).toBe(false);
-        expect(result.error).toContain("managed directory");
-        expect(mockOldStack.start).toHaveBeenCalledTimes(1);
-        await assertOriginalUntouched();
+        it("refuses a converted source the compose file does not declare, in preflight and migrate", async () => {
+            const service = buildService();
+
+            await expect(service.preflight(converting("./undeclared"))).rejects.toThrow(BadRequestError);
+            await expect(service.migrate(converting("./undeclared"))).rejects.toThrow("./undeclared");
+
+            expectNoSideEffects();
+            expect(mockOwnMounts.ownMounts).not.toHaveBeenCalled();
+        });
+
+        it("refuses an arbitrary absolute host path the compose file does not declare", async () => {
+            await expect(buildService().preflight(converting("/etc/passwd"))).rejects.toThrow(BadRequestError);
+
+            expectNoSideEffects();
+        });
+
+        it("does not require an unselected source to be declared", async () => {
+            const plan = await buildService().preflight({
+                ...input({backup: false}),
+                volumeSelections: [{originalPath: "./undeclared", newPath: "./undeclared", convert: false}],
+            });
+
+            expect(plan.bindCopies).toEqual([]);
+        });
+
+        it("refuses duplicate destinations among converted selections", async () => {
+            await expect(
+                buildService().migrate({
+                    ...input({backup: false}),
+                    volumeSelections: [
+                        {originalPath: "./data", newPath: "./volumes/shared", convert: true},
+                        {originalPath: "./missing", newPath: "./volumes/shared", convert: true},
+                    ],
+                }),
+            ).rejects.toThrow(BadRequestError);
+
+            expectNoSideEffects();
+        });
+
+        it("refuses a destination that would overwrite the compose file", async () => {
+            await expect(buildService().preflight(converting("./data", "./docker-compose.yml"))).rejects.toThrow(
+                BadRequestError,
+            );
+        });
+
+        it("refuses a bind destination that collides with a converted named volume", async () => {
+            await expect(
+                buildService().preflight({
+                    ...converting("./data", "./volumes/pgdata"),
+                    namedVolumeSelections: new Map([["pgdata", true]]),
+                }),
+            ).rejects.toThrow(BadRequestError);
+        });
+
+        it("refuses a compose file that does not parse when a bind source is converted", async () => {
+            await fs.writeFile(composePath, "services: [unterminated\n", "utf-8");
+
+            await expect(buildService().migrate(converting("./data"))).rejects.toThrow(BadRequestError);
+
+            expectNoSideEffects();
+        });
+
+        it("accepts the stack-directory mount copied to the stack root", async () => {
+            await fs.writeFile(composePath, composeDeclaring(["."]), "utf-8");
+
+            const plan = await buildService().preflight(converting(".", "."));
+
+            expect(plan.bindCopies).toHaveLength(1);
+        });
     });
 
     describe("bind-mount sources through Docktor's own mounts (CR-03)", () => {
@@ -503,6 +587,14 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
     });
 
     describe("sources Docktor cannot read fail closed (CR-03)", () => {
+        beforeEach(async () => {
+            await fs.writeFile(
+                composePath,
+                composeDeclaring(["./data", "./missing", "/opt/app/data", "~/data"]),
+                "utf-8",
+            );
+        });
+
         const invisible = (originalPath: string) => ({
             ...input({backup: false}),
             volumeSelections: [{originalPath, newPath: "./volumes/data", convert: true}],
@@ -521,7 +613,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
 
             expectNoSideEffects();
             expect(mockMigrator.moveDirectory).not.toHaveBeenCalled();
-            await assertOriginalUntouched();
+            expect(await fs.readFile(path.join(originalDir, "data", "keep.txt"), "utf-8")).toBe("keep me");
         });
 
         it("refuses a selected ~ source, before anything happens", async () => {
@@ -547,7 +639,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             const service = buildService();
             const plan = await service.preflight({
                 ...input({backup: false}),
-                volumeSelections: [{originalPath: "data", newPath: "./volumes/data", convert: true}],
+                volumeSelections: [{originalPath: "./data", newPath: "./volumes/data", convert: true}],
             });
             await fs.rm(path.join(originalDir, "data"), {recursive: true});
 
@@ -567,7 +659,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             const service = buildService();
             const plan = await service.preflight({
                 ...input({backup: false}),
-                volumeSelections: [{originalPath: "data", newPath: "./volumes/data", convert: true}],
+                volumeSelections: [{originalPath: "./data", newPath: "./volumes/data", convert: true}],
             });
             const realAccess = fs.access.bind(fs);
             const blockedSource = path.join(originalDir, "data");
@@ -888,6 +980,12 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
 
         it("reads an absolute bind-mount source inside the original directory from the renamed directory", async () => {
             mockDocker.up.mockResolvedValue(undefined);
+            // Long syntax, so a drive-letter path stays one value on Windows.
+            await fs.writeFile(
+                composePath,
+                `services:\n  web:\n    image: nginx:latest\n    volumes:\n      - type: bind\n        source: ${JSON.stringify(path.join(originalDir, "data"))}\n        target: /data\n`,
+                "utf-8",
+            );
 
             const result = await buildService().migrate({
                 ...inPlaceInput(),
@@ -1095,7 +1193,7 @@ describe("previewMigration (MIG-02, D-04, G-18-7)", () => {
     it("returns a UnifiedDiff with individually marked added and removed lines", async () => {
         const rewriter = {
             rewrite: vi.fn().mockReturnValue({
-                rewrittenCompose: "services:\n  web:\n    image: nginx:1.27\n",
+                rewrittenCompose: COMPOSE.replace("nginx:latest", "nginx:1.27"),
                 extractedEnv: "FOO=bar",
                 envVars: {},
             }),
@@ -1213,6 +1311,23 @@ describe("previewMigration (MIG-02, D-04, G-18-7)", () => {
             expect(preview.emptySources).toEqual(["./missing"]);
         });
 
+        it("refuses a converted source the compose file does not declare and a bad destination", async () => {
+            const service = buildPreviewService();
+
+            await expect(
+                service.previewMigration({
+                    ...request(),
+                    volumeSelections: [{originalPath: "./undeclared", newPath: "./volumes/x", convert: true}],
+                }),
+            ).rejects.toThrow(BadRequestError);
+            await expect(
+                service.previewMigration({
+                    ...request(),
+                    volumeSelections: [{originalPath: "./present", newPath: "../../outside", convert: true}],
+                }),
+            ).rejects.toThrow(BadRequestError);
+        });
+
         it("returns no emptySources when nothing is selected", async () => {
             const preview = await buildPreviewService().previewMigration(request());
 
@@ -1223,6 +1338,7 @@ describe("previewMigration (MIG-02, D-04, G-18-7)", () => {
             ["Docktor sees no host path", {kind: "container", mounts: []} as OwnMountsView],
             ["Docktor's mounts are unknown", {kind: "unknown"} as OwnMountsView],
         ])("refuses a selected absolute source when %s", async (_label, view) => {
+            await fs.writeFile(composePath, composeDeclaring(["/opt/app/data"]), "utf-8");
             const service = buildPreviewService(undefined, createMockOwnMounts(view));
 
             await expect(

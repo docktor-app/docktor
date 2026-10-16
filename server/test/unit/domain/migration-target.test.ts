@@ -1,6 +1,10 @@
 import path from "node:path";
 import {describe, expect, it} from "vitest";
-import {asideNameCandidates, classifyMigrationTarget} from "../../../src/domain/migration-target.js";
+import {
+    asideNameCandidates,
+    classifyMigrationTarget,
+    copyDestinationViolations,
+} from "../../../src/domain/migration-target.js";
 
 describe("classifyMigrationTarget (G-18-7)", () => {
     const original = path.resolve("/srv/stacks/memos");
@@ -46,5 +50,82 @@ describe("asideNameCandidates (G-18-7)", () => {
 
     it("returns nothing for a limit of zero", () => {
         expect(asideNameCandidates("memos", 0)).toEqual([]);
+    });
+});
+
+describe("copyDestinationViolations (WR-01)", () => {
+    const targetDir = path.resolve("/srv/docktor/stacks/app");
+    const composeDir = path.resolve("/opt/old/app");
+
+    function violations(
+        bindCopies: Array<{originalPath: string; newPath: string}>,
+        namedVolumes: string[] = [],
+    ): readonly string[] {
+        return copyDestinationViolations({targetDir, composeDir, bindCopies, namedVolumes});
+    }
+
+    it("accepts a regular bind destination next to a named volume", () => {
+        expect(violations([{originalPath: "./data", newPath: "./volumes/data"}], ["pgdata"])).toEqual([]);
+    });
+
+    it("accepts the stack-directory mount copied to the stack root", () => {
+        expect(violations([{originalPath: ".", newPath: "."}])).toEqual([]);
+        expect(violations([{originalPath: "./", newPath: "."}])).toEqual([]);
+        expect(violations([{originalPath: composeDir, newPath: "."}])).toEqual([]);
+    });
+
+    it("rejects destinations that escape the new stack directory", () => {
+        expect(violations([{originalPath: "./data", newPath: "../../outside"}])).toEqual([
+            expect.stringContaining("escapes"),
+        ]);
+        expect(violations([{originalPath: "./data", newPath: path.resolve("/etc/cron.d")}])).toEqual([
+            expect.stringContaining("escapes"),
+        ]);
+    });
+
+    it("rejects the stack root for any source but the stack-directory mount", () => {
+        expect(violations([{originalPath: "./data", newPath: "."}])).toEqual([expect.stringContaining("stack directory")]);
+    });
+
+    it.each([
+        "./docker-compose.yml",
+        "docker-compose.yaml",
+        "./compose.yml",
+        "compose.yaml",
+        ".env",
+        "pre-migration-backup/x",
+    ])("rejects a destination named %s", (newPath) => {
+        expect(violations([{originalPath: "./data", newPath}])).toEqual([expect.stringContaining(newPath)]);
+    });
+
+    it("rejects equal destinations", () => {
+        expect(
+            violations([
+                {originalPath: "./a", newPath: "./volumes/x"},
+                {originalPath: "./b", newPath: "./volumes/x"},
+            ]),
+        ).toHaveLength(1);
+    });
+
+    it("rejects nested destinations", () => {
+        expect(
+            violations([
+                {originalPath: "./a", newPath: "./volumes/a"},
+                {originalPath: "./b", newPath: "./volumes/a/b"},
+            ]),
+        ).toHaveLength(1);
+    });
+
+    it("rejects a bind destination that collides with a named volume", () => {
+        expect(violations([{originalPath: "./a", newPath: "./volumes/pgdata"}], ["pgdata"])).toHaveLength(1);
+    });
+
+    it.each(["../escape", "a/b", ""])("rejects the named volume name %j", (name) => {
+        expect(violations([], [name])).not.toEqual([]);
+    });
+
+    it("rejects an empty destination and a destination containing NUL", () => {
+        expect(violations([{originalPath: "./a", newPath: ""}])).not.toEqual([]);
+        expect(violations([{originalPath: "./a", newPath: "./volumes/a\0b"}])).not.toEqual([]);
     });
 });
