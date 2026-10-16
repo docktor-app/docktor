@@ -10,6 +10,7 @@ import type {VolumeMigratorPort} from "../../../src/application/ports/volume-mig
 import type {ComposeRewriterPort} from "../../../src/application/ports/compose-rewriter-port.js";
 import type {StackFilesystemPort} from "../../../src/application/ports/stack-filesystem-port.js";
 import type {ExternalStackControlPort} from "../../../src/application/ports/external-stack-control-port.js";
+import type {SelfStackPort} from "../../../src/application/ports/self-stack-port.js";
 import type {StackRepository} from "../../../src/repositories/stack-repository.js";
 
 const COMPOSE = "services:\n  web:\n    image: nginx:latest\n";
@@ -53,6 +54,10 @@ function createMockOldStack() {
     return {stop: vi.fn().mockResolvedValue(undefined), start: vi.fn().mockResolvedValue(undefined)};
 }
 
+function createMockSelfStack() {
+    return {composeFilePaths: vi.fn().mockResolvedValue([] as string[])};
+}
+
 describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
     const displayName = "Rollback Fixture";
     const stackId = slugify(displayName);
@@ -67,6 +72,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
     let mockStackFs: ReturnType<typeof createMockStackFs>;
     let mockStackRepo: ReturnType<typeof createMockStackRepo>;
     let mockOldStack: ReturnType<typeof createMockOldStack>;
+    let mockSelfStack: ReturnType<typeof createMockSelfStack>;
 
     beforeEach(async () => {
         tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "docktor-migrate-"));
@@ -84,6 +90,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         mockStackFs = createMockStackFs(path.join(tmpRoot, "stacks"));
         mockStackRepo = createMockStackRepo();
         mockOldStack = createMockOldStack();
+        mockSelfStack = createMockSelfStack();
     });
 
     afterEach(async () => {
@@ -121,6 +128,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             mockStackFs as unknown as StackFilesystemPort,
             mockStackRepo as unknown as StackRepository,
             mockOldStack as unknown as ExternalStackControlPort,
+            mockSelfStack as unknown as SelfStackPort,
         );
     }
 
@@ -443,6 +451,51 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         expect(result.error).toContain("managed directory");
         expect(mockOldStack.start).toHaveBeenCalledTimes(1);
         await assertOriginalUntouched();
+    });
+
+    describe("own-stack refusal (WR-09, STK-03)", () => {
+        function expectNothingTouched(): void {
+            expectNoSideEffects();
+            expect(mockMigrator.copyVolumeToBindMount).not.toHaveBeenCalled();
+            expect(mockRewriter.rewrite).not.toHaveBeenCalled();
+            expect(mockStackRepo.exists).not.toHaveBeenCalled();
+            expect(mockDocker.up).not.toHaveBeenCalled();
+        }
+
+        it("refuses Docktor's own compose file with a BadRequestError before anything is stopped", async () => {
+            mockSelfStack.composeFilePaths.mockResolvedValue([composePath]);
+
+            await expect(buildService().migrate(input())).rejects.toBeInstanceOf(BadRequestError);
+            await expect(buildService().preflight(input())).rejects.toBeInstanceOf(BadRequestError);
+            expectNothingTouched();
+        });
+
+        it("recognises the own compose file when the lookup reports it with backslashes", async () => {
+            mockSelfStack.composeFilePaths.mockResolvedValue([composePath.replaceAll("/", "\\")]);
+
+            await expect(buildService().migrate(input())).rejects.toBeInstanceOf(BadRequestError);
+            expectNothingTouched();
+        });
+
+        it("migrates a different compose file in the same directory as Docktor's own (D-01)", async () => {
+            mockSelfStack.composeFilePaths.mockResolvedValue([path.join(originalDir, "compose.yml")]);
+            mockDocker.up.mockResolvedValue(undefined);
+
+            const result = await buildService().migrate(input());
+
+            expect(result.success).toBe(true);
+        });
+
+        it("migrates as before and warns when the self-stack lookup rejects (fail-open, D-02)", async () => {
+            const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+            mockSelfStack.composeFilePaths.mockRejectedValue(new Error("inspect failed"));
+            mockDocker.up.mockResolvedValue(undefined);
+
+            const result = await buildService().migrate(input());
+
+            expect(result.success).toBe(true);
+            expect(warn).toHaveBeenCalled();
+        });
     });
 });
 

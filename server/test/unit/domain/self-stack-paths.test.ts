@@ -2,6 +2,7 @@ import {describe, expect, it} from "vitest";
 import {
     containerVisiblePaths,
     excludeOwnComposeFiles,
+    isOwnComposeFile,
     ownComposeFileCandidates,
     toComparablePath,
     type ContainerMount,
@@ -132,5 +133,23 @@ describe("excludeOwnComposeFiles", () => {
         const stacks = [stack("/b/compose.yml"), stack("/a/compose.yml")];
 
         expect(excludeOwnComposeFiles(stacks, [])).toEqual(stacks);
+    });
+});
+
+describe("isOwnComposeFile", () => {
+    it("is true when the compose path equals one of the own paths", () => {
+        expect(isOwnComposeFile("/host/opt/docktor/docker-compose.yml", ["/x/compose.yml", "/host/opt/docktor/docker-compose.yml"])).toBe(true);
+    });
+
+    it("is true when the compose path uses backslashes against a posix own path", () => {
+        expect(isOwnComposeFile("\\host\\opt\\docktor\\docker-compose.yml", ["/host/opt/docktor/docker-compose.yml"])).toBe(true);
+    });
+
+    it("is false for a different compose file in the same directory (D-01)", () => {
+        expect(isOwnComposeFile("/host/opt/docktor/compose.override.yml", ["/host/opt/docktor/docker-compose.yml"])).toBe(false);
+    });
+
+    it("is false when the own stack is unknown (D-02)", () => {
+        expect(isOwnComposeFile("/host/opt/docktor/docker-compose.yml", [])).toBe(false);
     });
 });
