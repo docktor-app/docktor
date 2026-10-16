@@ -64,6 +64,8 @@ describe("brownfield routes", () => {
         onboardingFake.adoptInPlace.mockReset();
         onboardingFake.isWizardComplete.mockReset();
         onboardingFake.isWizardComplete.mockResolvedValue(false);
+        onboardingFake.hasAnyUser.mockReset();
+        onboardingFake.hasAnyUser.mockResolvedValue(true);
         await app.close();
         await fs.rm(tmpDir, {recursive: true, force: true});
     });
@@ -142,6 +144,54 @@ describe("brownfield routes", () => {
 
             expect(res.statusCode).toBe(410);
         });
+    });
+
+    describe.each([
+        ["/api/setup/migrate/preview", "previewMigration"],
+        ["/api/setup/migrate", "migrate"],
+    ] as const)("POST %s before an admin account exists (WR-03)", (url, method) => {
+        function payload() {
+            return {
+                composePath,
+                displayName: "My App",
+                volumeSelections: [],
+                namedVolumeSelections: {},
+                backup: true,
+                stopOldStack: true,
+            };
+        }
+
+        it("answers 400 and never reaches MigrationService", async () => {
+            onboardingFake.hasAnyUser.mockResolvedValue(false);
+            const spy = vi.spyOn(migrationService, method).mockRejectedValue(new Error("must not be called"));
+
+            const res = await app.inject({method: "POST", url, payload: payload()});
+
+            expect(res.statusCode).toBe(400);
+            expect(spy).not.toHaveBeenCalled();
+        });
+
+        it("still answers 410 first once the wizard is complete", async () => {
+            onboardingFake.hasAnyUser.mockResolvedValue(false);
+            onboardingFake.isWizardComplete.mockResolvedValue(true);
+
+            const res = await app.inject({method: "POST", url, payload: payload()});
+
+            expect(res.statusCode).toBe(410);
+        });
+    });
+
+    it("leaves the /api/stacks/import/migrate/preview route unaffected by the admin-account guard", async () => {
+        onboardingFake.hasAnyUser.mockResolvedValue(false);
+
+        const res = await app.inject({
+            method: "POST",
+            url: "/api/stacks/import/migrate/preview",
+            payload: {composePath, volumeSelections: [], namedVolumeSelections: {pgdata: true}},
+        });
+
+        expect(res.statusCode).toBe(200);
+        expect(res.json().diff.hunks.length).toBeGreaterThan(0);
     });
 
     describe.each(["/api/stacks/import/adopt", "/api/setup/adopt"])("POST %s", (url) => {
