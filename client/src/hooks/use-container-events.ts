@@ -76,12 +76,20 @@ export type StateEvent = ContainerStateEvent | StackStatusEvent | ConfigChangedE
 
 const BASE = globalThis.location?.port === "5173" ? "http://localhost:3000" : ""
 
-export function useContainerEvents(onEvent: (event: StateEvent) => void) {
+interface UseContainerEventsOptions {
+    /** Called each time the connection opens, the first time and after every automatic reconnect. */
+    onOpen?: () => void
+}
+
+export function useContainerEvents(onEvent: (event: StateEvent) => void, options?: UseContainerEventsOptions) {
     const handler = useRef(onEvent)
     handler.current = onEvent
+    const onOpen = useRef(options?.onOpen)
+    onOpen.current = options?.onOpen
 
     useEffect(() => {
         const es = new EventSource(`${BASE}/api/events`, {withCredentials: true})
+        es.onopen = () => onOpen.current?.()
         es.onmessage = (e) => handler.current(JSON.parse(e.data))
         es.onerror = () => {} // Native EventSource auto-reconnects
         return () => es.close()

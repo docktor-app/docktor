@@ -26,14 +26,15 @@ function isSameSnapshot(a: MigrationOperation, b: MigrationOperation): boolean {
 }
 
 /**
- * A snapshot is stale when it would move an operation backwards: a finished
- * operation never becomes running again, and a running one never returns to an
- * earlier step (the 202 response can arrive after the first SSE events).
+ * A snapshot is stale when it repeats the stored one or would move an
+ * operation backwards: a finished operation never becomes running again, and a
+ * running one never returns to an earlier step (the 202 response can arrive
+ * after the first SSE events).
  */
 function isStale(current: MigrationOperation | undefined, next: MigrationOperation): boolean {
   if (!current) return false;
   if (current.status !== "running") return next.status === "running" || isSameSnapshot(current, next);
-  return next.status === "running" && stepIndex(next) < stepIndex(current);
+  return next.status === "running" && (stepIndex(next) < stepIndex(current) || isSameSnapshot(current, next));
 }
 
 /**
@@ -71,20 +72,28 @@ export function useMigrationOperations(
     },
     [upsert],
   );
-  useContainerEvents(handleEvent);
 
+  const mounted = useRef(true);
   useEffect(() => {
-    let cancelled = false;
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const resync = useCallback(() => {
     list
       .current()
       .then(({operations: listed}) => {
-        if (!cancelled) listed.forEach((operation) => upsert(operation, false));
+        if (mounted.current) listed.forEach((operation) => upsert(operation, false));
       })
       .catch((err: unknown) => console.warn("Could not read migration operations", err));
-    return () => {
-      cancelled = true;
-    };
   }, [upsert]);
+
+  // Events missed while the stream was closed (reload, network loss) are
+  // recovered by re-reading the list whenever the stream opens.
+  useContainerEvents(handleEvent, {onOpen: resync});
+  useEffect(resync, [resync]);
 
   const runningByComposePath = useMemo(
     () => new Map(operations.filter((op) => op.status === "running").map((op) => [op.composePath, op])),

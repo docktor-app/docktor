@@ -1,25 +1,31 @@
 import {Link} from "react-router";
+import type {MigrationOperation} from "@docktor/shared";
 import {Button} from "@/components/ui/button";
 import {ToneBadge} from "@/components/common/tone-badge";
+import {migrationStepLabel} from "@/lib/migration-progress";
 import type {DiscoveredStack} from "@/lib/brownfield-types";
 
 interface DiscoveredStackActionsProps {
   stack: DiscoveredStack;
   isAdopted: boolean;
   isAdopting: boolean;
+  /** The background migration of this stack, while one runs. */
+  runningOperation: MigrationOperation | undefined;
   onMigrate: () => void;
   onAdopt: () => void;
 }
 
 /**
- * Action cell of a scan result row. A stack Docktor already manages keeps its
- * buttons but disabled, with a link to the managing stack; the server refuses
- * the request regardless, so this is convenience only.
+ * Action cell of a scan result row. A stack Docktor already manages, or one
+ * whose migration is running, keeps its buttons but disabled (the managed one
+ * with a link to the managing stack); the server refuses the request
+ * regardless, so this is convenience only.
  */
 export function DiscoveredStackActions({
   stack,
   isAdopted,
   isAdopting,
+  runningOperation,
   onMigrate,
   onAdopt,
 }: Readonly<DiscoveredStackActionsProps>) {
@@ -28,10 +34,16 @@ export function DiscoveredStackActions({
   }
 
   const {managedStack} = stack;
-  const disabled = isAdopting || managedStack !== null;
+  const migrating = runningOperation !== undefined;
+  const disabled = isAdopting || migrating || managedStack !== null;
 
   return (
-    <div className="flex items-center justify-end gap-2">
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      {runningOperation && (
+        <span aria-live="polite" className="text-xs text-muted-foreground">
+          {migrationStepLabel(runningOperation)}
+        </span>
+      )}
       {managedStack && (
         <>
           <ToneBadge tone="blue">Already managed</ToneBadge>
@@ -41,7 +53,7 @@ export function DiscoveredStackActions({
         </>
       )}
       <Button size="sm" variant="outline" onClick={onMigrate} disabled={disabled}>
-        Migrate
+        {migrating ? "Migrating..." : "Migrate"}
       </Button>
       <Button size="sm" onClick={onAdopt} disabled={disabled}>
         {isAdopting ? "Adopting..." : "Adopt"}

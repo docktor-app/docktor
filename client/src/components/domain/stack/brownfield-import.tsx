@@ -54,7 +54,7 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
   const [migratingStack, setMigratingStack] = useState<DiscoveredStack | null>(null);
   const [adoptedIds, setAdoptedIds] = useState<Set<string>>(new Set());
 
-  const {track} = useMigrationOperations(api.listMigrationOperations, {
+  const {runningByComposePath, track} = useMigrationOperations(api.listMigrationOperations, {
     onUpdate: (operation) => {
       showMigrationToast(operation, navigate);
       if (operation.status === "succeeded") {
@@ -242,6 +242,7 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
                               stack={stack}
                               isAdopted={isAdopted}
                               isAdopting={isAdopting}
+                              runningOperation={runningByComposePath.get(stack.path)}
                               onMigrate={() => setMigratingStack(stack)}
                               onAdopt={() => handleAdopt(stack)}
                             />
