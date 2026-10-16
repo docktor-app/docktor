@@ -1,7 +1,35 @@
 import {spawn} from "node:child_process";
 import fs from "node:fs/promises";
-import {hasErrorCode} from "../lib/errors.js";
+import path from "node:path";
+import {AppError, hasErrorCode} from "../lib/errors.js";
 import type {VolumeMigratorPort} from "../application/ports/volume-migrator-port.js";
+
+/**
+ * Runs `command` with an argument array (never through a shell) and resolves on exit 0.
+ * A non-zero exit rejects with an AppError naming `purpose`, the exit code and stderr.
+ */
+function runCommand(command: string, args: readonly string[], purpose: string): Promise<void> {
+	return new Promise((resolve, reject) => {
+		const proc = spawn(command, args);
+
+		let stderr = "";
+		proc.stderr.on("data", (chunk: Buffer) => {
+			stderr += chunk.toString();
+		});
+
+		proc.on("close", (code) => {
+			if (code === 0) {
+				resolve();
+			} else {
+				reject(new AppError(`${purpose} failed (exit ${code}): ${stderr.trim()}`));
+			}
+		});
+
+		proc.on("error", (err) => {
+			reject(new AppError(`Failed to spawn ${command}: ${err.message}`));
+		});
+	});
+}
 
 export class VolumeMigrator implements VolumeMigratorPort {
 	/**
@@ -21,33 +49,18 @@ export class VolumeMigrator implements VolumeMigratorPort {
 			"sh", "-c", "cp -a /source/. /dest/",
 		];
 
-		return new Promise((resolve, reject) => {
-			const proc = spawn("docker", args);
-
-			let stderr = "";
-			proc.stderr.on("data", (chunk) => {
-				stderr += chunk.toString();
-			});
-
-			proc.on("close", (code) => {
-				if (code === 0) {
-					resolve();
-				} else {
-					reject(new Error(`Volume copy failed (exit ${code}): ${stderr}`));
-				}
-			});
-
-			proc.on("error", (err) => {
-				reject(new Error(`Failed to spawn docker: ${err.message}`));
-			});
-		});
+		return runCommand("docker", args, "Volume copy");
 	}
 
 	/**
-	 * Copy files from source directory to destination
+	 * Copy a directory (or file) faithfully with archive-mode `cp`: ownership when
+	 * privileged, modes, timestamps and symlinks (verbatim, never dereferenced) survive.
 	 */
 	async copyDirectory(srcPath: string, destPath: string): Promise<void> {
-		await fs.cp(srcPath, destPath, {recursive: true});
+		// A missing or unreadable source rejects with its errno code before anything is created.
+		await fs.lstat(srcPath);
+		await fs.mkdir(path.dirname(destPath), {recursive: true});
+		await runCommand("cp", ["-a", "--", srcPath, destPath], `Copy of ${srcPath} to ${destPath}`);
 	}
 
 	/**
