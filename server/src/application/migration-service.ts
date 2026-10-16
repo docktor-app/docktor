@@ -10,11 +10,14 @@ import {slugify} from "../lib/slugify.js";
 import {createComposeConfig} from "../domain/compose-config.js";
 import {computeUnifiedDiff, type UnifiedDiff} from "../lib/unified-diff.js";
 import {BadRequestError, ConflictError, hasErrorCode} from "../lib/errors.js";
+import {dockerSelfStack} from "../infrastructure/docker-self-stack.js";
+import {assertNotOwnStack} from "./own-stack-guard.js";
 import type {DockerExecutorPort} from "./ports/docker-executor-port.js";
 import type {VolumeMigratorPort} from "./ports/volume-migrator-port.js";
 import type {ComposeRewriterPort} from "./ports/compose-rewriter-port.js";
 import type {StackFilesystemPort} from "./ports/stack-filesystem-port.js";
 import type {ExternalStackControlPort} from "./ports/external-stack-control-port.js";
+import type {SelfStackPort} from "./ports/self-stack-port.js";
 
 // D-07/D-08: an opted-in backup is a plain copy of the old stack directory at
 // this fixed name inside the new stack directory; it is kept after success.
@@ -99,6 +102,9 @@ export class MigrationService {
 		private readonly stackFs: StackFilesystemPort = new StackFilesystem(),
 		private readonly stackRepo: StackRepository = stackRepository,
 		private readonly oldStack: ExternalStackControlPort = externalStackControl,
+		// WR-09/STK-03: last position so every existing positional call keeps
+		// compiling. Lets preflight refuse Docktor's own compose file.
+		private readonly selfStack: SelfStackPort = dockerSelfStack,
 	) {}
 
 	/**
@@ -122,16 +128,19 @@ export class MigrationService {
 	 * BF-04: Full migration wizard
 	 * BF-05: Rollback on failure
 	 *
-	 * Refusals reject with 400/409 typed errors before any side effect; step
-	 * failures resolve with `success: false` after the rollback.
+	 * Refusals (including Docktor's own stack, WR-09) reject with 400/409 typed
+	 * errors before any side effect; step failures resolve with
+	 * `success: false` after the rollback.
 	 */
 	async migrate(input: MigrationInput): Promise<MigrationResult> {
 		return this.execute(await this.preflight(input));
 	}
 
 	/**
-	 * Decides every refusal that needs no side effect: an empty slug, an
-	 * existing stack record, and a target directory that exists or overlaps
+	 * Decides every refusal that needs no side effect: an empty slug, Docktor's
+	 * own compose file (WR-09, STK-03: never stop or re-home Docktor itself;
+	 * fail-open when the own stack is unknown, D-02), an existing stack
+	 * record, and a target directory that exists or overlaps
 	 * the old directory (D-09, RESEARCH Pitfall 4: rollback removes the target
 	 * directory, so it must be one Docktor creates in this run and must not
 	 * overlap the old stack). Nothing is stopped, created, copied or written.
@@ -146,6 +155,8 @@ export class MigrationService {
 		if (!stackId) {
 			throw new BadRequestError("Display name produces an empty slug");
 		}
+
+		await assertNotOwnStack(this.selfStack, composePath, "MigrationService");
 
 		if (await this.stackRepo.exists(stackId)) {
 			throw new ConflictError(`Stack "${stackId}" already exists`);

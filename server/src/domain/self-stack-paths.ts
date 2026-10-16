@@ -97,3 +97,13 @@ export function excludeOwnComposeFiles<T extends {readonly path: string}>(
     const own = new Set(ownPaths.map(toComparablePath));
     return stacks.filter((stack) => !own.has(toComparablePath(stack.path)));
 }
+
+/**
+ * True when `composePath` is exactly one of Docktor's own compose files. Same
+ * exact-file rule as the scan filter (D-01), so a different compose file in
+ * the same directory is never own. An unknown own stack (empty `ownPaths`)
+ * means "not own" (D-02).
+ */
+export function isOwnComposeFile(composePath: string, ownPaths: readonly string[]): boolean {
+    return excludeOwnComposeFiles([{path: composePath}], ownPaths).length === 0;
+}
