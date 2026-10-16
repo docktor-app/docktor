@@ -5,16 +5,16 @@ milestone_name: Release Follow-ups
 current_phase: 18
 current_phase_name: Import and Migration Flow
 status: executing
-stopped_at: Completed 18-14-PLAN.md
-last_updated: "2026-10-16T10:25:18.050Z"
+stopped_at: Completed 18-15-PLAN.md
+last_updated: "2026-10-16T10:35:29.939Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 18 execution started
-state_head: d40cac476b2dbe656983115c53d491590b006493
+state_head: 55eff115b9f1827b88bfcd164e938943c2ee2865
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 20
-  completed_plans: 17
+  completed_plans: 18
   percent: 20
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-14)
 ## Current Position
 
 Phase: 18 (Import and Migration Flow) — EXECUTING
-Plan: 10 of 17
+Plan: 11 of 17
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 18 execution started
 
@@ -78,6 +78,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 18 P11 | 18 min | 3 tasks | 17 files |
 | Phase 18 P12 | 10 min | 3 tasks | 13 files |
 | Phase 18 P14 | 14 min | 3 tasks | 10 files |
+| Phase 18 P15 | 30 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -114,6 +115,9 @@ Roadmap decisions for v0.1.1:
 - [Phase 18]: 18-12: migration preview now requires displayName and returns target; client previewMigration callers must send it (plan 18-15)
 - [Phase 18]: 18-14: migration operations are an in-memory process-local registry (finished pruned after 1 h, max 50); a restart ends running migrations anyway
 - [Phase 18]: 18-14: in-flight guard holds stack:<slug> and compose:<path> keys synchronously before preflight, released in finally on refusal or run end
+- [Phase 18]: 18-15: Aside name and backup choice held as nullable user edits (string|null, boolean|null) with derived effective values; Back and re-previews never clobber an explicit choice
+- [Phase 18]: 18-15: Separate migrations default backup off (G-18-7 supersedes D-07 default-on); off-state warning replaced by a neutral note naming the untouched original path
+- [Phase 18]: 18-15: In-place confirms with backup false and stopOldStack true; renamed original is the backup, no extra copy
 
 ### Pending Todos
 
@@ -137,6 +141,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T10:25:17.823Z
-Stopped at: Completed 18-14-PLAN.md
+Last session: 2026-10-16T10:35:29.789Z
+Stopped at: Completed 18-15-PLAN.md
 Resume file: None
