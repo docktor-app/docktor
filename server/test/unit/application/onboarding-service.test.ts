@@ -205,13 +205,27 @@ describe("OnboardingService", () => {
     });
 
     describe("adoptInPlace (BF-03)", () => {
+        // All nine constructor arguments, so the real Docker self-stack adapter is never reached.
+        function buildAdoptService(composeFilePaths: () => Promise<readonly string[]> = async () => []) {
+            return new OnboardingService(
+                mockAuthClient as any,
+                mockSettingsRepo as any,
+                mockCrypto as any,
+                mockStackRepo as any,
+                mockProxy as any,
+                mockFsLib as any,
+                mockUserRepo as any,
+                mockScanner as any,
+                {composeFilePaths},
+            );
+        }
         it("should create Stack record with hostPath pointing to discovered path", async () => {
             // BF-03: adopt in-place — no stack-directory move/copy; the compose
             // file itself is read (WR-05) to build the stored compose config.
             mockStackRepo.exists.mockResolvedValue(false);
             mockStackRepo.create.mockResolvedValue({ id: "existing-stack", displayName: "Existing Stack", hostPath: "/home/user/my-compose-stack" } as any);
             mockFsLib.readFile.mockResolvedValue("version: '3'\nservices:\n  web:\n    image: nginx");
-            const service = new OnboardingService(mockAuthClient as any, mockSettingsRepo as any, mockCrypto as any, mockStackRepo as any, mockProxy as any, mockFsLib as any);
+            const service = buildAdoptService();
             const result = await service.adoptInPlace(
                 "/home/user/my-compose-stack/docker-compose.yml",
                 "Existing Stack",
@@ -233,7 +247,7 @@ describe("OnboardingService", () => {
             mockStackRepo.exists.mockResolvedValue(false);
             mockStackRepo.create.mockResolvedValue({ id: "stack-to-adopt", hostPath: "/opt/my-stack" } as any);
             mockFsLib.readFile.mockResolvedValue("version: '3'\nservices:\n  app:\n    image: alpine");
-            const service = new OnboardingService(mockAuthClient as any, mockSettingsRepo as any, mockCrypto as any, mockStackRepo as any, mockProxy as any, mockFsLib as any);
+            const service = buildAdoptService();
             await service.adoptInPlace(
                 "/opt/my-stack/docker-compose.yml",
                 "Stack to Adopt",
@@ -246,7 +260,7 @@ describe("OnboardingService", () => {
             mockStackRepo.exists.mockResolvedValue(false);
             mockStackRepo.create.mockResolvedValue({ id: "bare-compose", hostPath: "/opt/bare-stack" } as any);
             mockFsLib.readFile.mockResolvedValue("services:\n  app:\n    image: alpine");
-            const service = new OnboardingService(mockAuthClient as any, mockSettingsRepo as any, mockCrypto as any, mockStackRepo as any, mockProxy as any, mockFsLib as any);
+            const service = buildAdoptService();
             await service.adoptInPlace(
                 "/opt/bare-stack/compose.yml",
                 "Bare Compose",
@@ -258,12 +272,50 @@ describe("OnboardingService", () => {
 
         it("should throw error if stack with same name already exists, without reading the compose file", async () => {
             mockStackRepo.exists.mockResolvedValue(true);
-            const service = new OnboardingService(mockAuthClient as any, mockSettingsRepo as any, mockCrypto as any, mockStackRepo as any, mockProxy as any, mockFsLib as any);
+            const service = buildAdoptService();
             await expect(service.adoptInPlace(
                 "/home/user/stack/docker-compose.yml",
                 "Duplicate Stack",
             )).rejects.toThrow('Stack "duplicate-stack" already exists');
             expect(mockFsLib.readFile).not.toHaveBeenCalled();
+        });
+
+        it("refuses Docktor's own compose file (WR-09, STK-03) before reading it or creating a record", async () => {
+            const service = buildAdoptService(async () => ["/opt/docktor/docker-compose.yml"]);
+
+            await expect(service.adoptInPlace("/opt/docktor/docker-compose.yml", "Docktor")).rejects.toBeInstanceOf(
+                BadRequestError,
+            );
+            expect(mockStackRepo.exists).not.toHaveBeenCalled();
+            expect(mockFsLib.readFile).not.toHaveBeenCalled();
+            expect(mockStackRepo.create).not.toHaveBeenCalled();
+        });
+
+        it("adopts a different compose file in the same directory as Docktor's own (D-01)", async () => {
+            mockStackRepo.exists.mockResolvedValue(false);
+            mockStackRepo.create.mockResolvedValue({id: "other"} as any);
+            mockFsLib.readFile.mockResolvedValue("services:\n  app:\n    image: alpine");
+            const service = buildAdoptService(async () => ["/opt/docktor/docker-compose.yml"]);
+
+            await service.adoptInPlace("/opt/docktor/compose.yml", "Other");
+
+            expect(mockStackRepo.create).toHaveBeenCalled();
+        });
+
+        it("adopts and warns when the self-stack lookup rejects (fail-open, D-02)", async () => {
+            const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+            mockStackRepo.exists.mockResolvedValue(false);
+            mockStackRepo.create.mockResolvedValue({id: "any"} as any);
+            mockFsLib.readFile.mockResolvedValue("services:\n  app:\n    image: alpine");
+            const service = buildAdoptService(async () => {
+                throw new Error("inspect failed");
+            });
+
+            await service.adoptInPlace("/opt/any/docker-compose.yml", "Any");
+
+            expect(mockStackRepo.create).toHaveBeenCalled();
+            expect(warn).toHaveBeenCalled();
+            warn.mockRestore();
         });
     });
 
