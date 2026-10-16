@@ -2,6 +2,7 @@ import {beforeEach, describe, expect, it, vi} from "vitest";
 import {render, screen, waitFor, within} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {MemoryRouter} from "react-router";
+import type {MigrationTarget} from "@docktor/shared";
 import {toast} from "sonner";
 import {BrownfieldImport, type BrownfieldImportApi} from "@/components/domain/stack/brownfield-import";
 import type {DiscoveredStack, MigrationResult, ScanResult} from "@/lib/brownfield-types";
@@ -33,23 +34,42 @@ const stack: DiscoveredStack = {
     managedStack: null,
 };
 
+const separateTarget: MigrationTarget = {
+    stackId: "db",
+    directory: "/opt/docktor/stacks/db",
+    originalDirectory: "/host/opt/db",
+    inPlace: false,
+    suggestedAsideName: null,
+};
+
+const inPlaceTarget: MigrationTarget = {
+    stackId: "db",
+    directory: "/opt/docktor/stacks/db",
+    originalDirectory: "/opt/docktor/stacks/db",
+    inPlace: true,
+    suggestedAsideName: "db-pre-migration",
+};
+
 const okResult: MigrationResult = {success: true, stackId: "db", originalPath: "/host/opt/db"};
 
-function createApi(executeMigration: BrownfieldImportApi["executeMigration"]): BrownfieldImportApi {
+function createApi(
+    executeMigration: BrownfieldImportApi["executeMigration"],
+    target: MigrationTarget = separateTarget,
+): BrownfieldImportApi {
     return {
         scanDirectories: vi.fn().mockResolvedValue({stacks: [stack], skippedDirectories: 0, skipped: []}),
         adoptStack: vi.fn().mockResolvedValue({id: "db"}),
-        previewMigration: vi.fn().mockResolvedValue({diff: {hunks: [], added: 0, removed: 0}, extractedEnv: ""}),
+        previewMigration: vi.fn().mockResolvedValue({diff: {hunks: [], added: 0, removed: 0}, extractedEnv: "", target}),
         executeMigration,
     };
 }
 
-async function walkToConfirm(options: {backupOff?: boolean; stopOff?: boolean} = {}): Promise<void> {
+async function walkToConfirm(options: {backupOn?: boolean; stopOff?: boolean} = {}): Promise<void> {
     await userEvent.click(screen.getByRole("button", {name: "Scan"}));
     await userEvent.click(await screen.findByRole("button", {name: "Migrate"}));
     await userEvent.click(screen.getByRole("button", {name: "Preview Changes"}));
     await userEvent.click(await screen.findByRole("button", {name: "Choose Backup"}));
-    if (options.backupOff) {
+    if (options.backupOn) {
         await userEvent.click(screen.getByRole("switch", {name: "Back up the old stack first"}));
     }
     await userEvent.click(screen.getByRole("button", {name: "Choose Old Stack Action"}));
@@ -71,37 +91,65 @@ describe("BrownfieldImport migration flow", () => {
         vi.clearAllMocks();
     });
 
-    it("sends backup and stopOldStack as true by default and closes the dialog", async () => {
+    it("sends backup false and stopOldStack true by default and closes the dialog", async () => {
         const executeMigration = vi.fn().mockResolvedValue(okResult);
-        renderImport(createApi(executeMigration));
+        const api = createApi(executeMigration);
+        renderImport(api);
 
         await walkToConfirm();
         expect(screen.getByRole("switch", {name: "Stop the old stack before migrating"})).toBeChecked();
         await userEvent.click(screen.getByRole("button", {name: "Confirm & Migrate"}));
 
+        expect(api.previewMigration).toHaveBeenCalledWith({
+            composePath: "/host/opt/db/docker-compose.yml",
+            displayName: "db",
+            volumeSelections: [],
+            namedVolumeSelections: {pgdata: true},
+        });
         expect(executeMigration).toHaveBeenCalledTimes(1);
+        const body = executeMigration.mock.calls[0]?.[0];
+        expect(body).toEqual({
+            composePath: "/host/opt/db/docker-compose.yml",
+            displayName: "db",
+            volumeSelections: [],
+            namedVolumeSelections: {pgdata: true},
+            backup: false,
+            stopOldStack: true,
+        });
+        expect(body).not.toHaveProperty("inPlaceAsideName");
+        expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("sends backup true and stopOldStack false when the backup is turned on and the stop off", async () => {
+        const executeMigration = vi.fn().mockResolvedValue(okResult);
+        renderImport(createApi(executeMigration));
+
+        await walkToConfirm({backupOn: true, stopOff: true});
+        await userEvent.click(screen.getByRole("button", {name: "Confirm & Migrate"}));
+
+        expect(executeMigration).toHaveBeenCalledWith(expect.objectContaining({backup: true, stopOldStack: false}));
+    });
+
+    it("sends the aside name, the forced stop and no extra backup for an in-place migration", async () => {
+        const executeMigration = vi.fn().mockResolvedValue(okResult);
+        renderImport(createApi(executeMigration, inPlaceTarget));
+
+        await walkToConfirm();
+        expect(screen.getByRole("switch", {name: "Stop the old stack before migrating"})).toBeDisabled();
+        await userEvent.click(screen.getByRole("button", {name: "Confirm & Migrate"}));
+
         expect(executeMigration).toHaveBeenCalledWith({
             composePath: "/host/opt/db/docker-compose.yml",
             displayName: "db",
             volumeSelections: [],
             namedVolumeSelections: {pgdata: true},
-            backup: true,
+            backup: false,
             stopOldStack: true,
+            inPlaceAsideName: "db-pre-migration",
         });
-        expect(screen.queryByRole("dialog")).toBeNull();
     });
 
-    it("sends backup and stopOldStack as false when both switches are turned off", async () => {
-        const executeMigration = vi.fn().mockResolvedValue(okResult);
-        renderImport(createApi(executeMigration));
-
-        await walkToConfirm({backupOff: true, stopOff: true});
-        await userEvent.click(screen.getByRole("button", {name: "Confirm & Migrate"}));
-
-        expect(executeMigration).toHaveBeenCalledWith(expect.objectContaining({backup: false, stopOldStack: false}));
-    });
-
-    it("warns on step 3 when the backup switch is off", async () => {
+    it("explains on step 3 that the original stays untouched while the backup switch is off", async () => {
         renderImport(createApi(vi.fn()));
 
         await userEvent.click(screen.getByRole("button", {name: "Scan"}));
@@ -110,12 +158,12 @@ describe("BrownfieldImport migration flow", () => {
         await userEvent.click(await screen.findByRole("button", {name: "Choose Backup"}));
 
         const backupSwitch = screen.getByRole("switch", {name: "Back up the old stack first"});
-        expect(backupSwitch).toBeChecked();
-        expect(screen.queryByText(/No backup will be created\./)).toBeNull();
+        expect(backupSwitch).not.toBeChecked();
+        expect(screen.getByText(/Your original stack stays untouched at \/host\/opt\/db/)).toBeInTheDocument();
 
         await userEvent.click(backupSwitch);
 
-        expect(screen.getByText(/No backup will be created\./)).toBeInTheDocument();
+        expect(screen.queryByText(/Your original stack stays untouched at/)).toBeNull();
     });
 
     it("warns on step 4 when the stop switch is off", async () => {
@@ -135,7 +183,7 @@ describe("BrownfieldImport migration flow", () => {
 
         async function confirm(
             makeResult: () => Promise<MigrationResult>,
-            options: {backupOff?: boolean; stopOff?: boolean} = {},
+            options: {backupOn?: boolean; stopOff?: boolean} = {},
         ): Promise<void> {
             renderImport(createApi(vi.fn().mockImplementation(makeResult)));
             await walkToConfirm(options);
@@ -143,7 +191,7 @@ describe("BrownfieldImport migration flow", () => {
         }
 
         it("describes the kept backup and the stopped old stack on success", async () => {
-            await confirm(() => Promise.resolve(okResult));
+            await confirm(() => Promise.resolve(okResult), {backupOn: true});
 
             expect(toast.info).toHaveBeenCalledWith("Migrating db\u2026");
             await waitFor(() =>
@@ -158,7 +206,7 @@ describe("BrownfieldImport migration flow", () => {
         });
 
         it("only mentions the backup when the old stack was left running", async () => {
-            await confirm(() => Promise.resolve(okResult), {stopOff: true});
+            await confirm(() => Promise.resolve(okResult), {backupOn: true, stopOff: true});
 
             await waitFor(() =>
                 expect(toast.success).toHaveBeenCalledWith(SUCCESS_TITLE, expect.objectContaining({description: BACKUP_NOTE})),
@@ -166,7 +214,7 @@ describe("BrownfieldImport migration flow", () => {
         });
 
         it("only mentions the stopped old stack when no backup was made", async () => {
-            await confirm(() => Promise.resolve(okResult), {backupOff: true});
+            await confirm(() => Promise.resolve(okResult));
 
             await waitFor(() =>
                 expect(toast.success).toHaveBeenCalledWith(
@@ -177,7 +225,7 @@ describe("BrownfieldImport migration flow", () => {
         });
 
         it("omits the description when neither a backup nor a stop was chosen", async () => {
-            await confirm(() => Promise.resolve(okResult), {backupOff: true, stopOff: true});
+            await confirm(() => Promise.resolve(okResult), {stopOff: true});
 
             await waitFor(() => expect(vi.mocked(toast.success).mock.calls.some(([title]) => title === SUCCESS_TITLE)).toBe(true));
             const call = vi.mocked(toast.success).mock.calls.find(([title]) => title === SUCCESS_TITLE);
