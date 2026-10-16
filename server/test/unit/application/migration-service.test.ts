@@ -21,7 +21,7 @@ function createMockDocker() {
 }
 
 function createMockMigrator() {
-    return {copyVolumeToBindMount: vi.fn(), copyDirectory: vi.fn()};
+    return {copyVolumeToBindMount: vi.fn(), copyDirectory: vi.fn(), moveDirectory: vi.fn()};
 }
 
 function createMockRewriter() {
@@ -533,6 +533,103 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             const result = await buildService().migrate(input());
 
             expect(result.success).toBe(true);
+        });
+    });
+
+    describe("in-place migration (G-18-7)", () => {
+        const ASIDE_COMPOSE = COMPOSE;
+        const REWRITTEN = "services:\n  web:\n    image: nginx:1.27\n";
+        let asideDir: string;
+
+        beforeEach(async () => {
+            // The stack already lives in the stacks folder under its own slug: target == original.
+            originalDir = path.join(tmpRoot, "stacks", stackId);
+            composePath = path.join(originalDir, "docker-compose.yml");
+            newStackPath = originalDir;
+            asideDir = path.join(path.dirname(originalDir), `${stackId}-pre-migration`);
+            await fs.mkdir(path.join(originalDir, "data"), {recursive: true});
+            await fs.writeFile(composePath, ASIDE_COMPOSE, "utf-8");
+            await fs.writeFile(path.join(originalDir, ".env"), "SECRET=1\n", "utf-8");
+            await fs.writeFile(path.join(originalDir, "data", "keep.txt"), "keep me", "utf-8");
+
+            mockStackFs.getStackDirectory.mockImplementation((id: string) => path.join(tmpRoot, "stacks", id));
+            mockStackFs.removeDirectory.mockImplementation((id: string) =>
+                fs.rm(path.join(tmpRoot, "stacks", id), {recursive: true, force: true}),
+            );
+            mockMigrator.moveDirectory.mockImplementation((src: string, dest: string) => fs.rename(src, dest));
+            mockMigrator.copyDirectory.mockImplementation((src: string, dest: string) =>
+                fs.cp(src, dest, {recursive: true}),
+            );
+            mockRewriter.rewrite.mockReturnValue({rewrittenCompose: REWRITTEN, extractedEnv: ""});
+        });
+
+        function inPlaceInput(overrides: Partial<{backup: boolean; stopOldStack: boolean; inPlaceAsideName: string}> = {}) {
+            return {
+                ...input({backup: true, stopOldStack: true}),
+                volumeSelections: [{originalPath: "./data", newPath: "./volumes/data", convert: true}],
+                ...overrides,
+            };
+        }
+
+        it("renames the original aside, rebuilds the stack in its directory and keeps the renamed original as the backup", async () => {
+            mockDocker.up.mockResolvedValue(undefined);
+
+            const result = await buildService().migrate(inPlaceInput());
+
+            expect(result).toEqual({success: true, stackId, originalPath: originalDir, keptOriginalAt: asideDir});
+            const order = (mock: {mock: {invocationCallOrder: number[]}}): number =>
+                mock.mock.invocationCallOrder[0] ?? Number.NaN;
+            expect(order(mockOldStack.stop)).toBeLessThan(order(mockMigrator.moveDirectory));
+            expect(order(mockMigrator.moveDirectory)).toBeLessThan(order(mockStackFs.createDirectoryExclusive));
+            expect(mockMigrator.moveDirectory).toHaveBeenCalledWith(originalDir, asideDir);
+            expect(mockMigrator.copyDirectory).toHaveBeenCalledWith(
+                path.join(asideDir, "data"),
+                path.join(originalDir, "volumes", "data"),
+            );
+            const destinations = mockMigrator.copyDirectory.mock.calls.map((call) => String(call[1]));
+            expect(destinations.some((dest) => dest.endsWith(BACKUP_DIR_NAME))).toBe(false);
+            expect(mockStackRepo.create).toHaveBeenCalledWith(expect.objectContaining({hostPath: originalDir}));
+        });
+
+        it("leaves the renamed original byte-identical and writes the new compose file and .env into the original path", async () => {
+            mockDocker.up.mockResolvedValue(undefined);
+
+            await buildService().migrate(inPlaceInput());
+
+            expect(await fs.readFile(path.join(asideDir, "docker-compose.yml"), "utf-8")).toBe(ASIDE_COMPOSE);
+            expect(await fs.readFile(path.join(asideDir, ".env"), "utf-8")).toBe("SECRET=1\n");
+            expect(await fs.readFile(path.join(asideDir, "data", "keep.txt"), "utf-8")).toBe("keep me");
+            expect(await fs.readFile(composePath, "utf-8")).toBe(REWRITTEN);
+            expect(await fs.readFile(path.join(originalDir, ".env"), "utf-8")).toBe("SECRET=1\n");
+            expect(await fs.readFile(path.join(originalDir, "volumes", "data", "keep.txt"), "utf-8")).toBe("keep me");
+        });
+
+        it("uses the aside name the user chose", async () => {
+            mockDocker.up.mockResolvedValue(undefined);
+
+            const result = await buildService().migrate(inPlaceInput({inPlaceAsideName: "memos-old"}));
+
+            expect(result.success).toBe(true);
+            expect(result.keptOriginalAt).toBe(path.join(path.dirname(originalDir), "memos-old"));
+            expect(await fs.readFile(path.join(path.dirname(originalDir), "memos-old", "data", "keep.txt"), "utf-8")).toBe(
+                "keep me",
+            );
+        });
+
+        it("does not report keptOriginalAt for a migration into a separate directory", async () => {
+            mockStackFs.getStackDirectory.mockImplementation((id: string) => path.join(tmpRoot, "elsewhere", id));
+            mockStackFs.createDirectoryExclusive.mockImplementation(async (id: string) => {
+                const target = path.join(tmpRoot, "elsewhere", id);
+                await fs.mkdir(target, {recursive: true});
+                return target;
+            });
+            mockDocker.up.mockResolvedValue(undefined);
+
+            const result = await buildService().migrate(inPlaceInput());
+
+            expect(result.success).toBe(true);
+            expect(result.keptOriginalAt).toBeUndefined();
+            expect(mockMigrator.moveDirectory).not.toHaveBeenCalled();
         });
     });
 });
