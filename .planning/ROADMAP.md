@@ -88,7 +88,7 @@ Notes: server-side work (backup service and repository environment construction,
   4. The pre-migration backup is its own explicit step the user can opt out of: opting out creates no backup, opting in creates one whether or not the compose file is renamed
   5. The user can choose to stop (undeploy) the old stack as part of the migration, so the new draft stack does not run alongside it; if they decline, the old stack is left running
 
-**Plans:** 13/17 plans executed (12 gap-closure plans pending)
+**Plans:** 14/17 plans executed (12 gap-closure plans pending)
 
 Plans:
 **Wave 1**
@@ -121,7 +121,7 @@ Plans:
 - [x] 18-13-PLAN.md — Scan list shows skipped roots with reasons and the /host hint; already-managed rows disabled with indicator and link (G-18-3-scan, G-18-2; after 18-09, 18-10, 18-11)
 
 *Gap wave 5*
-- [ ] 18-14-PLAN.md — Migration as a background operation: 202 with operation id, in-flight 409 by slug and compose path, operation status and list endpoints in both route families (G-18-job; after 18-07, 18-12)
+- [x] 18-14-PLAN.md — Migration as a background operation: 202 with operation id, in-flight 409 by slug and compose path, operation status and list endpoints in both route families (G-18-job; after 18-07, 18-12)
 - [ ] 18-15-PLAN.md — Dialog adapts to in-place vs new directory: aside-name step, forced stop, backup default off with original-path note (G-18-7; after 18-10, 18-12, 18-13)
 
 *Gap wave 6*
@@ -190,7 +190,7 @@ Phases execute in numeric order: 17 → 18 → 19 → 20 → 21
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 17. Backup Repository and Port-Check Fixes | 3/3 | Complete    | 2026-10-14 |
-| 18. Import and Migration Flow | 13/17 | In Progress | - |
+| 18. Import and Migration Flow | 14/17 | In Progress | - |
 | 19. Sidebar, Templates and Version Block | 0/TBD | Not started | - |
 | 20. Visual Consistency, Dashboard Clarity and Touch Targets | 0/TBD | Not started | - |
 | 21. Release v0.1.1 | 0/TBD | Not started | - |
