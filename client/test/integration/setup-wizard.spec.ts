@@ -486,13 +486,13 @@ test.describe("Setup Wizard", () => {
             extractedEnv: "",
         };
 
-        async function scanForYellowStack(page: Page) {
+        async function scanForYellowStack(page: Page, stack: typeof yellowStack = yellowStack) {
             await reachBrownfieldStep(page);
             await page.route("**/api/setup/scan", (route) =>
                 route.fulfill({
                     status: 200,
                     contentType: "application/json",
-                    body: JSON.stringify({stacks: [yellowStack], skippedDirectories: 0}),
+                    body: JSON.stringify({stacks: [stack], skippedDirectories: 0}),
                 }),
             );
             await page.getByLabel(/directories to scan/i).fill("/home/user");
@@ -604,6 +604,37 @@ test.describe("Setup Wizard", () => {
 
             await expect.poll(() => bodies.length).toBe(1);
             expect(bodies[0]).toMatchObject({backup: false, stopOldStack: false});
+        });
+
+        test("should offer a relative bind mount, send it as ./volumes/ and warn when it is kept", async ({page}) => {
+            // G-18-4: relative bind mounts are listed, counted, sent, and a kept one warns
+            const memosStack = {...yellowStack, namedVolumes: [] as string[], relativePaths: ["./data"]};
+            await scanForYellowStack(page, memosStack);
+            const previewBodies: unknown[] = [];
+            await page.route("**/api/setup/migrate/preview", (route) => {
+                previewBodies.push(route.request().postDataJSON());
+                return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(emptyPreview)});
+            });
+            await page.getByRole("button", {name: "Migrate"}).click();
+
+            await expect(page.getByText("Relative Bind Mounts")).toBeVisible();
+            await expect(page.getByRole("checkbox", {name: "./data"})).toBeChecked();
+
+            await page.getByRole("button", {name: "Preview Changes"}).click();
+            await expect(page.getByRole("heading", {name: "Review Changes"})).toBeVisible();
+            expect(previewBodies[0]).toMatchObject({
+                volumeSelections: [{originalPath: "./data", newPath: "./volumes/data", convert: true}],
+            });
+
+            await page.getByRole("button", {name: "Choose Backup"}).click();
+            await page.getByRole("button", {name: "Choose Old Stack Action"}).click();
+            await expect(page.getByRole("region", {name: "Migration summary"})).toContainText("Volumes to copy: 1");
+
+            await page.getByRole("button", {name: "Back"}).click();
+            await page.getByRole("button", {name: "Back"}).click();
+            await page.getByRole("button", {name: "Back"}).click();
+            await page.getByRole("checkbox", {name: "./data"}).click();
+            await expect(page.getByText(/outside Docktor's managed \.\/volumes\/ layout/)).toBeVisible();
         });
 
         test("should show success toast with link to stack on completion", async ({page}) => {
