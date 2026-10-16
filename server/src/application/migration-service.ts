@@ -10,6 +10,7 @@ import {slugify} from "../lib/slugify.js";
 import {createComposeConfig} from "../domain/compose-config.js";
 import {asideNameCandidates, classifyMigrationTarget} from "../domain/migration-target.js";
 import {computeUnifiedDiff, type UnifiedDiff} from "../lib/unified-diff.js";
+import {stackDirectoryNameSchema} from "@docktor/shared";
 import {BadRequestError, ConflictError, hasErrorCode} from "../lib/errors.js";
 import {dockerSelfStack} from "../infrastructure/docker-self-stack.js";
 import {assertNotOwnStack} from "./own-stack-guard.js";
@@ -183,10 +184,11 @@ export class MigrationService {
 	 * own compose file (WR-09, STK-03: never stop or re-home Docktor itself;
 	 * fail-open when the own stack is unknown, D-02), a compose file in the
 	 * directory of a stack Docktor already manages (G-18-2, ConflictError), an
-	 * existing stack record, and a target directory that exists or overlaps
-	 * the old directory (D-09, RESEARCH Pitfall 4: rollback removes the target
-	 * directory, so it must be one Docktor creates in this run and must not
-	 * overlap the old stack). Nothing is stopped, created, copied or written.
+	 * existing stack record, and a target directory that exists or is nested
+	 * with the old directory (D-09, RESEARCH Pitfall 4: rollback removes the
+	 * target directory, so it must be one Docktor creates in this run). A target
+	 * equal to the old directory is the in-place case (G-18-7): it needs the
+	 * stop, and a free, valid aside name for the original. Nothing is stopped, created, copied or written.
 	 * Advisory by design: the exclusive mkdir and the unique record id stay
 	 * the authoritative backstops inside {@link execute}.
 	 */
@@ -218,7 +220,7 @@ export class MigrationService {
 		}
 		const inPlace =
 			targetKind === "in-place"
-				? {asideDir: await this.resolveAsideDir(originalDir, stackId, input.inPlaceAsideName)}
+				? {asideDir: await this.planInPlace(originalDir, stackId, input)}
 				: null;
 
 		return {
@@ -239,10 +241,13 @@ export class MigrationService {
 	 * Runs the side-effecting steps of a preflighted plan and, on any step
 	 * failure, the rollback: it removes only the directory and the stack record
 	 * this run created (CR-02, D-09) and restarts the old stack iff Docktor
-	 * stopped it (D-11). The original directory is only ever read. Never
-	 * rejects for a step failure (returns `success: false`). Only call it with
-	 * a plan from {@link preflight}; concurrent same-slug starts are refused by
-	 * the background operation start (plan 18-14).
+	 * stopped it (D-11). The original directory is only ever read, with one
+	 * exception (G-18-7): in an in-place migration it is renamed aside, kept as
+	 * the backup on success, and renamed back on failure. Nothing in it is ever
+	 * deleted (D-09 spirit). Never rejects for a step failure (returns
+	 * `success: false`). Only call it with a plan from {@link preflight};
+	 * concurrent same-slug starts are refused by the background operation start
+	 * (plan 18-14).
 	 */
 	async execute(plan: MigrationPlan): Promise<MigrationResult> {
 		const {stackId, displayName, composePath, originalDir, volumeSelections, namedVolumeSelections, backup, stopOldStack, inPlace} = plan;
@@ -379,11 +384,17 @@ export class MigrationService {
 				await this.stackRepo.delete(stackId).catch(() => {});
 			}
 
-			const restartNote = oldStackStopped ? await this.restartOldStack(composePath, originalDir) : "";
+			// In place (G-18-7) the original was renamed; put it back before anything
+			// restarts it. If that is impossible, nothing is deleted or restarted.
+			const restoration = movedAside && inPlace ? await this.moveOriginalBack(originalDir, inPlace.asideDir) : null;
+			const originalNote = restoration?.note ?? "Your original stack directory was not modified.";
+			const originalBackInPlace = restoration === null || restoration.restored;
+			const restartNote =
+				oldStackStopped && originalBackInPlace ? await this.restartOldStack(composePath, originalDir) : "";
 
 			return {
 				success: false,
-				error: `Migration failed: ${errMessage}. Your original stack directory was not modified.${restartNote}`,
+				error: `Migration failed: ${errMessage}. ${originalNote}${restartNote}`,
 				originalPath: originalDir,
 			};
 		}
@@ -419,14 +430,37 @@ export class MigrationService {
 	}
 
 	/**
-	 * G-18-7: the sibling directory an in-place migration renames the original
-	 * to: the name the user chose, or the first free `<id>-pre-migration[-N]`.
+	 * G-18-7: the in-place refusals, in order, before any side effect: the old
+	 * stack must be stopped (the new stack reuses its directory and compose
+	 * project name, T-18-35), and the sibling name the original is renamed to
+	 * must be a single valid directory name that is free (T-18-33). Returns the
+	 * aside directory.
 	 */
-	private async resolveAsideDir(originalDir: string, stackId: string, requestedName?: string): Promise<string> {
-		const parent = path.dirname(path.resolve(originalDir));
-		if (requestedName !== undefined) {
-			return path.join(parent, requestedName);
+	private async planInPlace(originalDir: string, stackId: string, input: MigrationInput): Promise<string> {
+		if (!input.stopOldStack) {
+			throw new BadRequestError(
+				"An in-place migration must stop the old stack first: the new stack reuses its directory and compose project name.",
+			);
 		}
+		const parent = path.dirname(path.resolve(originalDir));
+		const requestedName = input.inPlaceAsideName;
+		if (requestedName === undefined) {
+			return this.firstFreeAsideDir(parent, originalDir, stackId);
+		}
+		if (!stackDirectoryNameSchema.safeParse(requestedName).success || requestedName === path.basename(originalDir)) {
+			throw new BadRequestError(
+				`"${requestedName}" cannot be used as the new name of the original directory. Use a single directory name that differs from "${path.basename(originalDir)}".`,
+			);
+		}
+		const asideDir = path.join(parent, requestedName);
+		if (await pathIsTaken(asideDir)) {
+			throw new ConflictError(`${asideDir} already exists. Choose another name for the original directory.`);
+		}
+		return asideDir;
+	}
+
+	/** The first free `<id>-pre-migration[-N]` sibling of the original directory. */
+	private async firstFreeAsideDir(parent: string, originalDir: string, stackId: string): Promise<string> {
 		for (const name of asideNameCandidates(stackId, ASIDE_NAME_ATTEMPTS)) {
 			const candidate = path.join(parent, name);
 			if (!(await pathIsTaken(candidate))) {
@@ -434,6 +468,28 @@ export class MigrationService {
 			}
 		}
 		throw new ConflictError(`No free name for the original directory next to ${originalDir}. Choose one explicitly.`);
+	}
+
+	/**
+	 * Rollback step for an in-place migration (G-18-7): rename the original back,
+	 * but only into a free path, so nothing is ever replaced or deleted. When that
+	 * is impossible the renamed original is left untouched and the note tells the
+	 * user exactly where it is and how to restore it.
+	 */
+	private async moveOriginalBack(originalDir: string, asideDir: string): Promise<{restored: boolean; note: string}> {
+		try {
+			if (!(await pathIsTaken(originalDir))) {
+				await this.migrator.moveDirectory(asideDir, originalDir);
+				return {restored: true, note: `The original directory was moved back to ${originalDir}.`};
+			}
+		} catch (moveErr: unknown) {
+			const message = moveErr instanceof Error ? moveErr.message : String(moveErr);
+			console.error(`[MigrationService] Failed to move the original directory back: ${message}`);
+		}
+		return {
+			restored: false,
+			note: `The original stack is still at ${asideDir}; move it back to ${originalDir} by hand, then run docker compose start there.`,
+		};
 	}
 
 	/**

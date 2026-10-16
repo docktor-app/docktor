@@ -33,6 +33,16 @@ export const brownfieldAdoptSchema = z.object({
     displayName: z.string().min(1),
 });
 
+// G-18-7, T-18-33: a single directory-name segment (no separators, no leading
+// dot, so never "." or ".."), used to name the sibling directory an in-place
+// migration renames the original to.
+export const stackDirectoryNameSchema = z
+    .string()
+    .regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/, {
+        message:
+            "Must be a single directory name of up to 100 letters, digits, dots, underscores or hyphens, starting with a letter or digit",
+    });
+
 // D-12: both choices are mandatory and deliberately have no default, so an
 // old or buggy client can never let the server decide whether a backup is
 // kept or the old stack is stopped on the user's behalf.
@@ -40,6 +50,8 @@ export const migrationExecuteSchema = migrationPreviewSchema.extend({
     displayName: z.string().min(1),
     backup: z.boolean(),
     stopOldStack: z.boolean(),
+    // G-18-7: only meaningful when the new stack takes the old stack's directory.
+    inPlaceAsideName: stackDirectoryNameSchema.optional(),
 });
 
 // Response shapes of the scan endpoints (/api/setup/scan, /api/stacks/import/scan).
