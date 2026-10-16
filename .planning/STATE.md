@@ -5,16 +5,16 @@ milestone_name: Release Follow-ups
 current_phase: 18
 current_phase_name: Import and Migration Flow
 status: executing
-stopped_at: Completed 18-18-PLAN.md
-last_updated: "2026-10-16T16:26:20.516Z"
+stopped_at: Completed 18-19-PLAN.md
+last_updated: "2026-10-16T16:36:07.643Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 18 execution started
-state_head: 4a4bfb15f8b2f97c828fd860874cab8446a977bd
+state_head: b8879b92091ca419cbb071dc024fbfb0bab4d32e
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 24
-  completed_plans: 21
+  completed_plans: 22
   percent: 20
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-14)
 ## Current Position
 
 Phase: 18 (Import and Migration Flow) — EXECUTING
-Plan: 14 of 17
+Plan: 15 of 17
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 18 execution started
 
@@ -82,6 +82,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 18 P16 | 25 min | 2 tasks | 10 files |
 | Phase 18 P17 | 15 min | 3 tasks | 16 files |
 | Phase 18 P18 | 10min | 2 tasks | 3 files |
+| Phase 18 P19 | 40min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -125,6 +126,8 @@ Roadmap decisions for v0.1.1:
 - [Phase 18]: 18-17: migration list is read on mount and on every EventSource open; stale/duplicate operation snapshots are dropped in useMigrationOperations (finished never back to running, running never to an earlier step)
 - [Phase 18]: 18-17: migration toasts are one sonner toast per operation id; description notes derive from the operation (backup, stopOldStack, keptOriginalAt) so they survive a reload
 - [Phase 18]: 18-18: copyDirectory uses archive-mode cp (merge form cp -a src/. dest for existing dirs); win32 fs.cp fallback only for CI
+- [Phase 18]: 18-19: bind sources are host paths; inside a container they are read only through Docktor's own bind mounts, unreadable selected sources are refused (400) in preflight/preview, only visible-but-absent sources become empty dirs (emptySources)
+- [Phase 18]: 18-19: all request-controlled paths (declared source, destinations, volume names) validated in preflight via copyDestinationViolations; execute keeps assertWithin as backstop
 
 ### Pending Todos
 
@@ -148,6 +151,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T16:26:20.277Z
-Stopped at: Completed 18-18-PLAN.md
+Last session: 2026-10-16T16:36:07.492Z
+Stopped at: Completed 18-19-PLAN.md
 Resume file: None

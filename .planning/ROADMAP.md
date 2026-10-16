@@ -88,7 +88,7 @@ Notes: server-side work (backup service and repository environment construction,
   4. The pre-migration backup is its own explicit step the user can opt out of: opting out creates no backup, opting in creates one whether or not the compose file is renamed
   5. The user can choose to stop (undeploy) the old stack as part of the migration, so the new draft stack does not run alongside it; if they decline, the old stack is left running
 
-**Plans:** 18/21 plans executed (4 gap-closure plans pending, round 2)
+**Plans:** 19/21 plans executed (4 gap-closure plans pending, round 2)
 
 Plans:
 **Wave 1**
@@ -132,7 +132,7 @@ Plans:
 
 *Gap wave 1*
 - [x] 18-18-PLAN.md — Faithful copies: bind-mount data and the opt-in backup keep ownership, modes, timestamps and symlinks via `cp -a`, merge into an existing stack directory, reject on failure (CR-01)
-- [ ] 18-19-PLAN.md — Bind-mount sources resolved through Docktor's own mounts (containerVisiblePaths), invisible sources refused before any side effect, vanished sources roll back, preview lists sources that start empty; all request paths validated in preflight (CR-03, WR-01)
+- [x] 18-19-PLAN.md — Bind-mount sources resolved through Docktor's own mounts (containerVisiblePaths), invisible sources refused before any side effect, vanished sources roll back, preview lists sources that start empty; all request paths validated in preflight (CR-03, WR-01)
 
 *Gap wave 2*
 - [ ] 18-20-PLAN.md — .env extraction keeps each service's value: per-value names (SERVICE_KEY), never a name Docktor's environment, COMPOSE_/DOCKER_, compose references or the old .env would change; only valid names and dotenv-safe values move (CR-02, WR-09; after 18-19)
@@ -200,7 +200,7 @@ Phases execute in numeric order: 17 → 18 → 19 → 20 → 21
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 17. Backup Repository and Port-Check Fixes | 3/3 | Complete    | 2026-10-14 |
-| 18. Import and Migration Flow | 18/21 | In Progress | - |
+| 18. Import and Migration Flow | 19/21 | In Progress | - |
 | 19. Sidebar, Templates and Version Block | 0/TBD | Not started | - |
 | 20. Visual Consistency, Dashboard Clarity and Touch Targets | 0/TBD | Not started | - |
 | 21. Release v0.1.1 | 0/TBD | Not started | - |
