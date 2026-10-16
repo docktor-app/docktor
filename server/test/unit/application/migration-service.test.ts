@@ -45,6 +45,7 @@ function createMockStackFs(stacksRoot: string) {
 function createMockStackRepo() {
     return {
         exists: vi.fn().mockResolvedValue(false),
+        listLocations: vi.fn().mockResolvedValue([] as Array<{id: string; displayName: string; hostPath: string}>),
         create: vi.fn().mockResolvedValue(undefined),
         delete: vi.fn().mockResolvedValue(undefined),
     };
@@ -495,6 +496,43 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
 
             expect(result.success).toBe(true);
             expect(warn).toHaveBeenCalled();
+        });
+    });
+
+    describe("already-managed refusal (G-18-2)", () => {
+        function manageOriginalDir(): void {
+            mockStackRepo.listLocations.mockResolvedValue([{id: "legacy", displayName: "Legacy", hostPath: originalDir}]);
+        }
+
+        it("refuses a compose file in a managed stack's directory with a ConflictError before anything is stopped", async () => {
+            manageOriginalDir();
+
+            const migration = buildService().migrate(input({stopOldStack: true}));
+            await expect(migration).rejects.toBeInstanceOf(ConflictError);
+            await expect(migration).rejects.toThrow(/already managed.*Legacy/);
+            await expect(buildService().preflight(input())).rejects.toBeInstanceOf(ConflictError);
+
+            expectNoSideEffects();
+            expect(mockRewriter.rewrite).not.toHaveBeenCalled();
+            expect(mockDocker.up).not.toHaveBeenCalled();
+        });
+
+        it("reports Docktor's own stack (BadRequestError) before the managed one", async () => {
+            manageOriginalDir();
+            mockSelfStack.composeFilePaths.mockResolvedValue([composePath]);
+
+            await expect(buildService().preflight(input())).rejects.toBeInstanceOf(BadRequestError);
+        });
+
+        it("migrates a compose file in a directory no stack manages", async () => {
+            mockStackRepo.listLocations.mockResolvedValue([
+                {id: "other", displayName: "Other", hostPath: path.join(tmpRoot, "elsewhere")},
+            ]);
+            mockDocker.up.mockResolvedValue(undefined);
+
+            const result = await buildService().migrate(input());
+
+            expect(result.success).toBe(true);
         });
     });
 });
