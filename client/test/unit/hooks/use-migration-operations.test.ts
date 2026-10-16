@@ -166,4 +166,50 @@ describe("useMigrationOperations", () => {
         expect(onUpdate).not.toHaveBeenCalled();
         expect(result.current.operations).toEqual([]);
     });
+
+    describe("resync when the event stream (re)opens", () => {
+        function reopen(): void {
+            const onOpen = mockedEvents.mock.lastCall?.[1]?.onOpen;
+            if (!onOpen) throw new Error("no onOpen callback registered");
+            act(() => onOpen());
+        }
+
+        it("registers an onOpen callback that re-reads the operation list", async () => {
+            const listOperations = vi.fn().mockResolvedValue({operations: []});
+            renderHook(() => useMigrationOperations(listOperations));
+            await waitFor(() => expect(listOperations).toHaveBeenCalledTimes(1));
+
+            reopen();
+
+            await waitFor(() => expect(listOperations).toHaveBeenCalledTimes(2));
+        });
+
+        it("reports a followed operation that finished while the stream was closed", async () => {
+            const listOperations = vi
+                .fn()
+                .mockResolvedValueOnce({operations: [makeOperation()]})
+                .mockResolvedValueOnce({operations: [succeeded()]});
+            const onUpdate = vi.fn();
+            const {result} = renderHook(() => useMigrationOperations(listOperations, {onUpdate}));
+            await waitFor(() => expect(onUpdate).toHaveBeenCalledTimes(1));
+
+            reopen();
+
+            await waitFor(() => expect(onUpdate).toHaveBeenLastCalledWith(succeeded()));
+            expect(onUpdate).toHaveBeenCalledTimes(2);
+            expect(result.current.runningByComposePath.size).toBe(0);
+        });
+
+        it("does not report an unchanged operation again", async () => {
+            const listOperations = vi.fn().mockResolvedValue({operations: [makeOperation()]});
+            const onUpdate = vi.fn();
+            renderHook(() => useMigrationOperations(listOperations, {onUpdate}));
+            await waitFor(() => expect(onUpdate).toHaveBeenCalledTimes(1));
+
+            reopen();
+
+            await waitFor(() => expect(listOperations).toHaveBeenCalledTimes(2));
+            expect(onUpdate).toHaveBeenCalledTimes(1);
+        });
+    });
 });

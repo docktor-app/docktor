@@ -365,6 +365,90 @@ describe("BrownfieldImport migration flow", () => {
         });
     });
 
+    describe("rows of running migrations (G-18-job)", () => {
+        async function startMigration(api: BrownfieldImportApi): Promise<HTMLElement> {
+            renderImport(api);
+            await walkToConfirm();
+            await userEvent.click(screen.getByRole("button", {name: "Confirm & Migrate"}));
+            return screen.findByRole("row", {name: /\/host\/opt\/db/});
+        }
+
+        it("disables Migrate and Adopt and shows the current step while the operation runs", async () => {
+            const row = await startMigration(createApi(vi.fn().mockResolvedValue(runningOperation)));
+
+            expect(await within(row).findByRole("button", {name: "Migrating..."})).toBeDisabled();
+            expect(within(row).getByRole("button", {name: "Adopt"})).toBeDisabled();
+            expect(within(row).queryByRole("button", {name: "Migrate"})).toBeNull();
+            expect(within(row).getByText("Starting")).toBeInTheDocument();
+
+            emit(progress(makeOperation({step: "copying_bind_mount", stepDetail: "./data"})));
+
+            expect(await within(row).findByText("Copying ./data")).toBeInTheDocument();
+        });
+
+        it("makes the row actionable again after a failed migration", async () => {
+            const row = await startMigration(createApi(vi.fn().mockResolvedValue(runningOperation)));
+            await within(row).findByRole("button", {name: "Migrating..."});
+
+            emit(progress(failed("Migration failed: disk full.")));
+
+            expect(await within(row).findByRole("button", {name: "Migrate"})).toBeEnabled();
+            expect(within(row).getByRole("button", {name: "Adopt"})).toBeEnabled();
+        });
+
+        it("shows Imported after a successful migration", async () => {
+            const row = await startMigration(createApi(vi.fn().mockResolvedValue(runningOperation)));
+            await within(row).findByRole("button", {name: "Migrating..."});
+
+            emit(progress(finished()));
+
+            expect(await within(row).findByText("Imported")).toBeInTheDocument();
+            expect(within(row).queryByRole("button")).toBeNull();
+        });
+
+        it("restores a running migration after a reload without any confirm in this session", async () => {
+            const api = createApi(vi.fn());
+            vi.mocked(api.listMigrationOperations).mockResolvedValue({operations: [runningOperation]});
+            renderImport(api);
+
+            await waitFor(() =>
+                expect(toast.loading).toHaveBeenCalledWith(expect.stringMatching(/^Migrating db/), {id: "op-1"}),
+            );
+            await userEvent.click(screen.getByRole("button", {name: "Scan"}));
+            const row = await screen.findByRole("row", {name: /\/host\/opt\/db/});
+            expect(within(row).getByRole("button", {name: "Migrating..."})).toBeDisabled();
+            expect(within(row).getByRole("button", {name: "Adopt"})).toBeDisabled();
+
+            emit(progress(finished()));
+
+            expect(toast.success).toHaveBeenCalledWith(
+                "Migration complete! db is now managed by Docktor",
+                expect.objectContaining({id: "op-1"}),
+            );
+        });
+
+        it("re-reads the operations when the event stream reopens and reports what finished meanwhile", async () => {
+            const api = createApi(vi.fn());
+            vi.mocked(api.listMigrationOperations)
+                .mockResolvedValueOnce({operations: [runningOperation]})
+                .mockResolvedValueOnce({operations: [finished()]});
+            renderImport(api);
+            await waitFor(() => expect(toast.loading).toHaveBeenCalled());
+
+            const onOpen = mockedEvents.mock.lastCall?.[1]?.onOpen;
+            expect(onOpen).toBeDefined();
+            act(() => onOpen?.());
+
+            await waitFor(() =>
+                expect(toast.success).toHaveBeenCalledWith(
+                    "Migration complete! db is now managed by Docktor",
+                    expect.objectContaining({id: "op-1"}),
+                ),
+            );
+            expect(api.listMigrationOperations).toHaveBeenCalledTimes(2);
+        });
+    });
+
     describe("skipped scan roots (G-18-3-scan)", () => {
         const NOT_FOUND_PATH = "/run/desktop/mnt/host/c/stacks";
 
