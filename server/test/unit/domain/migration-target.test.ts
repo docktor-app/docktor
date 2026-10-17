@@ -1,37 +1,66 @@
 import path from "node:path";
 import {describe, expect, it} from "vitest";
+import type {OwnMountsView} from "../../../src/domain/bind-mount-sources.js";
+import {localDirectoryIdentity} from "../../../src/domain/directory-identity.js";
 import {
     asideNameCandidates,
     classifyMigrationTarget,
     copyDestinationViolations,
 } from "../../../src/domain/migration-target.js";
 
+/** Host-view identities, as when Docktor is not containerized. */
+function classify(targetDir: string, originalDir: string, view: OwnMountsView = {kind: "host"}) {
+    return classifyMigrationTarget(localDirectoryIdentity([targetDir], view), localDirectoryIdentity([originalDir], view));
+}
+
 describe("classifyMigrationTarget (G-18-7)", () => {
     const original = path.resolve("/srv/stacks/memos");
 
     it("classifies a target equal to the original directory as in-place", () => {
-        expect(classifyMigrationTarget(original, original)).toBe("in-place");
+        expect(classify(original, original)).toBe("in-place");
     });
 
     it("ignores a trailing separator on either side when comparing", () => {
-        expect(classifyMigrationTarget(original + path.sep, original)).toBe("in-place");
-        expect(classifyMigrationTarget(original, original + path.sep)).toBe("in-place");
+        expect(classify(original + "/", original)).toBe("in-place");
+        expect(classify(original, original + "/")).toBe("in-place");
     });
 
     it("classifies a target inside the original directory as nested", () => {
-        expect(classifyMigrationTarget(path.join(original, "memos"), original)).toBe("nested");
+        expect(classify(path.join(original, "memos"), original)).toBe("nested");
     });
 
     it("classifies a target containing the original directory as nested", () => {
-        expect(classifyMigrationTarget(path.resolve("/srv/stacks"), original)).toBe("nested");
+        expect(classify(path.resolve("/srv/stacks"), original)).toBe("nested");
     });
 
     it("classifies a sibling directory as separate", () => {
-        expect(classifyMigrationTarget(path.resolve("/srv/stacks/memos-new"), original)).toBe("separate");
+        expect(classify(path.resolve("/srv/stacks/memos-new"), original)).toBe("separate");
     });
 
     it("does not treat a shared name prefix as nesting", () => {
-        expect(classifyMigrationTarget(path.resolve("/srv/stacks/memos-2"), original)).toBe("separate");
+        expect(classify(path.resolve("/srv/stacks/memos-2"), original)).toBe("separate");
+    });
+});
+
+describe("classifyMigrationTarget across spellings (G-18-22-inplace)", () => {
+    const container: OwnMountsView = {
+        kind: "container",
+        mounts: [
+            {type: "bind", source: "/", destination: "/host"},
+            {type: "bind", source: "/opt/docktor/stacks", destination: "/opt/docktor/stacks"},
+        ],
+    };
+
+    it("classifies the stacks-folder spelling against the /host spelling as in-place", () => {
+        expect(classify("/opt/docktor/stacks/memos", "/host/opt/docktor/stacks/memos", container)).toBe("in-place");
+    });
+
+    it("classifies a target inside the original, reached through /host, as nested", () => {
+        expect(classify("/opt/docktor/stacks/memos", "/host/opt/docktor/stacks", container)).toBe("nested");
+    });
+
+    it("classifies a separate stack in the stacks folder as separate", () => {
+        expect(classify("/opt/docktor/stacks/memos", "/host/home/u/memos", container)).toBe("separate");
     });
 });
 

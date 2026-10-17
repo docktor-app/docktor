@@ -14,6 +14,9 @@ import type {StackFilesystemPort} from "../../../src/application/ports/stack-fil
 import type {ExternalStackControlPort} from "../../../src/application/ports/external-stack-control-port.js";
 import type {SelfStackPort} from "../../../src/application/ports/self-stack-port.js";
 import type {OwnMountsPort} from "../../../src/application/ports/own-mounts-port.js";
+import type {DirectoryIdentityPort} from "../../../src/application/ports/directory-identity-port.js";
+import {DirectoryIdentityResolver} from "../../../src/infrastructure/directory-identity-resolver.js";
+import {hostViewDirectories} from "../../helpers/host-directory-identity.js";
 import type {OwnMountsView} from "../../../src/domain/bind-mount-sources.js";
 import {toComparablePath} from "../../../src/domain/self-stack-paths.js";
 import type {StackRepository} from "../../../src/repositories/stack-repository.js";
@@ -74,6 +77,14 @@ function createMockSelfStack() {
 /** Docktor not containerized by default: a host path is a local path. */
 function createMockOwnMounts(view: OwnMountsView = {kind: "host"}) {
     return {ownMounts: vi.fn().mockResolvedValue(view)};
+}
+
+/**
+ * G-18-22-inplace: a real resolver over the given own-mounts fake. The realpath
+ * stub returns its input, so only the mount translation can prove an identity.
+ */
+function directoriesOver(ownMounts: OwnMountsPort): DirectoryIdentityPort {
+    return new DirectoryIdentityResolver(ownMounts, async (p) => p);
 }
 
 describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
@@ -150,6 +161,8 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             mockOldStack as unknown as ExternalStackControlPort,
             mockSelfStack as unknown as SelfStackPort,
             mockOwnMounts as unknown as OwnMountsPort,
+            undefined,
+            hostViewDirectories(),
         );
     }
 
@@ -1179,6 +1192,8 @@ describe("previewMigration (MIG-02, D-04, G-18-7)", () => {
             createMockOldStack() as unknown as ExternalStackControlPort,
             mockSelfStack as unknown as SelfStackPort,
             ownMounts,
+            undefined,
+            hostViewDirectories(),
         );
     }
 
@@ -1364,6 +1379,141 @@ describe("previewMigration (MIG-02, D-04, G-18-7)", () => {
     });
 });
 
+describe.skipIf(process.platform === "win32")("a stack in the stacks folder reached through /host (G-18-22-inplace)", () => {
+    const displayName = "Memos";
+    const stackId = slugify(displayName);
+    const REWRITTEN = "services:\n  web:\n    image: nginx:1.27\n";
+
+    let tmpRoot: string;
+    let hostRoot: string;
+    let stacksRoot: string;
+    let realDir: string;
+    let aliasDir: string;
+    let aliasCompose: string;
+    let asideDir: string;
+    let mockDocker: ReturnType<typeof createMockDocker>;
+    let mockMigrator: ReturnType<typeof createMockMigrator>;
+    let mockStackFs: ReturnType<typeof createMockStackFs>;
+    let mockStackRepo: ReturnType<typeof createMockStackRepo>;
+    let mockOldStack: ReturnType<typeof createMockOldStack>;
+    let mockOwnMounts: ReturnType<typeof createMockOwnMounts>;
+
+    beforeEach(async () => {
+        tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "docktor-alias-"));
+        stacksRoot = path.join(tmpRoot, "stacks");
+        // Stands for the host root that production mounts read-only at /host.
+        hostRoot = path.join(tmpRoot, "host");
+        realDir = path.join(stacksRoot, stackId);
+        asideDir = path.join(stacksRoot, `${stackId}-pre-migration`);
+        await fs.mkdir(path.join(realDir, "data"), {recursive: true});
+        await fs.writeFile(path.join(realDir, "docker-compose.yml"), COMPOSE, "utf-8");
+        await fs.writeFile(path.join(realDir, ".env"), "SECRET=1\n", "utf-8");
+        await fs.writeFile(path.join(realDir, "data", "keep.txt"), "keep me", "utf-8");
+        // The same files are readable under both spellings, as on a real host.
+        aliasDir = hostRoot + stacksRoot;
+        await fs.mkdir(path.dirname(aliasDir), {recursive: true});
+        await fs.symlink(stacksRoot, aliasDir);
+        aliasCompose = path.join(aliasDir, stackId, "docker-compose.yml");
+
+        mockDocker = createMockDocker();
+        mockDocker.up.mockResolvedValue(undefined);
+        mockMigrator = createMockMigrator();
+        mockMigrator.moveDirectory.mockImplementation((src: string, dest: string) => fs.rename(src, dest));
+        mockMigrator.copyDirectory.mockImplementation((src: string, dest: string) =>
+            fs.cp(src, dest, {recursive: true}),
+        );
+        mockStackFs = createMockStackFs(stacksRoot);
+        mockStackRepo = createMockStackRepo();
+        mockOldStack = createMockOldStack();
+        mockOwnMounts = createMockOwnMounts({
+            kind: "container",
+            mounts: [
+                {type: "bind", source: "/", destination: toComparablePath(hostRoot)},
+                {type: "bind", source: toComparablePath(stacksRoot), destination: toComparablePath(stacksRoot)},
+            ],
+        });
+    });
+
+    afterEach(async () => {
+        await fs.rm(tmpRoot, {recursive: true, force: true});
+    });
+
+    function buildService(): MigrationService {
+        const rewriter = {rewrite: vi.fn().mockReturnValue({rewrittenCompose: REWRITTEN, extractedEnv: "", envVars: {}})};
+        return new MigrationService(
+            mockDocker as unknown as DockerExecutorPort,
+            mockMigrator as unknown as VolumeMigratorPort,
+            rewriter as unknown as ComposeRewriterPort,
+            mockStackFs as unknown as StackFilesystemPort,
+            mockStackRepo as unknown as StackRepository,
+            mockOldStack as unknown as ExternalStackControlPort,
+            createMockSelfStack() as unknown as SelfStackPort,
+            mockOwnMounts as unknown as OwnMountsPort,
+            undefined,
+            directoriesOver(mockOwnMounts as unknown as OwnMountsPort),
+        );
+    }
+
+    function request(composePath: string = aliasCompose) {
+        return {
+            composePath,
+            displayName,
+            volumeSelections: [{originalPath: "./data", newPath: "./volumes/data", convert: true}],
+            namedVolumeSelections: new Map<string, boolean>(),
+        };
+    }
+
+    it("previews as an in-place migration with a free aside name instead of refusing", async () => {
+        const preview = await buildService().previewMigration(request());
+
+        expect(preview.target).toEqual({
+            stackId,
+            directory: realDir,
+            originalDirectory: realDir,
+            inPlace: true,
+            suggestedAsideName: `${stackId}-pre-migration`,
+        });
+    });
+
+    it("renames the original aside, builds the new stack and stops it through the writable stacks-folder path", async () => {
+        const result = await buildService().migrate({
+            ...request(),
+            backup: false,
+            stopOldStack: true,
+        });
+
+        expect(result).toEqual({success: true, stackId, originalPath: realDir, keptOriginalAt: asideDir});
+        expect(mockMigrator.moveDirectory).toHaveBeenCalledWith(realDir, asideDir);
+        for (const argument of mockMigrator.moveDirectory.mock.calls.flat()) {
+            expect(String(argument).startsWith(hostRoot)).toBe(false);
+        }
+        expect(mockOldStack.stop).toHaveBeenCalledWith(path.join(realDir, "docker-compose.yml"));
+        expect(mockStackRepo.create).toHaveBeenCalledWith(expect.objectContaining({hostPath: realDir}));
+        expect(await fs.readFile(path.join(asideDir, "data", "keep.txt"), "utf-8")).toBe("keep me");
+        expect(await fs.readFile(path.join(realDir, "volumes", "data", "keep.txt"), "utf-8")).toBe("keep me");
+    });
+
+    it("refuses a target nested with the original through the /host spelling before anything happens", async () => {
+        // The compose file sits in the stacks folder itself, so the new stack directory lies inside its directory.
+        const composeInStacksFolder = path.join(aliasDir, "docker-compose.yml");
+        await fs.writeFile(path.join(stacksRoot, "docker-compose.yml"), COMPOSE, "utf-8");
+
+        await expect(buildService().migrate({...request(composeInStacksFolder), backup: true, stopOldStack: true})).rejects.toThrow(
+            ConflictError,
+        );
+
+        expect(mockOldStack.stop).not.toHaveBeenCalled();
+        expect(mockMigrator.moveDirectory).not.toHaveBeenCalled();
+        expect(mockStackFs.createDirectoryExclusive).not.toHaveBeenCalled();
+    });
+
+    it("still refuses an existing target when Docktor's mounts are unknown (fail-safe)", async () => {
+        mockOwnMounts.ownMounts.mockResolvedValue({kind: "unknown"});
+
+        await expect(buildService().previewMigration(request())).rejects.toThrow(/already exists/);
+    });
+});
+
 describe("MigrationService environment extraction (CR-02)", () => {
     const displayName = "Env Fixture";
     const stackId = slugify(displayName);
@@ -1417,6 +1567,8 @@ describe("MigrationService environment extraction (CR-02)", () => {
             mockOldStack as unknown as ExternalStackControlPort,
             createMockSelfStack() as unknown as SelfStackPort,
             createMockOwnMounts() as unknown as OwnMountsPort,
+            undefined,
+            hostViewDirectories(),
         );
     }
 
