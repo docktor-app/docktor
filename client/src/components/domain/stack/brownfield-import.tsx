@@ -151,7 +151,7 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
 
   return (
     <>
-      <Card className="w-full max-w-3xl mx-auto">
+      <Card className="w-full max-w-6xl mx-auto">
         <CardHeader>
           <CardTitle>Import Existing Stacks</CardTitle>
           <CardDescription>
@@ -227,7 +227,7 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
 
                       return (
                         <TableRow key={stack.path}>
-                          <TableCell className="font-mono text-sm">
+                          <TableCell className="font-mono text-sm whitespace-normal break-all min-w-48">
                             {stack.directory}
                           </TableCell>
                           <TableCell>{stack.serviceCount}</TableCell>

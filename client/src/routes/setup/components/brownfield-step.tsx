@@ -18,7 +18,7 @@ interface BrownfieldStepProps {
 // other behaviour (scan/adopt/migrate) lives in BrownfieldImport.
 export function BrownfieldStep({onBack, onSkip, onFinish}: Readonly<BrownfieldStepProps>) {
   return (
-    <div className="w-full max-w-3xl mx-auto space-y-4">
+    <div className="w-full max-w-6xl mx-auto space-y-4">
       <BrownfieldImport
         api={{scanDirectories, adoptStack, previewMigration, executeMigration, listMigrationOperations}}
       />
