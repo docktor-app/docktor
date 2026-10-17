@@ -13,12 +13,52 @@ import {
     probeOwnedHealth,
     type HealthSourceName,
 } from "../domain/service-health.js"
+import {JsonLinesDecoder} from "../lib/json-lines-decoder.js"
+import {withKeyedLock} from "../lib/keyed-mutex.js"
 import {WatcherJob} from "./job.js"
 
 // Narrows an unknown thrown value to one carrying a given HTTP status code
 // (dockerode attaches `statusCode` to its errors).
 function hasStatusCode(err: unknown, statusCode: number): boolean {
     return typeof err === "object" && err !== null && "statusCode" in err && err.statusCode === statusCode
+}
+
+export interface DockerEvent {
+    Type?: string
+    Action?: string
+    Actor?: {
+        ID?: string
+        Attributes?: Record<string, string>
+    }
+    // Legacy format support
+    id?: string
+    status?: string
+}
+
+function isOptionalString(value: unknown): boolean {
+    return value === undefined || typeof value === "string"
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+    return typeof value === "object" && value !== null && Object.values(value).every((v) => typeof v === "string")
+}
+
+function isDockerActor(value: unknown): boolean {
+    if (value === undefined) return true
+    if (typeof value !== "object" || value === null) return false
+    const actor = value as {ID?: unknown; Attributes?: unknown} // narrowed to an object; each field is checked below
+    return isOptionalString(actor.ID) && (actor.Attributes === undefined || isStringRecord(actor.Attributes))
+}
+
+// Checks the fields handleEvent reads; anything else on the value is ignored.
+function isDockerEvent(value: unknown): value is DockerEvent {
+    if (typeof value !== "object" || value === null) return false
+    const event = value as {Type?: unknown; Action?: unknown; id?: unknown; status?: unknown; Actor?: unknown} // narrowed to an object; each field is checked below
+    return isOptionalString(event.Type)
+        && isOptionalString(event.Action)
+        && isOptionalString(event.id)
+        && isOptionalString(event.status)
+        && isDockerActor(event.Actor)
 }
 
 export interface ServiceState {
@@ -129,14 +169,11 @@ export class StatePoller extends WatcherJob {
             return
         }
 
+        // One decoder per stream: a reconnect starts with an empty buffer.
+        const decoder = new JsonLinesDecoder()
         stream.on("data", (chunk: Buffer) => {
-            try {
-                const event = JSON.parse(chunk.toString())
-                this.handleEvent(event).catch((err: unknown) => {
-                    console.error("[StatePoller] handleEvent error:", err)
-                })
-            } catch {
-                // ignore unparseable chunks
+            for (const value of decoder.push(chunk)) {
+                if (isDockerEvent(value)) this.dispatch(value)
             }
         })
 
@@ -156,17 +193,20 @@ export class StatePoller extends WatcherJob {
         })
     }
 
-    async handleEvent(event: {
-        Type?: string
-        Action?: string
-        Actor?: {
-            ID?: string
-            Attributes?: Record<string, string>
-        }
-        // Legacy format support
-        id?: string
-        status?: string
-    }): Promise<void> {
+    // docker stop emits kill, die and stop within milliseconds. Handled
+    // concurrently, a handler that inspected the still-running container could
+    // write last and leave the stack RUNNING until the next reconcile
+    // (G-18-23-stop-ui). Calls for one project run in Docker's order; other
+    // projects are not blocked.
+    private dispatch(event: DockerEvent): void {
+        const project = event.Actor?.Attributes?.["com.docker.compose.project"]
+        const key = `state-poller:${project ?? event.Actor?.ID ?? event.id ?? "unknown"}`
+        withKeyedLock(key, () => this.handleEvent(event)).catch((err: unknown) => {
+            console.error("[StatePoller] handleEvent error:", err)
+        })
+    }
+
+    async handleEvent(event: DockerEvent): Promise<void> {
         // Extract fields from either new or legacy format
         const containerId = event.Actor?.ID || event.id
         const action = event.Action || event.status
