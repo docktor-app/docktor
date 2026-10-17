@@ -571,6 +571,16 @@ describe("MigrationWizard", () => {
             expect(screen.getByRole("region", {name: "Migration summary"})).toHaveTextContent("Stop old stack: Yes");
         });
 
+        it.each([
+            ["directory", /go back and choose a different stack name/],
+            ["compose-file", /set by name: in the compose file/],
+            ["env-file", /set by COMPOSE_PROJECT_NAME in the stack's \.env file/],
+        ] as const)("names where the shared name comes from (%s)", async (source, sentence) => {
+            await walkToStep4({...separateTarget, sharedProjectName: {name: "db", source}});
+
+            expect(screen.getByText(/Docker Compose project name "db"/)).toHaveTextContent(sentence);
+        });
+
         it("confirms with stopOldStack true", async () => {
             const onConfirmMigrate = vi.fn();
             await walkToStep4(sharedTarget, onConfirmMigrate);

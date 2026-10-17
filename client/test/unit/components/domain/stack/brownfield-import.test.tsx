@@ -55,6 +55,7 @@ const separateTarget: MigrationTarget = {
     originalDirectory: "/host/opt/db",
     inPlace: false,
     suggestedAsideName: null,
+    sharedProjectName: null,
 };
 
 const inPlaceTarget: MigrationTarget = {
@@ -63,6 +64,7 @@ const inPlaceTarget: MigrationTarget = {
     originalDirectory: "/opt/docktor/stacks/db",
     inPlace: true,
     suggestedAsideName: "db-pre-migration",
+    sharedProjectName: null,
 };
 
 function makeOperation(overrides: Partial<MigrationOperation> = {}): MigrationOperation {

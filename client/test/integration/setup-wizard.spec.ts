@@ -512,6 +512,7 @@ test.describe("Setup Wizard", () => {
             originalDirectory: yellowStack.directory,
             inPlace: false,
             suggestedAsideName: null,
+            sharedProjectName: null,
         };
         const inPlaceTarget = {
             stackId: "db",
@@ -519,6 +520,7 @@ test.describe("Setup Wizard", () => {
             originalDirectory: "/opt/docktor/stacks/db",
             inPlace: true,
             suggestedAsideName: "db-pre-migration",
+            sharedProjectName: null,
         };
         const emptyPreview = {diff: {hunks: [], added: 0, removed: 0}, extractedEnv: "", emptySources: [], target: separateTarget};
         const diffPreview = {
@@ -790,6 +792,35 @@ test.describe("Setup Wizard", () => {
 
             await expect.poll(() => bodies.length).toBe(1);
             expect(bodies[0]).toMatchObject({inPlaceAsideName: "db-pre-migration", stopOldStack: true, backup: false});
+        });
+
+        test("should force the stop and explain the shared compose project name", async ({page}) => {
+            // G-18-22-status: the old and the new stack would both run under the project name "db"
+            await scanForYellowStack(page);
+            await page.route("**/api/setup/migrate/preview", (route) =>
+                route.fulfill({
+                    status: 200,
+                    contentType: "application/json",
+                    body: JSON.stringify({
+                        ...emptyPreview,
+                        target: {...separateTarget, sharedProjectName: {name: "db", source: "directory"}},
+                    }),
+                }),
+            );
+            const {bodies} = await mockMigrationRun(page, {success: true});
+            await openAndWalkToStep4(page);
+
+            await expect(page.getByRole("switch", {name: "Stop the old stack before migrating"})).toBeChecked();
+            await expect(page.getByRole("switch", {name: "Stop the old stack before migrating"})).toBeDisabled();
+            const explanation = page.getByText(/Docker Compose project name "db"/);
+            await expect(explanation).toBeVisible();
+            await expect(page.getByText(/choose a different stack name/)).toBeVisible();
+            await expect(page.getByRole("region", {name: "Migration summary"})).toContainText("Stop old stack: Yes");
+
+            await page.getByRole("button", {name: "Confirm & Migrate"}).click();
+
+            await expect.poll(() => bodies.length).toBe(1);
+            expect(bodies[0]).toMatchObject({stopOldStack: true});
         });
 
         test("should offer a relative bind mount, send it as ./volumes/ and warn when it is kept", async ({page}) => {
