@@ -6,14 +6,13 @@ import {
     probeOwnedHealth,
     type HealthSourceName,
 } from "../domain/service-health.js";
+import {COMPOSE_PROJECT_LABEL, COMPOSE_SERVICE_LABEL} from "../domain/compose-labels.js";
 import {deriveStackStatus, isTransitionalStatus} from "../domain/stack-state-derivation.js";
 import type {DockerodeClientPort} from "./ports/dockerode-client-port.js";
 import type {EventBusPort} from "./ports/event-bus-port.js";
 import type {ProbeOwnershipPort} from "./ports/probe-ownership-port.js";
 import {probedServiceRegistry} from "./probed-service-registry.js";
-
-const COMPOSE_PROJECT_LABEL = "com.docker.compose.project";
-const COMPOSE_SERVICE_LABEL = "com.docker.compose.service";
+import {stackContainerMatcher, type StackContainerMatcher} from "./stack-container-matcher.js";
 
 interface StoredService {
     serviceName: string;
@@ -25,6 +24,7 @@ interface StoredService {
 export interface ContainerStateCatchUpRepo {
     findByComposeProject(id: string): Promise<{
         id: string;
+        hostPath: string;
         status: string;
         services: ReadonlyArray<StoredService>;
     } | null>;
@@ -71,6 +71,7 @@ export class ContainerStateCatchUp {
         private readonly repo: ContainerStateCatchUpRepo,
         private readonly bus: Pick<EventBusPort, "emit">,
         private readonly probeOwnership: ProbeOwnershipPort = probedServiceRegistry,
+        private readonly matcher: Pick<StackContainerMatcher, "belongsTo"> = stackContainerMatcher,
     ) {}
 
     async catchUp(stackId: string): Promise<void> {
@@ -88,9 +89,12 @@ export class ContainerStateCatchUp {
         // status since: that operation owns the status and will finish it itself.
         if (!stack || stack.services.length === 0 || isTransitionalStatus(stack.status)) return;
 
-        const containers = (await this.docker.listContainers(true)).filter(
+        const projectContainers = (await this.docker.listContainers(true)).filter(
             (c) => c.Labels?.[COMPOSE_PROJECT_LABEL] === stackId,
         );
+        // G-18-22-status: a same-project copy running from another directory is not this stack's.
+        const owned = await Promise.all(projectContainers.map((c) => this.matcher.belongsTo(stack, c.Labels)));
+        const containers = projectContainers.filter((_, index) => owned[index]);
 
         const observations: ServiceObservation[] = [];
         for (const service of stack.services) {

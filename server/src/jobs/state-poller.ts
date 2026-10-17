@@ -445,6 +445,11 @@ export class StatePoller extends WatcherJob {
         }
     }
 
+    private async ownContainersOf(stack: StackWithServices, containers: ListedContainer[]): Promise<ListedContainer[]> {
+        const owned = await Promise.all(containers.map((c) => this.matcher.belongsTo(stack, c.Labels)))
+        return containers.filter((_, index) => owned[index])
+    }
+
     // Reconcile writes the same rows as the event handler, so it must not
     // interleave with a project's queued events: it takes the same
     // per-project key as dispatch() (G-18-23-stop-ui).
@@ -459,20 +464,26 @@ export class StatePoller extends WatcherJob {
                 if (!stack) return
                 if (isTransitionalStatus(stack.status)) return
 
+                // G-18-22-status: only the stack's own containers count; a
+                // same-project copy running from another directory is skipped.
+                const ownContainers = await this.ownContainersOf(stack, projectContainers)
+                const skipped = projectContainers.length - ownContainers.length
+                if (skipped > 0) console.log(`[StatePoller] Skipped ${skipped} container(s) of another directory for stack=${stack.id}`)
+
                 console.log(`[StatePoller] Processing stack=${stack.id}, services in DB: [${stack.services.map(s => s.serviceName).join(", ")}]`)
-                console.log(`[StatePoller] Containers found: [${projectContainers.map(c => c.Labels?.["com.docker.compose.service"]).join(", ")}]`)
+                console.log(`[StatePoller] Containers found: [${ownContainers.map(c => c.Labels?.["com.docker.compose.service"]).join(", ")}]`)
 
                 // Observe and write every container's real state and health.
                 // The first container seen for a service is the one the
                 // stack status is derived from.
                 const containerCounts = new Map<string, number>()
-                for (const container of projectContainers) {
+                for (const container of ownContainers) {
                     const svcName = container.Labels?.["com.docker.compose.service"]
                     if (svcName) containerCounts.set(svcName, (containerCounts.get(svcName) ?? 0) + 1)
                 }
 
                 const observed = new Map<string, ObservedContainer>()
-                for (const container of projectContainers) {
+                for (const container of ownContainers) {
                     const svcName = container.Labels?.["com.docker.compose.service"]
                     if (!svcName) continue
 
