@@ -3,6 +3,7 @@ import type {DockerodeClientPort} from "../application/ports/dockerode-client-po
 import type {EventBusPort} from "../application/ports/event-bus-port.js"
 import type {ProbeOwnershipPort} from "../application/ports/probe-ownership-port.js"
 import {probedServiceRegistry} from "../application/probed-service-registry.js"
+import {stackContainerMatcher, type StackContainerMatcher} from "../application/stack-container-matcher.js"
 import {domainEventBus} from "../infrastructure/event-bus.js"
 import type {StackStatus} from "../generated/prisma/enums.js"
 import {deriveStackStatus, isTransitionalStatus} from "../domain/stack-state-derivation.js"
@@ -70,6 +71,7 @@ export interface ServiceState {
 
 export interface StackWithServices {
     id: string
+    hostPath: string
     status: string
     services: ServiceState[]
 }
@@ -120,12 +122,14 @@ export class StatePoller extends WatcherJob {
     private readonly repo: StatePollerRepo | null
     private readonly bus: Pick<EventBusPort, "emit">
     private readonly probeOwnership: ProbeOwnershipPort
+    private readonly matcher: Pick<StackContainerMatcher, "belongsTo">
 
     constructor(
         docker?: Pick<DockerodeClientPort, "getEventStream" | "inspectContainer" | "listContainers">,
         repo?: StatePollerRepo,
         bus?: Pick<EventBusPort, "emit">,
         probeOwnership: ProbeOwnershipPort = probedServiceRegistry,
+        matcher: Pick<StackContainerMatcher, "belongsTo"> = stackContainerMatcher,
     ) {
         super()
         this.docker = docker ?? dockerodeClient
@@ -133,6 +137,7 @@ export class StatePoller extends WatcherJob {
         this.repo = repo ?? null
         this.bus = bus ?? domainEventBus
         this.probeOwnership = probeOwnership
+        this.matcher = matcher
     }
 
     private async getRepo(): Promise<StatePollerRepo> {
@@ -239,6 +244,12 @@ export class StatePoller extends WatcherJob {
 
         // Skip stacks in transitional states
         if (isTransitionalStatus(stack.status)) return
+
+        // G-18-22-status: a same-project container of another directory is not this stack's.
+        if (!(await this.matcher.belongsTo(stack, attributes))) {
+            console.log(`[StatePoller] Skipping event: stack=${stack.id}, container=${containerId.substring(0, 12)}, reason=container of another directory`)
+            return
+        }
 
         // Inspect the container (may no longer exist if destroy/remove event)
         let info
