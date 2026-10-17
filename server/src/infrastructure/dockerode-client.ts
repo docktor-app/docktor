@@ -35,7 +35,10 @@ export class DockerodeClient implements DockerodeClientPort {
         return (this.streamDocker as any).getEvents({
             filters: {
                 type: ["container"],
-                event: ["start", "stop", "die", "kill", "health_status"],
+                // kill fires while the container is still running (docker stop
+                // sends it before die) and carries no state change; die covers
+                // every exit and stop follows it (G-18-23-stop-ui).
+                event: ["start", "stop", "die", "health_status"],
             },
             abortSignal: signal,
         })

@@ -430,10 +430,23 @@ export class StatePoller extends WatcherJob {
 
         // Update each project's services
         for (const [project, projectContainers] of byProject) {
+            await this.reconcileProject(repo, project, projectContainers)
+        }
+    }
+
+    // Reconcile writes the same rows as the event handler, so it must not
+    // interleave with a project's queued events: it takes the same
+    // per-project key as dispatch() (G-18-23-stop-ui).
+    private async reconcileProject(
+        repo: StatePollerRepo,
+        project: string,
+        projectContainers: ListedContainer[],
+    ): Promise<void> {
+        await withKeyedLock(`state-poller:${project}`, async () => {
             try {
                 const stack = await repo.findByComposeProject(project)
-                if (!stack) continue
-                if (isTransitionalStatus(stack.status)) continue
+                if (!stack) return
+                if (isTransitionalStatus(stack.status)) return
 
                 console.log(`[StatePoller] Processing stack=${stack.id}, services in DB: [${stack.services.map(s => s.serviceName).join(", ")}]`)
                 console.log(`[StatePoller] Containers found: [${projectContainers.map(c => c.Labels?.["com.docker.compose.service"]).join(", ")}]`)
@@ -486,7 +499,7 @@ export class StatePoller extends WatcherJob {
             } catch (err) {
                 console.error(`[StatePoller] reconcile error for project ${project}:`, err)
             }
-        }
+        })
     }
 }
 
