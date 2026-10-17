@@ -1,4 +1,5 @@
 import {AlertTriangle} from "lucide-react";
+import type {SharedProjectName} from "@docktor/shared";
 import {Alert, AlertDescription} from "@/components/ui/alert";
 import {Label} from "@/components/ui/label";
 import {Switch} from "@/components/ui/switch";
@@ -11,21 +12,40 @@ export interface MigrationSummary {
   readonly keptOriginalAs: string | null;
 }
 
+// Why the old stack must be stopped, so the switch cannot be turned off:
+// - in-place (G-18-7): the new stack reuses the old directory and compose project name.
+// - shared-project-name (G-18-22-status): the old and the new stack would both
+//   run under one compose project name, so the new stack would take over the
+//   old stack's containers.
+export type StopRequirement =
+  | {readonly kind: "in-place"}
+  | {readonly kind: "shared-project-name"; readonly projectName: SharedProjectName};
+
 export interface MigrationOldStackStepProps {
   readonly checked: boolean;
   readonly onCheckedChange: (checked: boolean) => void;
-  // G-18-7: an in-place migration reuses the old directory and compose project
-  // name, so the old stack must be stopped and the switch cannot be turned off.
-  readonly stopRequired: boolean;
+  readonly stopRequirement: StopRequirement | null;
   readonly summary: MigrationSummary;
 }
 
 const yesNo = (value: boolean): string => (value ? "Yes" : "No");
 
+const DEFAULT_HELP =
+  "Runs docker compose stop on the old stack before its data is copied. Containers are stopped, not removed, so you can start the old stack again.";
+
+function stopHelp(requirement: StopRequirement | null): string {
+  if (requirement === null) return DEFAULT_HELP;
+  if (requirement.kind === "in-place") {
+    return "Required for an in-place migration: the new stack reuses this directory and its compose project name.";
+  }
+  return `Required: the old and the new stack would both use the Docker Compose project name "${requirement.projectName.name}", so the new stack would take over the old stack's containers.`;
+}
+
 // Step 4 of the migration dialog (MIG-04, D-10): the explicit, default-on
 // choice to stop the old stack, plus a read-only recap of every choice so the
 // single Confirm & Migrate action is made with all decisions on one screen.
-export function MigrationOldStackStep({checked, onCheckedChange, stopRequired, summary}: Readonly<MigrationOldStackStepProps>): React.JSX.Element {
+export function MigrationOldStackStep({checked, onCheckedChange, stopRequirement, summary}: Readonly<MigrationOldStackStepProps>): React.JSX.Element {
+  const stopRequired = stopRequirement !== null;
   return (
     <div className="flex flex-col gap-4 py-4">
       <div className="flex min-h-11 items-start gap-3 md:min-h-0">
@@ -40,9 +60,7 @@ export function MigrationOldStackStep({checked, onCheckedChange, stopRequired, s
         <div className="flex min-w-0 flex-col gap-1">
           <Label htmlFor="stop-old-stack" className="font-semibold">Stop the old stack before migrating</Label>
           <p id="stop-old-stack-help" className="text-xs text-muted-foreground">
-            {stopRequired
-              ? "Required for an in-place migration: the new stack reuses this directory and its compose project name."
-              : "Runs docker compose stop on the old stack before its data is copied. Containers are stopped, not removed, so you can start the old stack again."}
+            {stopHelp(stopRequirement)}
           </p>
         </div>
       </div>

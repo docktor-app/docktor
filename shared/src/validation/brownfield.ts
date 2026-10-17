@@ -56,15 +56,28 @@ export const migrationExecuteSchema = migrationPreviewSchema.extend({
     inPlaceAsideName: stackDirectoryNameSchema.optional(),
 });
 
+// G-18-22-status: where a Docker Compose project name comes from, in Compose's
+// order of precedence for what the migrated files show.
+export const composeProjectNameSourceSchema = z.enum(["directory", "compose-file", "env-file"]);
+
+export const sharedProjectNameSchema = z.object({
+    name: z.string(),
+    source: composeProjectNameSourceSchema,
+});
+
 // G-18-7: where the migration builds the new stack. `inPlace` means the target
 // is the old stack's own directory, so the original is renamed aside first;
 // `suggestedAsideName` is then a free name for it, and null otherwise.
+// G-18-22-status: `sharedProjectName` is set when the old and the new stack
+// would run under the same compose project name, so the old stack must be
+// stopped (the migration is refused otherwise); null when the names differ.
 export const migrationTargetSchema = z.object({
     stackId: z.string(),
     directory: z.string(),
     originalDirectory: z.string(),
     inPlace: z.boolean(),
     suggestedAsideName: z.string().nullable(),
+    sharedProjectName: sharedProjectNameSchema.nullable(),
 });
 
 // Response shapes of the scan endpoints (/api/setup/scan, /api/stacks/import/scan).
@@ -112,6 +125,8 @@ export type MigrationPreviewInput = z.infer<typeof migrationPreviewSchema>;
 export type BrownfieldAdoptInput = z.infer<typeof brownfieldAdoptSchema>;
 export type MigrationExecuteInput = z.infer<typeof migrationExecuteSchema>;
 export type MigrationTarget = z.infer<typeof migrationTargetSchema>;
+export type ComposeProjectNameSource = z.infer<typeof composeProjectNameSourceSchema>;
+export type SharedProjectName = z.infer<typeof sharedProjectNameSchema>;
 export type ManagedStackRef = z.infer<typeof managedStackRefSchema>;
 export type DiscoveredStack = z.infer<typeof discoveredStackSchema>;
 export type SkippedDirectoryReason = z.infer<typeof skippedDirectoryReasonSchema>;

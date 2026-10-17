@@ -152,6 +152,7 @@ describe("migrationTargetSchema (G-18-7)", () => {
         originalDirectory: "/opt/docktor/stacks/memos",
         inPlace: true,
         suggestedAsideName: "memos-pre-migration",
+        sharedProjectName: null,
     };
 
     it("accepts an in-place target with a suggested aside name", () => {
@@ -166,6 +167,23 @@ describe("migrationTargetSchema (G-18-7)", () => {
 
     it("rejects a target with a missing suggestedAsideName", () => {
         const {suggestedAsideName: _suggested, ...body} = target;
+        expect(migrationTargetSchema.safeParse(body).success).toBe(false);
+    });
+
+    it("accepts a shared compose project name with a known source (G-18-22-status)", () => {
+        expect(
+            migrationTargetSchema.safeParse({...target, sharedProjectName: {name: "memos", source: "directory"}}).success,
+        ).toBe(true);
+    });
+
+    it("rejects a shared compose project name with an unknown source", () => {
+        expect(
+            migrationTargetSchema.safeParse({...target, sharedProjectName: {name: "memos", source: "shell"}}).success,
+        ).toBe(false);
+    });
+
+    it("rejects a target without the sharedProjectName field", () => {
+        const {sharedProjectName: _shared, ...body} = target;
         expect(migrationTargetSchema.safeParse(body).success).toBe(false);
     });
 });

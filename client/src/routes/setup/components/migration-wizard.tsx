@@ -1,13 +1,13 @@
 import {useEffect, useRef, useState} from "react";
 import {toast} from "sonner";
-import {stackDirectoryNameSchema, type MigrationPreviewInput} from "@docktor/shared";
+import {stackDirectoryNameSchema, type MigrationPreviewInput, type SharedProjectName} from "@docktor/shared";
 import {Button} from "@/components/ui/button";
 import {Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle} from "@/components/ui/dialog";
 import {MigrationSelectStep} from "./migration-select-step";
 import {MigrationReviewStep} from "./migration-review-step";
 import {MigrationStepIndicator, MIGRATION_STEP_LABELS} from "./migration-step-indicator";
 import {MigrationBackupStep} from "./migration-backup-step";
-import {MigrationOldStackStep} from "./migration-old-stack-step";
+import {MigrationOldStackStep, type StopRequirement} from "./migration-old-stack-step";
 import {directoryDisplayName} from "@/lib/path-display";
 import {buildBindMountChoices, countVolumesToCopy, toVolumeSelections, type BindMountChoice} from "@/lib/migration-volume-paths";
 import type {DiscoveredStack, MigrationPreview, VolumeSelection} from "@/lib/brownfield-types";
@@ -19,6 +19,11 @@ const ASIDE_NAME_SAME_ERROR = "Choose a name different from the current director
 function validateAsideName(name: string, originalDirectory: string): string | null {
   if (!stackDirectoryNameSchema.safeParse(name).success) return ASIDE_NAME_FORMAT_ERROR;
   return name === directoryDisplayName(originalDirectory) ? ASIDE_NAME_SAME_ERROR : null;
+}
+
+function stopRequirementOf(inPlace: boolean, sharedProjectName: SharedProjectName | null): StopRequirement | null {
+  if (inPlace) return {kind: "in-place"};
+  return sharedProjectName ? {kind: "shared-project-name", projectName: sharedProjectName} : null;
 }
 
 const PREVIEW_ERROR_FALLBACK = "Failed to generate preview. Check that the compose file is still readable and try again.";
@@ -106,7 +111,10 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
   const inPlace = target ? target.inPlace : false;
   const asideName = asideNameEdit ?? target?.suggestedAsideName ?? "";
   const backup = !inPlace && (backupChoice ?? false);
-  const stopOldStack = inPlace || stopChoice;
+  // A response without the field counts as no collision.
+  const sharedProjectName = target?.sharedProjectName ?? null;
+  const stopRequirement = stopRequirementOf(inPlace, sharedProjectName);
+  const stopOldStack = stopRequirement !== null || stopChoice;
   const asideNameError = target && inPlace ? validateAsideName(asideName, target.originalDirectory) : null;
 
   // RESEARCH Pitfall 7: a preview response that arrives after the dialog was
@@ -243,7 +251,7 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
             <MigrationOldStackStep
               checked={stopOldStack}
               onCheckedChange={setStopChoice}
-              stopRequired={inPlace}
+              stopRequirement={stopRequirement}
               summary={{displayName, volumesToCopy, backup, keptOriginalAs: inPlace ? asideName : null}}
             />
           )}

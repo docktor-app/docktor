@@ -16,8 +16,14 @@ import {
 	copyDestinationViolations,
 	type MigrationTargetKind,
 } from "../domain/migration-target.js";
+import {composeProjectName} from "../domain/compose-project-name.js";
 import {computeUnifiedDiff, type UnifiedDiff} from "../lib/unified-diff.js";
-import {stackDirectoryNameSchema, type MigrationOperationStep, type MigrationTarget} from "@docktor/shared";
+import {
+	stackDirectoryNameSchema,
+	type MigrationOperationStep,
+	type MigrationTarget,
+	type SharedProjectName,
+} from "@docktor/shared";
 import {AppError, BadRequestError, ConflictError, hasErrorCode} from "../lib/errors.js";
 import {composeAnalyzer} from "../infrastructure/compose-analyzer.js";
 import {dockerSelfStack} from "../infrastructure/docker-self-stack.js";
@@ -115,6 +121,11 @@ function relocateIntoSource(srcPath: string, dirs: {originalDir: string; sourceD
 	const relative = path.relative(dirs.originalDir, srcPath);
 	const insideOriginal = relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
 	return insideOriginal ? path.join(dirs.sourceDir, relative) : srcPath;
+}
+
+/** G-18-22-status: why leaving the old stack running under a shared project name is refused. */
+function sharedProjectNameRefusal(shared: SharedProjectName): string {
+	return `Migration refused: the old stack keeps running and would share the Docker Compose project name "${shared.name}" with the new stack (both take it from their directory name), so deploying the new stack would take over the old stack's containers. Stop the old stack during the migration, or choose a different stack name.`;
 }
 
 /** What the preview needs to know about a migration request (G-18-7). */
@@ -250,6 +261,7 @@ export class MigrationService {
 			originalDirectory: path.resolve(assessment.originalDir),
 			inPlace,
 			suggestedAsideName,
+			sharedProjectName: await this.sharedProjectName(assessment),
 		};
 		const emptySources = bindCopies.filter((copy) => copy.sourcePath === null).map((copy) => copy.originalPath);
 		return {diff, extractedEnv: result.extractedEnv, target, emptySources};
@@ -292,6 +304,12 @@ export class MigrationService {
 		const {stackId, originalDir, targetDir, kind} = assessment;
 		const bindCopies = await this.planCopies(assessment, volumeSelections, namedVolumeSelections);
 		const inPlace = kind === "in-place" ? {asideDir: await this.planInPlace(originalDir, stackId, input)} : null;
+		if (!stopOldStack) {
+			const shared = await this.sharedProjectName(assessment);
+			if (shared) {
+				throw new BadRequestError(sharedProjectNameRefusal(shared));
+			}
+		}
 
 		return {
 			stackId,
@@ -306,6 +324,24 @@ export class MigrationService {
 			bindCopies,
 			inPlace,
 		};
+	}
+
+	/**
+	 * G-18-22-status: the compose project name the old and the new stack would
+	 * both run under, or null when they differ or the target is in place (which
+	 * stops the old stack anyway). The new stack keeps the compose file's name:
+	 * and the old .env, and Docktor runs compose in `<stacks>/<stackId>`, so its
+	 * name is predicted over the same files with the stack id as the directory.
+	 */
+	private async sharedProjectName(assessment: TargetAssessment): Promise<SharedProjectName | null> {
+		if (assessment.kind !== "separate") {
+			return null;
+		}
+		const composeContent = await fs.readFile(assessment.composePath, "utf-8");
+		const envContent = await this.readOldEnv(assessment.originalDir);
+		const old = composeProjectName({composeContent, envContent, directoryName: path.basename(assessment.originalDir)});
+		const next = composeProjectName({composeContent, envContent, directoryName: assessment.stackId});
+		return old.name !== "" && old.name === next.name ? old : null;
 	}
 
 	/**
