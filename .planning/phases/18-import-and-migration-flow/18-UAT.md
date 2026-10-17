@@ -226,7 +226,8 @@ blocked: 0
       issue: "no distinct project name or same-project refusal when the old stack stays running"
   missing:
     - "Match containers to a stack by project AND working_dir/config_files, via the same canonical path identity"
-    - "When stopOldStack is off and the project names collide, give the new stack a distinct COMPOSE_PROJECT_NAME or refuse with a clear message (needs a decision)"
+    - "When stopOldStack is off and the old and new compose project names collide, refuse the migration with a clear message (user decision: refuse, not auto-rename)"
+  user_decision: "Refuse when the project names collide and the old stack is not stopped."
 
 - gap_id: G-18-22-card
   truth: "Discovered stacks table fits without constant scrolling"
@@ -242,3 +243,15 @@ blocked: 0
       issue: "wrapper max-w-3xl"
   missing:
     - "Widen both (e.g. max-w-6xl on the page, wider in the wizard), keep phone layout"
+
+
+- gap_id: G-18-23-stop-ui
+  truth: "Stopping a stack's containers is reflected in the UI without a reload"
+  status: failed
+  reason: "User reported: stopping the container is not reflected in the UI; a reload is needed."
+  severity: major
+  test: 8
+  root_cause: ""
+  artifacts: []
+  missing: []
+  note: "Undiagnosed. The server side emits stack.container_state_changed for stop events (state-poller.ts handleEvent), so the cause is either the event not matching the stack (project/working_dir, see G-18-22-status), or the client SSE hook not applying it. Needs the repro: which stop (stack page button, docker CLI, or the migration's old-stack stop) and which page."
