@@ -5,16 +5,16 @@ milestone_name: Release Follow-ups
 current_phase: 18
 current_phase_name: Import and Migration Flow
 status: executing
-stopped_at: Completed 18-21-PLAN.md
-last_updated: "2026-10-16T22:19:58.827Z"
+stopped_at: Completed 18-22-PLAN.md
+last_updated: "2026-10-17T14:54:07.196Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 18 execution started
-state_head: 35fa87d3f0ec27687d384299985df5b242621bb1
+state_head: c2666844ee2afb5c5a5564a6f26170d7b3cf0fbf
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 24
-  completed_plans: 24
+  total_plans: 29
+  completed_plans: 25
   percent: 20
 ---
 
@@ -85,6 +85,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 18 P19 | 40min | 3 tasks | 9 files |
 | Phase 18 P20 | 15min | 3 tasks | 8 files |
 | Phase 18 P21 | 6 min | 2 tasks | 6 files |
+| Phase 18 P22 | 6 min | 3 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -133,6 +134,7 @@ Roadmap decisions for v0.1.1:
 - [Phase 18]: 18-20: extracted env names are allocated per value (KEY, SERVICE_KEY, SERVICE_KEY_n); Docktor process env, COMPOSE_/DOCKER_ names, compose-referenced names and conflicting old .env keys are never used
 - [Phase 18]: 18-20: old .env is read ENOENT-only in preview and execute; unreadable fails and rolls back
 - [Phase 18]: 18-21: empty bind-mount sources render as escaped code text in a warning Alert on the review step (break-all, dark variants); no note for an empty list
+- [Phase 18]: 18-22: directory identity (namespace-tagged host:/container: keys from spelling, realpath and own bind mounts) replaces path-string comparison for migration target classification and managed-stack detection; in-place originals are addressed through the writable stacks-folder spelling
 
 ### Pending Todos
 
@@ -156,6 +158,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T22:19:58.654Z
-Stopped at: Completed 18-21-PLAN.md
+Last session: 2026-10-17T14:54:06.934Z
+Stopped at: Completed 18-22-PLAN.md
 Resume file: None
