@@ -1,14 +1,18 @@
 ---
-status: diagnosed
+status: testing
 phase: 18-import-and-migration-flow
 source: [18-01-SUMMARY.md, 18-02-SUMMARY.md, 18-03-SUMMARY.md, 18-04-SUMMARY.md, 18-05-SUMMARY.md]
 started: 2026-10-15T12:00:00Z
-updated: 2026-10-15T15:48:21.865Z
+updated: 2026-10-17T00:00:00Z
 ---
 
 ## Current Test
 
-[testing complete]
+number: 2
+name: Import scan hides Docktor's own stack (re-test after gap closure)
+expected: |
+  Docktor's own compose file is not listed; other stacks are; stacks already managed by Docktor are listed but disabled with "Already managed" and a working View link.
+awaiting: user response
 
 ## Tests
 
@@ -71,7 +75,9 @@ blocked: 2
 
 - gap_id: G-18-2
   truth: "Import scan hides Docktor's own stack and offers every other stack for import"
-  status: failed
+  status: resolved
+  resolved_by: 18-13-PLAN
+  resolved_at: 2026-10-17
   reason: "User reported: the docktor stack was ignored, but the stacks that were already added to docktor are not ignored. I think it is ok to list them, but disable the buttons."
   severity: major
   test: 2
@@ -91,7 +97,9 @@ blocked: 2
 
 - gap_id: G-18-3-scan
   truth: "A scan of a directory that does not exist inside the container tells the user so, instead of silently dropping it"
-  status: failed
+  status: resolved
+  resolved_by: 18-13-PLAN
+  resolved_at: 2026-10-17
   reason: "User reported: the stack I tried to migrate was not found ... no error, only not showing the stack in the table. it is running with docker desktop and /run/desktop/mnt/host/c/... as stack directory volume mount. Resolved by user after moving the stack into the stacks folder: 'got it, moved it into the stack folder.'"
   severity: minor
   test: 3
@@ -111,7 +119,9 @@ blocked: 2
 
 - gap_id: G-18-4
   truth: "The migration preview diff shows the compose rewrite the user selected (bind mount ./data rewritten to the new stack's data path, e.g. /volume/data:/var/opt/memos), without spurious whitespace-only changes"
-  status: failed
+  status: resolved
+  resolved_by: 18-10-PLAN
+  resolved_at: 2026-10-17
   reason: "User reported: the diff renders, but the change is '-     - ./data:/var/opt/memos' / '+      - ./data:/var/opt/memos' (indentation-only change, path unchanged) instead of '+ /volume/data:/var/opt/memos'"
   severity: major
   test: 4
@@ -136,7 +146,9 @@ blocked: 2
 
 - gap_id: G-18-7
   truth: "A stack that already lives in Docktor's stacks folder under the same name can be migrated in place"
-  status: failed
+  status: resolved
+  resolved_by: 18-15-PLAN
+  resolved_at: 2026-10-17
   reason: "User reported: Migration refused: the new stack directory /run/desktop/mnt/host/c/.../memos-migration and the old stack directory /run/desktop/mnt/host/c/.../memos-migration overlap. If the name doesnt change, it needs to be copied to something like memos-migration-backup (or let the user choose). If it changes, no backup needed, since the old directory still exists."
   severity: major
   test: 7
@@ -155,7 +167,9 @@ blocked: 2
 
 - gap_id: G-18-job
   truth: "A long migration (large volume copies, slow Docker Desktop mounts, image pulls) completes reliably and the user sees its progress"
-  status: failed
+  status: resolved
+  resolved_by: 18-17-PLAN
+  resolved_at: 2026-10-17
   reason: "User asked: Is the migration running in a job? It could take a lot of time."
   severity: major
   test: 7
