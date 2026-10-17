@@ -399,7 +399,7 @@ export class MigrationService {
 		}
 
 		await assertNotOwnStack(this.selfStack, composePath, "MigrationService");
-		await assertNotManaged(this.stackRepo, composePath);
+		await assertNotManaged(this.stackRepo, this.directories, composePath);
 
 		if (await this.stackRepo.exists(stackId)) {
 			throw new ConflictError(`Stack "${stackId}" already exists`);

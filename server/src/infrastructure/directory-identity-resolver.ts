@@ -49,16 +49,22 @@ export class DirectoryIdentityResolver implements DirectoryIdentityPort {
      * unknown answer (the lookup failed) is not kept: the next call asks again.
      */
     private view(): Promise<OwnMountsView> {
-        this.pendingView ??= this.ownMounts
-            .ownMounts()
-            .catch((): OwnMountsView => ({kind: "unknown"}))
-            .then((view) => {
-                if (view.kind === "unknown") {
-                    this.pendingView = null;
-                }
-                return view;
-            });
+        this.pendingView ??= this.lookUpView().then((view) => {
+            if (view.kind === "unknown") {
+                this.pendingView = null;
+            }
+            return view;
+        });
         return this.pendingView;
+    }
+
+    private async lookUpView(): Promise<OwnMountsView> {
+        try {
+            return await this.ownMounts.ownMounts();
+        } catch {
+            // The port promises not to reject; an adapter that does is read as "mounts unknown" (fail-safe).
+            return {kind: "unknown"};
+        }
     }
 
     /** `spelling` plus its symlink-free form when the filesystem can resolve it. */

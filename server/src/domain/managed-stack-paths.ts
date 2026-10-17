@@ -1,3 +1,4 @@
+import {relateDirectories, type DirectoryIdentity} from "./directory-identity.js";
 import {toComparablePath} from "./self-stack-paths.js";
 
 /**
@@ -5,12 +6,11 @@ import {toComparablePath} from "./self-stack-paths.js";
  * (G-18-2): a scanned stack must not be adopted or migrated a second time.
  *
  * Docktor keeps one stack per directory and stores that directory as the
- * stack's `hostPath` (container-visible: Docktor-created and migrated stacks
- * live in the stacks directory, adopted stacks keep the scanned directory).
- * A compose file is therefore managed when its directory equals a stack's
- * `hostPath`; a sibling compose file in a managed directory counts as managed
- * too. Comparison is exact and case-sensitive, like the Linux container the
- * scan runs in.
+ * stack's `hostPath`. A compose file is therefore managed when its directory
+ * IS the directory of a stack; a sibling compose file in a managed directory
+ * counts as managed too. "Is" is decided over directory identities, not text
+ * (review WR-10): the scan reaches a managed stack through the read-only
+ * `/host` view or a symlink, and those spellings name the same directory.
  */
 
 /** Where an existing Docktor stack lives. */
@@ -26,15 +26,14 @@ export interface ManagedStackRef {
     readonly displayName: string;
 }
 
-function stripTrailingSeparators(comparablePath: string): string {
-    let end = comparablePath.length;
-    while (end > 1 && comparablePath[end - 1] === "/") {
-        end--;
-    }
-    return comparablePath.slice(0, end);
+/** A managed stack together with the identity of its directory. */
+export interface IdentifiedManagedStack extends ManagedStackRef {
+    readonly identity: DirectoryIdentity;
 }
 
-function directoryOf(comparablePath: string): string {
+/** The directory part of a compose file path: "/" for a root file, "" for a bare file name. */
+export function composeDirectoryOf(composePath: string): string {
+    const comparablePath = toComparablePath(composePath);
     const lastSeparator = comparablePath.lastIndexOf("/");
     if (lastSeparator < 0) {
         return "";
@@ -42,22 +41,11 @@ function directoryOf(comparablePath: string): string {
     return lastSeparator === 0 ? "/" : comparablePath.slice(0, lastSeparator);
 }
 
-/** The managed stack whose directory contains `composePath`, or null. */
+/** The first managed stack whose directory is `directory`, or null. */
 export function findManagingStack(
-    composePath: string,
-    managed: readonly ManagedStackLocation[],
+    directory: DirectoryIdentity,
+    managed: readonly IdentifiedManagedStack[],
 ): ManagedStackRef | null {
-    const directory = directoryOf(toComparablePath(composePath));
-    const match = managed.find(
-        (stack) => stripTrailingSeparators(toComparablePath(stack.hostPath)) === directory,
-    );
+    const match = managed.find((stack) => relateDirectories(directory, stack.identity) === "same");
     return match ? {id: match.id, displayName: match.displayName} : null;
-}
-
-/** Adds `managedStack` (the managing stack or null) to every row, keeping order and all other fields. */
-export function annotateManagedStacks<T extends {readonly path: string}>(
-    rows: readonly T[],
-    managed: readonly ManagedStackLocation[],
-): Array<T & {managedStack: ManagedStackRef | null}> {
-    return rows.map((row) => ({...row, managedStack: findManagingStack(row.path, managed)}));
 }

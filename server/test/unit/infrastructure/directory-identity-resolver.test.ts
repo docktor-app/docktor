@@ -102,6 +102,22 @@ describe.skipIf(process.platform === "win32")("DirectoryIdentityResolver (G-18-2
         });
     });
 
+    describe("an own-mounts adapter that fails", () => {
+        it("is read as unknown mounts: identical spellings still match, aliases do not", async () => {
+            const resolver = new DirectoryIdentityResolver(
+                {ownMounts: vi.fn().mockRejectedValue(new Error("docker unreachable"))},
+                keepPath,
+            );
+
+            const direct = await resolver.identifyLocal("/opt/x");
+            const alias = await resolver.identifyLocal("/host/opt/x");
+
+            expect(direct.mountsKnown).toBe(false);
+            expect(relateDirectories(direct, await resolver.identifyLocal("/opt/x"))).toBe("same");
+            expect(relateDirectories(direct, alias)).toBe("unrelated");
+        });
+    });
+
     describe("mount view caching", () => {
         it("asks for the mounts once when they are known", async () => {
             const ownMounts = ownMountsReturning({kind: "container", mounts: []});

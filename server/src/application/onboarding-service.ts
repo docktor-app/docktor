@@ -12,14 +12,15 @@ import {createComposeConfig} from "../domain/compose-config.js";
 // so there is no circular dependency.
 import {proxyService} from "./index.js";
 import type {ProxyService} from "./proxy-service.js";
-import {annotateManagedStacks} from "../domain/managed-stack-paths.js";
 import {excludeOwnComposeFiles} from "../domain/self-stack-paths.js";
-import {assertNotManaged} from "./managed-stack-guard.js";
+import {assertNotManaged, identifyManagedStacks, managingStackOf} from "./managed-stack-guard.js";
 import {assertNotOwnStack, lookupOwnComposeFiles} from "./own-stack-guard.js";
 import {brownfieldScanner} from "../infrastructure/brownfield-scanner.js";
 import {dockerSelfStack} from "../infrastructure/docker-self-stack.js";
+import {directoryIdentityResolver} from "../infrastructure/directory-identity-resolver.js";
 import type {BrownfieldScannerPort, ScanResult} from "./ports/brownfield-scanner-port.js";
 import type {SelfStackPort} from "./ports/self-stack-port.js";
+import type {DirectoryIdentityPort} from "./ports/directory-identity-port.js";
 import type {
     WizardStep1Input,
     WizardStep2Input,
@@ -71,6 +72,8 @@ export class OnboardingService {
         // D-03/STK-03: last position so every existing positional call keeps
         // compiling. Identifies Docktor's own compose file so scan() can hide it.
         private readonly selfStack: SelfStackPort = dockerSelfStack,
+        // G-18-22-inplace/WR-10: which directory a path names, whatever its spelling.
+        private readonly directories: DirectoryIdentityPort = directoryIdentityResolver,
     ) {}
 
     /**
@@ -233,10 +236,16 @@ export class OnboardingService {
         const [result, ownPaths, managed] = await Promise.all([
             this.scanner.scan(directories),
             lookupOwnComposeFiles(this.selfStack, "OnboardingService"),
-            this.stackRepo.listLocations(),
+            identifyManagedStacks(this.stackRepo, this.directories),
         ]);
         const candidates = ownPaths.length === 0 ? result.stacks : excludeOwnComposeFiles(result.stacks, ownPaths);
-        return {...result, stacks: annotateManagedStacks(candidates, managed)};
+        const stacks = await Promise.all(
+            candidates.map(async (row) => ({
+                ...row,
+                managedStack: await managingStackOf(row.path, managed, this.directories),
+            })),
+        );
+        return {...result, stacks};
     }
 
     /**
@@ -263,7 +272,7 @@ export class OnboardingService {
         }
 
         await assertNotOwnStack(this.selfStack, composePath, "OnboardingService");
-        await assertNotManaged(this.stackRepo, composePath);
+        await assertNotManaged(this.stackRepo, this.directories, composePath);
 
         if (await this.stackRepo.exists(id)) {
             throw new ConflictError(`Stack "${id}" already exists`);
