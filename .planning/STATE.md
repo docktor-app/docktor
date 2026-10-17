@@ -5,16 +5,16 @@ milestone_name: Release Follow-ups
 current_phase: 18
 current_phase_name: Import and Migration Flow
 status: executing
-stopped_at: Completed 18-24-PLAN.md
-last_updated: "2026-10-17T15:04:57.493Z"
+stopped_at: Completed 18-25-PLAN.md
+last_updated: "2026-10-17T15:08:45.225Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 18 execution started
-state_head: 599065745dacbc0ebfb462ec75789f5b9b200aa6
+state_head: c2593722178bf7a9de6114f3e88d83cc77f0bb7e
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 29
-  completed_plans: 27
+  completed_plans: 28
   percent: 20
 ---
 
@@ -88,6 +88,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 18 P22 | 6 min | 3 tasks | 16 files |
 | Phase 18 P23 | 20min | 2 tasks | 6 files |
 | Phase 18 P24 | 10min | 2 tasks | 4 files |
+| Phase 18 P25 | 12min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -138,6 +139,7 @@ Roadmap decisions for v0.1.1:
 - [Phase 18]: 18-21: empty bind-mount sources render as escaped code text in a warning Alert on the review step (break-all, dark variants); no note for an empty list
 - [Phase 18]: 18-22: directory identity (namespace-tagged host:/container: keys from spelling, realpath and own bind mounts) replaces path-string comparison for migration target classification and managed-stack detection; in-place originals are addressed through the writable stacks-folder spelling
 - [Phase 18]: 18-23: Docker events and reconcile of one compose project run in order under withKeyedLock('state-poller:<project>'); kill is no longer subscribed
+- [Phase 18]: 18-25: containers attributed to a stack by compose project AND compose directory via canonical identity; unlabelled containers and unknown mounts keep the project-only rule
 
 ### Pending Todos
 
@@ -161,6 +163,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T15:04:57.229Z
-Stopped at: Completed 18-24-PLAN.md
+Last session: 2026-10-17T15:08:44.912Z
+Stopped at: Completed 18-25-PLAN.md
 Resume file: None
