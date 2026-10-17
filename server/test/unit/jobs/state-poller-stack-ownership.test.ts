@@ -111,4 +111,60 @@ describe("StatePoller container ownership (G-18-22-status)", () => {
             expect(bus.emit).toHaveBeenCalledTimes(1);
         });
     });
+
+    describe("reconcile", () => {
+        function listed(id: string, workingDir: string, state: string) {
+            return {
+                Id: id,
+                State: state,
+                Labels: {
+                    "com.docker.compose.project": "memos",
+                    "com.docker.compose.service": "web",
+                    "com.docker.compose.project.working_dir": workingDir,
+                },
+            };
+        }
+
+        // reconcile() is protected; this narrow structural cast only exposes that one method.
+        async function reconcile(): Promise<void> {
+            await (poller as unknown as {reconcile(): Promise<void>}).reconcile();
+        }
+
+        beforeEach(() => {
+            repo.findByComposeProject.mockResolvedValue({
+                id: "memos",
+                status: "RUNNING",
+                hostPath: STACK_DIR,
+                services: [{serviceName: "web", containerId: null, containerState: "running", healthStatus: null}],
+            });
+            docker.inspectContainer.mockImplementation(async (id: string) => ({
+                State: {Status: id === "old-1" ? "running" : "exited"},
+            }));
+        });
+
+        it("observes only the stack's own containers, so the old copy cannot make it RUNNING", async () => {
+            docker.listContainers.mockResolvedValue([
+                listed("old-1", OLD_DIR, "running"),
+                listed("new-1", STACK_DIR, "exited"),
+            ]);
+
+            await reconcile();
+
+            expect(docker.inspectContainer).toHaveBeenCalledTimes(1);
+            expect(docker.inspectContainer).toHaveBeenCalledWith("new-1");
+            expect(repo.updateServiceState).toHaveBeenCalledTimes(1);
+            expect(repo.updateServiceState).toHaveBeenCalledWith(expect.objectContaining({containerId: "new-1"}));
+            expect(repo.updateStackStatus).toHaveBeenCalledWith("memos", "STOPPED");
+        });
+
+        it("counts a service whose only container is the old copy as exited", async () => {
+            docker.listContainers.mockResolvedValue([listed("old-1", OLD_DIR, "running")]);
+
+            await reconcile();
+
+            expect(docker.inspectContainer).not.toHaveBeenCalled();
+            expect(repo.updateServiceState).not.toHaveBeenCalled();
+            expect(repo.updateStackStatus).toHaveBeenCalledWith("memos", "STOPPED");
+        });
+    });
 });
