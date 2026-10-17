@@ -88,7 +88,7 @@ Notes: server-side work (backup service and repository environment construction,
   4. The pre-migration backup is its own explicit step the user can opt out of: opting out creates no backup, opting in creates one whether or not the compose file is renamed
   5. The user can choose to stop (undeploy) the old stack as part of the migration, so the new draft stack does not run alongside it; if they decline, the old stack is left running
 
-**Plans:** 25/26 plans executed (5 gap-closure plans pending, round 3)
+**Plans:** 26/26 plans executed (5 gap-closure plans pending, round 3)
 
 Plans:
 **Wave 1**
@@ -147,7 +147,7 @@ Plans:
 
 *Gap wave 2* *(blocked on Gap wave 1 completion)*
 - [x] 18-25-PLAN.md — Containers belong to a stack by compose project and compose directory identity in events, reconcile and post-deploy catch-up (G-18-22-status; after 18-22, 18-23)
-- [ ] 18-26-PLAN.md — Migration refused when the old stack keeps running under the new stack's compose project name (directory, name: or COMPOSE_PROJECT_NAME); step 4 requires the stop and says why (G-18-22-status user decision; after 18-22, 18-24)
+- [x] 18-26-PLAN.md — Migration refused when the old stack keeps running under the new stack's compose project name (directory, name: or COMPOSE_PROJECT_NAME); step 4 requires the stop and says why (G-18-22-status user decision; after 18-22, 18-24)
 
 **UI hint**: yes
 
@@ -211,7 +211,7 @@ Phases execute in numeric order: 17 → 18 → 19 → 20 → 21
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 17. Backup Repository and Port-Check Fixes | 3/3 | Complete    | 2026-10-14 |
-| 18. Import and Migration Flow | 25/26 | In Progress | - |
+| 18. Import and Migration Flow | 26/26 | In Progress | - |
 | 19. Sidebar, Templates and Version Block | 0/TBD | Not started | - |
 | 20. Visual Consistency, Dashboard Clarity and Touch Targets | 0/TBD | Not started | - |
 | 21. Release v0.1.1 | 0/TBD | Not started | - |

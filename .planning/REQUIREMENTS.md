@@ -15,7 +15,7 @@ Patch release on branch `release/v0.1.1`: bug fixes and interface polish only, n
 
 ### Migration (MIG)
 
-- [ ] **MIG-01**: User sees the migration diff in a larger dialog that is readable ([#72](https://github.com/docktor-app/docktor/issues/72))
+- [x] **MIG-01**: User sees the migration diff in a larger dialog that is readable ([#72](https://github.com/docktor-app/docktor/issues/72))
 - [ ] **MIG-02**: User sees a real line diff of the compose changes, rendered with the shared code editor ([#72](https://github.com/docktor-app/docktor/issues/72))
 - [ ] **MIG-03**: User can opt out of the pre-migration backup, which is its own explicit step rather than an implicit copy made only on rename ([#72](https://github.com/docktor-app/docktor/issues/72))
 - [x] **MIG-04**: User can stop/undeploy the old stack as part of migration, so the new draft stack does not run alongside it ([#72](https://github.com/docktor-app/docktor/issues/72))
@@ -80,7 +80,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | STK-01 | Phase 17 | Complete |
 | STK-02 | Phase 17 | Complete |
 | STK-03 | Phase 18 | Complete |
-| MIG-01 | Phase 18 | Gaps Found |
+| MIG-01 | Phase 18 | Complete |
 | MIG-02 | Phase 18 | Gaps Found |
 | MIG-03 | Phase 18 | Gaps Found |
 | MIG-04 | Phase 18 | Complete |

@@ -4,17 +4,17 @@ milestone: v0.1.1
 milestone_name: Release Follow-ups
 current_phase: 18
 current_phase_name: Import and Migration Flow
-status: executing
-stopped_at: Completed 18-25-PLAN.md
-last_updated: "2026-10-17T15:08:45.225Z"
+status: verifying
+stopped_at: Completed 18-26-PLAN.md
+last_updated: "2026-10-17T15:16:28.177Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 18 execution started
-state_head: c2593722178bf7a9de6114f3e88d83cc77f0bb7e
+state_head: 98d5a3fdf0e5875cea17fd2c0ce0e47384dfc4d0
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 29
-  completed_plans: 28
+  completed_plans: 29
   percent: 20
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-10-14)
 
 Phase: 18 (Import and Migration Flow) — EXECUTING
 Plan: 17 of 17
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-16 — Phase 18 execution started
 
 Progress: [██░░░░░░░░] 20%
@@ -89,6 +89,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 18 P23 | 20min | 2 tasks | 6 files |
 | Phase 18 P24 | 10min | 2 tasks | 4 files |
 | Phase 18 P25 | 12min | 2 tasks | 8 files |
+| Phase 18 P26 | 6min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -140,6 +141,7 @@ Roadmap decisions for v0.1.1:
 - [Phase 18]: 18-22: directory identity (namespace-tagged host:/container: keys from spelling, realpath and own bind mounts) replaces path-string comparison for migration target classification and managed-stack detection; in-place originals are addressed through the writable stacks-folder spelling
 - [Phase 18]: 18-23: Docker events and reconcile of one compose project run in order under withKeyedLock('state-poller:<project>'); kill is no longer subscribed
 - [Phase 18]: 18-25: containers attributed to a stack by compose project AND compose directory via canonical identity; unlabelled containers and unknown mounts keep the project-only rule
+- [Phase 18]: 18-26: refuse (not auto-rename) a stop-off migration whose old and new stack share the compose project name; prediction follows .env COMPOSE_PROJECT_NAME, name:, directory
 
 ### Pending Todos
 
@@ -163,6 +165,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T15:08:44.912Z
-Stopped at: Completed 18-25-PLAN.md
+Last session: 2026-10-17T15:16:27.925Z
+Stopped at: Completed 18-26-PLAN.md
 Resume file: None
