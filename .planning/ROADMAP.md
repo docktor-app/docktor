@@ -88,7 +88,7 @@ Notes: server-side work (backup service and repository environment construction,
   4. The pre-migration backup is its own explicit step the user can opt out of: opting out creates no backup, opting in creates one whether or not the compose file is renamed
   5. The user can choose to stop (undeploy) the old stack as part of the migration, so the new draft stack does not run alongside it; if they decline, the old stack is left running
 
-**Plans:** 23/26 plans executed (5 gap-closure plans pending, round 3)
+**Plans:** 24/26 plans executed (5 gap-closure plans pending, round 3)
 
 Plans:
 **Wave 1**
@@ -143,7 +143,7 @@ Plans:
 *Gap wave 1*
 - [x] 18-22-PLAN.md — Canonical directory identity (fs.realpath plus Docktor's own bind mounts): a stacks-folder stack scanned through /host migrates in place through the writable path; managed rows and adopt/migrate refusals recognise /host and symlink spellings (G-18-22-inplace, WR-10)
 - [x] 18-23-PLAN.md — Docker event stream decoded line by line and handled one compose project at a time in order (reconcile included); kill no longer subscribed, so a stop shows as exited/STOPPED without a reload (G-18-23-stop-ui)
-- [ ] 18-24-PLAN.md — Discovered-stacks card and setup wizard wrapper widened to max-w-6xl, long directories wrap; phone layout unchanged (G-18-22-card)
+- [x] 18-24-PLAN.md — Discovered-stacks card and setup wizard wrapper widened to max-w-6xl, long directories wrap; phone layout unchanged (G-18-22-card)
 
 *Gap wave 2* *(blocked on Gap wave 1 completion)*
 - [ ] 18-25-PLAN.md — Containers belong to a stack by compose project and compose directory identity in events, reconcile and post-deploy catch-up (G-18-22-status; after 18-22, 18-23)
@@ -211,7 +211,7 @@ Phases execute in numeric order: 17 → 18 → 19 → 20 → 21
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 17. Backup Repository and Port-Check Fixes | 3/3 | Complete    | 2026-10-14 |
-| 18. Import and Migration Flow | 23/26 | In Progress | - |
+| 18. Import and Migration Flow | 24/26 | In Progress | - |
 | 19. Sidebar, Templates and Version Block | 0/TBD | Not started | - |
 | 20. Visual Consistency, Dashboard Clarity and Touch Targets | 0/TBD | Not started | - |
 | 21. Release v0.1.1 | 0/TBD | Not started | - |
