@@ -1,5 +1,5 @@
 import {AlertTriangle} from "lucide-react";
-import type {SharedProjectName} from "@docktor/shared";
+import type {ComposeProjectNameSource, SharedProjectName} from "@docktor/shared";
 import {Alert, AlertDescription} from "@/components/ui/alert";
 import {Label} from "@/components/ui/label";
 import {Switch} from "@/components/ui/switch";
@@ -33,12 +33,19 @@ const yesNo = (value: boolean): string => (value ? "Yes" : "No");
 const DEFAULT_HELP =
   "Runs docker compose stop on the old stack before its data is copied. Containers are stopped, not removed, so you can start the old stack again.";
 
+const SOURCE_EXPLANATION: Record<ComposeProjectNameSource, string> = {
+  directory: "It comes from the directory name. To keep the old stack running, go back and choose a different stack name.",
+  "compose-file": "It is set by name: in the compose file, which the new stack keeps.",
+  "env-file": "It is set by COMPOSE_PROJECT_NAME in the stack's .env file, which the new stack keeps.",
+};
+
 function stopHelp(requirement: StopRequirement | null): string {
   if (requirement === null) return DEFAULT_HELP;
   if (requirement.kind === "in-place") {
     return "Required for an in-place migration: the new stack reuses this directory and its compose project name.";
   }
-  return `Required: the old and the new stack would both use the Docker Compose project name "${requirement.projectName.name}", so the new stack would take over the old stack's containers.`;
+  const {name, source} = requirement.projectName;
+  return `Required: the old and the new stack would both use the Docker Compose project name "${name}", so the new stack would take over the old stack's containers. ${SOURCE_EXPLANATION[source]}`;
 }
 
 // Step 4 of the migration dialog (MIG-04, D-10): the explicit, default-on
