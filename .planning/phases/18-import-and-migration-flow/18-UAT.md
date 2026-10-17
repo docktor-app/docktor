@@ -251,7 +251,13 @@ blocked: 0
   reason: "User reported: stopping the container is not reflected in the UI; a reload is needed."
   severity: major
   test: 8
-  root_cause: ""
-  artifacts: []
-  missing: []
+  root_cause: "Not reproduced; leading hypothesis (unverified): shares the cause of G-18-22-status. The stop button path is sound: StackService.stopStack sets STOPPED, the detail page refetches (onAction=refetch) and applies container_state SSE events. But StatePoller (event handler and 60s reconcile) attributes containers to a stack by compose project name only, so another running stack with the same project name (the old stack left running in test 8) re-writes the service rows to running and the derived status flips back. A second, weaker candidate: stopStack persists STOPPED before docker stops, and the first container event derives status from stale sibling service rows."
+  artifacts:
+    - path: "server/src/jobs/state-poller.ts"
+      issue: "byProject grouping and handleEvent lookup ignore working_dir"
+    - path: "server/src/application/stack-service.ts"
+      issue: "stopStack persists STOPPED before the docker stop completes"
+  missing:
+    - "Confirm with the user whether the stack was one migrated with the old stack still running; if a plain stack reproduces it, trace the SSE delivery instead"
+    - "Regression test: stopping a stack while a same-project container of another directory runs keeps the status STOPPED"
   note: "Undiagnosed. The server side emits stack.container_state_changed for stop events (state-poller.ts handleEvent), so the cause is either the event not matching the stack (project/working_dir, see G-18-22-status), or the client SSE hook not applying it. Needs the repro: which stop (stack page button, docker CLI, or the migration's old-stack stop) and which page."
