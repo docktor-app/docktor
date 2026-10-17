@@ -64,6 +64,7 @@ const separateTarget: MigrationTarget = {
     originalDirectory: "/host/opt/db",
     inPlace: false,
     suggestedAsideName: null,
+    sharedProjectName: null,
 };
 
 function renderWizard(
@@ -427,6 +428,7 @@ describe("MigrationWizard", () => {
             originalDirectory: "/opt/docktor/stacks/db",
             inPlace: true,
             suggestedAsideName: "db-pre-migration",
+            sharedProjectName: null,
         };
         const inPlacePreview = (): Promise<MigrationPreview> =>
             Promise.resolve({diff: emptyDiff, extractedEnv: "", emptySources: [], target: inPlaceTarget});
@@ -540,6 +542,53 @@ describe("MigrationWizard", () => {
 
             expect(screen.queryByRole("textbox", {name: "Name for the original directory"})).toBeNull();
             expect(screen.getByRole("switch", {name: "Back up the old stack first"})).not.toBeChecked();
+        });
+    });
+
+    describe("shared compose project name (G-18-22-status)", () => {
+        const sharedTarget: MigrationTarget = {...separateTarget, sharedProjectName: {name: "db", source: "directory"}};
+        const click = (name: string) => userEvent.click(screen.getByRole("button", {name}));
+
+        async function walkToStep4(target: MigrationTarget, onConfirmMigrate = vi.fn()) {
+            const previewMigration = vi
+                .fn()
+                .mockResolvedValue({diff: emptyDiff, extractedEnv: "", emptySources: [], target});
+            renderWizard(previewMigration, vi.fn(), onConfirmMigrate);
+            await click("Preview Changes");
+            await screen.findByRole("heading", {name: "Review Changes"});
+            await click("Choose Backup");
+            await click("Choose Old Stack Action");
+        }
+
+        it("forces the old stack to be stopped and explains the shared project name", async () => {
+            await walkToStep4(sharedTarget);
+
+            const stop = screen.getByRole("switch", {name: "Stop the old stack before migrating"});
+            expect(stop).toBeChecked();
+            expect(stop).toBeDisabled();
+            expect(screen.getByText(/"db"/)).toHaveTextContent(/project name/);
+            expect(screen.queryByText(/The old stack keeps running/)).toBeNull();
+            expect(screen.getByRole("region", {name: "Migration summary"})).toHaveTextContent("Stop old stack: Yes");
+        });
+
+        it("confirms with stopOldStack true", async () => {
+            const onConfirmMigrate = vi.fn();
+            await walkToStep4(sharedTarget, onConfirmMigrate);
+
+            await click("Confirm & Migrate");
+
+            expect(onConfirmMigrate).toHaveBeenCalledWith(expect.objectContaining({stopOldStack: true}));
+        });
+
+        it("lets the user keep the old stack running when no project name is shared", async () => {
+            await walkToStep4(separateTarget);
+
+            const stop = screen.getByRole("switch", {name: "Stop the old stack before migrating"});
+            expect(stop).toBeEnabled();
+            await userEvent.click(stop);
+
+            expect(stop).not.toBeChecked();
+            expect(screen.getByText(/The old stack keeps running/)).toBeInTheDocument();
         });
     });
 

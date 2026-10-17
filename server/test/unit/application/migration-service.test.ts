@@ -1252,6 +1252,7 @@ describe("previewMigration (MIG-02, D-04, G-18-7)", () => {
             originalDirectory: composeDir,
             inPlace: false,
             suggestedAsideName: null,
+            sharedProjectName: null,
         });
     });
 
@@ -1274,6 +1275,7 @@ describe("previewMigration (MIG-02, D-04, G-18-7)", () => {
                 originalDirectory: path.join(stacksRoot, stackId),
                 inPlace: true,
                 suggestedAsideName: `${stackId}-pre-migration`,
+                sharedProjectName: null,
             });
         });
 
@@ -1472,6 +1474,7 @@ describe.skipIf(process.platform === "win32")("a stack in the stacks folder reac
             originalDirectory: realDir,
             inPlace: true,
             suggestedAsideName: `${stackId}-pre-migration`,
+            sharedProjectName: null,
         });
     });
 
@@ -1707,5 +1710,134 @@ describe("MigrationService environment extraction (CR-02)", () => {
 
         expect(result.success).toBe(true);
         expect(await readNewEnv()).toBe("PORT=80");
+    });
+});
+
+describe("shared compose project name (G-18-22-status)", () => {
+    const PLAIN_COMPOSE = "services:\n  web:\n    image: nginx:latest\n";
+
+    let tmpRoot: string;
+    let stacksRoot: string;
+    let mockDocker: ReturnType<typeof createMockDocker>;
+    let mockMigrator: ReturnType<typeof createMockMigrator>;
+    let mockStackFs: ReturnType<typeof createMockStackFs>;
+    let mockStackRepo: ReturnType<typeof createMockStackRepo>;
+    let mockOldStack: ReturnType<typeof createMockOldStack>;
+
+    beforeEach(async () => {
+        tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "docktor-shared-name-"));
+        stacksRoot = path.join(tmpRoot, "stacks");
+        mockDocker = createMockDocker();
+        mockDocker.up.mockResolvedValue(undefined);
+        mockMigrator = createMockMigrator();
+        mockStackFs = createMockStackFs(stacksRoot);
+        mockStackRepo = createMockStackRepo();
+        mockOldStack = createMockOldStack();
+    });
+
+    afterEach(async () => {
+        await fs.rm(tmpRoot, {recursive: true, force: true});
+    });
+
+    /** An old stack in `<tmp>/<directoryName>` with the given compose file and optional `.env`. */
+    async function oldStack(directoryName: string, compose = PLAIN_COMPOSE, env: string | null = null): Promise<string> {
+        const dir = path.join(tmpRoot, directoryName);
+        await fs.mkdir(dir, {recursive: true});
+        await fs.writeFile(path.join(dir, "docker-compose.yml"), compose, "utf-8");
+        if (env !== null) {
+            await fs.writeFile(path.join(dir, ".env"), env, "utf-8");
+        }
+        return path.join(dir, "docker-compose.yml");
+    }
+
+    function buildService(): MigrationService {
+        const rewriter = {rewrite: vi.fn().mockReturnValue({rewrittenCompose: PLAIN_COMPOSE, extractedEnv: ""})};
+        return new MigrationService(
+            mockDocker as unknown as DockerExecutorPort,
+            mockMigrator as unknown as VolumeMigratorPort,
+            rewriter as unknown as ComposeRewriterPort,
+            mockStackFs as unknown as StackFilesystemPort,
+            mockStackRepo as unknown as StackRepository,
+            mockOldStack as unknown as ExternalStackControlPort,
+            createMockSelfStack() as unknown as SelfStackPort,
+            createMockOwnMounts() as unknown as OwnMountsPort,
+            undefined,
+            hostViewDirectories(),
+        );
+    }
+
+    function request(composePath: string, displayName: string, stopOldStack: boolean) {
+        return {
+            composePath,
+            displayName,
+            volumeSelections: [],
+            namedVolumeSelections: new Map<string, boolean>(),
+            backup: false,
+            stopOldStack,
+        };
+    }
+
+    function expectNoSideEffects(): void {
+        expect(mockOldStack.stop).not.toHaveBeenCalled();
+        expect(mockStackFs.createDirectoryExclusive).not.toHaveBeenCalled();
+        expect(mockMigrator.copyDirectory).not.toHaveBeenCalled();
+        expect(mockStackRepo.create).not.toHaveBeenCalled();
+    }
+
+    describe("the old directory name equals the new stack id", () => {
+        let composePath: string;
+
+        beforeEach(async () => {
+            composePath = await oldStack("memos");
+        });
+
+        it("refuses migrate with the old stack left running and names the project name and the way out", async () => {
+            const refusal = buildService().migrate(request(composePath, "Memos", false));
+
+            await expect(refusal).rejects.toBeInstanceOf(BadRequestError);
+            await expect(refusal).rejects.toThrow('"memos"');
+            await expect(refusal).rejects.toThrow("Stop the old stack");
+            expectNoSideEffects();
+        });
+
+        it("refuses preflight the same way", async () => {
+            const refusal = buildService().preflight(request(composePath, "Memos", false));
+
+            await expect(refusal).rejects.toBeInstanceOf(BadRequestError);
+            await expect(refusal).rejects.toThrow("Docker Compose project name");
+            expectNoSideEffects();
+        });
+
+        it("proceeds when the old stack is stopped", async () => {
+            const result = await buildService().migrate(request(composePath, "Memos", true));
+
+            expect(result.success).toBe(true);
+            expect(mockOldStack.stop).toHaveBeenCalledTimes(1);
+        });
+
+        it("reports the shared name in the preview", async () => {
+            const preview = await buildService().previewMigration(request(composePath, "Memos", false));
+
+            expect(preview.target.sharedProjectName).toEqual({name: "memos", source: "directory"});
+        });
+    });
+
+    it("does not report or refuse a different stack name", async () => {
+        const composePath = await oldStack("memos");
+
+        const preview = await buildService().previewMigration(request(composePath, "Memos New", false));
+        const result = await buildService().migrate(request(composePath, "Memos New", false));
+
+        expect(preview.target.sharedProjectName).toBeNull();
+        expect(result.success).toBe(true);
+    });
+
+    it("never reports a shared name for an in-place migration", async () => {
+        const composePath = await oldStack(path.join("stacks", "memos"));
+
+        const preview = await buildService().previewMigration(request(composePath, "Memos", false));
+
+        expect(preview.target.inPlace).toBe(true);
+        expect(preview.target.sharedProjectName).toBeNull();
     });
 });
