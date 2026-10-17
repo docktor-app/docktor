@@ -563,3 +563,36 @@ describe("BrownfieldImport migration flow", () => {
         });
     });
 });
+
+describe("BrownfieldImport layout", () => {
+    const longDirectory = "/host/home/raphael/workspace/docktor/dev-data/docktor/stacks/memos-archive";
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it("renders the card up to max-w-6xl instead of max-w-3xl", () => {
+        renderImport(createApi(vi.fn()));
+
+        const card = screen.getByText("Import Existing Stacks").closest('[data-slot="card"]');
+
+        expect(card).toHaveClass("max-w-6xl");
+        expect(card).not.toHaveClass("max-w-3xl");
+    });
+
+    it("lets a long scanned directory wrap inside its table cell", async () => {
+        const api = createApi(vi.fn());
+        vi.mocked(api.scanDirectories).mockResolvedValue({
+            stacks: [{...stack, path: `${longDirectory}/docker-compose.yml`, directory: longDirectory}],
+            skippedDirectories: 0,
+            skipped: [],
+        });
+        renderImport(api);
+
+        await userEvent.click(screen.getByRole("button", {name: "Scan"}));
+        const cell = (await screen.findByText(longDirectory)).closest("td");
+
+        expect(longDirectory.length).toBeGreaterThanOrEqual(70);
+        expect(cell).toHaveClass("whitespace-normal", "break-all");
+    });
+});
