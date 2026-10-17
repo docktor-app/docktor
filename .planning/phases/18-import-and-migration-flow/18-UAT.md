@@ -248,16 +248,16 @@ blocked: 0
 - gap_id: G-18-23-stop-ui
   truth: "Stopping a stack's containers is reflected in the UI without a reload"
   status: failed
-  reason: "User reported: stopping the container is not reflected in the UI; a reload is needed."
+  reason: "User reported: stopping the container is not reflected in the UI; a reload is needed. Confirmed on a plain managed stack with no old copy running, via the UI Stop action on the detail page (so not the project-name collision of G-18-22-status)."
   severity: major
   test: 8
-  root_cause: "Not reproduced; leading hypothesis (unverified): shares the cause of G-18-22-status. The stop button path is sound: StackService.stopStack sets STOPPED, the detail page refetches (onAction=refetch) and applies container_state SSE events. But StatePoller (event handler and 60s reconcile) attributes containers to a stack by compose project name only, so another running stack with the same project name (the old stack left running in test 8) re-writes the service rows to running and the derived status flips back. A second, weaker candidate: stopStack persists STOPPED before docker stops, and the first container event derives status from stale sibling service rows."
+  root_cause: "Code-evidenced, not reproduced: a race in StatePoller. The Docker event filter subscribes to start/stop/die/kill/health_status (dockerode-client.ts:38). docker stop emits kill, die and stop in quick succession. handleEvent runs fire-and-forget per event (no per-stack or per-container serialisation), inspects the container, writes the service row and derived stack status, then broadcasts. The kill handler inspects while the container is still running and writes running/RUNNING; if it finishes after the die/stop handlers (each does several awaits), the last write and last SSE message say running, and nothing corrects it until the 60s reconcile or a reload. Secondary: stream.on('data') JSON.parse(chunk) drops events when one chunk carries several newline-delimited events or splits one."
   artifacts:
     - path: "server/src/jobs/state-poller.ts"
-      issue: "byProject grouping and handleEvent lookup ignore working_dir"
-    - path: "server/src/application/stack-service.ts"
-      issue: "stopStack persists STOPPED before the docker stop completes"
+      issue: "handleEvent not serialised per container/stack; kill event inspected as a state change; chunk parsing assumes one JSON per chunk"
+    - path: "server/src/infrastructure/dockerode-client.ts"
+      issue: "event filter includes kill"
   missing:
-    - "Confirm with the user whether the stack was one migrated with the old stack still running; if a plain stack reproduces it, trace the SSE delivery instead"
-    - "Regression test: stopping a stack while a same-project container of another directory runs keeps the status STOPPED"
-  note: "Undiagnosed. The server side emits stack.container_state_changed for stop events (state-poller.ts handleEvent), so the cause is either the event not matching the stack (project/working_dir, see G-18-22-status), or the client SSE hook not applying it. Needs the repro: which stop (stack page button, docker CLI, or the migration's old-stack stop) and which page."
+    - "Serialise event handling per container (or stack) so writes land in event order; or drop kill and re-inspect after die/stop"
+    - "Parse the Docker event stream line-delimited with buffering"
+    - "Regression tests: kill/die/stop events processed out of order or concurrently end in exited/STOPPED; two events in one chunk are both handled"
