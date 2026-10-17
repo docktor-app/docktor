@@ -1,6 +1,6 @@
 import path from "node:path";
 import type {OwnMountsView} from "./bind-mount-sources.js";
-import {toComparablePath, type ContainerMount} from "./self-stack-paths.js";
+import {containerVisiblePaths, toComparablePath, type ContainerMount} from "./self-stack-paths.js";
 
 /**
  * Which directory is this? (G-18-22-inplace, review WR-10)
@@ -66,6 +66,22 @@ export function hostPathsOfContainerPath(containerPath: string, mounts: readonly
     return [...hostPaths];
 }
 
+/**
+ * Paths at which Docktor reads the host path `hostPath` through its own bind
+ * mounts: the destinations of mounts whose source IS `hostPath` first (a data
+ * directory that is itself mounted), then one candidate per mount whose source
+ * is a strict ancestor, in mount order. The identical path is not included: a
+ * same-path mount still yields it through its own mount entry, the bare path is
+ * not host data.
+ */
+export function containerPathsOfHostPath(hostPath: string, mounts: readonly ContainerMount[]): string[] {
+    const [, ...beneathMounts] = containerVisiblePaths(hostPath, mounts);
+    const exact = mounts
+        .filter((mount) => mount.type === "bind" && path.posix.normalize(mount.source) === path.posix.normalize(hostPath))
+        .map((mount) => mount.destination);
+    return [...exact, ...beneathMounts];
+}
+
 function keysOfSpelling(spelling: string, view: OwnMountsView): string[] {
     const own = comparable(spelling);
     if (view.kind === "host") {
@@ -88,6 +104,33 @@ function keysOfSpelling(spelling: string, view: OwnMountsView): string[] {
 export function localDirectoryIdentity(spellings: readonly string[], view: OwnMountsView): DirectoryIdentity {
     const keys = spellings.flatMap((spelling) => keysOfSpelling(spelling, view));
     return {keys: [...new Set(keys)], mountsKnown: view.kind !== "unknown"};
+}
+
+/**
+ * The identity of a directory named by a compose label
+ * (`com.docker.compose.project.working_dir`, or the directory of a
+ * `config_files` entry): a host path, or a container path when Docktor's own
+ * compose CLI created the container. `containerSpellings` are the paths at
+ * which Docktor can observe the host path (see {@link containerPathsOfHostPath}).
+ *
+ * Residual: a host directory spelled exactly like an unrelated container-only
+ * path would match through the `container:` key. Docktor's stacks mount uses
+ * identical paths, so this does not arise in the documented deployment.
+ */
+export function labelDirectoryIdentity(
+    labelPath: string,
+    containerSpellings: readonly string[],
+    view: OwnMountsView,
+): DirectoryIdentity {
+    if (view.kind === "host") {
+        return localDirectoryIdentity([labelPath, ...containerSpellings], view);
+    }
+    const label = comparable(labelPath);
+    const observed = localDirectoryIdentity(containerSpellings, view);
+    return {
+        keys: [...new Set([tag("host", label), tag("container", label), ...observed.keys])],
+        mountsKnown: view.kind === "container",
+    };
 }
 
 function splitKey(key: string): {namespace: string; spelling: string} {

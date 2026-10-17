@@ -1,5 +1,6 @@
 import path from "node:path";
-import {containerVisiblePaths, toComparablePath, type ContainerMount} from "./self-stack-paths.js";
+import {containerPathsOfHostPath} from "./directory-identity.js";
+import {toComparablePath, type ContainerMount} from "./self-stack-paths.js";
 
 /**
  * Where Docktor can read a bind-mount source that a compose file declares
@@ -58,22 +59,6 @@ function insideFirst(candidates: readonly string[], composeDir: string): string[
     return [...unique.filter(inside), ...unique.filter((candidate) => !inside(candidate))];
 }
 
-/**
- * Paths at which Docktor reads the host path `hostPath` through its own bind
- * mounts. `containerVisiblePaths` skips a mount whose source IS `hostPath`
- * (right for a compose file, wrong for a data directory that is itself
- * mounted), so those destinations are added here.
- */
-function mountDerivedPaths(hostPath: string, mounts: readonly ContainerMount[]): string[] {
-    // Drop the leading identical-path entry: a same-path mount still yields
-    // the identical path through its own mount entry, the bare path is not host data.
-    const [, ...beneathMounts] = containerVisiblePaths(hostPath, mounts);
-    const exact = mounts
-        .filter((mount) => mount.type === "bind" && path.posix.normalize(mount.source) === path.posix.normalize(hostPath))
-        .map((mount) => mount.destination);
-    return [...exact, ...beneathMounts];
-}
-
 /** True when `resolved` lies within the destination of one of Docktor's own bind mounts. */
 function isWithinMountDestination(resolved: string, mounts: readonly ContainerMount[]): boolean {
     const comparable = toComparablePath(resolved);
@@ -114,7 +99,7 @@ function locateAbsolute(declaredPath: string, composeDir: string, view: OwnMount
     if (view.kind === "unknown") {
         return {kind: "refused", reason: "mounts-unknown"};
     }
-    const paths = insideFirst(mountDerivedPaths(declaredPath, view.mounts), composeDir);
+    const paths = insideFirst(containerPathsOfHostPath(declaredPath, view.mounts), composeDir);
     return paths.length === 0 ? {kind: "refused", reason: "not-visible"} : {kind: "candidates", paths};
 }
 

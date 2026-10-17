@@ -14,6 +14,13 @@ export interface DirectoryIdentityPort {
      * Never rejects.
      */
     identifyLocal(directory: string): Promise<DirectoryIdentity>;
+
+    /**
+     * A directory named by a compose label (`com.docker.compose.project.working_dir`,
+     * or the directory of a `config_files` entry): a host path, or a container
+     * path when Docktor's own compose CLI created the container. Never rejects.
+     */
+    identifyLabel(directory: string): Promise<DirectoryIdentity>;
 }
 
 export type {DirectoryIdentity};
