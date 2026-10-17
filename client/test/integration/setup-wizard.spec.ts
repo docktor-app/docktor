@@ -847,9 +847,9 @@ test.describe("Setup Wizard", () => {
             await page.getByRole("button", {name: "Choose Old Stack Action"}).click();
             await expect(page.getByRole("region", {name: "Migration summary"})).toContainText("Volumes to copy: 1");
 
-            await page.getByRole("button", {name: "Back"}).click();
-            await page.getByRole("button", {name: "Back"}).click();
-            await page.getByRole("button", {name: "Back"}).click();
+            await page.getByRole("button", {name: "Back", exact: true}).click();
+            await page.getByRole("button", {name: "Back", exact: true}).click();
+            await page.getByRole("button", {name: "Back", exact: true}).click();
             await page.getByRole("checkbox", {name: "./data"}).click();
             await expect(page.getByText(/outside Docktor's managed \.\/volumes\/ layout/)).toBeVisible();
         });
