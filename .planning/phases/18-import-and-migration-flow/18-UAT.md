@@ -1,5 +1,5 @@
 ---
-status: testing
+status: diagnosed
 phase: 18-import-and-migration-flow
 source: [18-01-SUMMARY.md, 18-02-SUMMARY.md, 18-03-SUMMARY.md, 18-04-SUMMARY.md, 18-05-SUMMARY.md]
 started: 2026-10-15T12:00:00Z
@@ -8,11 +8,7 @@ updated: 2026-10-17T00:00:00Z
 
 ## Current Test
 
-number: 2
-name: Import scan hides Docktor's own stack (re-test after gap closure)
-expected: |
-  Docktor's own compose file is not listed; other stacks are; stacks already managed by Docktor are listed but disabled with "Already managed" and a working View link.
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -22,9 +18,8 @@ result: pass
 
 ### 2. Import scan hides Docktor's own stack
 expected: Open "Import existing stack" and scan the directory that holds Docktor's own compose file plus at least one other compose stack. Docktor's own compose file is not listed; every other stack (including a sibling compose file in the same directory) is listed. The setup wizard's scan behaves the same way.
-result: issue
-reported: "the docktor stack was ignored, but the stacks that were already added to docktor are not ignored. I think it is ok to list them, but disable the buttons."
-severity: major
+result: pass
+note: "Re-test after gap closure (G-18-2): user confirmed."
 
 ### 3. Migration dialog opens wide with step indicator
 expected: Click Migrate on a scanned stack. The dialog opens noticeably wider than before (up to ~5xl on desktop), shows "Step 1 of 4" with a progress list, and step 1 lets you pick volumes/options with "Cancel Migration" and "Preview Changes" buttons. Header and footer stay pinned while the body scrolls.
@@ -33,9 +28,8 @@ note: "Initially reported 'stack not found' (scan root not visible in container,
 
 ### 4. Review step shows a real line diff and masked .env
 expected: Click "Preview Changes". Step 2 shows a unified line diff of the compose file with added lines marked green and removed lines red, plus "+N" / "−N" counters. If nothing changes it reads "No changes to your compose file." If the stack has a .env, it is shown in a read-only editor with secret values masked until you click "Show secret values".
-result: issue
-reported: "Test 4 also passed. however, the change is:\n  -     - ./data:/var/opt/memos\n+      - ./data:/var/opt/memos\ninstead of + /volume/data:/var/opt/memos"
-severity: major
+result: pass
+note: "Re-test after gap closure (G-18-4): user confirmed."
 
 ### 5. Backup step is explicit
 expected: Step 3 is a dedicated backup step with a switch that is on by default. Turning it off shows a warning that no pre-migration backup will be made.
@@ -48,28 +42,38 @@ note: "User: pass, however Volumes to copy: 0. But this is probably related to t
 
 ### 7. Migrate with backup on and old stack stopped
 expected: With both switches on, click "Confirm & Migrate". A "Migrating {name}…" toast appears, then a success toast mentioning the kept backup and that the old stack was stopped. The new stack directory contains a pre-migration-backup folder, the old stack's containers are stopped, the new stack runs, and the original directory is unchanged.
-result: blocked
-blocked_by: prior-phase
-reason: "Depends on G-18-4 (volume rewrite/copy). User: Doesnt it make sense to test this, when also the volume is copied correctly? Attempt also hit G-18-7 (overlap refusal)."
+result: pass
+note: "Re-test: user reported the other tests passed."
 
 ### 8. Migrate with backup off and old stack left running
 expected: Migrate another stack with both switches off. No pre-migration-backup folder is created in the new stack directory, and the old stack's containers keep running.
-result: blocked
-blocked_by: prior-phase
-reason: "Depends on G-18-4 (volume rewrite/copy). User: Doesnt it make sense to test this, when also the volume is copied correctly?"
+result: pass
+note: "Passed, but the new stack showed running because the old stack kept running under the same compose project name (G-18-22-status)."
 
 ### 9. Phone-width layout
 expected: At a phone width (~360px), the migration dialog fits horizontally without clipping, the diff on step 2 is visible and scrollable, footer buttons are full width, and "Confirm & Migrate" is reachable on step 4.
 result: pass
 
+### 10. In-place migration of a same-name stack
+expected: Migrate on a stack already in the stacks folder under the same name goes the in-place route (aside-name step, forced stop, original renamed to <name>-pre-migration).
+result: issue
+reported: "Toast: Migration refused: the new stack directory /home/raphael/workspace/docktor/dev-data/docktor/stacks/memos already exists."
+severity: major
+
+### 11. Discovered stacks card size
+expected: The discovered-stacks table is readable without constant scrolling.
+result: issue
+reported: "please make the card with the discovered stacks bigger. I always need to scroll."
+severity: minor
+
 ## Summary
 
-total: 9
-passed: 5
+total: 11
+passed: 9
 issues: 2
 pending: 0
 skipped: 0
-blocked: 2
+blocked: 0
 
 ## Gaps
 
@@ -189,3 +193,52 @@ blocked: 2
     - "Per-slug in-flight guard (ConflictError on a second migration of the same name); client disables Migrate/Adopt for in-flight rows"
     - "Operation status queryable after reconnect/reload"
   user_decision: "Approved for v0.1.1."
+
+- gap_id: G-18-22-inplace
+  truth: "A stack that lives in the stacks folder under its own name is recognised as in-place even when the scan reaches it through Docktor's /host mount"
+  status: failed
+  reason: "User reported: Migration refused: the new stack directory .../dev-data/docktor/stacks/memos already exists. (Docktor's compose maps /:/host:ro.)"
+  severity: major
+  test: 10
+  root_cause: "classifyMigrationTarget compares path.resolve strings only. The scanned compose path is container-side (/host/home/.../stacks/memos) while getStackDirectory returns the stacks directory as Docktor sees it, so the same folder compares as 'separate' and the exists-check refuses. The same textual comparison in managed-stack-paths.ts predicts the same miss for managed rows scanned through /host (review WR-10)."
+  artifacts:
+    - path: "server/src/domain/migration-target.ts"
+      issue: "classifyMigrationTarget is string-only"
+    - path: "server/src/application/migration-service.ts"
+      issue: "assessTarget passes un-normalised paths"
+    - path: "server/src/domain/managed-stack-paths.ts"
+      issue: "findManagingStack is string-only"
+  missing:
+    - "Canonical directory identity: fs.realpath plus translation through Docktor's own bind mounts (container path <-> host path), compared as a set"
+    - "Use it in classifyMigrationTarget and findManagingStack; tests with a /host:/ mount and a symlink"
+
+- gap_id: G-18-22-status
+  truth: "A migrated stack's status reflects only its own containers, not those of the old stack that is left running"
+  status: failed
+  reason: "User reported (test 8): the new stack had status running; the old stack was running with the same name."
+  severity: major
+  test: 8
+  root_cause: "StatePoller and the event handler map containers to stacks by compose project name only (findByComposeProject). The old and new directories share the project name, so old containers count for the new stack. Worse, docker compose up for the new stack with the same project and service names can recreate the old containers."
+  artifacts:
+    - path: "server/src/jobs/state-poller.ts"
+      issue: "byProject grouping ignores com.docker.compose.project.working_dir"
+    - path: "server/src/application/migration-service.ts"
+      issue: "no distinct project name or same-project refusal when the old stack stays running"
+  missing:
+    - "Match containers to a stack by project AND working_dir/config_files, via the same canonical path identity"
+    - "When stopOldStack is off and the project names collide, give the new stack a distinct COMPOSE_PROJECT_NAME or refuse with a clear message (needs a decision)"
+
+- gap_id: G-18-22-card
+  truth: "Discovered stacks table fits without constant scrolling"
+  status: failed
+  reason: "User reported: make the card with the discovered stacks bigger."
+  severity: minor
+  test: 11
+  root_cause: "BrownfieldImport's Card and the wizard wrapper are capped at max-w-3xl (768px), so long paths wrap and rows grow tall."
+  artifacts:
+    - path: "client/src/components/domain/stack/brownfield-import.tsx"
+      issue: "Card className w-full max-w-3xl"
+    - path: "client/src/routes/setup/components/brownfield-step.tsx"
+      issue: "wrapper max-w-3xl"
+  missing:
+    - "Widen both (e.g. max-w-6xl on the page, wider in the wizard), keep phone layout"
