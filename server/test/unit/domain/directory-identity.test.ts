@@ -1,7 +1,9 @@
 import {describe, expect, it} from "vitest";
 import type {OwnMountsView} from "../../../src/domain/bind-mount-sources.js";
 import {
+    containerPathsOfHostPath,
     hostPathsOfContainerPath,
+    labelDirectoryIdentity,
     localDirectoryIdentity,
     relateDirectories,
 } from "../../../src/domain/directory-identity.js";
@@ -130,5 +132,68 @@ describe("relateDirectories outside a container", () => {
 
         expect(relateDirectories(root, child)).toBe("nested");
         expect(relateDirectories(root, root)).toBe("same");
+    });
+});
+
+describe("containerPathsOfHostPath", () => {
+    it("lists the exact-source mount destinations first, then ancestor-mount candidates in mount order", () => {
+        expect(containerPathsOfHostPath("/srv/app", MOUNTS)).toEqual(["/host/srv/app"]);
+        expect(containerPathsOfHostPath("/opt/docktor/stacks/x", MOUNTS)).toEqual([
+            "/host/opt/docktor/stacks/x",
+            "/opt/docktor/stacks/x",
+        ]);
+        expect(containerPathsOfHostPath("/opt/docktor/stacks", MOUNTS)).toEqual([
+            "/opt/docktor/stacks",
+            "/host/opt/docktor/stacks",
+        ]);
+    });
+
+    it("never lets a volume mount contribute", () => {
+        const volumes: readonly ContainerMount[] = [{type: "volume", source: "/", destination: "/vol"}];
+
+        expect(containerPathsOfHostPath("/srv/app", volumes)).toEqual([]);
+    });
+
+    it("returns nothing for a relative path", () => {
+        expect(containerPathsOfHostPath("srv/app", MOUNTS)).toEqual([]);
+    });
+});
+
+describe("labelDirectoryIdentity (a directory named by a compose label)", () => {
+    it("matches the local directory a host-path label is visible at", () => {
+        const label = labelDirectoryIdentity("/srv/app", ["/host/srv/app"], CONTAINER);
+        const local = localDirectoryIdentity(["/host/srv/app"], CONTAINER);
+
+        expect(relateDirectories(label, local)).toBe("same");
+        expect(label.mountsKnown).toBe(true);
+    });
+
+    it("keeps an unrelated label apart from the stacks-folder directory", () => {
+        const label = labelDirectoryIdentity("/home/u/memos-old", ["/host/home/u/memos-old"], CONTAINER);
+        const local = localDirectoryIdentity(["/opt/docktor/stacks/memos"], CONTAINER);
+
+        expect(relateDirectories(label, local)).toBe("unrelated");
+    });
+
+    it("matches a label written by Docktor's own compose CLI (a container path) through its container key", () => {
+        const view: OwnMountsView = {kind: "container", mounts: [{type: "bind", source: "/data/stacks", destination: "/stacks"}]};
+        const label = labelDirectoryIdentity("/stacks/memos", [], view);
+        const local = localDirectoryIdentity(["/stacks/memos"], view);
+
+        expect(relateDirectories(label, local)).toBe("same");
+    });
+
+    it("reports mountsKnown false when the mounts are unknown, and still matches identical spellings", () => {
+        const label = labelDirectoryIdentity("/opt/x", [], UNKNOWN);
+
+        expect(label.mountsKnown).toBe(false);
+        expect(relateDirectories(label, localDirectoryIdentity(["/opt/x"], UNKNOWN))).toBe("same");
+        expect(relateDirectories(label, localDirectoryIdentity(["/host/opt/x"], UNKNOWN))).toBe("unrelated");
+    });
+
+    it("outside a container compares the label as a host path", () => {
+        const label = labelDirectoryIdentity("/srv/app", [], HOST);
+
+        expect(relateDirectories(label, localDirectoryIdentity(["/srv/app"], HOST))).toBe("same");
     });
 });
