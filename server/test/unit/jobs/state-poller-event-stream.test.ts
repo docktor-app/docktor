@@ -44,6 +44,10 @@ function deferred<T>(): {promise: Promise<T>; resolve: (value: T) => void} {
     return {promise, resolve};
 }
 
+function nextIoTurn(): Promise<void> {
+    return new Promise((resolve) => setImmediate(resolve));
+}
+
 const running = {State: {Status: "running"}};
 const exited = {State: {Status: "exited"}};
 
@@ -169,5 +173,86 @@ describe("StatePoller event stream (G-18-23-stop-ui)", () => {
             expect(docker.inspectContainer).toHaveBeenCalledTimes(2);
             expect(repo.updateServiceState).toHaveBeenCalledTimes(2);
         });
+    });
+
+    it("does not block other projects", async () => {
+        const slowA = deferred<typeof running>();
+        docker.inspectContainer.mockImplementation((containerId: string) =>
+            containerId === "ca" ? slowA.promise : Promise.resolve(running));
+        await startPoller({a: ["web"], b: ["web"]});
+
+        stream.write(Buffer.from(dockerEvent("a", "start", "web", "ca")));
+        await vi.waitFor(() => expect(docker.inspectContainer).toHaveBeenCalledWith("ca"));
+        stream.write(Buffer.from(dockerEvent("b", "start", "web", "cb")));
+
+        await vi.waitFor(() => expect(repo.updateServiceState).toHaveBeenCalledTimes(1));
+        expect(repo.updateServiceState.mock.calls[0]?.[0].stackId).toBe("b");
+
+        slowA.resolve(running);
+        await vi.waitFor(() => expect(repo.updateServiceState).toHaveBeenCalledTimes(2));
+    });
+
+    it("keeps going after a failed handler", async () => {
+        const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+        docker.inspectContainer
+            .mockRejectedValueOnce(new Error("docker unreachable"))
+            .mockResolvedValue(exited);
+        await startPoller({"my-stack": ["web"]});
+
+        stream.write(Buffer.from(dockerEvent("my-stack", "die", "web", "c1")));
+        stream.write(Buffer.from(dockerEvent("my-stack", "stop", "web", "c1")));
+
+        await vi.waitFor(() => expect(repo.updateServiceState).toHaveBeenCalledTimes(1));
+        expect(errorLog).toHaveBeenCalledWith("[StatePoller] handleEvent error:", expect.any(Error));
+        expect(repo.statuses.at(-1)).toBe("STOPPED");
+    });
+
+    it("reconciles a project after its in-flight events", async () => {
+        const slowEvent = deferred<typeof running>();
+        docker.inspectContainer
+            .mockReturnValueOnce(slowEvent.promise)
+            .mockResolvedValue(exited);
+        docker.listContainers.mockResolvedValue([{
+            Id: "c1",
+            State: "exited",
+            Labels: {"com.docker.compose.project": "my-stack", "com.docker.compose.service": "web"},
+        }]);
+        await startPoller({"my-stack": ["web"]});
+
+        stream.write(Buffer.from(dockerEvent("my-stack", "start", "web", "c1")));
+        await vi.waitFor(() => expect(docker.inspectContainer).toHaveBeenCalledTimes(1));
+
+        // reconcile() is protected; this narrow structural cast drives it the way the cron does.
+        const reconciling = (poller as unknown as {reconcile(): Promise<void>}).reconcile();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(repo.updateServiceState).not.toHaveBeenCalled();
+
+        slowEvent.resolve(running);
+        await reconciling;
+
+        expect(repo.updateServiceState).toHaveBeenCalledTimes(2);
+        const [eventWrite, reconcileWrite] = repo.updateServiceState.mock.calls.map((call) => call[0].containerState);
+        expect([eventWrite, reconcileWrite]).toEqual(["running", "exited"]);
+    });
+
+    it("decodes a reconnected stream from scratch", async () => {
+        vi.useFakeTimers({toFake: ["setTimeout", "clearTimeout"]});
+        const reconnected = new PassThrough();
+        docker.getEventStream.mockResolvedValueOnce(stream).mockResolvedValueOnce(reconnected);
+        docker.inspectContainer.mockResolvedValue(running);
+        await startPoller({"my-stack": ["web"]});
+
+        stream.write('{"Type":"cont');
+        stream.end();
+        await nextIoTurn(); // setImmediate is not faked: lets the stream emit "end" and arm the reconnect timer
+        await vi.advanceTimersByTimeAsync(2000);
+        expect(docker.getEventStream).toHaveBeenCalledTimes(2);
+
+        reconnected.write(dockerEvent("my-stack", "start", "web", "c1"));
+        await nextIoTurn();
+        await nextIoTurn();
+
+        expect(repo.updateServiceState).toHaveBeenCalledTimes(1);
+        expect(docker.inspectContainer).toHaveBeenCalledTimes(1);
     });
 });
