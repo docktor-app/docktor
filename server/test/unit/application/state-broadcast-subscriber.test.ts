@@ -1,6 +1,25 @@
 import {beforeEach, describe, expect, it, vi} from "vitest"
 import {InMemoryEventBus} from "../../../src/infrastructure/event-bus.js"
 import {subscribeStateBroadcast} from "../../../src/application/subscribers/state-broadcast-subscriber.js"
+import type {MigrationOperation} from "@docktor/shared"
+
+function migrationOperation(overrides: Partial<MigrationOperation> = {}): MigrationOperation {
+    return {
+        id: "op-1",
+        stackId: "my-app",
+        displayName: "My App",
+        composePath: "/opt/old/docker-compose.yml",
+        backup: true,
+        stopOldStack: false,
+        status: "running",
+        step: "copying_named_volume",
+        stepDetail: "pgdata",
+        startedAt: "2026-01-01T10:00:00.000Z",
+        finishedAt: null,
+        result: null,
+        ...overrides,
+    }
+}
 
 function createMockBroadcaster() {
     return {
@@ -184,6 +203,35 @@ describe("subscribeStateBroadcast", () => {
         expect(published).not.toHaveProperty("message")
     })
 
+    it("translates migration.progressed into a migration_progress live-state event, with a null result", () => {
+        subscribeStateBroadcast(bus, broadcaster)
+        const operation = migrationOperation()
+
+        bus.emit("migration.progressed", {operation})
+
+        expect(broadcaster.publish).toHaveBeenCalledWith({type: "migration_progress", operation})
+    })
+
+    it("maps every field of a finished migration operation, including keptOriginalAt", () => {
+        subscribeStateBroadcast(bus, broadcaster)
+        const operation = migrationOperation({
+            status: "succeeded",
+            step: "finished",
+            stepDetail: null,
+            finishedAt: "2026-01-01T10:05:00.000Z",
+            result: {
+                success: true,
+                stackId: "my-app",
+                originalPath: "/opt/old",
+                keptOriginalAt: "/opt/old-pre-migration",
+            },
+        })
+
+        bus.emit("migration.progressed", {operation})
+
+        expect(broadcaster.publish).toHaveBeenCalledWith({type: "migration_progress", operation})
+    })
+
     it("returns a disposer that detaches every subscription", () => {
         const dispose = subscribeStateBroadcast(bus, broadcaster)
 
@@ -212,6 +260,7 @@ describe("subscribeStateBroadcast", () => {
             domain: "app.example.com",
             status: "pending",
         })
+        bus.emit("migration.progressed", {operation: migrationOperation()})
 
         expect(broadcaster.publish).not.toHaveBeenCalled()
     })

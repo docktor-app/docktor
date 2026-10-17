@@ -153,15 +153,30 @@ can abort without data loss.
 
 1. **Scan & Discover** — Search the host filesystem (through the read-only `/host` mount) for `docker-compose.yml`
    files. For each, show: directory path, service names, images, container state, and a compatibility assessment
-   flagging what needs to change (named volumes, inline env vars, non-standard paths).
+   flagging what needs to change (named volumes, inline env vars, non-standard paths). Docktor's own compose project is
+   never offered: it is detected from its own container's compose labels, and if it cannot be identified, every stack
+   is listed.
 
 2. **Adopt in Place** (lightweight) — Register an existing directory as a stack in the DB without moving anything.
    Docktor monitors and manages it where it lives. Trade-off: no volume convention enforcement, incomplete backup
    coverage. Zero downtime, zero risk. Users can upgrade to full migration later.
 
-3. **Full Migration** (recommended) — A guided wizard that stops the stack, copies data into the stack's directory,
-   converts named volumes to bind mounts, extracts inline env vars to `.env`, rewrites compose paths, and restarts.
-   Includes rollback on failure and user-initiated cleanup of old volumes/directories.
+3. **Full Migration** (recommended) — A four-step dialog that copies the stack into Docktor's directory layout,
+   converts named volumes to bind mounts, extracts inline env vars to `.env` and rewrites compose paths:
+    1. **Select data** — choose which named volumes and bind mounts to copy, and the new stack's name.
+    2. **Review changes** — a real line diff of the compose file changes plus the extracted `.env` content; secret
+       values are masked until the user reveals them.
+    3. **Backup** — choose whether to keep a copy of the old stack directory (compose file, `.env` and bind-mount
+       data) at `pre-migration-backup/` inside the new stack directory. Default on. The copy is kept after a
+       successful migration; named Docker volumes are not included. Because it lives inside the new stack directory,
+       it is part of the new stack's restic backups.
+    4. **Old stack** — choose whether to stop the old stack first with `docker compose stop` (default on). Containers
+       are stopped, not removed, so the old stack can be started again. If declined, the old stack keeps running and
+       ports used by both stacks may conflict when the new stack is deployed.
+
+   Rollback never modifies the original directory: on failure Docktor removes the new stack directory and record it
+   created and restarts the old stack with `docker compose start`, only if Docktor stopped it. A migration whose
+   target directory already exists or overlaps the old directory is refused before anything is stopped or created.
 
 ---
 

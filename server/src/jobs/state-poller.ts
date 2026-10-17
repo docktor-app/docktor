@@ -3,6 +3,7 @@ import type {DockerodeClientPort} from "../application/ports/dockerode-client-po
 import type {EventBusPort} from "../application/ports/event-bus-port.js"
 import type {ProbeOwnershipPort} from "../application/ports/probe-ownership-port.js"
 import {probedServiceRegistry} from "../application/probed-service-registry.js"
+import {stackContainerMatcher, type StackContainerMatcher} from "../application/stack-container-matcher.js"
 import {domainEventBus} from "../infrastructure/event-bus.js"
 import type {StackStatus} from "../generated/prisma/enums.js"
 import {deriveStackStatus, isTransitionalStatus} from "../domain/stack-state-derivation.js"
@@ -13,12 +14,52 @@ import {
     probeOwnedHealth,
     type HealthSourceName,
 } from "../domain/service-health.js"
+import {JsonLinesDecoder} from "../lib/json-lines-decoder.js"
+import {withKeyedLock} from "../lib/keyed-mutex.js"
 import {WatcherJob} from "./job.js"
 
 // Narrows an unknown thrown value to one carrying a given HTTP status code
 // (dockerode attaches `statusCode` to its errors).
 function hasStatusCode(err: unknown, statusCode: number): boolean {
     return typeof err === "object" && err !== null && "statusCode" in err && err.statusCode === statusCode
+}
+
+export interface DockerEvent {
+    Type?: string
+    Action?: string
+    Actor?: {
+        ID?: string
+        Attributes?: Record<string, string>
+    }
+    // Legacy format support
+    id?: string
+    status?: string
+}
+
+function isOptionalString(value: unknown): boolean {
+    return value === undefined || typeof value === "string"
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+    return typeof value === "object" && value !== null && Object.values(value).every((v) => typeof v === "string")
+}
+
+function isDockerActor(value: unknown): boolean {
+    if (value === undefined) return true
+    if (typeof value !== "object" || value === null) return false
+    const actor = value as {ID?: unknown; Attributes?: unknown} // narrowed to an object; each field is checked below
+    return isOptionalString(actor.ID) && (actor.Attributes === undefined || isStringRecord(actor.Attributes))
+}
+
+// Checks the fields handleEvent reads; anything else on the value is ignored.
+function isDockerEvent(value: unknown): value is DockerEvent {
+    if (typeof value !== "object" || value === null) return false
+    const event = value as {Type?: unknown; Action?: unknown; id?: unknown; status?: unknown; Actor?: unknown} // narrowed to an object; each field is checked below
+    return isOptionalString(event.Type)
+        && isOptionalString(event.Action)
+        && isOptionalString(event.id)
+        && isOptionalString(event.status)
+        && isDockerActor(event.Actor)
 }
 
 export interface ServiceState {
@@ -30,6 +71,7 @@ export interface ServiceState {
 
 export interface StackWithServices {
     id: string
+    hostPath: string
     status: string
     services: ServiceState[]
 }
@@ -80,12 +122,14 @@ export class StatePoller extends WatcherJob {
     private readonly repo: StatePollerRepo | null
     private readonly bus: Pick<EventBusPort, "emit">
     private readonly probeOwnership: ProbeOwnershipPort
+    private readonly matcher: Pick<StackContainerMatcher, "belongsTo">
 
     constructor(
         docker?: Pick<DockerodeClientPort, "getEventStream" | "inspectContainer" | "listContainers">,
         repo?: StatePollerRepo,
         bus?: Pick<EventBusPort, "emit">,
         probeOwnership: ProbeOwnershipPort = probedServiceRegistry,
+        matcher: Pick<StackContainerMatcher, "belongsTo"> = stackContainerMatcher,
     ) {
         super()
         this.docker = docker ?? dockerodeClient
@@ -93,6 +137,7 @@ export class StatePoller extends WatcherJob {
         this.repo = repo ?? null
         this.bus = bus ?? domainEventBus
         this.probeOwnership = probeOwnership
+        this.matcher = matcher
     }
 
     private async getRepo(): Promise<StatePollerRepo> {
@@ -129,14 +174,11 @@ export class StatePoller extends WatcherJob {
             return
         }
 
+        // One decoder per stream: a reconnect starts with an empty buffer.
+        const decoder = new JsonLinesDecoder()
         stream.on("data", (chunk: Buffer) => {
-            try {
-                const event = JSON.parse(chunk.toString())
-                this.handleEvent(event).catch((err: unknown) => {
-                    console.error("[StatePoller] handleEvent error:", err)
-                })
-            } catch {
-                // ignore unparseable chunks
+            for (const value of decoder.push(chunk)) {
+                if (isDockerEvent(value)) this.dispatch(value)
             }
         })
 
@@ -156,17 +198,20 @@ export class StatePoller extends WatcherJob {
         })
     }
 
-    async handleEvent(event: {
-        Type?: string
-        Action?: string
-        Actor?: {
-            ID?: string
-            Attributes?: Record<string, string>
-        }
-        // Legacy format support
-        id?: string
-        status?: string
-    }): Promise<void> {
+    // docker stop emits kill, die and stop within milliseconds. Handled
+    // concurrently, a handler that inspected the still-running container could
+    // write last and leave the stack RUNNING until the next reconcile
+    // (G-18-23-stop-ui). Calls for one project run in Docker's order; other
+    // projects are not blocked.
+    private dispatch(event: DockerEvent): void {
+        const project = event.Actor?.Attributes?.["com.docker.compose.project"]
+        const key = `state-poller:${project ?? event.Actor?.ID ?? event.id ?? "unknown"}`
+        withKeyedLock(key, () => this.handleEvent(event)).catch((err: unknown) => {
+            console.error("[StatePoller] handleEvent error:", err)
+        })
+    }
+
+    async handleEvent(event: DockerEvent): Promise<void> {
         // Extract fields from either new or legacy format
         const containerId = event.Actor?.ID || event.id
         const action = event.Action || event.status
@@ -199,6 +244,12 @@ export class StatePoller extends WatcherJob {
 
         // Skip stacks in transitional states
         if (isTransitionalStatus(stack.status)) return
+
+        // G-18-22-status: a same-project container of another directory is not this stack's.
+        if (!(await this.matcher.belongsTo(stack, attributes))) {
+            console.log(`[StatePoller] Skipping event: stack=${stack.id}, container=${containerId.substring(0, 12)}, reason=container of another directory`)
+            return
+        }
 
         // Inspect the container (may no longer exist if destroy/remove event)
         let info
@@ -390,25 +441,49 @@ export class StatePoller extends WatcherJob {
 
         // Update each project's services
         for (const [project, projectContainers] of byProject) {
+            await this.reconcileProject(repo, project, projectContainers)
+        }
+    }
+
+    private async ownContainersOf(stack: StackWithServices, containers: ListedContainer[]): Promise<ListedContainer[]> {
+        const owned = await Promise.all(containers.map((c) => this.matcher.belongsTo(stack, c.Labels)))
+        return containers.filter((_, index) => owned[index])
+    }
+
+    // Reconcile writes the same rows as the event handler, so it must not
+    // interleave with a project's queued events: it takes the same
+    // per-project key as dispatch() (G-18-23-stop-ui).
+    private async reconcileProject(
+        repo: StatePollerRepo,
+        project: string,
+        projectContainers: ListedContainer[],
+    ): Promise<void> {
+        await withKeyedLock(`state-poller:${project}`, async () => {
             try {
                 const stack = await repo.findByComposeProject(project)
-                if (!stack) continue
-                if (isTransitionalStatus(stack.status)) continue
+                if (!stack) return
+                if (isTransitionalStatus(stack.status)) return
+
+                // G-18-22-status: only the stack's own containers count; a
+                // same-project copy running from another directory is skipped.
+                const ownContainers = await this.ownContainersOf(stack, projectContainers)
+                const skipped = projectContainers.length - ownContainers.length
+                if (skipped > 0) console.log(`[StatePoller] Skipped ${skipped} container(s) of another directory for stack=${stack.id}`)
 
                 console.log(`[StatePoller] Processing stack=${stack.id}, services in DB: [${stack.services.map(s => s.serviceName).join(", ")}]`)
-                console.log(`[StatePoller] Containers found: [${projectContainers.map(c => c.Labels?.["com.docker.compose.service"]).join(", ")}]`)
+                console.log(`[StatePoller] Containers found: [${ownContainers.map(c => c.Labels?.["com.docker.compose.service"]).join(", ")}]`)
 
                 // Observe and write every container's real state and health.
                 // The first container seen for a service is the one the
                 // stack status is derived from.
                 const containerCounts = new Map<string, number>()
-                for (const container of projectContainers) {
+                for (const container of ownContainers) {
                     const svcName = container.Labels?.["com.docker.compose.service"]
                     if (svcName) containerCounts.set(svcName, (containerCounts.get(svcName) ?? 0) + 1)
                 }
 
                 const observed = new Map<string, ObservedContainer>()
-                for (const container of projectContainers) {
+                for (const container of ownContainers) {
                     const svcName = container.Labels?.["com.docker.compose.service"]
                     if (!svcName) continue
 
@@ -446,7 +521,7 @@ export class StatePoller extends WatcherJob {
             } catch (err) {
                 console.error(`[StatePoller] reconcile error for project ${project}:`, err)
             }
-        }
+        })
     }
 }
 

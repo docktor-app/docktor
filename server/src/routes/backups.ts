@@ -233,6 +233,12 @@ const backupsPlugin: FastifyPluginAsyncZod = async (app) => {
         },
     )
 
+    // ── POST /api/settings/backup/test — Test the saved remote repository ─────
+
+    app.post("/api/settings/backup/test", async () => {
+        return backupService.testRepositoryConnection()
+    })
+
     // ── GET /api/settings/backup-defaults — Get global default schedule/retention
 
     app.get("/api/settings/backup-defaults", async () => {

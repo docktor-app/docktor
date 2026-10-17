@@ -12,8 +12,15 @@ import {createComposeConfig} from "../domain/compose-config.js";
 // so there is no circular dependency.
 import {proxyService} from "./index.js";
 import type {ProxyService} from "./proxy-service.js";
+import {excludeOwnComposeFiles} from "../domain/self-stack-paths.js";
+import {assertNotManaged, identifyManagedStacks, managingStackOf} from "./managed-stack-guard.js";
+import {assertNotOwnStack, lookupOwnComposeFiles} from "./own-stack-guard.js";
 import {brownfieldScanner} from "../infrastructure/brownfield-scanner.js";
+import {dockerSelfStack} from "../infrastructure/docker-self-stack.js";
+import {directoryIdentityResolver} from "../infrastructure/directory-identity-resolver.js";
 import type {BrownfieldScannerPort, ScanResult} from "./ports/brownfield-scanner-port.js";
+import type {SelfStackPort} from "./ports/self-stack-port.js";
+import type {DirectoryIdentityPort} from "./ports/directory-identity-port.js";
 import type {
     WizardStep1Input,
     WizardStep2Input,
@@ -62,6 +69,11 @@ export class OnboardingService {
         // (post-setup) so the two callers can never drift onto different
         // scan behaviours (T-10-16).
         private readonly scanner: BrownfieldScannerPort = brownfieldScanner,
+        // D-03/STK-03: last position so every existing positional call keeps
+        // compiling. Identifies Docktor's own compose file so scan() can hide it.
+        private readonly selfStack: SelfStackPort = dockerSelfStack,
+        // G-18-22-inplace/WR-10: which directory a path names, whatever its spelling.
+        private readonly directories: DirectoryIdentityPort = directoryIdentityResolver,
     ) {}
 
     /**
@@ -208,15 +220,46 @@ export class OnboardingService {
      * port. Both routes/setup.ts (pre-wizard-complete) and routes/imports.ts
      * (post-setup) call this one method, so they can never reach the
      * scanner through two different code paths.
+     *
+     * STK-03/D-03 (#13): the compose file Docktor's own container was started
+     * from is dropped from the result, by exact file equality, so users are
+     * never offered the stack that runs Docktor itself. Fail-open (D-02): when
+     * the own stack cannot be identified nothing is excluded. The exclusion is
+     * silent: skippedDirectories is left untouched.
+     *
+     * G-18-2: every remaining row carries `managedStack`, the Docktor stack
+     * that already manages its directory (or null). Managed rows stay listed
+     * so the user sees why they cannot be imported again; adopt and migrate
+     * refuse them server-side.
      */
     async scan(directories: string[]): Promise<ScanResult> {
-        return this.scanner.scan(directories);
+        const [result, ownPaths, managed] = await Promise.all([
+            this.scanner.scan(directories),
+            lookupOwnComposeFiles(this.selfStack, "OnboardingService"),
+            identifyManagedStacks(this.stackRepo, this.directories),
+        ]);
+        const candidates = ownPaths.length === 0 ? result.stacks : excludeOwnComposeFiles(result.stacks, ownPaths);
+        const stacks = await Promise.all(
+            candidates.map(async (row) => ({
+                ...row,
+                managedStack: await managingStackOf(row.path, managed, this.directories),
+            })),
+        );
+        return {...result, stacks};
     }
 
     /**
      * BF-03: Adopt stack in-place (no filesystem moves — the stack directory
      * stays where it is; only the compose file is read to build the config).
      * Creates Stack record pointing to existing directory.
+     *
+     * WR-09/STK-03: Docktor's own compose file is refused with a 400 before
+     * anything is read or recorded, so a direct API call or a stale list cannot
+     * adopt the stack Docktor runs in. Fail-open (D-02): when the own stack is
+     * unknown nothing is refused.
+     *
+     * G-18-2: a compose file in the directory of a stack Docktor already
+     * manages is refused with a 409 next, before the record check and the read.
      */
     async adoptInPlace(
         composePath: string,
@@ -227,6 +270,9 @@ export class OnboardingService {
             // WR-03: an empty slug is a client input problem — 400, not 500.
             throw new BadRequestError("Display name produces an empty slug");
         }
+
+        await assertNotOwnStack(this.selfStack, composePath, "OnboardingService");
+        await assertNotManaged(this.stackRepo, this.directories, composePath);
 
         if (await this.stackRepo.exists(id)) {
             throw new ConflictError(`Stack "${id}" already exists`);

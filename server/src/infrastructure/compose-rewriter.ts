@@ -1,5 +1,9 @@
-import {parse as parseYaml, stringify as stringifyYaml} from "yaml";
+import {CST, isMap, isScalar, isSeq, parseDocument, Scalar, type YAMLMap} from "yaml";
+import {AppError} from "../lib/errors.js";
+import {parseEnvAssignments} from "../domain/host-ports.js";
 import type {ComposeRewriterPort} from "../application/ports/compose-rewriter-port.js";
+import {isVariableReference} from "./compose-analyzer.js";
+import {formatDotenvLine, isDotenvSafeValue, isInterpolationName} from "./dotenv-format.js";
 
 export interface VolumeSelection {
 	originalPath: string;
@@ -13,160 +17,470 @@ export interface RewriteResult {
 	envVars: Record<string, string>;
 }
 
+/** A replacement of `source[start, end)` by `text`. An insertion has `start === end`. */
+interface Splice {
+	start: number;
+	end: number;
+	text: string;
+}
+
+const EXTERNAL_FLOW = "{external: true}";
+
+/** Plain scalars compose reads back with the same text: booleans and canonical decimal integers. */
+const CANONICAL_PLAIN_SCALAR = /^(?:true|false|-?(?:0|[1-9][0-9]*))$/;
+
+/** Offset of the first character of the line that contains `offset`. */
+function lineStart(source: string, offset: number): number {
+	return source.lastIndexOf("\n", offset - 1) + 1;
+}
+
+/** Offset just past the line terminator of the line that contains `offset` (end of text when unterminated). */
+function lineEnd(source: string, offset: number): number {
+	const terminator = source.indexOf("\n", offset);
+	return terminator === -1 ? source.length : terminator + 1;
+}
+
+/** Moves `offset` back over trailing whitespace (spaces, tabs, CR, LF) but never below `floor`. */
+function trimEnd(source: string, offset: number, floor: number): number {
+	let end = offset;
+	while (end > floor && /\s/.test(source.charAt(end - 1))) {
+		end--;
+	}
+	return end;
+}
+
+/**
+ * Collects edits against the ORIGINAL text and applies them in one pass.
+ *
+ * The output is never produced by the yaml document's `toString()` or its stringify
+ * function: both re-indent and normalise line endings, which is exactly the noise
+ * G-18-4 (B) removes. Every byte outside a splice is copied verbatim.
+ */
+class SourceEdits {
+	private readonly splices: Splice[] = [];
+
+	constructor(private readonly source: string) {}
+
+	add(splice: Splice): void {
+		this.splices.push(splice);
+	}
+
+	/**
+	 * Replaces a plain or quoted scalar's value, keeping its quote style and any trailing
+	 * comment (the comment lies outside the scalar's `range`). Block scalars are never edited.
+	 */
+	replaceScalar(node: Scalar, value: string): void {
+		const range = node.range;
+		const token = node.srcToken;
+		if (!range || !token || node.value === value) {
+			return;
+		}
+		if (token.type !== "scalar" && token.type !== "single-quoted-scalar" && token.type !== "double-quoted-scalar") {
+			return;
+		}
+		const replacement = structuredClone(token);
+		replacement.end = []; // trailing space/comment/newline stay in the original text
+		CST.setScalarValue(replacement, value);
+		const text = CST.stringify(replacement);
+		if (text === this.source.slice(range[0], range[1])) {
+			return;
+		}
+		this.add({start: range[0], end: range[1], text});
+	}
+
+	/** Removes every line from the one containing `from` through the one holding `contentEnd`. */
+	removeLines(from: number, contentEnd: number): void {
+		this.add({start: lineStart(this.source, from), end: lineEnd(this.source, contentEnd), text: ""});
+	}
+
+	apply(): string {
+		const ordered = [...this.splices].sort((a, b) => a.start - b.start || a.end - b.end);
+		let result = "";
+		let cursor = 0;
+		for (const splice of ordered) {
+			if (splice.start < cursor) {
+				throw new AppError("Compose rewrite produced overlapping edits");
+			}
+			result += this.source.slice(cursor, splice.start) + splice.text;
+			cursor = splice.end;
+		}
+		return result + this.source.slice(cursor);
+	}
+}
+
+/** Lookup of which volume references the user chose to convert (the rewrite rules, no text handling). */
+class VolumeRules {
+	private readonly bindRewrites = new Map<string, string>();
+
+	constructor(
+		volumeSelections: VolumeSelection[],
+		private readonly namedVolumeSelections: Map<string, boolean>,
+	) {
+		for (const selection of volumeSelections) {
+			if (selection.convert) {
+				this.bindRewrites.set(selection.originalPath, selection.newPath);
+			}
+		}
+	}
+
+	isConverted(volumeName: string): boolean {
+		return this.namedVolumeSelections.get(volumeName) === true;
+	}
+
+	bindTarget(hostPath: string): string | undefined {
+		const newPath = this.bindRewrites.get(hostPath);
+		return newPath || undefined;
+	}
+
+	namedTarget(volumeName: string): string {
+		return `./volumes/${volumeName}`;
+	}
+
+	/** New text of a short-form entry (`host:container[:mode]`), or undefined when it stays as it is. */
+	shortForm(entry: string): string | undefined {
+		const [hostPath, ...rest] = entry.split(":");
+		const isNamedReference = !hostPath.startsWith(".") && !hostPath.startsWith("/");
+		const target = isNamedReference
+			? (this.isConverted(hostPath) ? this.namedTarget(hostPath) : undefined)
+			: this.bindTarget(hostPath);
+		return target === undefined ? undefined : [target, ...rest].join(":");
+	}
+}
+
+/** Highest numeric suffix tried for a name (`<SERVICE>_KEY_2` ... `<SERVICE>_KEY_99`). */
+const MAX_NAME_SUFFIX = 99;
+
+/** `web.v2` -> `WEB_V2`, `1st` -> `_1ST`: a service name made usable inside a variable name. */
+function variablePrefix(serviceName: string): string {
+	const upper = serviceName.toUpperCase().replaceAll(/[^A-Z0-9_]/g, "_");
+	return /^[0-9]/.test(upper) ? `_${upper}` : upper;
+}
+
+/** Prefixes compose reads from `.env` to configure itself (project name, files, the daemon). */
+const COMPOSE_CONFIG_PREFIXES = ["COMPOSE_", "DOCKER_"];
+
+/** Variable names a compose file references (`$NAME`, `${NAME}`, `${NAME:-x}`). Over-matching is harmless. */
+function referencedNames(compose: string): Set<string> {
+	return new Set([...compose.matchAll(/\$\{?([A-Za-z_][A-Za-z0-9_]*)/g)].map(match => match[1]));
+}
+
+interface NameConstraints {
+	/** Names that can never carry an extracted value (Docktor's own process environment). */
+	reserved: ReadonlySet<string>;
+	/** The old stack's `.env` assignments: such a name is reusable only for the same value. */
+	existingEnv: Readonly<Record<string, string>>;
+	/** Names the original compose file already references: a new `.env` entry would change them. */
+	referenced: ReadonlySet<string>;
+}
+
+/**
+ * Decides which `.env` name carries each extracted literal. A name is never reused for a
+ * different value and never changes how anything else resolves, so every `${NAME}` keeps
+ * resolving to the literal it replaced.
+ */
+class EnvNameAllocator {
+	// Insertion-ordered: the order in which names were first emitted. Names reused from the
+	// old .env are not in here: their line already exists.
+	private readonly assigned = new Map<string, string>();
+
+	constructor(private readonly constraints: NameConstraints) {}
+
+	/** The name for `key`'s literal in `serviceName`, or undefined when no candidate is usable. */
+	allocate(serviceName: string, key: string, value: string): string | undefined {
+		const prefixed = `${variablePrefix(serviceName)}_${key}`;
+		const candidates = [key, prefixed];
+		for (let suffix = 2; suffix <= MAX_NAME_SUFFIX; suffix++) {
+			candidates.push(`${prefixed}_${suffix}`);
+		}
+		const name = candidates.find(candidate => this.isUsable(candidate, value));
+		if (name !== undefined && !this.isReusedFromExistingEnv(name)) {
+			this.assigned.set(name, value);
+		}
+		return name;
+	}
+
+	entries(): ReadonlyMap<string, string> {
+		return this.assigned;
+	}
+
+	private isReusedFromExistingEnv(name: string): boolean {
+		return Object.hasOwn(this.constraints.existingEnv, name);
+	}
+
+	private isUsable(name: string, value: string): boolean {
+		const {reserved, existingEnv, referenced} = this.constraints;
+		if (reserved.has(name) || COMPOSE_CONFIG_PREFIXES.some(prefix => name.startsWith(prefix))) {
+			return false;
+		}
+		const emitted = this.assigned.get(name);
+		if (emitted !== undefined) {
+			return emitted === value;
+		}
+		if (this.isReusedFromExistingEnv(name)) {
+			return existingEnv[name] === value;
+		}
+		return !referenced.has(name);
+	}
+}
+
+/** Position of the `:` that follows a mapping key, as the offset just past it. */
+function colonEnd(source: string, keyEnd: number): number {
+	return source.indexOf(":", keyEnd) + 1;
+}
+
+function declaresExternal(value: unknown): boolean {
+	if (!isMap(value)) {
+		return false;
+	}
+	const external = value.get("external");
+	return external === true || isMap(external); // legacy `external: {name: ...}` is still external
+}
+
+type VolumeEntry = YAMLMap["items"][number];
+
+/** Plans the edits for one compose document. */
+class ComposeEditPlan {
+	private readonly edits: SourceEdits;
+
+	constructor(
+		private readonly source: string,
+		private readonly rules: VolumeRules,
+		private readonly names: EnvNameAllocator,
+	) {
+		this.edits = new SourceEdits(source);
+	}
+
+	rewriteServiceVolumes(service: YAMLMap): void {
+		const volumes = service.get("volumes", true);
+		if (!isSeq(volumes)) {
+			return;
+		}
+		for (const entry of volumes.items) {
+			if (isScalar(entry) && typeof entry.value === "string") {
+				const rewritten = this.rules.shortForm(entry.value);
+				if (rewritten !== undefined) {
+					this.edits.replaceScalar(entry, rewritten);
+				}
+			} else if (isMap(entry)) {
+				this.rewriteLongForm(entry);
+			}
+		}
+	}
+
+	/**
+	 * Inline literal values of a map-form `environment` move to `.env`: each value scalar becomes
+	 * `${NAME}` in place, where NAME is the key unless another value already owns it. List-form entries, null values, values that already reference a variable
+	 * and block scalars stay as they are.
+	 */
+	extractServiceEnvironment(serviceName: string, service: YAMLMap): void {
+		const environment = service.get("environment", true);
+		if (!isMap(environment)) {
+			return;
+		}
+		for (const pair of environment.items) {
+			if (!isScalar(pair.key) || !isScalar(pair.value)) {
+				continue;
+			}
+			const key = String(pair.key.value);
+			const literal = this.literalEnvValue(key, pair.value);
+			const name = literal === undefined ? undefined : this.names.allocate(serviceName, key, literal);
+			if (name !== undefined) {
+				this.edits.replaceScalar(pair.value, `\${${name}}`);
+			}
+		}
+	}
+
+	/** The text to move to `.env`, or undefined when the entry must stay inline (see dotenv-format.ts). */
+	private literalEnvValue(key: string, node: Scalar): string | undefined {
+		const range = node.range;
+		const isEditable = node.type === Scalar.PLAIN || node.type === Scalar.QUOTE_DOUBLE || node.type === Scalar.QUOTE_SINGLE;
+		if (!range || !isEditable || node.value === null || node.value === undefined || !isInterpolationName(key)) {
+			return undefined;
+		}
+		// A plain number or boolean keeps its source spelling (`0x1F`, `1e3`), not the parsed value.
+		const text = typeof node.value === "string" ? node.value : this.source.slice(range[0], range[1]);
+		const readsBackUnchanged =
+			typeof node.value === "string" ? isDotenvSafeValue(text) : CANONICAL_PLAIN_SCALAR.test(text);
+		return readsBackUnchanged && !isVariableReference(text) ? text : undefined;
+	}
+
+	extractedEnv(): {extractedEnv: string; envVars: Record<string, string>} {
+		const entries = this.names.entries();
+		return {
+			extractedEnv: [...entries].map(([name, value]) => formatDotenvLine(name, value)).join("\n"),
+			envVars: Object.fromEntries(entries),
+		};
+	}
+
+	// CR-03: long-form entries ({type, source, target}) rewrite only their `source` (and `type`
+	// for a converted named volume), so migrated data and the compose file agree.
+	private rewriteLongForm(entry: YAMLMap): void {
+		const source = entry.get("source", true);
+		if (!isScalar(source) || typeof source.value !== "string") {
+			return;
+		}
+		const type = entry.get("type", true);
+		const kind = isScalar(type) ? type.value : undefined;
+		if (kind === "bind") {
+			const target = this.rules.bindTarget(source.value);
+			if (target !== undefined) {
+				this.edits.replaceScalar(source, target);
+			}
+		} else if (kind === "volume" && this.rules.isConverted(source.value) && isScalar(type)) {
+			this.edits.replaceScalar(type, "bind");
+			this.edits.replaceScalar(source, this.rules.namedTarget(source.value));
+		}
+	}
+
+	/** Top-level `volumes:` — converted entries disappear, every other one is declared external. */
+	rewriteTopLevelVolumes(root: YAMLMap): void {
+		const block = root.items.find(pair => isScalar(pair.key) && pair.key.value === "volumes");
+		if (!block || !isScalar(block.key) || !block.key.range || !isMap(block.value) || !block.value.range) {
+			return;
+		}
+		const entries = block.value.items;
+		if (entries.length === 0) {
+			return;
+		}
+		const kept = entries.filter(pair => !this.isConvertedEntry(pair));
+		if (kept.length === 0) {
+			// Every entry became a bind mount: drop the `volumes:` key with its whole block.
+			this.edits.removeLines(block.key.range[0], this.contentEnd(block.value.range[1], block.key.range[1]));
+		} else if (block.value.flow) {
+			this.rewriteFlowVolumes(block.value, kept);
+		} else {
+			for (const pair of entries) {
+				if (this.isConvertedEntry(pair)) {
+					this.removeEntry(pair);
+				} else if (this.needsExternal(pair)) {
+					this.markExternal(pair);
+				}
+			}
+		}
+	}
+
+	private isConvertedEntry(pair: VolumeEntry): boolean {
+		return isScalar(pair.key) && this.rules.isConverted(String(pair.key.value));
+	}
+
+	private needsExternal(pair: VolumeEntry): boolean {
+		return isScalar(pair.key) && !declaresExternal(pair.value);
+	}
+
+	private contentEnd(rangeEnd: number, floor: number): number {
+		return trimEnd(this.source, rangeEnd, floor);
+	}
+
+	/** End of the last content character the entry occupies (its key's `:` when the value is empty). */
+	private entryEnd(pair: VolumeEntry): number {
+		const keyEnd = isScalar(pair.key) && pair.key.range ? pair.key.range[1] : 0;
+		const floor = colonEnd(this.source, keyEnd);
+		const range = isScalar(pair.value) || isMap(pair.value) ? pair.value.range : undefined;
+		return range && range[1] > range[0] ? this.contentEnd(range[1], floor) : floor;
+	}
+
+	private removeEntry(pair: VolumeEntry): void {
+		if (isScalar(pair.key) && pair.key.range) {
+			this.edits.removeLines(pair.key.range[0], this.entryEnd(pair));
+		}
+	}
+
+	private markExternal(pair: VolumeEntry): void {
+		if (isScalar(pair.key) && pair.key.range) {
+			const start = colonEnd(this.source, pair.key.range[1]);
+			this.edits.add({start, end: this.entryEnd(pair), text: ` ${EXTERNAL_FLOW}`});
+		}
+	}
+
+	/** `volumes: {a: {}, b: {}}` has no lines of its own to cut, so the one flow map is rebuilt. */
+	private rewriteFlowVolumes(volumes: YAMLMap, kept: VolumeEntry[]): void {
+		const range = volumes.range;
+		const texts = kept.map(pair => this.flowEntryText(pair));
+		const changed = kept.length < volumes.items.length || kept.some(pair => this.needsExternal(pair));
+		if (!range || !changed || texts.some(text => text === undefined)) {
+			return;
+		}
+		this.edits.add({start: range[0], end: this.contentEnd(range[1], range[0]), text: `{${texts.join(", ")}}`});
+	}
+
+	private flowEntryText(pair: VolumeEntry): string | undefined {
+		if (!isScalar(pair.key) || !pair.key.range) {
+			return undefined;
+		}
+		const key = this.source.slice(pair.key.range[0], pair.key.range[1]);
+		return this.needsExternal(pair)
+			? `${key}: ${EXTERNAL_FLOW}`
+			: this.source.slice(pair.key.range[0], this.entryEnd(pair));
+	}
+
+	apply(): string {
+		return this.edits.apply();
+	}
+}
+
+/**
+ * Rewrites a compose file for the migration flow (MIG-02, G-18-4 B).
+ *
+ * The rewrite edits only the nodes it must change and leaves every other byte of the user's
+ * file in place: indentation, comments, quoting and line endings survive, so the review
+ * step's line diff shows exactly the real changes.
+ */
 export class ComposeRewriter implements ComposeRewriterPort {
+	/**
+	 * @param reservedNames names that can never carry an extracted value, read once per rewrite.
+	 *   Docker compose is run with Docktor's own environment and shell variables override `.env`,
+	 *   so every variable of this process is reserved by default.
+	 */
+	constructor(private readonly reservedNames: () => ReadonlySet<string> = () => new Set(Object.keys(process.env))) {}
+
 	/**
 	 * Rewrite compose file:
 	 * 1. Update volume paths based on selections
-	 * 2. Extract inline environment variables to .env format
-	 * 3. Mark unconverted named volumes as external
+	 * 2. Mark unconverted named volumes as external
+	 * 3. Move inline literal `environment` values to `.env`
+	 *
+	 * Behaviour change (G-18-4 B): the previous implementation replaced a map-form `environment`
+	 * by a list of bare `${KEY}` entries, which Compose reads as interpolated values without keys.
+	 * The map form now stays and each value becomes `KEY: ${KEY}`, which Compose interpolates from
+	 * the stack's `.env`.
+	 *
+	 * A document that does not parse, or has no `services` map, is returned unchanged.
 	 */
 	rewrite(
 		originalCompose: string,
 		volumeSelections: VolumeSelection[],
 		namedVolumeSelections: Map<string, boolean>, // volumeName -> convert (true = bind mount, false = keep as named)
+		existingEnv?: string,
 	): RewriteResult {
-		const doc = parseYaml(originalCompose);
-		const extractedEnvVars: Record<string, string> = {};
-
-		// Create lookup for volume path rewrites
-		const pathRewrites = new Map<string, string>();
-		for (const sel of volumeSelections) {
-			if (sel.convert) {
-				pathRewrites.set(sel.originalPath, sel.newPath);
-			}
+		const unchanged: RewriteResult = {rewrittenCompose: originalCompose, extractedEnv: "", envVars: {}};
+		const doc = parseDocument(originalCompose, {keepSourceTokens: true});
+		const root = doc.contents;
+		if (doc.errors.length > 0 || !isMap(root)) {
+			return unchanged;
+		}
+		const services = root.get("services", true);
+		if (!isMap(services)) {
+			return unchanged;
 		}
 
-		// Rewrite service volumes and extract environment variables
-		for (const [, service] of Object.entries(doc.services || {})) {
-			const svc = service as any;
-
-			// Rewrite volume paths
-			if (Array.isArray(svc.volumes)) {
-				svc.volumes = svc.volumes.map((vol: string | Record<string, unknown>) => {
-					if (typeof vol === "string") {
-						const parts = vol.split(":");
-						const hostPath = parts[0];
-						const rest = parts.slice(1);
-
-						// Check if this is a named volume reference
-						if (!hostPath.startsWith(".") && !hostPath.startsWith("/")) {
-							const shouldConvert = namedVolumeSelections.get(hostPath);
-							if (shouldConvert) {
-								// Convert named volume to bind mount
-								return [`./volumes/${hostPath}`, ...rest].join(":");
-							}
-							// Keep as named volume (will mark as external below)
-							return vol;
-						}
-
-						// Rewrite bind mount path if selected for conversion
-						const newPath = pathRewrites.get(hostPath);
-						if (newPath) {
-							return [newPath, ...rest].join(":");
-						}
-
-						return vol;
-					}
-
-					// CR-03: long-form volume entries ({type, source, target}) were
-					// previously skipped entirely, so migrated data was copied to the
-					// new bind-mount location while the compose file kept pointing at
-					// the stale original path. Rewrite `source` the same way as the
-					// short-form case above.
-					const entry = vol as {type?: unknown; source?: unknown; [key: string]: unknown};
-
-					if (entry.type === "bind" && typeof entry.source === "string") {
-						const newPath = pathRewrites.get(entry.source);
-						return newPath ? {...entry, source: newPath} : entry;
-					}
-
-					if (entry.type === "volume" && typeof entry.source === "string") {
-						const shouldConvert = namedVolumeSelections.get(entry.source);
-						if (shouldConvert) {
-							// Convert named-volume long-form entry to a bind mount
-							return {...entry, type: "bind", source: `./volumes/${entry.source}`};
-						}
-						// Keep as named volume (will mark as external below)
-						return entry;
-					}
-
-					return vol;
-				});
-			}
-
-			// Extract inline environment variables (object form)
-			if (svc.environment && typeof svc.environment === "object" && !Array.isArray(svc.environment)) {
-				const inlineEnv = svc.environment;
-				const envRefs: string[] = [];
-
-				for (const [key, value] of Object.entries(inlineEnv)) {
-					extractedEnvVars[key] = String(value);
-					envRefs.push(key); // Will reference via ${KEY} in array form
-				}
-
-				// Replace object form with array form referencing .env
-				svc.environment = envRefs.map(k => `\${${k}}`);
+		const plan = new ComposeEditPlan(
+			originalCompose,
+			new VolumeRules(volumeSelections, namedVolumeSelections),
+			new EnvNameAllocator({
+				reserved: this.reservedNames(),
+				existingEnv: parseEnvAssignments(existingEnv ?? ""),
+				referenced: referencedNames(originalCompose),
+			}),
+		);
+		for (const pair of services.items) {
+			if (isMap(pair.value)) {
+				plan.rewriteServiceVolumes(pair.value);
+				plan.extractServiceEnvironment(String(isScalar(pair.key) ? pair.key.value : ""), pair.value);
 			}
 		}
+		plan.rewriteTopLevelVolumes(root);
 
-		// Update top-level volumes: mark unconverted named volumes as external
-		if (doc.volumes) {
-			const newVolumes: Record<string, any> = {};
-			for (const [volName] of Object.entries(doc.volumes)) {
-				const shouldConvert = namedVolumeSelections.get(volName);
-				if (shouldConvert) {
-					// Remove from volumes section (now a bind mount)
-					continue;
-				}
-				// Keep as external named volume
-				newVolumes[volName] = {external: true};
-			}
-			if (Object.keys(newVolumes).length > 0) {
-				doc.volumes = newVolumes;
-			} else {
-				delete doc.volumes;
-			}
-		}
-
-		const rewrittenCompose = stringifyYaml(doc, {
-			lineWidth: 0, // Prevent line wrapping
-		});
-
-		const extractedEnv = Object.entries(extractedEnvVars)
-			.map(([key, value]) => `${key}=${value}`)
-			.join("\n");
-
-		return {
-			rewrittenCompose,
-			extractedEnv,
-			envVars: extractedEnvVars,
-		};
-	}
-
-	/**
-	 * Generate unified diff for preview
-	 */
-	generateDiff(originalCompose: string, rewrittenCompose: string): string {
-		// Simple line-by-line diff for preview
-		const origLines = originalCompose.split("\n");
-		const newLines = rewrittenCompose.split("\n");
-
-		const diffLines: string[] = [];
-		const maxLen = Math.max(origLines.length, newLines.length);
-
-		for (let i = 0; i < maxLen; i++) {
-			const orig = origLines[i];
-			const newL = newLines[i];
-
-			if (orig === newL) {
-				if (orig !== undefined) diffLines.push(`  ${orig}`);
-			} else {
-				if (orig !== undefined) diffLines.push(`- ${orig}`);
-				if (newL !== undefined) diffLines.push(`+ ${newL}`);
-			}
-		}
-
-		return diffLines.join("\n");
+		return {rewrittenCompose: plan.apply(), ...plan.extractedEnv()};
 	}
 }
 

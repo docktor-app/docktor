@@ -1,4 +1,4 @@
-import {afterEach, describe, expect, it} from "vitest";
+import {afterEach, describe, expect, it, vi} from "vitest";
 import {execFile} from "node:child_process";
 import {promisify} from "node:util";
 import fs from "node:fs/promises";
@@ -9,6 +9,10 @@ import {GitExecutor} from "../../../src/infrastructure/git-executor.js";
 import {BadRequestError} from "../../../src/lib/errors.js";
 
 const execFileAsync = promisify(execFile);
+
+// These tests run real git against a local bare repo. A clone/pull is routinely
+// slower than vitest's 5s default on the Windows CI runner.
+vi.setConfig({testTimeout: 30_000});
 
 /**
  * Creates a bare git repo in a temp dir, then commits the given files

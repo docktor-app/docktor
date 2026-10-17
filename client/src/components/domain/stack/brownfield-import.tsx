@@ -1,6 +1,7 @@
 import {useState} from "react";
 import {useNavigate} from "react-router";
 import {toast} from "sonner";
+import type {MigrationExecuteInput, MigrationOperation, MigrationPreviewInput} from "@docktor/shared";
 import {Search, FolderOpen} from "lucide-react";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
@@ -9,14 +10,17 @@ import {Card, CardContent, CardDescription, CardHeader, CardTitle} from "@/compo
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from "@/components/ui/table";
 import {Skeleton} from "@/components/ui/skeleton";
 import {CompatibilityBadge} from "@/components/domain/stack/compatibility-badge";
+import {DiscoveredStackActions} from "@/components/domain/stack/discovered-stack-actions";
+import {ScanSkippedDirectories} from "@/components/domain/stack/scan-skipped-directories";
 import {MigrationWizard, type ConfirmMigrateParams} from "@/routes/setup/components/migration-wizard";
+import {useMigrationOperations} from "@/hooks/use-migration-operations";
 import {directoryDisplayName} from "@/lib/path-display";
+import {MIGRATION_ERROR_FALLBACK, showMigrationToast} from "@/lib/migration-progress";
 import type {
   DiscoveredStack,
   MigrationPreview,
-  MigrationResult,
   ScanResult,
-  VolumeSelection,
+  SkippedDirectory,
 } from "@/lib/brownfield-types";
 
 /**
@@ -29,17 +33,10 @@ import type {
 export interface BrownfieldImportApi {
   scanDirectories: (directories: string[]) => Promise<ScanResult>;
   adoptStack: (composePath: string, displayName: string) => Promise<{id: string}>;
-  previewMigration: (
-    composePath: string,
-    volumeSelections: VolumeSelection[],
-    namedVolumeSelections: Record<string, boolean>,
-  ) => Promise<MigrationPreview>;
-  executeMigration: (
-    composePath: string,
-    displayName: string,
-    volumeSelections: VolumeSelection[],
-    namedVolumeSelections: Record<string, boolean>,
-  ) => Promise<MigrationResult>;
+  previewMigration: (input: MigrationPreviewInput) => Promise<MigrationPreview>;
+  // Answers 202 with the background operation, not the migration outcome.
+  executeMigration: (input: MigrationExecuteInput) => Promise<MigrationOperation>;
+  listMigrationOperations: () => Promise<{operations: MigrationOperation[]}>;
 }
 
 interface BrownfieldImportProps {
@@ -52,10 +49,19 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
   const [scanning, setScanning] = useState(false);
   const [scanned, setScanned] = useState(false);
   const [stacks, setStacks] = useState<DiscoveredStack[]>([]);
-  const [skippedDirs, setSkippedDirs] = useState(0);
+  const [skipped, setSkipped] = useState<readonly SkippedDirectory[]>([]);
   const [adoptingId, setAdoptingId] = useState<string | null>(null);
   const [migratingStack, setMigratingStack] = useState<DiscoveredStack | null>(null);
   const [adoptedIds, setAdoptedIds] = useState<Set<string>>(new Set());
+
+  const {runningByComposePath, track} = useMigrationOperations(api.listMigrationOperations, {
+    onUpdate: (operation) => {
+      showMigrationToast(operation, navigate);
+      if (operation.status === "succeeded") {
+        setAdoptedIds((prev) => new Set([...prev, operation.composePath]));
+      }
+    },
+  });
 
   const handleScan = async () => {
     const dirs = directories
@@ -72,11 +78,15 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
     try {
       const result = await api.scanDirectories(dirs);
       setStacks(result.stacks);
-      setSkippedDirs(result.skippedDirectories);
+      setSkipped(result.skipped);
       setScanned(true);
 
       if (result.stacks.length === 0) {
-        toast.info("No compose files found in the specified directories");
+        toast.info(
+          result.skipped.length > 0
+            ? "No compose files found. Some directories could not be scanned; see the list below."
+            : "No compose files found in the specified directories",
+        );
       } else {
         toast.success(`Found ${result.stacks.length} stack(s)`);
       }
@@ -109,36 +119,39 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
     }
   };
 
-  // WR-09: migration execution now runs here (in the parent, which stays
+  // WR-09: the migration request starts here (in the parent, which stays
   // mounted for the whole background migration) instead of inside
   // MigrationWizard, which closes/unmounts as soon as the user confirms.
-  const handleConfirmMigrate = ({stack, displayName, volumeSelections, namedVolumeSelections}: ConfirmMigrateParams) => {
-    toast.info(`Migrating ${displayName}...`);
-
+  // G-18-job: the request answers 202 with an operation; its progress and
+  // outcome arrive as toasts through useMigrationOperations.
+  const handleConfirmMigrate = ({
+    stack,
+    displayName,
+    volumeSelections,
+    namedVolumeSelections,
+    backup,
+    stopOldStack,
+    inPlaceAsideName,
+  }: ConfirmMigrateParams) => {
     api
-      .executeMigration(stack.path, displayName, volumeSelections, namedVolumeSelections)
-      .then((result) => {
-        if (result.success && result.stackId) {
-          toast.success(`Migration complete! ${displayName} is now managed by Docktor`, {
-            action: {
-              label: "View stack",
-              onClick: () => navigate(`/stacks/${result.stackId}`),
-            },
-          });
-          setAdoptedIds((prev) => new Set([...prev, stack.path]));
-        } else {
-          toast.error(result.error || "Migration failed");
-        }
+      .executeMigration({
+        composePath: stack.path,
+        displayName,
+        volumeSelections,
+        namedVolumeSelections,
+        backup,
+        stopOldStack,
+        ...(inPlaceAsideName !== null && {inPlaceAsideName}),
       })
+      .then(track)
       .catch((err: unknown) => {
-        const message = err instanceof Error ? err.message : "Migration failed";
-        toast.error(message);
+        toast.error(err instanceof Error && err.message ? err.message : MIGRATION_ERROR_FALLBACK);
       });
   };
 
   return (
     <>
-      <Card className="w-full max-w-3xl mx-auto">
+      <Card className="w-full max-w-6xl mx-auto">
         <CardHeader>
           <CardTitle>Import Existing Stacks</CardTitle>
           <CardDescription>
@@ -168,7 +181,8 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Enter comma-separated paths. System directories (/proc, /sys, /dev) are automatically excluded.
+              Enter comma-separated paths as the Docktor container sees them (host directories are under /host with
+              the default compose file). System directories (/proc, /sys, /dev) are automatically excluded.
             </p>
           </div>
 
@@ -179,6 +193,8 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
               <Skeleton className="h-10 w-full" />
             </div>
           )}
+
+          {scanned && !scanning && <ScanSkippedDirectories skipped={skipped} />}
 
           {scanned && !scanning && stacks.length === 0 && (
             <div className="text-center py-8 border rounded-md">
@@ -193,14 +209,7 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
 
           {scanned && !scanning && stacks.length > 0 && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-medium">Discovered Stacks ({stacks.length})</h3>
-                {skippedDirs > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    {skippedDirs} director{skippedDirs === 1 ? "y" : "ies"} skipped (permission denied)
-                  </p>
-                )}
-              </div>
+              <h3 className="text-sm font-medium">Discovered Stacks ({stacks.length})</h3>
               <div className="border rounded-md">
                 <Table>
                   <TableHeader>
@@ -218,7 +227,7 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
 
                       return (
                         <TableRow key={stack.path}>
-                          <TableCell className="font-mono text-sm">
+                          <TableCell className="font-mono text-sm whitespace-normal break-all min-w-48">
                             {stack.directory}
                           </TableCell>
                           <TableCell>{stack.serviceCount}</TableCell>
@@ -229,29 +238,14 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
                             />
                           </TableCell>
                           <TableCell className="text-right">
-                            {isAdopted ? (
-                              <span className="text-sm text-green-600 dark:text-green-400">
-                                Imported
-                              </span>
-                            ) : (
-                              <div className="flex justify-end gap-2">
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => setMigratingStack(stack)}
-                                  disabled={isAdopting}
-                                >
-                                  Migrate
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleAdopt(stack)}
-                                  disabled={isAdopting}
-                                >
-                                  {isAdopting ? "Adopting..." : "Adopt"}
-                                </Button>
-                              </div>
-                            )}
+                            <DiscoveredStackActions
+                              stack={stack}
+                              isAdopted={isAdopted}
+                              isAdopting={isAdopting}
+                              runningOperation={runningByComposePath.get(stack.path)}
+                              onMigrate={() => setMigratingStack(stack)}
+                              onAdopt={() => handleAdopt(stack)}
+                            />
                           </TableCell>
                         </TableRow>
                       );

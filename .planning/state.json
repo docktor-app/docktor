@@ -1,58 +1,38 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v0.1.0",
+  "milestone": "v0.1.1 — Release Follow-ups",
   "phases": [
     {
-      "number": "1",
-      "name": "MVP Completion",
+      "number": "17",
+      "name": "Backup Repository and Port-Check Fixes",
       "status": "complete"
     },
     {
-      "number": "2",
-      "name": "Observability",
-      "status": "complete"
+      "number": "18",
+      "name": "Import and Migration Flow",
+      "status": "in_progress"
     },
     {
-      "number": "3",
-      "name": "Notifications",
-      "status": "complete"
+      "number": "19",
+      "name": "Sidebar, Templates and Version Block",
+      "status": "pending"
     },
     {
-      "number": "4",
-      "name": "Backup & Restore",
-      "status": "complete"
+      "number": "20",
+      "name": "Visual Consistency, Dashboard Clarity and Touch Targets",
+      "status": "pending"
     },
     {
-      "number": "5",
-      "name": "Onboarding",
-      "status": "complete"
-    },
-    {
-      "number": "6",
-      "name": "Proxy Configuration",
-      "status": "complete"
-    },
-    {
-      "number": "7",
-      "name": "Release Hardening: Data Safety and Core Workflows",
-      "status": "complete"
-    },
-    {
-      "number": "8",
-      "name": "Live State Consistency",
-      "status": "complete"
-    },
-    {
-      "number": "9",
-      "name": "Deployment and Release Readiness",
-      "status": "complete"
+      "number": "21",
+      "name": "Release v0.1.1",
+      "status": "pending"
     }
   ],
   "next": {
-    "command": "/gsd:new-milestone",
-    "label": "Start a new milestone",
-    "reason": "All phases complete — start a new milestone"
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step (verify)",
+    "reason": "Phase 18 of 5 · 20% · ready to verify"
   },
-  "updated_at": "2026-10-11T22:02:59.638Z"
+  "updated_at": "2026-10-17T15:16:25.467Z"
 }

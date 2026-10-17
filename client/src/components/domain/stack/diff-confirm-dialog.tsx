@@ -15,7 +15,7 @@ import {Button} from "@/components/ui/button";
 import {ScrollArea} from "@/components/ui/scroll-area";
 import {UnifiedDiffView, type UnifiedDiffHunk, type UnifiedDiffLine} from "@/components/common/unified-diff-view";
 import {ComposeFindingRow} from "@/components/domain/stack/compose-finding-row";
-import {isSecretKey} from "@/lib/env-file";
+import {envLineHasSecret, maskEnvLine} from "@/lib/env-mask";
 import type {ReviewFinding, UnifiedDiff} from "@/lib/stacks-api";
 
 // Issue #18/D-01/D-03 + Issue #20/D-02: the review gate between an edit (or
@@ -37,23 +37,9 @@ export interface DiffConfirmDialogProps {
     readonly onCancel: () => void;
 }
 
-const SECRET_MASK = "••••••••";
-// Mirrors client/src/lib/env-file.ts's variable-line pattern (an optional
-// `export ` prefix, per the env key rule) — this dialog only needs to
-// recognize the key to decide whether to mask the value, not to round-trip
-// the line losslessly the way env-file.ts does.
-const ENV_KEY_VALUE_PATTERN = /^(export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/;
-
 function maskSecretLine(line: UnifiedDiffLine, revealSecrets: boolean): UnifiedDiffLine {
-    if (revealSecrets) {
-        return line;
-    }
-    const match = ENV_KEY_VALUE_PATTERN.exec(line.text);
-    if (!match || !isSecretKey(match[2]!)) {
-        return line;
-    }
-    const prefix = match[1] ?? "";
-    return {...line, text: `${prefix}${match[2]}=${SECRET_MASK}`};
+    const text = maskEnvLine(line.text, revealSecrets);
+    return text === line.text ? line : {...line, text};
 }
 
 function maskSecretHunks(
@@ -67,12 +53,7 @@ function maskSecretHunks(
 }
 
 function hunksHaveSecret(hunks: ReadonlyArray<UnifiedDiffHunk>): boolean {
-    return hunks.some((hunk) =>
-        hunk.lines.some((line) => {
-            const match = ENV_KEY_VALUE_PATTERN.exec(line.text);
-            return !!match && isSecretKey(match[2]!);
-        }),
-    );
+    return hunks.some((hunk) => hunk.lines.some((line) => envLineHasSecret(line.text)));
 }
 
 // Issue #20/D-03: the set of new-file line numbers actually rendered by the

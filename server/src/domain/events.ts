@@ -14,6 +14,8 @@
  * HealthProbeJob emits service.probe_completed / service.probe_cleared (#23).
  */
 
+import type {MigrationOperation} from "@docktor/shared";
+
 import type {ProbeOutcome} from "./health-probe.js";
 
 /** A stack's status-machine transition completed. */
@@ -183,6 +185,11 @@ export interface ServiceProbeClearedEvent {
     reason: "probe-removed" | "container-not-running";
 }
 
+/** A migration operation started, advanced a step, or finished (producer: MigrationOperationService). */
+export interface MigrationProgressedEvent {
+    operation: MigrationOperation;
+}
+
 /**
  * The domain-event catalog: one key per event, mapped to its payload type.
  * The bus (EventBusPort) is generic over this map so emit()/subscribe()
@@ -204,4 +211,5 @@ export interface DomainEventMap {
     "service.health_changed": ServiceHealthChangedEvent;
     "service.probe_completed": ServiceProbeCompletedEvent;
     "service.probe_cleared": ServiceProbeClearedEvent;
+    "migration.progressed": MigrationProgressedEvent;
 }

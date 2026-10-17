@@ -1,22 +1,70 @@
-import {useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import {toast} from "sonner";
-import {AlertTriangle} from "lucide-react";
+import {stackDirectoryNameSchema, type MigrationPreviewInput, type SharedProjectName} from "@docktor/shared";
 import {Button} from "@/components/ui/button";
-import {Input} from "@/components/ui/input";
-import {Label} from "@/components/ui/label";
-import {Checkbox} from "@/components/ui/checkbox";
 import {Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle} from "@/components/ui/dialog";
-import {Alert, AlertDescription} from "@/components/ui/alert";
-import {DiffViewer} from "./diff-viewer";
+import {MigrationSelectStep} from "./migration-select-step";
+import {MigrationReviewStep} from "./migration-review-step";
+import {MigrationStepIndicator, MIGRATION_STEP_LABELS} from "./migration-step-indicator";
+import {MigrationBackupStep} from "./migration-backup-step";
+import {MigrationOldStackStep, type StopRequirement} from "./migration-old-stack-step";
 import {directoryDisplayName} from "@/lib/path-display";
+import {buildBindMountChoices, countVolumesToCopy, toVolumeSelections, type BindMountChoice} from "@/lib/migration-volume-paths";
 import type {DiscoveredStack, MigrationPreview, VolumeSelection} from "@/lib/brownfield-types";
+
+const ASIDE_NAME_FORMAT_ERROR = "Use letters, digits, dots, dashes and underscores; start with a letter or digit.";
+const ASIDE_NAME_SAME_ERROR = "Choose a name different from the current directory name.";
+
+// Convenience check only: the server re-validates the name and checks that it is free.
+function validateAsideName(name: string, originalDirectory: string): string | null {
+  if (!stackDirectoryNameSchema.safeParse(name).success) return ASIDE_NAME_FORMAT_ERROR;
+  return name === directoryDisplayName(originalDirectory) ? ASIDE_NAME_SAME_ERROR : null;
+}
+
+function stopRequirementOf(inPlace: boolean, sharedProjectName: SharedProjectName | null): StopRequirement | null {
+  if (inPlace) return {kind: "in-place"};
+  return sharedProjectName ? {kind: "shared-project-name", projectName: sharedProjectName} : null;
+}
+
+const PREVIEW_ERROR_FALLBACK = "Failed to generate preview. Check that the compose file is still readable and try again.";
 
 export interface ConfirmMigrateParams {
   stack: DiscoveredStack;
   displayName: string;
   volumeSelections: VolumeSelection[];
   namedVolumeSelections: Record<string, boolean>;
+  backup: boolean;
+  stopOldStack: boolean;
+  // G-18-7: the name the original directory is renamed to; null unless the
+  // migration is in place.
+  inPlaceAsideName: string | null;
 }
+
+type MigrationStep = 1 | 2 | 3 | 4;
+
+const STEP_TITLES: Record<MigrationStep, string> = {
+  1: "Select Data to Migrate",
+  2: "Review Changes",
+  3: "Back Up Before Migrating",
+  4: "Old Stack",
+};
+
+const IN_PLACE_BACKUP_DESCRIPTION = "The original directory is kept under a new name as your backup.";
+
+const STEP_DESCRIPTIONS: Record<MigrationStep, string> = {
+  1: "Choose which volumes and bind mounts move into Docktor's managed ./volumes/ directory. Unchecked named volumes and absolute paths stay where they are and are not backed up; unchecked relative paths are copied as they are.",
+  2: "Review the changes to your compose file and environment variables before migration.",
+  3: "Choose whether to keep a copy of the old stack's files before anything is migrated.",
+  4: "Choose what happens to the old stack while its data is copied.",
+};
+
+const PREVIOUS_STEP: Record<Exclude<MigrationStep, 1>, MigrationStep> = {2: 1, 3: 2, 4: 3};
+const NEXT_STEP: Record<Exclude<MigrationStep, 4>, MigrationStep> = {1: 2, 2: 3, 3: 4};
+
+const NEXT_LABELS: Partial<Record<MigrationStep, string>> = {
+  2: "Choose Backup",
+  3: "Choose Old Stack Action",
+};
 
 interface MigrationWizardProps {
   stack: DiscoveredStack;
@@ -30,15 +78,11 @@ interface MigrationWizardProps {
   // Injected rather than imported directly, so this component is agnostic
   // about whether it's driven by the wizard's setup-api or the post-setup
   // page's import-api.
-  previewMigration: (
-    composePath: string,
-    volumeSelections: VolumeSelection[],
-    namedVolumeSelections: Record<string, boolean>,
-  ) => Promise<MigrationPreview>;
+  previewMigration: (input: MigrationPreviewInput) => Promise<MigrationPreview>;
 }
 
 export function MigrationWizard({stack, open, onClose, onConfirmMigrate, previewMigration}: Readonly<MigrationWizardProps>) {
-  const [step, setStep] = useState<1 | 2>(1);
+  const [step, setStep] = useState<MigrationStep>(1);
   const [displayName, setDisplayName] = useState(directoryDisplayName(stack.directory) || "");
   const [loading, setLoading] = useState(false);
 
@@ -51,47 +95,79 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
     return selections;
   });
 
-  const [bindMountSelections, setBindMountSelections] = useState<VolumeSelection[]>(() => {
-    // For absolute paths, default to convert
-    return stack.absolutePaths.map((path) => ({
-      originalPath: path,
-      newPath: `./volumes/${directoryDisplayName(path) || "data"}`,
-      convert: true,
-    }));
-  });
+  const [bindMounts, setBindMounts] = useState<BindMountChoice[]>(() => buildBindMountChoices(stack));
 
-  // Preview state
-  const [previewDiff, setPreviewDiff] = useState("");
-  const [previewEnv, setPreviewEnv] = useState("");
+  const [preview, setPreview] = useState<MigrationPreview | null>(null);
+  // null = not chosen yet; the effective default is "no backup" and a user
+  // toggle is an explicit boolean that later previews never override.
+  const [backupChoice, setBackupChoice] = useState<boolean | null>(null);
+  const [stopChoice, setStopChoice] = useState(true);
+  // null = not edited, so the server's suggestion shows (and follows new previews).
+  const [asideNameEdit, setAsideNameEdit] = useState<string | null>(null);
+
+  // G-18-7: when the new stack takes the old stack's own directory, the
+  // original is renamed aside and is the backup; the old stack must be stopped.
+  const target = preview?.target;
+  const inPlace = target ? target.inPlace : false;
+  const asideName = asideNameEdit ?? target?.suggestedAsideName ?? "";
+  const backup = !inPlace && (backupChoice ?? false);
+  // A response without the field counts as no collision.
+  const sharedProjectName = target?.sharedProjectName ?? null;
+  const stopRequirement = stopRequirementOf(inPlace, sharedProjectName);
+  const stopOldStack = stopRequirement !== null || stopChoice;
+  const asideNameError = target && inPlace ? validateAsideName(asideName, target.originalDirectory) : null;
+
+  // RESEARCH Pitfall 7: a preview response that arrives after the dialog was
+  // cancelled or closed must not advance (or toast into) a dead session.
+  const previewRequestId = useRef(0);
+  useEffect(() => {
+    if (!open) previewRequestId.current += 1;
+  }, [open]);
+  useEffect(() => () => {
+    previewRequestId.current += 1;
+  }, []);
+
+  // UI-SPEC focus rule: the step body takes focus on every step change.
+  const stepBodyRef = useRef<HTMLDivElement>(null);
+  const previousStep = useRef(step);
+  useEffect(() => {
+    if (previousStep.current !== step) {
+      previousStep.current = step;
+      stepBodyRef.current?.focus();
+    }
+  }, [step]);
+
+  const volumesToCopy = countVolumesToCopy(namedVolumeSelections, bindMounts);
 
   const handleVolumeToggle = (volName: string, checked: boolean) => {
     setNamedVolumeSelections((prev) => ({...prev, [volName]: checked}));
   };
 
-  const handleBindMountToggle = (index: number, checked: boolean) => {
-    setBindMountSelections((prev) => {
-      const updated = [...prev];
-      updated[index] = {...updated[index], convert: checked};
-      return updated;
-    });
+  const handleBindMountToggle = (index: number, moveIntoVolumes: boolean) => {
+    setBindMounts((prev) =>
+      prev.map((choice, i) => (i === index && !choice.mustMove && !choice.mustKeep ? {...choice, moveIntoVolumes} : choice)),
+    );
   };
 
   const handleNextToPreview = async () => {
+    previewRequestId.current += 1;
+    const requestId = previewRequestId.current;
     setLoading(true);
     try {
-      const preview = await previewMigration(
-        stack.path,
-        bindMountSelections,
+      const result = await previewMigration({
+        composePath: stack.path,
+        displayName,
+        volumeSelections: toVolumeSelections(bindMounts),
         namedVolumeSelections,
-      );
-      setPreviewDiff(preview.diff);
-      setPreviewEnv(preview.extractedEnv);
+      });
+      if (requestId !== previewRequestId.current) return;
+      setPreview(result);
       setStep(2);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Failed to generate preview";
-      toast.error(message);
+      if (requestId !== previewRequestId.current) return;
+      toast.error(err instanceof Error && err.message ? err.message : PREVIEW_ERROR_FALLBACK);
     } finally {
-      setLoading(false);
+      if (requestId === previewRequestId.current) setLoading(false);
     }
   };
 
@@ -103,151 +179,106 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
     onConfirmMigrate({
       stack,
       displayName,
-      volumeSelections: bindMountSelections,
+      volumeSelections: toVolumeSelections(bindMounts),
       namedVolumeSelections,
+      backup,
+      stopOldStack,
+      inPlaceAsideName: inPlace ? asideName : null,
     });
     handleClose();
   };
 
   const handleClose = () => {
+    previewRequestId.current += 1;
+    setLoading(false);
     setStep(1);
     onClose();
   };
 
-  // Parse diff for display
-  const parseDiffForViewer = () => {
-    const lines = previewDiff.split("\n");
-    const original = lines.filter(l => l.startsWith("- ") || l.startsWith("  ")).map(l => l.slice(2)).join("\n");
-    const modified = lines.filter(l => l.startsWith("+ ") || l.startsWith("  ")).map(l => l.slice(2)).join("\n");
-    return {original, modified};
-  };
-
-  const {original, modified} = parseDiffForViewer();
-
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="flex flex-col gap-4 p-4 sm:p-6 max-h-[90dvh] sm:max-w-5xl">
         <DialogHeader>
-          <DialogTitle>
-            {step === 1 ? "Select Data to Migrate" : "Review Changes"}
-          </DialogTitle>
-          <DialogDescription>
-            {step === 1
-              ? "Choose which volumes and bind mounts to copy into Docktor's managed directory. Unchecked items will remain at their current location (not backed up)."
-              : "Review the changes to your compose file and environment variables before migration."
-            }
-          </DialogDescription>
+          <DialogTitle>{STEP_TITLES[step]}</DialogTitle>
+          <DialogDescription>{step === 3 && inPlace ? IN_PLACE_BACKUP_DESCRIPTION : STEP_DESCRIPTIONS[step]}</DialogDescription>
         </DialogHeader>
 
-        {step === 1 && (
-          <div className="space-y-6 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="displayName">Stack Name</Label>
-              <Input
-                id="displayName"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="my-stack"
+        <MigrationStepIndicator step={step} />
+
+        <div
+          ref={stepBodyRef}
+          role="group"
+          aria-label={MIGRATION_STEP_LABELS[step - 1]}
+          tabIndex={-1}
+          className="min-h-0 flex-1 overflow-y-auto outline-none"
+        >
+          {step === 1 && (
+            <MigrationSelectStep
+              displayName={displayName}
+              onDisplayNameChange={setDisplayName}
+              namedVolumes={stack.namedVolumes}
+              namedVolumeSelections={namedVolumeSelections}
+              onVolumeToggle={handleVolumeToggle}
+              bindMounts={bindMounts}
+              onBindMountToggle={handleBindMountToggle}
+              inlineEnvVars={stack.inlineEnvVars}
+            />
+          )}
+
+          {step === 2 && preview && (
+            <div className="py-4">
+              <MigrationReviewStep
+                diff={preview.diff}
+                extractedEnv={preview.extractedEnv}
+                emptySources={preview.emptySources}
               />
             </div>
+          )}
 
-            {stack.namedVolumes.length > 0 && (
-              <div className="space-y-3">
-                <Label>Named Volumes</Label>
-                {stack.namedVolumes.map((vol) => (
-                  <div key={vol} className="flex items-start space-x-3">
-                    <Checkbox
-                      id={`vol-${vol}`}
-                      checked={namedVolumeSelections[vol] ?? true}
-                      onCheckedChange={(checked) => handleVolumeToggle(vol, !!checked)}
-                    />
-                    <div className="space-y-1">
-                      <Label htmlFor={`vol-${vol}`} className="font-normal cursor-pointer">
-                        {vol}
-                      </Label>
-                      {!namedVolumeSelections[vol] && (
-                        <p className="text-xs text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
-                          <AlertTriangle className="h-3 w-3" />
-                          This volume will remain a Docker volume (not backed up)
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {stack.absolutePaths.length > 0 && (
-              <div className="space-y-3">
-                <Label>Absolute Bind Mounts</Label>
-                {bindMountSelections.map((sel, i) => (
-                  <div key={sel.originalPath} className="flex items-start space-x-3">
-                    <Checkbox
-                      id={`bind-${i}`}
-                      checked={sel.convert}
-                      onCheckedChange={(checked) => handleBindMountToggle(i, !!checked)}
-                    />
-                    <div className="space-y-1">
-                      <Label htmlFor={`bind-${i}`} className="font-normal cursor-pointer">
-                        {sel.originalPath}
-                      </Label>
-                      <Alert className="py-1 px-2">
-                        <AlertDescription className="text-xs flex items-center gap-1">
-                          <AlertTriangle className="h-3 w-3 text-yellow-600 dark:text-yellow-500" />
-                          Absolute path - not recommended for Docktor
-                        </AlertDescription>
-                      </Alert>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {stack.inlineEnvVars && (
-              <Alert>
-                <AlertTriangle className="h-4 w-4" />
-                <AlertDescription>
-                  This compose file has inline environment variables that will be extracted to a .env file.
-                </AlertDescription>
-              </Alert>
-            )}
-          </div>
-        )}
-
-        {step === 2 && (
-          <div className="space-y-4 py-4">
-            <DiffViewer
-              originalContent={original || "Loading..."}
-              modifiedContent={modified || "Loading..."}
-              originalLabel="Original"
-              modifiedLabel="Migrated"
+          {step === 3 && (
+            <MigrationBackupStep
+              mode={inPlace ? "in-place" : "separate"}
+              originalDirectory={target?.originalDirectory ?? stack.directory}
+              checked={backup}
+              onCheckedChange={setBackupChoice}
+              asideName={asideName}
+              onAsideNameChange={setAsideNameEdit}
+              asideNameError={asideNameError}
             />
+          )}
 
-            {previewEnv && (
-              <div className="space-y-2">
-                <Label>New .env File</Label>
-                <div className="rounded-md border bg-muted/50 p-4">
-                  <pre className="text-xs font-mono whitespace-pre-wrap">{previewEnv}</pre>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+          {step === 4 && (
+            <MigrationOldStackStep
+              checked={stopOldStack}
+              onCheckedChange={setStopChoice}
+              stopRequirement={stopRequirement}
+              summary={{displayName, volumesToCopy, backup, keptOriginalAs: inPlace ? asideName : null}}
+            />
+          )}
+        </div>
 
         <DialogFooter>
           {step === 1 ? (
             <>
-              <Button variant="outline" onClick={handleClose}>Cancel</Button>
-              <Button onClick={handleNextToPreview} disabled={loading || !displayName}>
-                {loading ? "Loading..." : "Next"}
+              <Button variant="outline" className="w-full sm:w-auto" onClick={handleClose}>Cancel Migration</Button>
+              <Button className="w-full sm:w-auto" onClick={handleNextToPreview} disabled={loading || !displayName}>
+                {loading ? "Generating preview\u2026" : "Preview Changes"}
               </Button>
             </>
           ) : (
             <>
-              <Button variant="outline" onClick={() => setStep(1)}>Back</Button>
-              <Button onClick={handleMigrate} disabled={loading}>
-                {loading ? "Migrating..." : "Confirm & Migrate"}
-              </Button>
+              <Button variant="outline" className="w-full sm:w-auto" onClick={() => setStep(PREVIOUS_STEP[step])}>Back</Button>
+              {step === 4 ? (
+                <Button className="w-full sm:w-auto" onClick={handleMigrate}>Confirm & Migrate</Button>
+              ) : (
+                <Button
+                  className="w-full sm:w-auto"
+                  onClick={() => setStep(NEXT_STEP[step])}
+                  disabled={step === 3 && asideNameError !== null}
+                >
+                  {NEXT_LABELS[step]}
+                </Button>
+              )}
             </>
           )}
         </DialogFooter>

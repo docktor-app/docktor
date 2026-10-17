@@ -10,6 +10,7 @@ import {decrypt} from "../lib/crypto.js"
 import {assertTransition} from "../domain/stack-status-machine.js"
 import {createComposeConfig} from "../domain/compose-config.js"
 import {parseRetentionPolicy} from "../domain/backup-retention-policy.js"
+import {parseStoredPort, resolveResticRepository, type ResticRepositoryTarget} from "../domain/restic-repository.js"
 import {BadRequestError, ConflictError} from "../lib/errors.js"
 import type {StackStatus, BackupTrigger} from "../generated/prisma/enums.js"
 // The single surviving infrastructure/ import: isRepositoryNotFoundError is
@@ -125,6 +126,7 @@ const BACKUP_SETTING_KEYS = {
     REPO_PATH: "backup.repoPath",
     SFTP_HOST: "backup.sftpHost",
     SFTP_USER: "backup.sftpUser",
+    SFTP_PORT: "backup.sftpPort",
     SFTP_KEY: "backup.sftpKey",
     S3_ENDPOINT: "backup.s3Endpoint",
     S3_BUCKET: "backup.s3Bucket",
@@ -158,6 +160,31 @@ interface StackRecord {
 }
 
 // ─── BackupService ────────────────────────────────────────────────────────────
+
+/** Values that must never reach a client or a log line, even inside a foreign error message. */
+function secretsOf(config: BackupRepoConfig): string[] {
+    return [config.password, config.sftpKey, config.s3SecretKey, config.s3AccessKey]
+        .flatMap((secret) => (secret ? [secret, secret.trim()] : []))
+        .filter((secret) => secret !== "")
+}
+
+function redactSecrets(message: string, secrets: readonly string[]): string {
+    // Longest first, so a secret that contains another is replaced whole.
+    return [...secrets]
+        .sort((a, b) => b.length - a.length)
+        .reduce((redacted, secret) => redacted.split(secret).join("***"), message)
+}
+
+export interface RepositoryConnectionResult {
+    readonly ok: boolean
+    readonly message: string
+}
+
+/** Stack id used to address a throwaway repository when testing the connection. */
+const CONNECTION_PROBE_STACK_ID = "docktor-connection-probe"
+const MAX_CONNECTION_ERROR_LENGTH = 500
+/** restic retries failing S3 requests for ~15 minutes; the probe must answer long before that. */
+const CONNECTION_PROBE_TIMEOUT_MS = 30_000
 
 export class BackupService {
     constructor(
@@ -233,9 +260,10 @@ export class BackupService {
         console.log(`[BackupService] Starting backup ${backupRecord.id} for stack ${stack.id}`)
 
         try {
-            const env = this.buildEnv(repoConfig, stack.hostPath ?? undefined)
+            const target = resolveResticRepository(repoConfig, {id: stack.id, hostPath: stack.hostPath})
             const stackPath = stack.hostPath ?? "."
-            console.log(`[BackupService] Using repository: ${env.RESTIC_REPOSITORY}`)
+            // Log the repository only, never env: it carries RESTIC_PASSWORD and AWS keys.
+            console.log(`[BackupService] Using repository: ${target.repository}`)
             const onLine = (line: string): void => {
                 console.log(`[BackupService] Log line: ${line}`)
                 lines.push(line)
@@ -250,13 +278,13 @@ export class BackupService {
             // Build backup args: prepend "backup" subcommand, run from stack directory
             const backupArgs = ["backup", ...this.resticExecutor.buildBackupArgs(stackPath, stack.id)]
             console.log(`[BackupService] Running restic with args:`, backupArgs)
-            await this.runWithAutoInit(backupArgs, env, onLine, stackPath)
+            await this.runWithAutoInit(backupArgs, target, onLine, stackPath)
 
             // Run forget / prune only for scheduled backups, not manual ones
             if (backupRecord.trigger === "SCHEDULED") {
                 const retentionPolicy = parseRetentionPolicy(stack.backupRetention)
                 const forgetArgs = this.resticExecutor.buildForgetArgs(stack.id, retentionPolicy)
-                await this.resticExecutor.run(forgetArgs, env, onLine, stackPath)
+                await this.resticExecutor.run(forgetArgs, target, onLine, stackPath)
             }
 
             // Run post-hook if configured
@@ -402,7 +430,9 @@ export class BackupService {
                     "No backup repository is configured. Configure one in Settings > Backup.",
                 )
             }
-            const env: Record<string, string> = this.buildEnv(repoConfig, stack.hostPath ?? undefined)
+            // Resolved before docker.stop so an incomplete remote configuration
+            // fails the restore before any container is touched (D-05).
+            const target = resolveResticRepository(repoConfig, {id: stack.id, hostPath: stack.hostPath})
             const stackPath = stack.hostPath ?? "."
 
             const onLine = (line: string): void => {
@@ -421,7 +451,7 @@ export class BackupService {
 
             // Step 2: Restore snapshot to "." (current directory) by running from stack directory
             console.log(`[BackupService] Restoring snapshot ${snapshotId} to ${stackPath}`)
-            await this.resticExecutor.run(["restore", snapshotId, "--target", "."], env, onLine, stackPath)
+            await this.resticExecutor.run(["restore", snapshotId, "--target", "."], target, onLine, stackPath)
 
             // Step 3: Redeploy containers with restored configuration
             console.log(`[BackupService] Redeploying stack ${stack.id} after restore`)
@@ -588,6 +618,7 @@ export class BackupService {
             repoPath: values[BACKUP_SETTING_KEYS.REPO_PATH],
             sftpHost: values[BACKUP_SETTING_KEYS.SFTP_HOST],
             sftpUser: values[BACKUP_SETTING_KEYS.SFTP_USER],
+            sftpPort: parseStoredPort(values[BACKUP_SETTING_KEYS.SFTP_PORT]) ?? undefined,
             sftpKey,
             s3Endpoint: values[BACKUP_SETTING_KEYS.S3_ENDPOINT],
             s3Bucket: values[BACKUP_SETTING_KEYS.S3_BUCKET],
@@ -595,6 +626,35 @@ export class BackupService {
             s3SecretKey,
             password,
         }
+    }
+
+    /**
+     * Checks that the configured remote repository is reachable and the credentials
+     * are accepted, by reading the config of a throwaway per-stack repository.
+     * "Repository does not exist" counts as success: the connection and
+     * authentication worked, there is just nothing at the probe location yet.
+     * The repository password cannot be verified until a repository exists.
+     * Never throws for a bad configuration; the outcome is the result.
+     */
+    async testRepositoryConnection(): Promise<RepositoryConnectionResult> {
+        const config = await this.getBackupRepoConfig()
+        if (!config) {
+            return {ok: false, message: "No backup repository is configured. Save the repository settings first."}
+        }
+        if (config.repoType === "local") {
+            return {ok: true, message: "Local backups are stored in each stack's directory; there is nothing to connect to."}
+        }
+
+        try {
+            const target = resolveResticRepository(config, {id: CONNECTION_PROBE_STACK_ID})
+            await this.resticExecutor.run(["cat", "config"], target, undefined, undefined, {timeoutMs: CONNECTION_PROBE_TIMEOUT_MS})
+        } catch (err) {
+            if (!isRepositoryNotFoundError(err)) {
+                const message = err instanceof Error ? err.message : String(err)
+                return {ok: false, message: redactSecrets(message, secretsOf(config)).slice(0, MAX_CONNECTION_ERROR_LENGTH)}
+            }
+        }
+        return {ok: true, message: "Connection successful. The repository password is verified on the first backup."}
     }
 
     /**
@@ -660,8 +720,10 @@ export class BackupService {
         const stack = await this.stackRepo.findByIdOrThrow(stackId)
         const repoConfig = await this.getBackupRepoConfig()
         if (!repoConfig) return []
-        const env = this.buildEnv(repoConfig, stack.hostPath ?? undefined)
-        return this.resticExecutor.snapshots(env, stackId)
+        // A BadRequestError for an incomplete remote configuration propagates
+        // (400); never list local snapshots instead (D-05).
+        const target = resolveResticRepository(repoConfig, {id: stack.id, hostPath: stack.hostPath})
+        return this.resticExecutor.snapshots(target, stackId)
     }
 
     /**
@@ -919,20 +981,20 @@ export class BackupService {
      */
     private async runWithAutoInit(
         args: string[],
-        env: Record<string, string>,
+        repository: ResticRepositoryTarget,
         onLine: (line: string) => void,
         cwd?: string,
     ): Promise<void> {
         try {
-            await this.resticExecutor.run(args, env, onLine, cwd)
+            await this.resticExecutor.run(args, repository, onLine, cwd)
         } catch (err) {
             if (isRepositoryNotFoundError(err)) {
                 // Repository not initialized — init and retry
                 const initArgs = typeof this.resticExecutor.buildInitArgs === "function"
                     ? this.resticExecutor.buildInitArgs()
                     : ["init"]
-                await this.resticExecutor.run(initArgs, env, onLine, cwd)
-                await this.resticExecutor.run(args, env, onLine, cwd)
+                await this.resticExecutor.run(initArgs, repository, onLine, cwd)
+                await this.resticExecutor.run(args, repository, onLine, cwd)
             } else {
                 throw err
             }
@@ -972,33 +1034,6 @@ export class BackupService {
                 resolve({stdout: "", exitCode: 1})
             })
         })
-    }
-
-    /**
-     * Builds the restic env object from a BackupRepoConfig.
-     * Uses stack-specific backup directory within the stack's hostPath.
-     */
-    private buildEnv(repoConfig: BackupRepoConfig, stackPath?: string): Record<string, string> {
-        const base: Record<string, string> = {
-            RESTIC_PASSWORD: repoConfig.password,
-        }
-
-        // Always use stack-local backup directory
-        if (stackPath) {
-            base.RESTIC_REPOSITORY = path.resolve(stackPath, "backups")
-        } else {
-            // Fallback to configured repo (shouldn't happen in production)
-            if (repoConfig.repoType === "local") {
-                base.RESTIC_REPOSITORY = repoConfig.repoPath ?? ""
-            } else if (repoConfig.repoType === "sftp") {
-                base.RESTIC_REPOSITORY = `sftp:${repoConfig.sftpUser}@${repoConfig.sftpHost}:${repoConfig.repoPath ?? "/backups"}`
-            } else {
-                base.RESTIC_REPOSITORY = `s3:${repoConfig.s3Endpoint ?? "s3.amazonaws.com"}/${repoConfig.s3Bucket ?? ""}`
-                base.AWS_ACCESS_KEY_ID = repoConfig.s3AccessKey ?? ""
-                base.AWS_SECRET_ACCESS_KEY = repoConfig.s3SecretKey ?? ""
-            }
-        }
-        return base
     }
 
     /**

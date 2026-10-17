@@ -1,8 +1,13 @@
 import type {FastifyPluginAsyncZod} from "fastify-type-provider-zod";
-import {z} from "zod";
 import {onboardingService} from "../application/onboarding-service.js";
 import {migrationService} from "../application/migration-service.js";
+import {migrationOperationService} from "../application/migration-operation-service.js";
+import {BadRequestError} from "../lib/errors.js";
 import {
+    brownfieldAdoptSchema,
+    migrationExecuteSchema,
+    migrationOperationParamsSchema,
+    migrationPreviewSchema,
     wizardStep1Schema,
     wizardStep2Schema,
     wizardStep3Schema,
@@ -10,6 +15,19 @@ import {
     wizardStep5Schema,
     wizardStep6Schema,
 } from "@docktor/shared";
+
+/**
+ * WR-03: the setup migrate routes can stop compose projects and read compose
+ * files, so they are closed until the admin account exists (mirrors step6's
+ * hasAnyUser guard). Requiring the step-1 session on the setup brownfield
+ * routes after the admin exists is out of scope and tracked as residual risk
+ * (T-18-23).
+ */
+async function requireAdminAccount(): Promise<void> {
+    if (!(await onboardingService.hasAnyUser())) {
+        throw new BadRequestError("Create the admin account before previewing or running a migration");
+    }
+}
 
 const setupRoutes: FastifyPluginAsyncZod = async (app) => {
     // CR-01/T-05-09: every /api/setup/* route beyond step 1 must stop being
@@ -119,10 +137,7 @@ const setupRoutes: FastifyPluginAsyncZod = async (app) => {
         "/api/setup/adopt",
         {
             schema: {
-                body: z.object({
-                    composePath: z.string(),
-                    displayName: z.string().min(1),
-                }),
+                body: brownfieldAdoptSchema,
             },
         },
         async (request) => {
@@ -138,54 +153,54 @@ const setupRoutes: FastifyPluginAsyncZod = async (app) => {
     app.post(
         "/api/setup/migrate/preview",
         {
+            preHandler: requireAdminAccount,
             schema: {
-                body: z.object({
-                    composePath: z.string(),
-                    volumeSelections: z.array(z.object({
-                        originalPath: z.string(),
-                        newPath: z.string(),
-                        convert: z.boolean(),
-                    })),
-                    namedVolumeSelections: z.record(z.string(), z.boolean()),
-                }),
+                body: migrationPreviewSchema,
             },
         },
         async (request) => {
-            const {composePath, volumeSelections, namedVolumeSelections} = request.body;
-            const namedVolMap = new Map(Object.entries(namedVolumeSelections) as [string, boolean][]);
-            const result = await migrationService.previewMigration(composePath, volumeSelections, namedVolMap);
-            return result;
+            const {namedVolumeSelections, ...rest} = request.body;
+            return migrationService.previewMigration({
+                ...rest,
+                namedVolumeSelections: new Map(Object.entries(namedVolumeSelections)),
+            });
         },
     );
 
-    // Execute migration
+    // Start a migration as a background operation (G-18-job)
     app.post(
         "/api/setup/migrate",
         {
+            preHandler: requireAdminAccount,
             schema: {
-                body: z.object({
-                    composePath: z.string(),
-                    displayName: z.string().min(1),
-                    volumeSelections: z.array(z.object({
-                        originalPath: z.string(),
-                        newPath: z.string(),
-                        convert: z.boolean(),
-                    })),
-                    namedVolumeSelections: z.record(z.string(), z.boolean()),
-                }),
+                body: migrationExecuteSchema,
             },
         },
-        async (request) => {
-            const {composePath, displayName, volumeSelections, namedVolumeSelections} = request.body;
-            const namedVolMap = new Map(Object.entries(namedVolumeSelections) as [string, boolean][]);
-            const result = await migrationService.migrate({
-                composePath,
-                displayName,
-                volumeSelections,
-                namedVolumeSelections: namedVolMap,
+        async (request, reply) => {
+            const {namedVolumeSelections, ...rest} = request.body;
+            const operation = await migrationOperationService.start({
+                ...rest,
+                namedVolumeSelections: new Map(Object.entries(namedVolumeSelections)),
             });
-            return result;
+            return reply.status(202).send(operation);
         },
+    );
+
+    // List running and recent operations, e.g. to resync after a reload
+    app.get("/api/setup/migrations", {preHandler: requireAdminAccount}, async () => ({
+        operations: migrationOperationService.list(),
+    }));
+
+    // Read one operation
+    app.get(
+        "/api/setup/migrations/:operationId",
+        {
+            preHandler: requireAdminAccount,
+            schema: {
+                params: migrationOperationParamsSchema,
+            },
+        },
+        async (request) => migrationOperationService.get(request.params.operationId),
     );
 
     // Step 6: Deploy the managed proxy stack (optional, terminal step — D-09/D-10)

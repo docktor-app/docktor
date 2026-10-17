@@ -119,7 +119,7 @@ function expandHostPortRange(startStr: string, endStr: string | undefined): numb
  * (dash-only, "unset" semantics) uses VAR's value even if it is empty, and
  * only falls back to the default when VAR is entirely absent from `env`.
  */
-function interpolateEnv(raw: string, env: Record<string, string>): string | null {
+export function interpolateEnv(raw: string, env: Record<string, string>): string | null {
     let unresolved = false;
     const result = raw.replace(
         /\$\{([A-Za-z_][A-Za-z0-9_]*)(?:(:-|-)([^}]*))?\}|\$([A-Za-z_][A-Za-z0-9_]*)/g,

@@ -381,20 +381,30 @@ test.describe("Backup UI", () => {
         await expect(page.getByText("Backup Repository")).toBeVisible();
 
         // Verify repository type selector shows Local
-        await expect(page.getByText("Local", {exact: true})).toBeVisible();
+        await expect(page.getByRole("combobox", {name: "Repository type"})).toContainText("Local");
     });
 
-    test("Settings Backup tab offers only the Local repository type", async ({page}) => {
+    test("Settings Backup tab offers the Local, SFTP and S3 repository types", async ({page}) => {
         await page.goto("/settings");
         await page.getByRole("tab", {name: /backup/i}).click();
 
-        // Remote targets (SFTP, S3) are planned but not selectable in v0.1.0;
-        // the dropdown stays so the list reads as extensible.
-        await page.locator("#repoType").click();
-        await expect(page.getByRole("option")).toHaveCount(1);
+        await page.getByRole("combobox", {name: "Repository type"}).click();
+        await expect(page.getByRole("option")).toHaveCount(3);
         await expect(page.getByRole("option", {name: "Local"})).toBeVisible();
-        await expect(page.getByRole("option", {name: /SFTP/i})).toHaveCount(0);
-        await expect(page.getByRole("option", {name: /S3/i})).toHaveCount(0);
+        await expect(page.getByRole("option", {name: "SFTP"})).toBeVisible();
+        await expect(page.getByRole("option", {name: "S3"})).toBeVisible();
+    });
+
+    test("Selecting SFTP reveals the remote repository fields", async ({page}) => {
+        await page.goto("/settings");
+        await page.getByRole("tab", {name: /backup/i}).click();
+
+        await page.getByRole("combobox", {name: "Repository type"}).click();
+        await page.getByRole("option", {name: "SFTP"}).click();
+
+        await expect(page.getByLabel("Host")).toBeVisible();
+        await expect(page.getByLabel("Username")).toBeVisible();
+        await expect(page.getByLabel("Private key")).toBeVisible();
     });
 
     test("Settings Backup tab shows defaults card", async ({page}) => {

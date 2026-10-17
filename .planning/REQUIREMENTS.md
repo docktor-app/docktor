@@ -1,183 +1,107 @@
-# Requirements: Docktor
+# Requirements: Docktor — Milestone v0.1.1 (Release Follow-ups)
 
-**Defined:** 2026-03-10
+**Defined:** 2026-10-14
 **Core Value:** Users can deploy, monitor, and manage Docker Compose stacks through a browser UI without needing SSH or Docker CLI access.
 
-## v1 Requirements
+Patch release on branch `release/v0.1.1`: bug fixes and interface polish only, no new product features. Product scope lives in GitHub Issues (`docktor-app/docktor`); each requirement below cites its source issue. The v0.1.0 requirements are archived with `.planning/milestones/v0.1.0-phases/`.
 
-### Container Observability
+## v0.1.1 Requirements
 
-- [x] **OBS-01**: Container state updates are event-driven: subscribe to the dockerode event stream (`docker events`) and react to `start`, `stop`, `die`, `kill`, and `health_status` events in real time
-- [x] **OBS-02**: On each relevant Docker event, inspect the affected container via dockerode and update the stack/service status in the DB immediately
-- [x] **OBS-03**: Event-driven updates skip stacks in Docktor-owned transitional states (DEPLOYING, UPDATING, BACKING_UP, RESTORING, MIGRATING) to avoid overwriting operational status
-- [x] **OBS-04**: A 60s reconciliation loop performs a full state sync to catch any events missed during stream reconnects or Docker daemon restarts
-- [x] **OBS-05**: User can stream live container logs per service via SSE (Server-Sent Events)
-- [x] **OBS-06**: Log stream shows historical tail-N lines on connect, then live output
-- [x] **OBS-07**: Log viewer renders ANSI escape codes (color/bold) and prefixes each line with service name
-- [x] **OBS-08**: Client reconnects automatically when SSE connection drops
-- [x] **OBS-09**: User can filter logs by service in the combined view
+### Backup (BKP)
 
-### Settings
+- [x] **BKP-01**: Backup, restore and snapshot listing use the configured SFTP or S3 repository when the repository type is `sftp` or `s3`, and only use the stack-local path for `local` ([#68](https://github.com/docktor-app/docktor/issues/68))
+- [x] **BKP-02**: Existing local-repository backups behave exactly as before ([#68](https://github.com/docktor-app/docktor/issues/68))
+- [x] **BKP-03**: The SFTP/S3 branch of repository environment construction is covered by unit tests ([#68](https://github.com/docktor-app/docktor/issues/68))
 
-- [x] **SET-01**: User can set instance name, base URL, and timezone via a Settings page
-- [x] **SET-02**: Settings are persisted in the DB Settings key-value model
-- [x] **SET-03**: Settings page validates input (valid IANA timezone, valid URL format)
+### Migration (MIG)
 
-### File Watcher
+- [x] **MIG-01**: User sees the migration diff in a larger dialog that is readable ([#72](https://github.com/docktor-app/docktor/issues/72))
+- [ ] **MIG-02**: User sees a real line diff of the compose changes, rendered with the shared code editor ([#72](https://github.com/docktor-app/docktor/issues/72))
+- [ ] **MIG-03**: User can opt out of the pre-migration backup, which is its own explicit step rather than an implicit copy made only on rename ([#72](https://github.com/docktor-app/docktor/issues/72))
+- [x] **MIG-04**: User can stop/undeploy the old stack as part of migration, so the new draft stack does not run alongside it ([#72](https://github.com/docktor-app/docktor/issues/72))
 
-- [x] **FW-01**: Background process watches `/stacks/*/docker-compose.yml` for changes using chokidar
-- [x] **FW-02**: When a compose file changes, the stack is re-hashed (SHA256), DB metadata updated, and stack flagged as "config changed"
-- [x] **FW-03**: A polling fallback (60s interval) re-hashes all compose files to catch events missed by inotify (e.g., NFS mounts)
+### Stacks and Compose (STK)
 
-### Update Checker
+- [x] **STK-01**: Deploying or redeploying a stack shows no port warning when the only user of the port is the stack's own container ([#76](https://github.com/docktor-app/docktor/issues/76))
+- [x] **STK-02**: A port held by another stack or an external process still produces the warning ([#76](https://github.com/docktor-app/docktor/issues/76))
+- [x] **STK-03**: "Import existing stack" does not offer Docktor's own stack ([#13](https://github.com/docktor-app/docktor/issues/13))
 
-- [x] **UPD-01**: Background job polls Docker registries to check for newer image versions (semver, date-tag, or digest comparison)
-- [x] **UPD-02**: Update checks are rate-limit safe: results cached per image, checks staggered, not triggered on every poll cycle
-- [x] **UPD-03**: Stack detail page shows an "update available" badge when newer images are found
-- [x] **UPD-04**: User can trigger an update (pull + recreate) from the stack detail page — never automatic
+### Dashboard (DASH)
 
-### Notifications
+- [ ] **DASH-01**: The "Backups Configured" card states exactly what it counts, or counts what its label says ([#85](https://github.com/docktor-app/docktor/issues/85))
+- [ ] **DASH-02**: A stack with a manual snapshot but no schedule is not silently invisible on the dashboard ([#85](https://github.com/docktor-app/docktor/issues/85))
 
-- [x] **NOTF-01**: User can configure SMTP settings (host, port, username, password, from address, recipient) in Settings
-- [x] **NOTF-02**: SMTP password is stored AES-encrypted in the DB
-- [x] **NOTF-03**: Notification sent when a stack enters ERROR or UNHEALTHY state (includes stack name, state, timestamp, last log lines)
-- [x] **NOTF-04**: Notification sent when disk space drops below 10% or 2 GB
-- [x] **NOTF-05**: Notification sent when a backup fails
-- [x] **NOTF-06**: Each notification trigger can be individually enabled/disabled in Settings
+### Interface (UI)
 
-### Backup & Restore
+- [ ] **UI-01**: User sees the running version (injected at build time, not hard-coded) and GitHub and docs links above the sidebar account menu, working collapsed and on mobile ([#88](https://github.com/docktor-app/docktor/issues/88))
+- [ ] **UI-02**: Every status label across dashboard, stack list, stack header, services table and activity timeline uses one casing, from one shared mapping ([#89](https://github.com/docktor-app/docktor/issues/89))
+- [ ] **UI-03**: Dashboard KPI numbers and a defined set of labels use a self-hosted monospace font defined in the design tokens ([#90](https://github.com/docktor-app/docktor/issues/90))
+- [ ] **UI-04**: The tab bar shows no scrollbar at desktop and tablet widths, and stays usable on narrow screens ([#91](https://github.com/docktor-app/docktor/issues/91))
+- [ ] **UI-05**: Forms use one shared label-to-input and field-to-button spacing rule ([#92](https://github.com/docktor-app/docktor/issues/92))
+- [ ] **UI-06**: Sidebar entries are grouped under labelled sections, with nested routes keeping the active highlight ([#93](https://github.com/docktor-app/docktor/issues/93))
+- [ ] **UI-07**: A Templates sidebar entry opens a standalone catalog page whose "Use template" starts the create-stack flow ([#94](https://github.com/docktor-app/docktor/issues/94))
+- [ ] **UI-08**: All data tables share one restyled look matching the shadcn blocks, keeping sorting, status pills and row actions ([#95](https://github.com/docktor-app/docktor/issues/95))
 
-- [x] **BCK-01**: User can configure a restic repository (local path, SFTP, or S3-compatible) and password via Settings
-- [x] **BCK-02**: Restic password is stored AES-encrypted in the DB
-- [x] **BCK-03**: User can trigger a manual backup for any stack from the stack detail page
-- [x] **BCK-04**: User can configure a per-stack backup schedule (cron expression)
-- [x] **BCK-05**: User can configure per-stack retention policy (daily/weekly/monthly counts)
-- [x] **BCK-06**: Backup includes the entire stack directory (docker-compose.yml, .env, volumes/) excluding logs/
-- [x] **BCK-07**: Absolute-path volumes outside the stack directory are excluded from backup with a visible warning
-- [x] **BCK-08**: User can view a list of available restic snapshots for a stack
-- [x] **BCK-09**: User can restore a stack from a selected snapshot (stop → restore → redeploy → health check)
-- [x] **BCK-10**: Restic CLI is invoked using spawn (not execFile) to support streaming progress output
-- [x] **BCK-11**: Stack transitions to BACKING_UP state during backup and returns to previous state on completion or ERROR on failure
+### Accessibility (A11Y)
 
-### First-Run Wizard
+- [ ] **A11Y-01**: The stack actions trigger, theme toggle, certificate delete button and table pagination buttons have a 44px touch target below `md` and keep the compact size at `md` and up ([#71](https://github.com/docktor-app/docktor/issues/71))
 
-- [x] **WIZ-01**: On first boot with no user in the DB, the UI shows a setup wizard instead of the login page
-- [x] **WIZ-02**: Wizard step 1: create admin account (email + password)
-- [x] **WIZ-03**: Wizard step 2: set instance name, base URL, and timezone (writes to Settings)
-- [x] **WIZ-04**: Wizard step 3 (optional): configure restic backup repository and password
-- [x] **WIZ-05**: Wizard step 4 (optional): configure SMTP notifications
-- [x] **WIZ-06**: Wizard step 5 (optional): trigger brownfield stack scan
-- [x] **WIZ-07**: After wizard completion, user is redirected to the dashboard
+### Release (REL)
 
-### Brownfield Import
+- [ ] **REL-01**: Package versions are bumped to 0.1.1, the changelog is updated, and CI is green on `release/v0.1.1`
 
-- [x] **BF-01**: User can trigger a scan of the host filesystem for docker-compose.yml files
-- [x] **BF-02**: Scan results show: directory path, service names, images, container state, and compatibility assessment (named volumes, inline env vars, non-standard paths)
-- [x] **BF-03**: User can adopt a discovered stack in-place: registers it in the DB without moving files (zero downtime, zero risk)
-- [x] **BF-04**: User can run a full migration wizard: stop → copy to /stacks/<id>/ → convert named volumes to bind mounts → extract env vars to .env → rewrite paths → restart
-- [x] **BF-05**: Full migration includes rollback on failure and user-initiated cleanup of old files after confirming success
+## Future Requirements
 
-### Proxy Configuration
+Deferred to a later release (tracked in GitHub Issues, not in this roadmap).
 
-- [x] **PRXY-01**: User can configure one or more domains, an internal service/port, and a TLS setting for a stack's service via the stack detail page
-- [x] **PRXY-02**: Docktor auto-deploys and manages an `nginx-proxy` + `acme-companion` reverse-proxy stack; configuring a domain writes the required routing/TLS env vars into the target service's compose file and redeploys it
-- [x] **PRXY-03**: ACME/Let's Encrypt registration email and proxy-stack settings are configurable in Settings
-- [x] **PRXY-04**: User can remove a proxy configuration, which removes the routing/TLS env vars from the service's compose file and redeploys it
-- [x] **PRXY-05**: Proxy operations are idempotent (re-applying an existing domain's env vars updates the service's config rather than erroring or duplicating)
-
-## v2 Requirements
-
-### Marketplace
-
-- **MKT-01**: Bundled templates for common self-hosting apps (Nextcloud, Vaultwarden, Gitea, Immich, etc.)
-- **MKT-02**: Remote template index fetched from marketplace.docktor.io
-- **MKT-03**: Community templates display a review warning before deployment
-
-### Registry Credentials
-
-- **REG-01**: User can add authenticated private registry credentials (URL, username, password, encrypted)
-- **REG-02**: Registered credentials are used automatically for image pulls and update checks
+- Remote backups as a new feature, e.g. [#81](https://github.com/docktor-app/docktor/issues/81)
+- Compose warning suppression [#83](https://github.com/docktor-app/docktor/issues/83), WebSocket proxy support [#86](https://github.com/docktor-app/docktor/issues/86), uptime reset [#84](https://github.com/docktor-app/docktor/issues/84), always-fresh template images [#82](https://github.com/docktor-app/docktor/issues/82), YAML check improvements [#77](https://github.com/docktor-app/docktor/issues/77)
+- Password reset by email [#79](https://github.com/docktor-app/docktor/issues/79), OIDC and authorization [#87](https://github.com/docktor-app/docktor/issues/87)
+- Structured server logging [#70](https://github.com/docktor-app/docktor/issues/70)
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Marketplace (v1) | Deferred to v2 — requires separate infrastructure |
-| RBAC / multi-user | Single-user model sufficient for personal server use case |
-| Inter-stack networking | Users can use `external: true` manually in compose files |
-| Metrics dashboards | Out of product scope (Prometheus/Grafana integration) |
-| OAuth / LDAP | better-auth email/password sufficient |
-| Docker Secrets | Filesystem permissions + encrypted restic backups covers MVP security |
-| Plugin system | Adds complexity without near-term user benefit |
-| Docktor self-update via UI | Users run `docker compose pull && up -d` from host |
-| Auto-updates (containers) | Never automatic — always user-initiated |
-| Named Docker volumes | Rejected by design — bind mounts only |
-| WebSocket log streaming | SSE is sufficient for unidirectional log display |
+| New product features | v0.1.1 is a patch release: fixes and polish only |
+| Auth changes (#79, #87) | Features, belong in v0.2.0 |
+| Editing `components/ui/` (shadcn-managed) | Project rule; the SidebarTrigger touch target stays out of #71 |
+| Settings cards migration to react-hook-form | Separate refactoring target, not part of #92 |
 
 ## Traceability
 
+Which phases cover which requirements. Updated during roadmap creation.
+
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| OBS-01 | Phase 1 | Complete |
-| OBS-02 | Phase 1 | Complete |
-| OBS-03 | Phase 1 | Complete |
-| OBS-04 | Phase 1 | Complete |
-| OBS-05 | Phase 1 | Complete |
-| OBS-06 | Phase 1 | Complete |
-| OBS-07 | Phase 1 | Complete |
-| OBS-08 | Phase 1 | Complete |
-| OBS-09 | Phase 1 | Complete |
-| SET-01 | Phase 1 | Complete |
-| SET-02 | Phase 1 | Complete |
-| SET-03 | Phase 1 | Complete |
-| FW-01 | Phase 2 | Complete |
-| FW-02 | Phase 2 | Complete |
-| FW-03 | Phase 2 | Complete |
-| UPD-01 | Phase 2 | Complete |
-| UPD-02 | Phase 2 | Complete |
-| UPD-03 | Phase 2 | Complete |
-| UPD-04 | Phase 2 | Complete |
-| NOTF-01 | Phase 3 | Complete |
-| NOTF-02 | Phase 3 | Complete |
-| NOTF-03 | Phase 3 | Complete |
-| NOTF-04 | Phase 3 | Complete |
-| NOTF-05 | Phase 3 | Complete |
-| NOTF-06 | Phase 3 | Complete |
-| BCK-01 | Phase 4 | Complete |
-| BCK-02 | Phase 4 | Complete |
-| BCK-03 | Phase 4 | Complete |
-| BCK-04 | Phase 4 | Complete |
-| BCK-05 | Phase 4 | Complete |
-| BCK-06 | Phase 4 | Complete |
-| BCK-07 | Phase 4 | Complete |
-| BCK-08 | Phase 4 | Complete |
-| BCK-09 | Phase 4 | Complete |
-| BCK-10 | Phase 4 | Complete |
-| BCK-11 | Phase 4 | Complete |
-| WIZ-01 | Phase 5 | Complete |
-| WIZ-02 | Phase 5 | Complete |
-| WIZ-03 | Phase 5 | Complete |
-| WIZ-04 | Phase 5 | Complete |
-| WIZ-05 | Phase 5 | Complete |
-| WIZ-06 | Phase 5 | Complete |
-| WIZ-07 | Phase 5 | Complete |
-| BF-01 | Phase 5 | Complete |
-| BF-02 | Phase 5 | Complete |
-| BF-03 | Phase 5 | Complete |
-| BF-04 | Phase 5 | Complete |
-| BF-05 | Phase 5 | Complete |
-| PRXY-01 | Phase 6 | Complete |
-| PRXY-02 | Phase 6 | Complete |
-| PRXY-03 | Phase 6 | Complete |
-| PRXY-04 | Phase 6 | Complete |
-| PRXY-05 | Phase 6 | Complete |
+| BKP-01 | Phase 17 | Complete |
+| BKP-02 | Phase 17 | Complete |
+| BKP-03 | Phase 17 | Complete |
+| STK-01 | Phase 17 | Complete |
+| STK-02 | Phase 17 | Complete |
+| STK-03 | Phase 18 | Complete |
+| MIG-01 | Phase 18 | Complete |
+| MIG-02 | Phase 18 | Gaps Found |
+| MIG-03 | Phase 18 | Gaps Found |
+| MIG-04 | Phase 18 | Complete |
+| UI-01 | Phase 19 | Pending |
+| UI-06 | Phase 19 | Pending |
+| UI-07 | Phase 19 | Pending |
+| UI-02 | Phase 20 | Pending |
+| UI-03 | Phase 20 | Pending |
+| UI-04 | Phase 20 | Pending |
+| UI-05 | Phase 20 | Pending |
+| UI-08 | Phase 20 | Pending |
+| DASH-01 | Phase 20 | Pending |
+| DASH-02 | Phase 20 | Pending |
+| A11Y-01 | Phase 20 | Pending |
+| REL-01 | Phase 21 | Pending |
 
 **Coverage:**
-
-- v1 requirements: 50 total
-- Mapped to phases: 50
+- v0.1.1 requirements: 22 total
+- Mapped to phases: 22
 - Unmapped: 0 ✓
 
 ---
-*Requirements defined: 2026-03-10*
-*Last updated: 2026-03-10 after initial definition*
+*Requirements defined: 2026-10-14*
+*Last updated: 2026-10-14 after roadmap creation (traceability mapped to Phases 17-21)*
