@@ -123,9 +123,18 @@ function relocateIntoSource(srcPath: string, dirs: {originalDir: string; sourceD
 	return insideOriginal ? path.join(dirs.sourceDir, relative) : srcPath;
 }
 
-/** G-18-22-status: why leaving the old stack running under a shared project name is refused. */
-function sharedProjectNameRefusal(shared: SharedProjectName): string {
-	return `Migration refused: the old stack keeps running and would share the Docker Compose project name "${shared.name}" with the new stack (both take it from their directory name), so deploying the new stack would take over the old stack's containers. Stop the old stack during the migration, or choose a different stack name.`;
+/** G-18-22-status: why leaving the old stack running under a shared project name is refused, per source. */
+function sharedProjectNameRefusal({name, source}: SharedProjectName): string {
+	const refused = `Migration refused: the old stack keeps running and would share the Docker Compose project name "${name}" with the new stack`;
+	const takeover = "so deploying the new stack would take over the old stack's containers. Stop the old stack during the migration";
+	switch (source) {
+		case "directory":
+			return `${refused} (both take it from their directory name), ${takeover}, or choose a different stack name.`;
+		case "compose-file":
+			return `${refused} (set by name: in the compose file, which the new stack keeps), ${takeover}, or remove name: from the old compose file first.`;
+		case "env-file":
+			return `${refused} (set by COMPOSE_PROJECT_NAME in the old stack's .env file, which the new stack keeps), ${takeover}, or remove COMPOSE_PROJECT_NAME from the old .env file first.`;
+	}
 }
 
 /** What the preview needs to know about a migration request (G-18-7). */
