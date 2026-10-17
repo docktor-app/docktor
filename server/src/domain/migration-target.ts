@@ -1,32 +1,34 @@
 import path from "node:path";
+import {relateDirectories, type DirectoryIdentity} from "./directory-identity.js";
 
 /**
  * How the directory a migration builds the new stack in relates to the
- * directory of the old stack (G-18-7):
+ * directory of the old stack (G-18-7), decided over directory identities so
+ * every spelling of a directory counts (G-18-22-inplace):
  * - `separate`: unrelated directories; the original is only ever read.
  * - `in-place`: the very same directory (the stack already lives in Docktor's
- *   stacks folder under the same name); the original is renamed aside first.
+ *   stacks folder under the same name, however the scan reached it); the
+ *   original is renamed aside first.
  * - `nested`: one directory sits inside the other; always refused, because
  *   copying a directory into itself and removing the target on rollback would
  *   endanger the original (RESEARCH Pitfall 4).
  */
 export type MigrationTargetKind = "separate" | "in-place" | "nested";
 
-/** Host-native path comparison, like the overlap check this replaces, so the Windows unit job keeps passing. */
+/** Host-native path comparison, used for the destination collisions below. */
 function isInside(child: string, parent: string): boolean {
     return child.startsWith(parent + path.sep);
 }
 
-export function classifyMigrationTarget(targetDir: string, originalDir: string): MigrationTargetKind {
-    const target = path.resolve(targetDir);
-    const original = path.resolve(originalDir);
-    if (target === original) {
-        return "in-place";
+export function classifyMigrationTarget(target: DirectoryIdentity, original: DirectoryIdentity): MigrationTargetKind {
+    switch (relateDirectories(target, original)) {
+        case "same":
+            return "in-place";
+        case "nested":
+            return "nested";
+        case "unrelated":
+            return "separate";
     }
-    if (isInside(target, original) || isInside(original, target)) {
-        return "nested";
-    }
-    return "separate";
 }
 
 /**

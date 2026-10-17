@@ -23,6 +23,7 @@ import {composeAnalyzer} from "../infrastructure/compose-analyzer.js";
 import {dockerSelfStack} from "../infrastructure/docker-self-stack.js";
 import {assertNotOwnStack} from "./own-stack-guard.js";
 import {assertNotManaged} from "./managed-stack-guard.js";
+import {directoryIdentityResolver} from "../infrastructure/directory-identity-resolver.js";
 import type {DockerExecutorPort} from "./ports/docker-executor-port.js";
 import type {VolumeMigratorPort} from "./ports/volume-migrator-port.js";
 import type {ComposeRewriterPort} from "./ports/compose-rewriter-port.js";
@@ -31,6 +32,7 @@ import type {ExternalStackControlPort} from "./ports/external-stack-control-port
 import type {SelfStackPort} from "./ports/self-stack-port.js";
 import type {OwnMountsPort} from "./ports/own-mounts-port.js";
 import type {ComposeAnalyzerPort} from "./ports/compose-analyzer-port.js";
+import type {DirectoryIdentityPort} from "./ports/directory-identity-port.js";
 
 /**
  * CR-02: Resolve `target` against `base` and reject the result unless it is
@@ -131,6 +133,8 @@ export interface MigrationPreview {
 
 interface TargetAssessment {
 	readonly stackId: string;
+	/** The old compose file, addressed through the same spelling as `originalDir`. */
+	readonly composePath: string;
 	readonly originalDir: string;
 	readonly targetDir: string;
 	readonly kind: MigrationTargetKind;
@@ -211,6 +215,8 @@ export class MigrationService {
 		private readonly ownMounts: OwnMountsPort = dockerSelfStack,
 		// WR-01: which bind sources the compose file declares.
 		private readonly analyzer: Pick<ComposeAnalyzerPort, "analyzeCompatibility"> = composeAnalyzer,
+		// G-18-22-inplace: which directory a path names, whatever its spelling.
+		private readonly directories: DirectoryIdentityPort = directoryIdentityResolver,
 	) {}
 
 	/**
@@ -224,9 +230,9 @@ export class MigrationService {
 	async previewMigration(request: MigrationPreviewRequest): Promise<MigrationPreview> {
 		const {composePath, displayName, volumeSelections, namedVolumeSelections} = request;
 		const assessment = await this.assessTarget(composePath, displayName);
-		const bindCopies = await this.planCopies(composePath, assessment, volumeSelections, namedVolumeSelections);
-		const originalCompose = await fs.readFile(composePath, "utf-8");
-		const existingEnv = await this.readOldEnv(path.dirname(composePath));
+		const bindCopies = await this.planCopies(assessment, volumeSelections, namedVolumeSelections);
+		const originalCompose = await fs.readFile(assessment.composePath, "utf-8");
+		const existingEnv = await this.readOldEnv(assessment.originalDir);
 		const result = this.rewriter.rewrite(
 			originalCompose,
 			volumeSelections,
@@ -284,13 +290,13 @@ export class MigrationService {
 		const {composePath, displayName, volumeSelections, namedVolumeSelections, backup, stopOldStack} = input;
 		const assessment = await this.assessTarget(composePath, displayName);
 		const {stackId, originalDir, targetDir, kind} = assessment;
-		const bindCopies = await this.planCopies(composePath, assessment, volumeSelections, namedVolumeSelections);
+		const bindCopies = await this.planCopies(assessment, volumeSelections, namedVolumeSelections);
 		const inPlace = kind === "in-place" ? {asideDir: await this.planInPlace(originalDir, stackId, input)} : null;
 
 		return {
 			stackId,
 			displayName,
-			composePath,
+			composePath: assessment.composePath,
 			originalDir,
 			targetDir,
 			volumeSelections,
@@ -309,14 +315,13 @@ export class MigrationService {
 	 * readable by Docktor. Returns where each converted bind mount is read from.
 	 */
 	private async planCopies(
-		composePath: string,
 		assessment: TargetAssessment,
 		volumeSelections: readonly VolumeSelection[],
 		namedVolumeSelections: ReadonlyMap<string, boolean>,
 	): Promise<PlannedBindCopy[]> {
 		const converted = volumeSelections.filter((selection) => selection.convert);
 		if (converted.length > 0) {
-			await this.assertDeclaredSources(composePath, converted);
+			await this.assertDeclaredSources(assessment.composePath, converted);
 		}
 		const violations = copyDestinationViolations({
 			targetDir: assessment.targetDir,
@@ -401,7 +406,11 @@ export class MigrationService {
 		}
 
 		const targetDir = this.stackFs.getStackDirectory(stackId);
-		const kind = classifyMigrationTarget(targetDir, originalDir);
+		const [targetIdentity, originalIdentity] = await Promise.all([
+			this.directories.identifyLocal(targetDir),
+			this.directories.identifyLocal(originalDir),
+		]);
+		const kind = classifyMigrationTarget(targetIdentity, originalIdentity);
 		if (kind === "nested") {
 			throw new ConflictError(
 				`Migration refused: the new stack directory ${path.resolve(targetDir)} and the old stack directory ${path.resolve(originalDir)} overlap.`,
@@ -410,7 +419,13 @@ export class MigrationService {
 		if (kind === "separate" && (await pathIsTaken(targetDir))) {
 			throw new ConflictError(`Migration refused: the new stack directory ${path.resolve(targetDir)} already exists.`);
 		}
-		return {stackId, originalDir, targetDir, kind};
+		if (kind === "in-place") {
+			// The scan may have reached the stack through the read-only /host view
+			// (`/:/host:ro`). The stop, the rename aside, the copies and the rollback
+			// must go through the writable stacks-folder spelling of the same directory.
+			return {stackId, composePath: path.join(targetDir, path.basename(composePath)), originalDir: targetDir, targetDir, kind};
+		}
+		return {stackId, composePath, originalDir, targetDir, kind};
 	}
 
 	/**
