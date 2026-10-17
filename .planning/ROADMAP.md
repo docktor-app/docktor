@@ -88,7 +88,7 @@ Notes: server-side work (backup service and repository environment construction,
   4. The pre-migration backup is its own explicit step the user can opt out of: opting out creates no backup, opting in creates one whether or not the compose file is renamed
   5. The user can choose to stop (undeploy) the old stack as part of the migration, so the new draft stack does not run alongside it; if they decline, the old stack is left running
 
-**Plans:** 21/21 plans executed (4 gap-closure plans pending, round 2)
+**Plans:** 21/26 plans executed (5 gap-closure plans pending, round 3)
 
 Plans:
 **Wave 1**
@@ -137,6 +137,17 @@ Plans:
 *Gap wave 2*
 - [x] 18-20-PLAN.md — .env extraction keeps each service's value: per-value names (SERVICE_KEY), never a name Docktor's environment, COMPOSE_/DOCKER_, compose references or the old .env would change; only valid names and dotenv-safe values move (CR-02, WR-09; after 18-19)
 - [x] 18-21-PLAN.md — Review step names every selected source that starts empty in the new stack (CR-03 client half; after 18-19)
+
+**Gap closure round 3** *(from the 18-UAT.md re-test: G-18-22-inplace (with review WR-10), G-18-22-status, G-18-22-card, G-18-23-stop-ui)*
+
+*Gap wave 1*
+- [ ] 18-22-PLAN.md — Canonical directory identity (fs.realpath plus Docktor's own bind mounts): a stacks-folder stack scanned through /host migrates in place through the writable path; managed rows and adopt/migrate refusals recognise /host and symlink spellings (G-18-22-inplace, WR-10)
+- [ ] 18-23-PLAN.md — Docker event stream decoded line by line and handled one compose project at a time in order (reconcile included); kill no longer subscribed, so a stop shows as exited/STOPPED without a reload (G-18-23-stop-ui)
+- [ ] 18-24-PLAN.md — Discovered-stacks card and setup wizard wrapper widened to max-w-6xl, long directories wrap; phone layout unchanged (G-18-22-card)
+
+*Gap wave 2* *(blocked on Gap wave 1 completion)*
+- [ ] 18-25-PLAN.md — Containers belong to a stack by compose project and compose directory identity in events, reconcile and post-deploy catch-up (G-18-22-status; after 18-22, 18-23)
+- [ ] 18-26-PLAN.md — Migration refused when the old stack keeps running under the new stack's compose project name (directory, name: or COMPOSE_PROJECT_NAME); step 4 requires the stop and says why (G-18-22-status user decision; after 18-22, 18-24)
 
 **UI hint**: yes
 
@@ -200,7 +211,7 @@ Phases execute in numeric order: 17 → 18 → 19 → 20 → 21
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 17. Backup Repository and Port-Check Fixes | 3/3 | Complete    | 2026-10-14 |
-| 18. Import and Migration Flow | 21/21 | In Progress | - |
+| 18. Import and Migration Flow | 21/26 | In Progress | - |
 | 19. Sidebar, Templates and Version Block | 0/TBD | Not started | - |
 | 20. Visual Consistency, Dashboard Clarity and Touch Targets | 0/TBD | Not started | - |
 | 21. Release v0.1.1 | 0/TBD | Not started | - |
