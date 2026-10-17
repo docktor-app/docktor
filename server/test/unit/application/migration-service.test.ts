@@ -1822,6 +1822,52 @@ describe("shared compose project name (G-18-22-status)", () => {
         });
     });
 
+    describe("a name the old stack's files set", () => {
+        it("refuses COMPOSE_PROJECT_NAME in the old .env and names it", async () => {
+            const composePath = await oldStack("old", PLAIN_COMPOSE, "COMPOSE_PROJECT_NAME=bar\n");
+
+            const refusal = buildService().migrate(request(composePath, "Foo", false));
+
+            await expect(refusal).rejects.toBeInstanceOf(BadRequestError);
+            await expect(refusal).rejects.toThrow('"bar"');
+            await expect(refusal).rejects.toThrow("COMPOSE_PROJECT_NAME");
+            expectNoSideEffects();
+        });
+
+        it("refuses a top-level name: in the compose file and names it", async () => {
+            const composePath = await oldStack("old", `name: shop\n${PLAIN_COMPOSE}`);
+
+            const refusal = buildService().migrate(request(composePath, "Foo", false));
+
+            await expect(refusal).rejects.toBeInstanceOf(BadRequestError);
+            await expect(refusal).rejects.toThrow('"shop"');
+            await expect(refusal).rejects.toThrow("name:");
+            expectNoSideEffects();
+        });
+
+        it("reports the source of the shared name in the preview", async () => {
+            const envPath = await oldStack("old-env", PLAIN_COMPOSE, "COMPOSE_PROJECT_NAME=bar\n");
+            const filePath = await oldStack("old-file", `name: shop\n${PLAIN_COMPOSE}`);
+
+            const fromEnv = await buildService().previewMigration(request(envPath, "Foo", false));
+            const fromFile = await buildService().previewMigration(request(filePath, "Foo", false));
+
+            expect(fromEnv.target.sharedProjectName).toEqual({name: "bar", source: "env-file"});
+            expect(fromFile.target.sharedProjectName).toEqual({name: "shop", source: "compose-file"});
+        });
+
+        it.each([
+            ["COMPOSE_PROJECT_NAME", PLAIN_COMPOSE, "COMPOSE_PROJECT_NAME=bar\n"],
+            ["name:", `name: shop\n${PLAIN_COMPOSE}`, null],
+        ])("proceeds with the old stack stopped (%s)", async (_label, compose, env) => {
+            const composePath = await oldStack("old", compose, env);
+
+            const result = await buildService().migrate(request(composePath, "Foo", true));
+
+            expect(result.success).toBe(true);
+        });
+    });
+
     it("does not report or refuse a different stack name", async () => {
         const composePath = await oldStack("memos");
 
