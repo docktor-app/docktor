@@ -5,6 +5,9 @@ import {ConflictError, BadRequestError} from "../../../src/lib/errors.js";
 import {DockerSelfStack} from "../../../src/infrastructure/docker-self-stack.js";
 import type {ScannedStack} from "../../../src/application/ports/brownfield-scanner-port.js";
 import {wizardStep6Schema} from "@docktor/shared";
+import {DirectoryIdentityResolver} from "../../../src/infrastructure/directory-identity-resolver.js";
+import type {OwnMountsView} from "../../../src/domain/bind-mount-sources.js";
+import {hostViewDirectories} from "../../helpers/host-directory-identity.js";
 
 function createMockSettingsRepo() {
     return {
@@ -223,6 +226,7 @@ describe("OnboardingService", () => {
                 mockUserRepo as any,
                 mockScanner as any,
                 {composeFilePaths},
+                hostViewDirectories(),
             );
         }
         it("should create Stack record with hostPath pointing to discovered path", async () => {
@@ -519,6 +523,7 @@ describe("OnboardingService", () => {
                 mockUserRepo as any,
                 mockScanner as any,
                 {composeFilePaths: vi.fn().mockResolvedValue([])},
+                hostViewDirectories(),
             );
 
             const result = await service.scan(["/opt/stacks"]);
@@ -557,6 +562,7 @@ describe("OnboardingService", () => {
                 mockUserRepo as any,
                 mockScanner as any,
                 {composeFilePaths: vi.fn().mockResolvedValue([])},
+                hostViewDirectories(),
             );
 
             const fromSetupRoute = await service.scan(["/opt/stacks"]);
@@ -599,6 +605,7 @@ describe("OnboardingService", () => {
                 mockUserRepo as any,
                 mockScanner as any,
                 selfStack,
+                hostViewDirectories(),
             );
 
             const result = await service.scan(["/host/opt"]);
@@ -620,6 +627,7 @@ describe("OnboardingService", () => {
                 mockUserRepo as any,
                 mockScanner as any,
                 selfStack,
+                hostViewDirectories(),
             );
         }
 
@@ -703,6 +711,7 @@ describe("OnboardingService", () => {
                 mockUserRepo as any,
                 mockScanner as any,
                 {composeFilePaths: async () => selfPaths},
+                hostViewDirectories(),
             );
         }
 
@@ -744,6 +753,64 @@ describe("OnboardingService", () => {
 
             expect(result.stacks.map((s) => s.path)).toEqual(["/host/opt/blog/docker-compose.yml"]);
             expect(result.stacks[0]?.managedStack).toBeNull();
+        });
+    });
+    describe("a managed stack reached through /host or a symlink (WR-10)", () => {
+        // Production shape: the host root read-only at /host, the stacks folder at its identical host path.
+        const CONTAINER: OwnMountsView = {
+            kind: "container",
+            mounts: [
+                {type: "bind", source: "/", destination: "/host"},
+                {type: "bind", source: "/opt/docktor/stacks", destination: "/opt/docktor/stacks"},
+            ],
+        };
+        const BLOG = {id: "blog", displayName: "Blog", hostPath: "/opt/docktor/stacks/blog"};
+
+        function buildService() {
+            const ownMounts = {ownMounts: vi.fn().mockResolvedValue(CONTAINER)};
+            return new OnboardingService(
+                mockAuthClient as any,
+                mockSettingsRepo as any,
+                mockCrypto as any,
+                mockStackRepo as any,
+                mockProxy as any,
+                mockFsLib as any,
+                mockUserRepo as any,
+                mockScanner as any,
+                {composeFilePaths: async () => []},
+                new DirectoryIdentityResolver(ownMounts, async (p) => p),
+            );
+        }
+
+        beforeEach(() => {
+            mockStackRepo.listLocations.mockResolvedValue([BLOG]);
+        });
+
+        it("marks the row scanned through /host as managed and keeps an unrelated row unmanaged", async () => {
+            mockScanner.scan.mockResolvedValue({
+                stacks: [
+                    discoveredStack("/host/opt/docktor/stacks/blog/docker-compose.yml"),
+                    discoveredStack("/host/opt/wiki/docker-compose.yml"),
+                ],
+                skippedDirectories: 0,
+                skipped: [],
+            });
+
+            const result = await buildService().scan(["/host/opt"]);
+
+            expect(result.stacks.map((s) => [s.path, s.managedStack])).toEqual([
+                ["/host/opt/docktor/stacks/blog/docker-compose.yml", {id: "blog", displayName: "Blog"}],
+                ["/host/opt/wiki/docker-compose.yml", null],
+            ]);
+        });
+
+        it("refuses to adopt the /host spelling of a managed directory before reading the file or creating a record", async () => {
+            await expect(
+                buildService().adoptInPlace("/host/opt/docktor/stacks/blog/docker-compose.yml", "Blog Again"),
+            ).rejects.toBeInstanceOf(ConflictError);
+
+            expect(mockFsLib.readFile).not.toHaveBeenCalled();
+            expect(mockStackRepo.create).not.toHaveBeenCalled();
         });
     });
 });

@@ -1507,6 +1507,40 @@ describe.skipIf(process.platform === "win32")("a stack in the stacks folder reac
         expect(mockStackFs.createDirectoryExclusive).not.toHaveBeenCalled();
     });
 
+    describe("a managed stack's directory reached through the /host spelling (WR-10)", () => {
+        beforeEach(() => {
+            mockStackRepo.listLocations.mockResolvedValue([
+                {id: "blog", displayName: "Blog", hostPath: path.join(stacksRoot, "blog")},
+            ]);
+            mockStackRepo.exists.mockResolvedValue(false);
+        });
+
+        async function managedAliasRequest() {
+            await fs.mkdir(path.join(stacksRoot, "blog"), {recursive: true});
+            await fs.writeFile(path.join(stacksRoot, "blog", "docker-compose.yml"), COMPOSE, "utf-8");
+            return request(path.join(aliasDir, "blog", "docker-compose.yml"));
+        }
+
+        it("refuses migrate with a ConflictError and no side effects", async () => {
+            const managed = await managedAliasRequest();
+
+            await expect(buildService().migrate({...managed, backup: false, stopOldStack: true})).rejects.toThrow(
+                /already managed by Docktor as "Blog"/,
+            );
+
+            expect(mockOldStack.stop).not.toHaveBeenCalled();
+            expect(mockStackFs.createDirectoryExclusive).not.toHaveBeenCalled();
+            expect(mockMigrator.moveDirectory).not.toHaveBeenCalled();
+            expect(mockStackRepo.create).not.toHaveBeenCalled();
+        });
+
+        it("refuses previewMigration with a ConflictError", async () => {
+            const managed = await managedAliasRequest();
+
+            await expect(buildService().previewMigration(managed)).rejects.toThrow(ConflictError);
+        });
+    });
+
     it("still refuses an existing target when Docktor's mounts are unknown (fail-safe)", async () => {
         mockOwnMounts.ownMounts.mockResolvedValue({kind: "unknown"});
 
