@@ -11,6 +11,11 @@ import type {DirectoryIdentityPort} from "../application/ports/directory-identit
 import type {OwnMountsPort} from "../application/ports/own-mounts-port.js";
 import {dockerSelfStack} from "./docker-self-stack.js";
 
+/** Docker paths are POSIX: `path.resolve` would graft a drive letter onto `/host/...` on Windows. */
+function absolutePath(directory: string): string {
+    return path.posix.isAbsolute(directory) || path.win32.isAbsolute(directory) ? directory : path.resolve(directory);
+}
+
 /**
  * Resolves directory identities from the real filesystem (`fs.realpath`, which
  * follows symlinks) and Docktor's own bind mounts (container path to host
@@ -26,14 +31,14 @@ export class DirectoryIdentityResolver implements DirectoryIdentityPort {
     ) {}
 
     async identifyLocal(directory: string): Promise<DirectoryIdentity> {
-        const [view, spellings] = await Promise.all([this.view(), this.withRealpath(path.resolve(directory))]);
+        const [view, spellings] = await Promise.all([this.view(), this.withRealpath(absolutePath(directory))]);
         return localDirectoryIdentity(spellings, view);
     }
 
     async identifyLabel(directory: string): Promise<DirectoryIdentity> {
         const view = await this.view();
         if (view.kind === "host") {
-            return labelDirectoryIdentity(path.resolve(directory), await this.realpathsOf(path.resolve(directory)), view);
+            return labelDirectoryIdentity(absolutePath(directory), await this.realpathsOf(absolutePath(directory)), view);
         }
         if (view.kind === "unknown") {
             return labelDirectoryIdentity(directory, [], view);
