@@ -35,7 +35,7 @@ export function TemplatesCatalog({
     if (!catalog) return null;
 
     // A failed repo's own alert already explains an empty catalog, so the
-    // "No templates available" state is reserved for a catalog with no failures.
+    // empty state is reserved for a catalog with no failures.
     const isEmpty = catalog.templates.length === 0 && !catalog.repos.some((repo) => repo.lastSyncError);
 
     return (
