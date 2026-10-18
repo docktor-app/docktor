@@ -1,3 +1,5 @@
+import {readFileSync} from "node:fs";
+import {resolve} from "node:path";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {render, screen, waitFor, within} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -17,6 +19,9 @@ if (typeof globalThis.ResizeObserver === "undefined") {
         disconnect() {}
     } as unknown as typeof ResizeObserver;
 }
+
+// client/package.json always carries a version field
+const PACKAGE_VERSION = (JSON.parse(readFileSync(resolve(__dirname, "../../../package.json"), "utf8")) as {version: string}).version;
 
 function renderSidebar(path: string, defaultOpen = true) {
     return render(
@@ -120,6 +125,39 @@ describe("AppSidebar icon rail (UI-SPEC D-02)", () => {
     });
 });
 
+function expectExternalLink(link: HTMLElement, href: string): void {
+    expect(link).toHaveAttribute("href", href);
+    expect(link).toHaveAttribute("target", "_blank");
+    const rel = (link.getAttribute("rel") ?? "").split(/\s+/);
+    expect(rel).toContain("noopener");
+    expect(rel).toContain("noreferrer");
+}
+
+describe("AppSidebar version block (UI-01)", () => {
+    it("shows the package.json version and both project links in the footer", () => {
+        renderSidebar("/");
+
+        const about = screen.getByRole("group", {name: "About Docktor"});
+        expect(about).toHaveTextContent(`v${PACKAGE_VERSION}`);
+        expectExternalLink(
+            within(about).getByRole("link", {name: "Docktor on GitHub (opens in a new tab)"}),
+            "https://github.com/docktor-app/docktor",
+        );
+        expectExternalLink(
+            within(about).getByRole("link", {name: "Docktor documentation (opens in a new tab)"}),
+            "https://getdocktor.dev",
+        );
+    });
+
+    it("sits above the account menu", () => {
+        renderSidebar("/");
+
+        const about = screen.getByRole("group", {name: "About Docktor"});
+        const account = screen.getByRole("button", {name: /Ada Lovelace/});
+        expect(about.compareDocumentPosition(account) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+});
+
 describe("AppSidebar mobile sheet (UI-SPEC D-09)", () => {
     const originalWidth = Object.getOwnPropertyDescriptor(window, "innerWidth");
 
@@ -154,5 +192,37 @@ describe("AppSidebar mobile sheet (UI-SPEC D-09)", () => {
 
         expect(await screen.findByText("Stacks page")).toBeInTheDocument();
         await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    });
+
+    it("keeps the sheet open when an external project link is followed", async () => {
+        Object.defineProperty(window, "innerWidth", {configurable: true, value: 500});
+        // jsdom does not implement navigation; swallow anchor clicks before the default action
+        const blockNavigation = (event: MouseEvent): void => {
+            if ((event.target as Element).closest("a")) {
+                event.preventDefault();
+            }
+        };
+        document.addEventListener("click", blockNavigation, true);
+        const user = userEvent.setup();
+        try {
+            render(
+                <MemoryRouter initialEntries={["/"]}>
+                    <SidebarProvider>
+                        <AppSidebar/>
+                    </SidebarProvider>
+                </MemoryRouter>,
+            );
+
+            await user.keyboard("{Control>}b{/Control}");
+            const dialog = await screen.findByRole("dialog");
+            expect(within(dialog).getByRole("group", {name: "About Docktor"})).toBeInTheDocument();
+
+            await user.click(within(dialog).getByRole("link", {name: "Docktor on GitHub (opens in a new tab)"}));
+
+            expect(screen.getByRole("dialog")).toBeInTheDocument();
+            expect(within(dialog).getByRole("link", {name: "Docktor documentation (opens in a new tab)"})).toBeInTheDocument();
+        } finally {
+            document.removeEventListener("click", blockNavigation, true);
+        }
     });
 });
