@@ -9,6 +9,7 @@ import {Label} from "@/components/ui/label";
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from "@/components/ui/card";
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from "@/components/ui/table";
 import {Skeleton} from "@/components/ui/skeleton";
+import {ToneBadge} from "@/components/common/tone-badge";
 import {CompatibilityBadge} from "@/components/domain/stack/compatibility-badge";
 import {DiscoveredStackActions} from "@/components/domain/stack/discovered-stack-actions";
 import {ScanSkippedDirectories} from "@/components/domain/stack/scan-skipped-directories";
@@ -232,10 +233,14 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
                           </TableCell>
                           <TableCell>{stack.serviceCount}</TableCell>
                           <TableCell>
-                            <CompatibilityBadge
-                              compatibility={stack.compatibility}
-                              unsupportedFeatures={stack.unsupportedFeatures}
-                            />
+                            {stack.managedStack ? (
+                              <ToneBadge tone="blue">Already managed</ToneBadge>
+                            ) : (
+                              <CompatibilityBadge
+                                compatibility={stack.compatibility}
+                                unsupportedFeatures={stack.unsupportedFeatures}
+                              />
+                            )}
                           </TableCell>
                           <TableCell className="text-right">
                             <DiscoveredStackActions

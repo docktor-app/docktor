@@ -1,7 +1,6 @@
 import {Link} from "react-router";
 import type {MigrationOperation} from "@docktor/shared";
 import {Button} from "@/components/ui/button";
-import {ToneBadge} from "@/components/common/tone-badge";
 import {migrationStepLabel} from "@/lib/migration-progress";
 import type {DiscoveredStack} from "@/lib/brownfield-types";
 
@@ -18,7 +17,7 @@ interface DiscoveredStackActionsProps {
 /**
  * Action cell of a scan result row. A stack Docktor already manages, or one
  * whose migration is running, keeps its buttons but disabled (the managed one
- * with a link to the managing stack); the server refuses the request
+ * with a link to the managing stack; its "Already managed" badge lives in the Status column); the server refuses the request
  * regardless, so this is convenience only.
  */
 export function DiscoveredStackActions({
@@ -45,12 +44,12 @@ export function DiscoveredStackActions({
         </span>
       )}
       {managedStack && (
-        <>
-          <ToneBadge tone="blue">Already managed</ToneBadge>
-          <Link to={`/stacks/${managedStack.id}`} className="text-sm underline-offset-4 hover:underline">
-            View {managedStack.displayName}
-          </Link>
-        </>
+        <Link
+          to={`/stacks/${managedStack.id}`}
+          className="mr-1 text-sm whitespace-nowrap underline-offset-4 hover:underline"
+        >
+          View {managedStack.displayName}
+        </Link>
       )}
       <Button size="sm" variant="outline" onClick={onMigrate} disabled={disabled}>
         {migrating ? "Migrating..." : "Migrate"}

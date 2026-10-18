@@ -1,5 +1,5 @@
 ---
-status: diagnosed
+status: complete
 phase: 18-import-and-migration-flow
 source: [18-01-SUMMARY.md, 18-02-SUMMARY.md, 18-03-SUMMARY.md, 18-04-SUMMARY.md, 18-05-SUMMARY.md]
 started: 2026-10-15T12:00:00Z
@@ -56,21 +56,22 @@ result: pass
 
 ### 10. In-place migration of a same-name stack
 expected: Migrate on a stack already in the stacks folder under the same name goes the in-place route (aside-name step, forced stop, original renamed to <name>-pre-migration).
-result: issue
-reported: "Toast: Migration refused: the new stack directory /home/raphael/workspace/docktor/dev-data/docktor/stacks/memos already exists."
-severity: major
+result: pass
+previously_reported: "Toast: Migration refused: the new stack directory /home/raphael/workspace/docktor/dev-data/docktor/stacks/memos already exists."
+note: "Re-test after gap closure (G-18-22-inplace, 18-22)."
 
 ### 11. Discovered stacks card size
 expected: The discovered-stacks table is readable without constant scrolling.
-result: issue
-reported: "please make the card with the discovered stacks bigger. I always need to scroll."
-severity: minor
+result: pass
+follow_up: "Passed, but the Already managed badge, the link and both buttons are strangely arranged (G-18-27-managed-row)."
+previously_reported: "please make the card with the discovered stacks bigger. I always need to scroll."
+note: "Re-test after gap closure (G-18-22-card, 18-24)."
 
 ## Summary
 
 total: 11
-passed: 9
-issues: 2
+passed: 11
+issues: 0
 pending: 0
 skipped: 0
 blocked: 0
@@ -196,7 +197,9 @@ blocked: 0
 
 - gap_id: G-18-22-inplace
   truth: "A stack that lives in the stacks folder under its own name is recognised as in-place even when the scan reaches it through Docktor's /host mount"
-  status: failed
+  status: resolved
+  resolved_by: 18-22-PLAN
+  resolved_at: 2026-10-17
   reason: "User reported: Migration refused: the new stack directory .../dev-data/docktor/stacks/memos already exists. (Docktor's compose maps /:/host:ro.)"
   severity: major
   test: 10
@@ -214,7 +217,9 @@ blocked: 0
 
 - gap_id: G-18-22-status
   truth: "A migrated stack's status reflects only its own containers, not those of the old stack that is left running"
-  status: failed
+  status: resolved
+  resolved_by: 18-26-PLAN
+  resolved_at: 2026-10-17
   reason: "User reported (test 8): the new stack had status running; the old stack was running with the same name."
   severity: major
   test: 8
@@ -231,7 +236,9 @@ blocked: 0
 
 - gap_id: G-18-22-card
   truth: "Discovered stacks table fits without constant scrolling"
-  status: failed
+  status: resolved
+  resolved_by: 18-24-PLAN
+  resolved_at: 2026-10-17
   reason: "User reported: make the card with the discovered stacks bigger."
   severity: minor
   test: 11
@@ -247,7 +254,9 @@ blocked: 0
 
 - gap_id: G-18-23-stop-ui
   truth: "Stopping a stack's containers is reflected in the UI without a reload"
-  status: failed
+  status: resolved
+  resolved_by: 18-23-PLAN
+  resolved_at: 2026-10-17
   reason: "User reported: stopping the container is not reflected in the UI; a reload is needed. Confirmed on a plain managed stack with no old copy running, via the UI Stop action on the detail page (so not the project-name collision of G-18-22-status)."
   severity: major
   test: 8
@@ -261,3 +270,23 @@ blocked: 0
     - "Serialise event handling per container (or stack) so writes land in event order; or drop kill and re-inspect after die/stop"
     - "Parse the Docker event stream line-delimited with buffering"
     - "Regression tests: kill/die/stop events processed out of order or concurrently end in exited/STOPPED; two events in one chunk are both handled"
+
+- gap_id: G-18-27-managed-row
+  truth: "An already-managed row reads clearly: the Status column says it is managed (instead of a meaningless 'Ready') and the action cell is not a cluttered mix of badge, link and disabled buttons"
+  status: resolved
+  resolved_by: inline fix (commit "fix(18): show Already managed in the Status column")
+  resolved_at: 2026-10-18
+  reason: "User reported (test 11, passed): the 'already managed' badge, the link and both buttons are strangely arranged. Maybe add the badge to the status, since 'Ready' is not very useful when already migrated."
+  severity: cosmetic
+  test: 11
+  root_cause: "DiscoveredStackActions renders the Already managed ToneBadge, the 'View <name>' link and both disabled buttons in one flex-wrap justify-end cell, so they wrap unevenly; the Status column still shows the CompatibilityBadge ('Ready') regardless of managedStack."
+  artifacts:
+    - path: "client/src/components/domain/stack/discovered-stack-actions.tsx"
+      issue: "badge + link + two disabled buttons in one wrapping cell"
+    - path: "client/src/components/domain/stack/compatibility-badge.tsx"
+      issue: "status column ignores managedStack"
+  missing:
+    - "Show 'Already managed' in the Status column in place of the compatibility badge for managed rows"
+    - "Action cell: link to the managing stack instead of the disabled Migrate/Adopt buttons (or a single tidy layout)"
+    - "Component tests for the managed row"
+  debug_session: ""

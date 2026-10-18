@@ -547,6 +547,13 @@ describe("BrownfieldImport migration flow", () => {
             expect(within(unmanagedRow).queryByText("Already managed")).toBeNull();
         });
 
+        it("shows Already managed in place of the compatibility badge", async () => {
+            const {managedRow, unmanagedRow} = await scanBoth();
+
+            expect(within(managedRow).queryByText("Migration Recommended")).toBeNull();
+            expect(within(unmanagedRow).getByText("Migration Recommended")).toBeInTheDocument();
+        });
+
         it("disables Migrate and Adopt on the managed row only", async () => {
             const {managedRow, unmanagedRow} = await scanBoth();
 
