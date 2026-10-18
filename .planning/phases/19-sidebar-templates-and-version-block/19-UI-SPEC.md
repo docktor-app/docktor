@@ -301,8 +301,8 @@ No third-party registries are declared (`components.json` `registries: {}`), so 
 
 ## Checker Sign-Off
 
-- [x] Dimension 1 Copywriting: PASS
-- [x] Dimension 2 Visuals: PASS
+- [x] Dimension 1 Copywriting: FLAG (non-blocking: "Retry" lacks a noun)
+- [x] Dimension 2 Visuals: FLAG (non-blocking: no declared focal point)
 - [x] Dimension 3 Color: PASS
 - [x] Dimension 4 Typography: PASS
 - [x] Dimension 5 Spacing: PASS
