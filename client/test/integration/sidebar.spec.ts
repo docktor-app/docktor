@@ -1,10 +1,9 @@
 import {readFileSync} from "node:fs";
-import {resolve} from "node:path";
 import {expect, test} from "./fixtures";
 import type {Page} from "@playwright/test";
 
 // client/package.json always carries a version field
-const {version: appVersion} = JSON.parse(readFileSync(resolve(__dirname, "../../package.json"), "utf8")) as {
+const {version: appVersion} = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as {
     version: string;
 };
 
