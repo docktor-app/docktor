@@ -16,7 +16,7 @@
     {
       "number": "19",
       "name": "Sidebar, Templates and Version Block",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "20",
@@ -31,8 +31,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step",
-    "reason": "Phase 19 of 5 · 40% · executing"
+    "label": "Advance to the next step (verify)",
+    "reason": "Phase 19 of 5 · 40% · ready to verify"
   },
-  "updated_at": "2026-10-18T14:51:19.111Z"
+  "updated_at": "2026-10-18T15:08:12.012Z"
 }

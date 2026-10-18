@@ -21,7 +21,7 @@ export function TemplatesCatalog({
     onUse,
     onRetryRepo,
     retryingRepoId,
-}: Readonly<TemplatesCatalogProps>): JSX.Element | null {
+}: Readonly<TemplatesCatalogProps>): React.JSX.Element | null {
     if (loading) {
         return (
             <div className="space-y-4">

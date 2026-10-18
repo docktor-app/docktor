@@ -31,7 +31,7 @@ const CREATE_FLOW_BREADCRUMB = (
 // One page, two routes: #94 serves the standalone catalog at /templates and
 // #19 serves the create-flow entry at /stacks/create/templates. Title and
 // breadcrumb are chosen by path (UI-SPEC D-04).
-export function TemplatesPageHeader({variant}: Readonly<TemplatesPageHeaderProps>): JSX.Element {
+export function TemplatesPageHeader({variant}: Readonly<TemplatesPageHeaderProps>): React.JSX.Element {
     if (variant === "create-flow") {
         return (
             <PageHeader breadcrumbs={CREATE_FLOW_BREADCRUMB}>
