@@ -1,3 +1,5 @@
+import {readFileSync} from "node:fs";
+import {resolve} from "node:path";
 import {expect, test} from "./fixtures";
 import type {Page} from "@playwright/test";
 
@@ -6,6 +8,11 @@ import type {Page} from "@playwright/test";
 // sufficient (stubs every outbound **/api/** call this suite's pages
 // trigger) and independent of desktop-viewport assumptions — this file is
 // matched only by the "mobile-chromium" project (see playwright.config.ts).
+
+// client/package.json always carries a version field
+const {version: appVersion} = JSON.parse(readFileSync(resolve(__dirname, "../../package.json"), "utf8")) as {
+    version: string;
+};
 
 const mockUser = {id: "1", name: "E2E Tester", email: "test@example.com"};
 const mockSession = {session: {id: "sess-1", userId: "1"}, user: mockUser};
@@ -286,6 +293,38 @@ test.describe("Mobile (D-17, 390-412px viewport)", () => {
         await nav.getByRole("link", {name: "Stacks"}).click();
         await expect(page).toHaveURL("/stacks");
         await expect(page.getByRole("dialog")).toBeHidden();
+        await expectNoHorizontalOverflow(page);
+    });
+
+    test("sidebar sheet: the version and both project links fit with 44px targets and no overflow at 412px and 360px", async ({
+        page,
+    }) => {
+        await mockStacksList(page);
+        await mockBackupDefaults(page);
+
+        await page.goto("/");
+        await page.getByRole("button", {name: "Toggle Sidebar"}).click();
+        const nav = page.getByRole("dialog");
+        const about = nav.getByRole("group", {name: "About Docktor"});
+        await expect(about).toContainText(`v${appVersion}`);
+
+        const github = nav.getByRole("link", {name: "Docktor on GitHub (opens in a new tab)"});
+        const docs = nav.getByRole("link", {name: "Docktor documentation (opens in a new tab)"});
+        await expect(github).toBeVisible();
+        await expect(docs).toBeVisible();
+        await expect(github).toHaveAttribute("href", "https://github.com/docktor-app/docktor");
+        await expect(docs).toHaveAttribute("href", "https://getdocktor.dev");
+        for (const link of [github, docs]) {
+            await expect(link).toHaveAttribute("target", "_blank");
+            await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+            const box = await link.boundingBox();
+            expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
+            expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+        }
+        await expectNoHorizontalOverflow(page);
+
+        await page.setViewportSize({width: 360, height: 780});
+        await expect(about).toBeVisible();
         await expectNoHorizontalOverflow(page);
     });
 
