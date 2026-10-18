@@ -11,6 +11,7 @@ import {
     SidebarMenu,
     SidebarMenuButton,
     SidebarMenuItem,
+    useSidebar,
 } from "@/components/ui/sidebar";
 import {BrandLogo} from "@/components/common/brand-logo";
 import {NavUser} from "@/components/nav-user";
@@ -19,12 +20,20 @@ import {isNavItemActive, NAV_SECTIONS} from "@/lib/sidebar-nav";
 
 export function AppSidebar(): JSX.Element {
     const {pathname} = useLocation();
+    const {setOpenMobile} = useSidebar();
 
     return (
-        <Sidebar>
+        <Sidebar collapsible="icon">
             <SidebarHeader>
-                <div className="px-2 py-2">
-                    <h1><BrandLogo className="h-7 w-auto"/></h1>
+                <div className="px-2 py-2 group-data-[collapsible=icon]:px-0">
+                    <h1>
+                        <span className="group-data-[collapsible=icon]:hidden">
+                            <BrandLogo className="h-7 w-auto"/>
+                        </span>
+                        <span className="hidden group-data-[collapsible=icon]:block">
+                            <BrandLogo variant="mark" className="size-8"/>
+                        </span>
+                    </h1>
                 </div>
             </SidebarHeader>
             <SidebarContent>
@@ -37,8 +46,12 @@ export function AppSidebar(): JSX.Element {
                                     const active = isNavItemActive(pathname, item.to);
                                     return (
                                         <SidebarMenuItem key={item.to}>
-                                            <SidebarMenuButton asChild isActive={active}>
-                                                <Link to={item.to} aria-current={active ? "page" : undefined}>
+                                            <SidebarMenuButton asChild isActive={active} tooltip={item.label}>
+                                                <Link
+                                                    to={item.to}
+                                                    aria-current={active ? "page" : undefined}
+                                                    onClick={() => setOpenMobile(false)}
+                                                >
                                                     <item.icon/>
                                                     <span>{item.label}</span>
                                                 </Link>
