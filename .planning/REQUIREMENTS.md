@@ -33,7 +33,7 @@ Patch release on branch `release/v0.1.1`: bug fixes and interface polish only, n
 
 ### Interface (UI)
 
-- [ ] **UI-01**: User sees the running version (injected at build time, not hard-coded) and GitHub and docs links above the sidebar account menu, working collapsed and on mobile ([#88](https://github.com/docktor-app/docktor/issues/88))
+- [x] **UI-01**: User sees the running version (injected at build time, not hard-coded) and GitHub and docs links above the sidebar account menu, working collapsed and on mobile ([#88](https://github.com/docktor-app/docktor/issues/88))
 - [ ] **UI-02**: Every status label across dashboard, stack list, stack header, services table and activity timeline uses one casing, from one shared mapping ([#89](https://github.com/docktor-app/docktor/issues/89))
 - [ ] **UI-03**: Dashboard KPI numbers and a defined set of labels use a self-hosted monospace font defined in the design tokens ([#90](https://github.com/docktor-app/docktor/issues/90))
 - [ ] **UI-04**: The tab bar shows no scrollbar at desktop and tablet widths, and stays usable on narrow screens ([#91](https://github.com/docktor-app/docktor/issues/91))
@@ -84,7 +84,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MIG-02 | Phase 18 | Complete |
 | MIG-03 | Phase 18 | Complete |
 | MIG-04 | Phase 18 | Complete |
-| UI-01 | Phase 19 | Pending |
+| UI-01 | Phase 19 | Complete |
 | UI-06 | Phase 19 | Complete |
 | UI-07 | Phase 19 | Complete |
 | UI-02 | Phase 20 | Pending |

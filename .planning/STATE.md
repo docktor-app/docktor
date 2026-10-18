@@ -4,17 +4,17 @@ milestone: v0.1.1
 milestone_name: Release Follow-ups
 current_phase: 19
 current_phase_name: Sidebar, Templates and Version Block
-status: executing
-stopped_at: Completed 19-02-PLAN.md
-last_updated: "2026-10-18T15:00:24.901Z"
+status: verifying
+stopped_at: Completed 19-03-PLAN.md
+last_updated: "2026-10-18T15:08:16.172Z"
 last_activity: 2026-10-18
 last_activity_desc: Phase 19 execution started
-state_head: 8d3486d884648e7ec841a5a15e3cae63af6ee797
+state_head: a96fdf3d5473b3be40ddbf1d6590f1e4381601e7
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 32
-  completed_plans: 31
+  completed_plans: 32
   percent: 40
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-10-14)
 
 Phase: 19 (Sidebar, Templates and Version Block) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-18 — Phase 19 execution started
 
 Progress: [████░░░░░░] 40%
@@ -93,6 +93,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 18 P26 | 6min | 3 tasks | 12 files |
 | Phase 19 P01 | 4 min | 2 tasks | 6 files |
 | Phase 19 P02 | 8min | 2 tasks | 7 files |
+| Phase 19 P03 | 20min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -148,6 +149,7 @@ Roadmap decisions for v0.1.1:
 - [Phase 19]: 19-01: sidebar section labels/order/items live only in sidebar-nav.ts; active state is segment-aware (no startsWith); mobile sheet closes via setOpenMobile(false) on nav Link click
 - [Phase 19]: /templates and /stacks/create/templates share TemplateBrowsePage; header variant derives from pathname
 - [Phase 19]: Zero-templates EmptyState suppressed when any repo has a lastSyncError (its alert explains the empty catalog)
+- [Phase 19]: Version comes from client/package.json via Vite/Vitest define (no request); docs link targets getdocktor.dev; collapsed rail uses one Info dropdown button
 
 ### Pending Todos
 
@@ -171,6 +173,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-18T15:00:24.480Z
-Stopped at: Completed 19-02-PLAN.md
+Last session: 2026-10-18T15:08:15.597Z
+Stopped at: Completed 19-03-PLAN.md
 Resume file: None
