@@ -238,4 +238,73 @@ describe("TemplateBrowsePage", () => {
         await user.click(screen.getByRole("button", {name: "Use Template"}));
         expect(mockNavigate).toHaveBeenCalledWith("/stacks/create?variant=v1");
     });
+
+    describe("catalog states (UI-SPEC empty / loading / error)", () => {
+        const FAILED_REPO = {
+            id: "r1",
+            url: "https://example.com/repo.git",
+            isDefault: true,
+            headCommitSha: null,
+            lastSyncAttemptAt: "2026-01-01T00:00:00Z",
+            lastSyncedAt: null,
+            lastSyncError: "not found",
+            issues: [],
+        };
+
+        it.each(["/templates", "/stacks/create/templates"])(
+            "an empty catalog at %s shows No templates available with Settings and blank-compose links",
+            (path) => {
+                mockUseTemplates.mockReturnValue(baseResult({catalog: {repos: [], templates: []}}));
+
+                renderPage(path);
+
+                expect(screen.getByRole("heading", {level: 3, name: "No templates available"})).toBeVisible();
+                expect(screen.getByRole("link", {name: "Settings"})).toHaveAttribute("href", "/settings/stacks");
+                expect(screen.getByRole("link", {name: "start from a blank compose file"})).toHaveAttribute(
+                    "href",
+                    "/stacks/create",
+                );
+                expect(screen.queryByRole("textbox", {name: "Search templates"})).not.toBeInTheDocument();
+            },
+        );
+
+        it("a healthy repo with zero templates still shows No templates available", () => {
+            mockUseTemplates.mockReturnValue(
+                baseResult({catalog: {repos: [{...FAILED_REPO, lastSyncError: null}], templates: []}}),
+            );
+
+            renderPage("/templates");
+
+            expect(screen.getByText("No templates available")).toBeVisible();
+        });
+
+        it("a failed repo with zero templates shows its alert instead of No templates available", () => {
+            mockUseTemplates.mockReturnValue(baseResult({catalog: {repos: [FAILED_REPO], templates: []}}));
+
+            renderPage("/templates");
+
+            expect(screen.getByText(/Couldn't load templates from/)).toBeVisible();
+            expect(screen.queryByText("No templates available")).not.toBeInTheDocument();
+        });
+
+        it("a populated catalog shows the grid and no empty state", () => {
+            mockUseTemplates.mockReturnValue(baseResult({catalog: SINGLE_VARIANT_CATALOG}));
+
+            renderPage("/templates");
+
+            expect(screen.queryByText("No templates available")).not.toBeInTheDocument();
+            expect(screen.getByText("Whoami")).toBeVisible();
+            expect(screen.getByRole("textbox", {name: "Search templates"})).toBeVisible();
+        });
+
+        it("shows the first-run loading copy at /templates", () => {
+            mockUseTemplates.mockReturnValue(baseResult({loading: true}));
+
+            renderPage("/templates");
+
+            expect(
+                screen.getByText("Templates are loading for the first time — this can take a moment."),
+            ).toBeVisible();
+        });
+    });
 });
