@@ -1,8 +1,8 @@
 ---
 phase: 18-import-and-migration-flow
-verified: 2026-10-17T00:30:00Z
+verified: 2026-10-18T13:00:00Z
 status: human_needed
-score: 21/21 must-haves verified
+score: 28/28 must-haves verified
 covered_files:
   - ".planning/phases/18-import-and-migration-flow/18-01-PLAN.md"
   - ".planning/phases/18-import-and-migration-flow/18-01-SUMMARY.md"
@@ -46,6 +46,16 @@ covered_files:
   - ".planning/phases/18-import-and-migration-flow/18-20-SUMMARY.md"
   - ".planning/phases/18-import-and-migration-flow/18-21-PLAN.md"
   - ".planning/phases/18-import-and-migration-flow/18-21-SUMMARY.md"
+  - ".planning/phases/18-import-and-migration-flow/18-22-PLAN.md"
+  - ".planning/phases/18-import-and-migration-flow/18-22-SUMMARY.md"
+  - ".planning/phases/18-import-and-migration-flow/18-23-PLAN.md"
+  - ".planning/phases/18-import-and-migration-flow/18-23-SUMMARY.md"
+  - ".planning/phases/18-import-and-migration-flow/18-24-PLAN.md"
+  - ".planning/phases/18-import-and-migration-flow/18-24-SUMMARY.md"
+  - ".planning/phases/18-import-and-migration-flow/18-25-PLAN.md"
+  - ".planning/phases/18-import-and-migration-flow/18-25-SUMMARY.md"
+  - ".planning/phases/18-import-and-migration-flow/18-26-PLAN.md"
+  - ".planning/phases/18-import-and-migration-flow/18-26-SUMMARY.md"
   - "client/src/components/domain/stack/brownfield-import.tsx"
   - "client/src/components/domain/stack/diff-confirm-dialog.tsx"
   - "client/src/components/domain/stack/discovered-stack-actions.tsx"
@@ -67,6 +77,7 @@ covered_files:
   - "client/src/routes/setup/components/migration-select-step.tsx"
   - "client/src/routes/setup/components/migration-step-indicator.tsx"
   - "client/src/routes/setup/components/migration-wizard.tsx"
+  - "server/src/application/container-state-catch-up.ts"
   - "server/src/application/managed-stack-guard.ts"
   - "server/src/application/migration-operation-service.ts"
   - "server/src/application/migration-service.ts"
@@ -74,14 +85,20 @@ covered_files:
   - "server/src/application/own-stack-guard.ts"
   - "server/src/application/ports/brownfield-scanner-port.ts"
   - "server/src/application/ports/compose-rewriter-port.ts"
+  - "server/src/application/ports/directory-identity-port.ts"
   - "server/src/application/ports/external-stack-control-port.ts"
   - "server/src/application/ports/own-mounts-port.ts"
   - "server/src/application/ports/self-stack-port.ts"
   - "server/src/application/ports/stack-filesystem-port.ts"
   - "server/src/application/ports/volume-migrator-port.ts"
+  - "server/src/application/stack-container-matcher.ts"
   - "server/src/application/subscribers/state-broadcast-subscriber.ts"
   - "server/src/domain/bind-mount-sources.ts"
+  - "server/src/domain/compose-labels.ts"
+  - "server/src/domain/compose-project-name.ts"
+  - "server/src/domain/directory-identity.ts"
   - "server/src/domain/events.ts"
+  - "server/src/domain/host-ports.ts"
   - "server/src/domain/managed-stack-paths.ts"
   - "server/src/domain/migration-operation.ts"
   - "server/src/domain/migration-target.ts"
@@ -89,14 +106,18 @@ covered_files:
   - "server/src/infrastructure/brownfield-scanner.ts"
   - "server/src/infrastructure/compose-analyzer.ts"
   - "server/src/infrastructure/compose-rewriter.ts"
+  - "server/src/infrastructure/directory-identity-resolver.ts"
   - "server/src/infrastructure/disk-usage-scanner.ts"
   - "server/src/infrastructure/docker-self-stack.ts"
+  - "server/src/infrastructure/dockerode-client.ts"
   - "server/src/infrastructure/dotenv-format.ts"
   - "server/src/infrastructure/external-stack-control.ts"
   - "server/src/infrastructure/probe-transport.ts"
   - "server/src/infrastructure/stack-filesystem.ts"
   - "server/src/infrastructure/volume-migrator.ts"
+  - "server/src/jobs/state-poller.ts"
   - "server/src/lib/errors.ts"
+  - "server/src/lib/json-lines-decoder.ts"
   - "server/src/lib/state-broadcaster.ts"
   - "server/src/repositories/stack-repository.ts"
   - "server/src/routes/imports.ts"
@@ -104,133 +125,120 @@ covered_files:
   - "shared/src/validation/brownfield.ts"
   - "shared/src/validation/index.ts"
   - "shared/src/validation/migration-operation.ts"
-covered_digest: "v3:sha256:f53f5cdf81de682ac533bd1d1f8883e81338cb1ad7c3eceefb8049073edae356"
+covered_digest: "v3:sha256:3fd55372c6ae721470234b0189cbf16102219880d436f94a527a4a9ba24bba65"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
-  previous_status: gaps_found
-  previous_score: 14/17
+  previous_status: human_needed
+  previous_score: 21/21
   gaps_closed:
-    - "CR-03 / gap 1 (18-19, 18-21): absolute bind sources are resolved through Docktor's own mounts (containerVisiblePaths); an invisible, unreadable or ~ source is refused with a 400 in preview and preflight before any side effect; a source that vanishes between preflight and copy rolls back; only a visible-but-absent source becomes an empty directory and it is listed in emptySources, which the review step shows"
-    - "CR-01 / gap 2 (18-18): copyDirectory is archive-mode cp (-a, merge via src/. into an existing destination, fs.cp with verbatimSymlinks and preserveTimestamps only on win32); a missing source or failing copy rejects with its cause and never creates an empty destination"
-    - "CR-02 / gap 3 (18-20): EnvNameAllocator gives each differing literal its own name (KEY, then SERVICE_KEY, then _2.._99), never reuses a Docktor process-env, COMPOSE_*/DOCKER_*, compose-referenced or differing old-.env name; only valid names and dotenv-safe values are moved; the old .env flows into preview and execute, read ENOENT-only"
-    - "WR-01 (18-19): converted sources must be declared by the compose file; destinations, volume names, collisions and reserved names are validated in preflight (copyDestinationViolations), so a bad request is a 400 with no stop, rename or rollback"
-    - "WR-09 (18-20): invalid interpolation names and non-dotenv-safe values stay inline"
+    - "G-18-22-inplace / WR-10 (18-22): directory identity (fs.realpath plus Docktor's own bind mounts, namespace-tagged host:/container: keys) drives classifyMigrationTarget, findManagingStack and the managed-stack guard; a stacks-folder stack scanned through /host is classified in-place and migrated through the writable stacks-folder spelling"
+    - "G-18-23-stop-ui (18-23): Docker events decoded line by line (JsonLinesDecoder), handled and reconciled in order per compose project under withKeyedLock, kill no longer subscribed"
+    - "G-18-22-card (18-24): discovered-stacks card and setup wrapper max-w-6xl, directory cell wraps"
+    - "G-18-22-status (18-25, 18-26): containers attributed to a stack by compose directory identity in events, reconcile and catch-up; a stop-off migration that would share the old stack's compose project name is refused in preflight (400) and step 4 forces the stop with the reason"
+    - "G-18-27-managed-row (inline fix 57fd049): Already managed shown in the Status column, action cell reduced to the View link plus the disabled buttons"
   gaps_remaining: []
   regressions: []
 gaps: []
 human_verification:
-  - test: "CI: run `yarn tsc --build`, the full workspace unit suites, and server integration tests (server/test/integration/imports.test.ts) on release/v0.1.1"
-    expected: "Zero type errors (MigrationService gained two constructor parameters, ComposeRewriterPort.rewrite gained existingEnv, MigrationPreview gained emptySources; none was type-checked locally); all unit suites green; preview endpoints return emptySources; migrate endpoints answer 202/400/409 as specified"
-    why_human: "Deferred to CI per the no-heavy-local-actions rule; only targeted unit files were run here"
-  - test: "CI: run the Playwright flow (client/test/integration/setup-wizard.spec.ts and stacks-import.spec.ts) on desktop chromium and mobile-chromium with PLAYWRIGHT_PORT"
-    expected: "Four-step dialog walks through; the empty-source note (fixture emptySources: ['./missing']) shows on step 2 and wraps at 360px; sent backup/stopOldStack flags match the switches; managed rows are disabled with the link; skipped roots are listed"
-    why_human: "Only automated evidence for ROADMAP SC2 (readability at desktop and phone widths); visual quality needs a human look; specs have never been executed locally"
-  - test: "On a real host with Docktor in the documented container topology (host / mounted at /host), scan /host/<dir>, then migrate a stack whose compose file has an absolute bind source (e.g. /opt/app/data:/var/lib/data) with 'Stop the old stack' on, once with the source present and once with it absent, and once with a source outside any mount"
-    expected: "Present: data arrives in the new stack. Absent: review step lists it and the new stack starts with an empty folder. Outside any mount: the migration is refused with a 400 naming the path before anything is stopped"
-    why_human: "Real inspect/mount behaviour of the Docker daemon is exercised only through fakes in unit tests (the /host translation is tested with a temp-dir stand-in for the host root)"
-  - test: "As root in the production image, migrate a stack whose bind mount holds a database directory owned by a non-root uid (e.g. Postgres) and enable the backup; then inspect ownership and symlinks in the new stack and in pre-migration-backup/"
+  - test: "CI: run `yarn tsc --build`, the full workspace unit suites (all three workspaces, Linux, Windows, macOS) and the server integration tests on release/v0.1.1"
+    expected: "Zero type errors (round 3 added DirectoryIdentityPort, StackContainerMatcher, JsonLinesDecoder, SharedProjectName and several changed constructor signatures; none was type-checked locally with the full build); all unit suites green on all three OSes (commit 4294d85 fixed a Windows-only path.resolve defect in the identity resolver); integration tests including health-probe.test.ts (constructs a StatePoller with the real repository) green"
+    why_human: "Deferred to CI by project rule (no full tsc --build, no integration suites locally); only targeted unit files were run in this verification"
+  - test: "CI: run the Playwright specs client/test/integration/setup-wizard.spec.ts and stacks-import.spec.ts on desktop chromium and mobile-chromium with PLAYWRIGHT_PORT"
+    expected: "Four-step dialog walks through; empty-source note shows and wraps at 360px; the forced stop switch with the shared-project-name reason (18-26); the discovered-stacks card fits without horizontal table scroll at 1280px and the 360px phone layout does not overflow (18-24); managed rows disabled with the link; skipped roots listed"
+    why_human: "Specs were written in plans 18-21, 18-24 and 18-26 and have never been executed locally; UAT covered the same surfaces by hand but not the automated specs"
+  - test: "As root in the production image, migrate a stack whose bind mount holds a database directory owned by a non-root uid (e.g. Postgres) with the backup on; inspect ownership and symlinks in the new stack and in pre-migration-backup/"
     expected: "uid/gid, modes, timestamps and symlink targets equal the source's; the migrated database starts"
-    why_human: "The ownership assertion in volume-migrator.test.ts is gated on uid 0 (it.skipIf) and was skipped here (uid 1000); CI runners are normally non-root too, so the chown path of `cp -a` is not automatically exercised anywhere. Symlink, mode, timestamp and merge behaviour are exercised and pass"
-  - test: "UAT tests 7 and 8 (BLOCKED in round 1, never re-run). On a real host, migrate (a) a stack with a relative bind mount into a new directory with backup on and stop on, (b) another with backup off and stop off, and (c) a same-name stack already in the stacks folder (in place)"
-    expected: "(a) pre-migration-backup/ exists, old containers stopped, new stack runs with its ./volumes data, original unchanged; (b) no backup folder, old containers keep running; (c) original renamed to <name>-pre-migration, new stack runs in the original path, failure path renames it back. Progress toast follows the steps and ends in one success/failure toast"
-    why_human: "The only end-to-end proof of ROADMAP SC4 and SC5 against a real Docker daemon"
-  - test: "On a real host with Docktor in a container, open Import existing stack and scan the directory holding Docktor's own compose file, a second stack, and one stack already managed by Docktor"
-    expected: "Docktor's own compose file is not listed; the other stack is; the managed one is listed disabled with 'Already managed' and a working View link. Repeat via /host/... and note whether the managed row is still flagged (review WR-10 predicts it is not)"
-    why_human: "Real Docker inspect/label/mount behaviour"
-  - test: "Migrate a stack whose project name differs from its directory (started with -p or COMPOSE_PROJECT_NAME) with 'Stop the old stack' on"
+    why_human: "The ownership assertion in volume-migrator.test.ts is root-gated (it.skipIf) and skipped here (uid 1000, 1 skipped); CI runners are normally non-root, so the chown path of `cp -a` is not exercised anywhere automatically. UAT used a non-database stack (memos)"
+  - test: "Migrate a stack whose compose project name differs from its directory (started with -p or a shell COMPOSE_PROJECT_NAME) with 'Stop the old stack' on"
     expected: "Old containers actually stop; the success toast is accurate"
-    why_human: "Review WR-05: `docker compose -f <file> stop` can exit 0 having stopped nothing"
+    why_human: "Review WR-05 (open): `docker compose -f <file> stop` can exit 0 having stopped nothing when the project name is inferred wrongly; the 18-26 predictor sees only .env, name: and the directory, not -p or shell variables. Not part of the 11 UAT tests"
   - test: "Security decision on review WR-02: /api/setup/scan, /adopt and (once any user exists) /migrate, /migrate/preview and operation reads stay reachable without a session until the wizard is completed"
     expected: "Decide whether to require the step-1 session on all brownfield setup routes before release, or accept the exposure"
-    why_human: "Product/security risk acceptance; explicitly deferred out of gap round 2"
+    why_human: "Product/security risk acceptance; explicitly deferred out of every gap round"
+  - test: "Optional residual: on the documented container topology (host / mounted at /host), migrate a stack with an absolute bind source (e.g. /opt/app/data:/var/lib/data) once with the source present, once absent, once outside any mount"
+    expected: "Present: data arrives. Absent: review step lists it, new stack starts with an empty folder. Outside any mount: 400 naming the path before anything is stopped"
+    why_human: "UAT tests 7, 8 and 10 exercised the /host topology with a relative bind mount; the three absolute-source cases (CR-03) are covered only by unit tests with fakes and a temp-dir stand-in for the host root"
 ---
 
 # Phase 18: Import and Migration Flow Verification Report
 
 **Phase Goal:** Users can import existing stacks without being offered Docktor's own stack, and can migrate one with a readable diff, an explicit choice about the pre-migration backup, and control over whether the old stack keeps running
-**Verified:** 2026-10-17
+**Verified:** 2026-10-18
 **Status:** human_needed
-**Re-verification:** Yes, after gap-closure round 2 (plans 18-18..18-21; prior status gaps_found, 14/17)
+**Re-verification:** Yes, after gap-closure round 3 (plans 18-22..18-26) and two inline fixes (4294d85, 57fd049); prior status human_needed, 21/21
 
 ## Summary
 
-All three gaps recorded in the previous 18-VERIFICATION.md (review CR-03, CR-01, CR-02) are closed in the code, and the folded-in WR-01 and WR-09 are closed with them. They were re-checked against the source, not the SUMMARYs, and each is backed by tests that ran and passed in this verification. No regression was found against the 18 previously verified truths. No gap remains, so the status is no longer `gaps_found`; it is `human_needed` solely because real-Docker, CI and visual checks (and the WR-02 security decision) cannot be done programmatically here.
+All five ROADMAP success criteria hold in the code, all 26 plans have summaries, and the round-3 gaps from the UAT re-test (G-18-22-inplace with WR-10, G-18-23-stop-ui, G-18-22-card, G-18-22-status, G-18-27-managed-row) are closed in the source, not only in the SUMMARYs. 18-UAT.md records 11/11 passed with every gap resolved, so the real-host checks of the previous report (own-stack hiding and managed rows, in-place migration, backup on/stop on, backup off/stop off, phone width, card size) are verified by that UAT. No regression against the earlier truths was found. The status stays `human_needed` only because CI-only evidence (full type-check, all three OS unit jobs, integration tests, Playwright), a root-owned-data check, the WR-05 differing-project-name stop, and the WR-02 security decision cannot be settled programmatically here.
 
 ## Goal Achievement
-
-### Re-check of each previous gap
-
-| Prior gap | Verdict | Evidence in the code |
-|---|---|---|
-| 1. Silent success after not carrying a selected bind mount's data (CR-03) | CLOSED | `MigrationService.planBindCopies` runs in both `previewMigration` and `preflight`. It calls `locateBindSource(originalPath, originalDir, view)` (`domain/bind-mount-sources.ts`), which translates an absolute host source through `containerVisiblePaths` over Docktor's own bind mounts (`OwnMountsPort`, implemented by `DockerSelfStack.ownMounts()`, which never rejects). Refusals (`not-visible`, `mounts-unknown`, `home-relative`) throw `BadRequestError` naming the path before anything is stopped. Of the candidates `firstExisting` picks the first that exists; none existing yields `sourcePath: null`, which only then becomes an empty directory and is returned as `emptySources`. In `execute`, `copyBindMounts` re-checks a planned source with `sourceExists` (ENOENT only) and throws if it vanished, so the rollback path restarts the old stack. Tests: "copies a bind source seen only through Docktor's own mounts", "sources Docktor cannot read fail closed (CR-03)" incl. "planned source vanished" and "access error raised only at execute time" pass (migration-service.test.ts, 94 tests). |
-| 2. Copy and backup lose ownership and rewrite symlinks (CR-01) | CLOSED (ownership: see human item 4) | `VolumeMigrator.copyDirectory` is `cp -a -- src dest`, or `cp -a -- src/. dest` when merging into an existing directory; the source is `lstat`ed first so a missing source rejects with ENOENT and nothing is created; a non-directory collision is refused. `fs.cp` remains only on win32 with `verbatimSymlinks` and `preserveTimestamps`. The production image has no `USER`, so Docktor runs as root and `cp -a` preserves uid/gid. Tests for verbatim relative, absolute and dangling symlinks, file/dir modes and executable bit, timestamps, merge without nesting, single-file and symlink sources, ENOENT, and non-directory destination pass (volume-migrator.test.ts). The uid/gid test is root-gated and skipped (uid 1000 here). |
-| 3. Equal env keys across services collapse (CR-02) | CLOSED | `EnvNameAllocator.allocate` tries `KEY`, then `<SERVICE>_KEY`, then `_2`..`_99`; a name is usable only if it is not a Docktor process-env variable, not `COMPOSE_*`/`DOCKER_*`, either already emitted with the same value, or an old-`.env` key with the same value, or otherwise not referenced by the compose file. `literalEnvValue` only extracts valid interpolation names and dotenv-safe values (`dotenv-format.ts`); unsafe entries stay inline. `rewrite(..., existingEnv)` is fed from `readOldEnv` (ENOENT-only) in both preview and execute; `writeNewEnv` appends only new names, or copies the old `.env` byte for byte when nothing was extracted. Tests "keeps each service's own value when the same key has different values", "shares one .env entry when the same key has the same value", reserved/COMPOSE_/DOCKER_/old-.env cases, and "fails the migration with rollback when the old .env cannot be read" pass. |
 
 ### ROADMAP Success Criteria
 
 | # | Success Criterion | Status | Evidence |
 |---|---|---|---|
-| 1 | Scan never includes Docktor's own stack, every other stack still offered | VERIFIED | Unchanged by round 2 apart from `DockerSelfStack` gaining `ownMounts()` from the same self inspect; `composeFilePaths` fail-open behaviour retained (docker-self-stack.test.ts, onboarding-service.test.ts pass) |
-| 2 | Dialog opens larger; diff and steps readable at desktop and phone widths | VERIFIED in code; visual fit pending CI | `sm:max-w-5xl`, pinned header/footer, scrolling body; the new empty-source `Alert` uses `text-yellow-600 dark:text-yellow-400` and `break-all` on the path. Playwright not run (human item 2) |
-| 3 | Real line diff, shared components | VERIFIED | `computeUnifiedDiff` in preview; `UnifiedDiffView`/`CodeEditor` in `migration-review-step.tsx`; extraction changes alter only the `${NAME}` text, still a splice-based minimal diff |
-| 4 | Backup is its own explicit step; opt-out creates none, opt-in creates one whether renamed or not | VERIFIED | `execute` copies `originalDir` to `<new>/pre-migration-backup` iff `backup && !inPlace`; the copy is now faithful (gap 2). Ownership on real hosts: human item 4 |
-| 5 | User can stop the old stack; if declined it is left running | VERIFIED in code; real Docker pending | `stopOldStack` gate, rollback `start` iff stopped; preflight refusals now happen before the stop (WR-01), so a bad request no longer stops the old stack at all |
+| 1 | Scan never includes Docktor's own stack, every other stack still offered | VERIFIED | `OnboardingService.scan` applies `excludeOwnComposeFiles` over the self-stack lookup (fail-open) and annotates the rest through identity-based `managingStackOf`; UAT test 2 passed on a real host (own stack hidden, sibling listed). onboarding-service (41 tests) pass |
+| 2 | Dialog opens larger; diff and steps readable at desktop and phone widths | VERIFIED (UAT tests 3, 9); Playwright pending CI | `sm:max-w-5xl` on the wizard `DialogContent`, pinned header/footer; discovered-stacks card widened to `max-w-6xl` with wrapping directory cell (18-24); UAT 3, 9 and 11 passed |
+| 3 | Real line diff, shared components | VERIFIED | `migration-review-step.tsx` renders `UnifiedDiffView` and `CodeEditor`; server preview returns `computeUnifiedDiff` over a splice-based rewrite; UAT 4 passed after the re-test |
+| 4 | Backup is its own explicit step; opt-out creates none, opt-in creates one whether renamed or not | VERIFIED | `execute` copies to `pre-migration-backup` iff `backup && !inPlace` (an in-place rename is itself the backup); `cp -a` fidelity (18-18); UAT 5, 7, 8 passed. Root-owner fidelity: human item 3 |
+| 5 | User can stop the old stack; if declined it is left running | VERIFIED | `stopOldStack` gate in `execute`, restart on rollback; a stop-off request that would share the compose project name is refused in preflight (18-26); UAT 6, 7, 8 passed |
 
-### Observable truths (round-2 plan must-haves and carried-forward truths)
+### Observable truths
 
 | # | Truth | Status | Evidence |
 |---|---|---|---|
-| 1-5 | The five ROADMAP SCs above | VERIFIED | see above |
-| 6-10 | Original plan 18-01..18-05 truths (own-stack match, shared schemas, required flags, non-destructive rollback, review step/wizard) | VERIFIED (regression check) | files present and wired; server targeted suites and client wizard/import suites pass |
-| 11-18 | Prior-round gap-closure truths (18-06..18-17: ENOENT-only empty source, exclusive mkdir/recordCreated, managed rows, skipped roots, relative mounts, in-place, background operation, hardening) | VERIFIED (regression check) | `migration-operation-service` (17), `onboarding-service`, `brownfield-scanner`, `brownfield-routes` suites pass; operation start/SSE wiring unchanged |
-| 19 | No success report after silently not carrying a selected bind mount's data (18-19) | VERIFIED | see gap 1; behavior-dependent (rollback/ordering), backed by named passing tests, so not PRESENT_BEHAVIOR_UNVERIFIED |
-| 20 | Copied bind-mount data and backup are faithful (18-18) | VERIFIED (ownership caveat) | see gap 2 |
-| 21 | Rewrite preserves each service's effective environment (18-20) | VERIFIED | see gap 3 |
-| 22 | An absolute source seen only through Docktor's own mounts is copied from that path (18-19) | VERIFIED | `locateAbsolute` + `mountDerivedPaths`; test with a temp-dir stand-in for `/host` |
-| 23 | Every converted originalPath is declared by the compose file; newPath/volume names validated in preflight (WR-01) | VERIFIED | `assertDeclaredSources`, `copyDestinationViolations` (escape, stack-root only for the stack-directory mount, reserved names, equal/nested destinations, `VOLUME_NAME_PATTERN`) |
-| 24 | Review step lists every emptySources entry, nothing when empty, dark-mode safe, one `MigrationPreview` type (18-21) | VERIFIED | `MigrationPreview.emptySources` in `brownfield-types.ts`; `emptySources={preview.emptySources}` in the wizard; conditional `Alert` in `migration-review-step.tsx`; wizard test with `["./missing","/srv/app/cache"]` passes (client migration-wizard + brownfield-import suites, 68 tests) |
+| 1-5 | The five ROADMAP SCs | VERIFIED | above |
+| 6-23 | Plan 18-01..18-21 truths (own-stack match, shared schemas, required flags, non-destructive rollback, wizard, relative mounts, in-place, background operation and SSE progress, faithful copy, source resolution, per-service env, empty-source note) | VERIFIED (regression check) | Files present and wired; server suites volume-migrator, bind-mount-sources, compose-rewriter, dotenv-format, migration-operation-service, brownfield-scanner, brownfield-routes, state-poller pass; client migration-wizard and brownfield-import pass |
+| 24 | A stack in the stacks folder reached through /host is classified in-place and migrated through the writable spelling (18-22) | VERIFIED | `MigrationService.assessTarget` identifies target and original via `DirectoryIdentityPort` and `classifyMigrationTarget(identity, identity)`; for `in-place` it re-addresses `composePath` and `originalDir` to the stacks-folder path. directory-identity (domain) and directory-identity-resolver (12) and migration-target tests pass; UAT 10 passed after the re-test |
+| 25 | Managed rows and adopt/migrate refusals recognise /host and symlink spellings (18-22, WR-10) | VERIFIED | `identifyManagedStacks`/`managingStackOf`/`assertNotManaged(stacks, directories, path)` used by `OnboardingService.scan`, adopt and migrate; managed-stack-paths tests pass. Residual: unknown mounts degrade to identical-spelling matching (documented fail-safe) |
+| 26 | A stop of a stack ends exited/STOPPED without a reload (18-23) | VERIFIED | Behavior-dependent (ordering). `JsonLinesDecoder` feeds `dispatch`, which runs `handleEvent` and `reconcileProject` under `withKeyedLock("state-poller:<project>")`; `dockerode-client` filter is `start, stop, die, health_status`. Named test in state-poller-event-stream.test.ts (kill, die, stop in one chunk, kill inspect slowest, ends exited/STOPPED) passes; the UAT gap is recorded resolved |
+| 27 | A migrated stack's status reflects only its own containers (18-25) | VERIFIED | Behavior-dependent (filtering). `StackContainerMatcher.belongsTo` compares the container's compose directory with the stack's `hostPath` by canonical identity (fail-open for unlabelled containers and unknown mounts); wired in `StatePoller.handleEvent`, `reconcileProject` (`ownContainersOf`) and `ContainerStateCatchUp`. state-poller-stack-ownership, stack-container-matcher (7) and container-state-catch-up tests pass |
+| 28 | A stop-off migration sharing the old stack's compose project name is refused before any side effect, and step 4 says why (18-26) | VERIFIED | Behavior-dependent (refusal before side effect). `MigrationService.preflight` throws `BadRequestError(sharedProjectNameRefusal)` when `!stopOldStack` and `sharedProjectName()` is non-null (separate targets only); `composeProjectName` follows .env, `name:`, directory; `target.sharedProjectName` flows through the shared schema to `stopRequirementOf` in `migration-wizard.tsx`. compose-project-name (domain), migration-service (111) and client wizard tests pass |
 
-**Score:** 21/21 must-haves verified (18 prior truths plus the three formerly failed truths 19-21; rows 22-24 are round-2 plan truths evidenced by the same code and tests and not counted separately). 0 behavior-unverified truths.
+(Round-3 truths 24-28 plus the discovered-stacks width and Already-managed status cell: the card width is asserted in brownfield-import.test.tsx, "Already managed in place of the compatibility badge" at line 550; both pass and both passed UAT test 11.)
+
+**Score:** 28/28 truths verified, 0 behavior-unverified.
 
 ### Required Artifacts
 
 | Artifact | Status | Details |
 |---|---|---|
-| `server/src/infrastructure/volume-migrator.ts` | VERIFIED | `cp -a`, merge, lstat-first, win32 fallback; used by `migrator.copyDirectory` for backup and every bind copy |
-| `server/src/domain/bind-mount-sources.ts`, `application/ports/own-mounts-port.ts` | VERIFIED | Pure resolver reusing `containerVisiblePaths`; port implemented by `DockerSelfStack`, injected as default `ownMounts` |
-| `server/src/domain/migration-target.ts` | VERIFIED | `copyDestinationViolations`, `VOLUME_NAME_PATTERN`, `BACKUP_DIR_NAME` consumed by `MigrationService.planCopies` |
-| `server/src/application/migration-service.ts` (736 lines) | VERIFIED | preflight/preview share `planCopies`; `bindCopies` in the plan; fail-closed copy |
-| `server/src/infrastructure/compose-rewriter.ts`, `dotenv-format.ts`, `ports/compose-rewriter-port.ts` | VERIFIED | Allocator, reserved names, `existingEnv` parameter |
-| `client/src/lib/brownfield-types.ts`, `migration-review-step.tsx`, `migration-wizard.tsx` | VERIFIED | Substantive and wired end to end |
+| `server/src/domain/directory-identity.ts`, `application/ports/directory-identity-port.ts`, `infrastructure/directory-identity-resolver.ts` | VERIFIED | Pure identity value object, port, and adapter with cached known mount view and POSIX-safe `absolutePath` (4294d85); consumed by migration-service, onboarding-service, managed-stack-guard, stack-container-matcher |
+| `server/src/application/stack-container-matcher.ts`, `domain/compose-labels.ts` | VERIFIED | Singleton default injected into `StatePoller` and `ContainerStateCatchUp` |
+| `server/src/lib/json-lines-decoder.ts`, `jobs/state-poller.ts` | VERIFIED | Decoder per stream, per-project keyed lock for events and reconcile |
+| `server/src/domain/compose-project-name.ts`, `application/migration-service.ts` | VERIFIED | Predictor and preflight refusal; `shared/src/validation/brownfield.ts` carries `sharedProjectNameSchema` |
+| `client/.../migration-old-stack-step.tsx`, `migration-wizard.tsx`, `brownfield-import.tsx`, `discovered-stack-actions.tsx`, `brownfield-step.tsx` | VERIFIED | Forced stop with source-specific reason, Already managed in the Status column, `max-w-6xl` |
 
 ### Key Link Verification
 
 | From | To | Status |
 |---|---|---|
-| `MigrationService` -> `locateBindSource` -> `containerVisiblePaths` | WIRED (`planBindCopies`) |
-| `MigrationService` -> `dockerSelfStack.ownMounts()` (constructor default) | WIRED |
-| `MigrationService.execute` -> `migrator.copyDirectory(plan source, dest)` and backup copy | WIRED |
-| `MigrationService` -> `rewriter.rewrite(compose, sels, named, existingEnv)` in preview and execute | WIRED |
-| `routes/imports.ts` and `routes/setup.ts` preview -> `previewMigration` result (incl. `emptySources`) returned as is | WIRED |
-| `MigrationWizard` -> `MigrationReviewStep emptySources` | WIRED |
+| `MigrationService.assessTarget` -> `DirectoryIdentityPort.identifyLocal` -> `classifyMigrationTarget` | WIRED |
+| `OnboardingService.scan/adopt` and `MigrationService` -> `managed-stack-guard` (identity) | WIRED |
+| `StatePoller.handleEvent` / `reconcileProject` / `ContainerStateCatchUp.catchUp` -> `StackContainerMatcher.belongsTo` | WIRED |
+| `startEventStream` -> `JsonLinesDecoder.push` -> `dispatch` -> `withKeyedLock` -> `handleEvent` | WIRED |
+| `MigrationService.preflight` -> `sharedProjectName` -> preview `target.sharedProjectName` -> wizard `StopRequirement` | WIRED |
+| `BrownfieldImport` Status cell -> `ToneBadge` "Already managed" when `stack.managedStack` | WIRED |
 
 ### Data-Flow Trace (Level 4)
 
 | Artifact | Data | Source | Real data | Status |
 |---|---|---|---|---|
-| Copied bind-mount data | `sourcePath` | compose-declared path, translated via Docktor's mounts, checked with `fs.access` | Yes | FLOWING (previously DISCONNECTED) |
-| Review step empty-source note | `preview.emptySources` | `previewMigration` -> `planBindCopies` | Yes | FLOWING |
-| `.env` extraction | `extractedEnv` | allocator over the real compose and old `.env` | Yes | FLOWING |
+| Directory identity keys | `view.mounts` | `DockerSelfStack.ownMounts()` (container inspect) plus `fs.realpath` | Yes | FLOWING |
+| Container ownership | compose directory label | live Docker container labels vs `stack.hostPath` (prisma column via `findByComposeProject`) | Yes | FLOWING |
+| Shared-project-name notice | `preview.target.sharedProjectName` | old compose file and `.env` read in `previewMigration` | Yes | FLOWING |
 
 ### Behavioral Spot-Checks (targeted unit files only)
 
 | Scope | Result | Status |
 |---|---|---|
-| Server unit: volume-migrator, bind-mount-sources, docker-self-stack, migration-target, migration-service, compose-rewriter, dotenv-format | 7 files, 269 passed, 1 skipped (root-only chown test, uid 1000) | PASS |
-| Server unit: migration-operation-service, onboarding-service, brownfield-scanner, brownfield-routes | 4 files, 126 passed | PASS |
-| Client: migration-wizard, brownfield-import | 2 files, 68 passed | PASS |
-| Not run (project rule) | `tsc --build`, Playwright, server integration tests, full suites | Deferred to CI (human items 1, 2) |
+| Server unit, round 3: directory-identity, directory-identity-resolver, migration-target, managed-stack-paths, compose-project-name, compose-labels, migration-service, onboarding-service, stack-container-matcher, container-state-catch-up, state-poller-stack-ownership, state-poller-event-stream, json-lines-decoder, dockerode-client | 14 files, 320 passed | PASS |
+| Server unit, regression: volume-migrator, bind-mount-sources, compose-rewriter, dotenv-format, migration-operation-service, brownfield-scanner, state-poller | 8 files (incl. directory-identity), 242 passed, 1 skipped (root-only chown, uid 1000) | PASS |
+| Server unit: brownfield-routes | 41 passed | PASS |
+| Shared: brownfield validation | 58 passed | PASS |
+| Client: brownfield-import, migration-wizard | 2 files, 77 passed | PASS |
+| Not run (project rule) | `tsc --build`, Playwright, server integration, full suites | Deferred to CI (human items 1, 2) |
 
 ### Probe Execution
 
@@ -238,43 +246,43 @@ SKIPPED: no probes declared by the phase plans; no `scripts/*/tests/probe-*.sh` 
 
 ### Requirements Coverage
 
-Requirement IDs declared across the 21 plans: STK-03, MIG-01, MIG-02, MIG-03, MIG-04 (round 2: 18-18 MIG-03, 18-19 MIG-04 + STK-03, 18-20 MIG-02, 18-21 MIG-01). All five are in REQUIREMENTS.md (lines 18-21, 27) and in the phase section of the ROADMAP; no orphaned requirement.
+Requirement IDs declared across the 26 plans' frontmatter: STK-03, MIG-01, MIG-02, MIG-03, MIG-04 (18-22 carries STK-03, MIG-02, MIG-03, MIG-04; 18-23 MIG-04; 18-24 STK-03; 18-25 MIG-04; 18-26 MIG-04, MIG-01). All five are defined in REQUIREMENTS.md (lines 18-21, 27) and mapped to Phase 18 in its traceability table and in the ROADMAP phase section. No ID is missing and none is orphaned.
 
-| Requirement | Source Plans (round 2) | Status | Evidence |
+| Requirement | Source Plans | Status | Evidence |
 |---|---|---|---|
-| STK-03 | 18-19 (and 18-01, 18-07, 18-09, 18-11, 18-13) | SATISFIED | Own-stack detection unchanged and still fail-open; `composeFilePaths` candidates unchanged. Caveat WR-10 (managed detection via `/host` alias) stays open |
-| MIG-01 | 18-21 (and 18-04, 18-05, 18-10, 18-17) | SATISFIED in code; Playwright/visual in CI | Wide dialog; empty-source note readable in dark mode |
-| MIG-02 | 18-20 (and 18-02, 18-04, 18-08, 18-09, 18-10) | SATISFIED | Real line diff over a non-lossy rewrite; env extraction now value-preserving. Caveat WR-06 (compose diff unmasked) open |
-| MIG-03 | 18-18 (and 18-03, 18-05, 18-06, 18-12, 18-14, 18-15) | SATISFIED | Explicit step; the opted-in copy is now faithful. Root-owner proof on a real host is human item 4 |
-| MIG-04 | 18-19 (and 18-03, 18-05, 18-06, 18-07, 18-12, 18-14..18-17) | SATISFIED in code; real-Docker proof pending | Fail-closed source handling, stop before copy, restart on rollback |
+| STK-03 | 18-01, 07, 09, 11, 13, 19, 22, 24 | SATISFIED | Own stack hidden, others listed, managed rows flagged by identity and refused with 409; UAT 2 and 11 |
+| MIG-01 | 18-04, 05, 10, 17, 21, 26 | SATISFIED | Wide dialog, readable steps; UAT 3, 9; Playwright in CI |
+| MIG-02 | 18-02, 04, 08, 09, 10, 20, 22 | SATISFIED | Real line diff via `UnifiedDiffView`/`CodeEditor` over a non-lossy rewrite; UAT 4. Caveat WR-06 (compose diff secrets unmasked) open |
+| MIG-03 | 18-03, 05, 06, 12, 14, 15, 18, 22 | SATISFIED | Explicit backup step, opt-out creates none, faithful opt-in copy; UAT 5, 7, 8. Root-owner proof: human item 3 |
+| MIG-04 | 18-03, 05, 06, 07, 12, 14..17, 19, 22, 23, 25, 26 | SATISFIED | Stop gate, rollback restart, ordered state, project-name refusal; UAT 6, 7, 8 |
 
-Housekeeping for the orchestrator: REQUIREMENTS.md currently marks all five as "Gaps Found" (commit 8ddd41b); with no gaps remaining they can move to Complete once the human items are accepted or resolved. `18-REVIEW-DISPOSITION.md` still lists CR-01..03, WR-01 and WR-09 as `open`; update them to closed.
+Housekeeping for the orchestrator (not verification failures): REQUIREMENTS.md still shows MIG-02 and MIG-03 unchecked and "Gaps Found" in the traceability table although no gap remains; ROADMAP.md still reads "26/26 plans executed (5 gap-closure plans pending, round 3)" with the Phase 18 checkbox open; 18-REVIEW-DISPOSITION.md lists all 19 findings as `open` (CR-01..03, WR-01, WR-09 and WR-10 are closed in code).
 
 ### Anti-Patterns Found
 
-TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER scan over the 13 source files changed in round 2: no matches; no `any` casts introduced. Pre-existing infos unchanged: `compose-analyzer.ts` `any` (IN-02), `console.error` in rollback paths.
+TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER scan over the round-3 source files (directory identity, resolver, matcher, labels, project-name, decoder, migration-service, managed-stack-guard, state-poller, catch-up, wizard, old-stack step, import card and actions): no matches. The `as` narrowings in `state-poller.ts` carry explanatory comments; no `as any` introduced.
 
 | File | Line | Pattern | Severity | Impact |
 |---|---|---|---|---|
 | (none blocking) | | | | |
 
-### Non-blocking items still open (unchanged, tracked in 18-REVIEW-DISPOSITION.md)
+### Non-blocking items still open (tracked in 18-REVIEW-DISPOSITION.md)
 
-WR-02 (unauthenticated setup brownfield routes; human item 8), WR-03 (failed `docker.up` leaves containers), WR-04 (named-volume key prefix), WR-05 (stop by inferred project name; human item 7), WR-06 (compose diff secrets unmasked), WR-07 (rollback cleanup errors swallowed), WR-08 (toast lifecycle), WR-10 (`/host` alias in managed/in-place detection), WR-11 (`~` sources are now refused instead of silently emptied, but never rewritten), IN-01..IN-05. None falsifies a success criterion. One edge noted while reading: an absolute source that equals the compose directory but is spelled as a host path under a `/host` scan is not recognised as the stack-directory mount and is refused with an explicit 400 (fail closed; related to WR-10).
+WR-02 (unauthenticated setup brownfield routes; human item 5), WR-03 (failed `docker.up` leaves containers), WR-04 (named-volume key prefix), WR-05 (stop by inferred project name; human item 4), WR-06 (compose diff secrets unmasked), WR-07 (rollback cleanup errors swallowed), WR-08 (toast lifecycle), WR-11 (`~` sources refused, never rewritten), IN-01..IN-05. None falsifies a success criterion.
 
 ### Deferred items (Step 9b)
 
-None. Phases 19-21 (sidebar/templates/version, visual consistency, release) do not cover any open item.
+None. Phases 19-21 (sidebar/templates/version, visual consistency and touch targets, release) do not cover any open item.
 
 ## Human Verification Required
 
-Eight items in the frontmatter: CI type-check/unit/integration; CI Playwright incl. 360px and the empty-source note; a real-host `/host` absolute-source migration (present, absent, outside any mount); a root-owned database directory and backup fidelity check (the chown assertion is skipped without root); the blocked UAT tests 7 and 8 plus in-place; own-stack hiding and managed-row flagging on a real host; stop with a differing project name; and the WR-02 security decision.
+Six items in the frontmatter: CI type-check/unit (3 OS)/integration; CI Playwright; root-owned database fidelity; stop with a differing project name (WR-05); the WR-02 security decision; and an optional absolute-bind-source run on the /host topology. Everything the previous report listed for own-stack hiding, managed rows, in-place and not-in-place migrations, backup on/off, stop on/off and phone width is verified by the completed UAT (11/11).
 
 ## Gaps Summary
 
-No gaps. The three data-fidelity defects from the previous round are closed in code and covered by passing tests, with WR-01 and WR-09 closed alongside. What remains is evidence that only CI, a real Docker host, a root run and a human can supply, plus the open WR-02 security decision, so the phase is `human_needed` rather than `passed`.
+No gaps. Round 3 closed the five UAT re-test gaps in code with passing targeted tests, and the UAT confirms them on a real host. The phase is `human_needed` rather than `passed` only because of CI-only evidence, the root-ownership and WR-05 real-host checks, and the open WR-02 security decision.
 
 ---
 
-_Verified: 2026-10-17_
+_Verified: 2026-10-18_
 _Verifier: Claude (gsd-verifier)_
