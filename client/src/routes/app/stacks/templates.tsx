@@ -2,14 +2,12 @@ import {useState} from "react";
 import {useLocation, useNavigate} from "react-router";
 import {toast} from "sonner";
 import {useTemplates} from "@/hooks/use-templates";
-import {TemplateGrid} from "@/components/domain/template/template-grid";
 import {TemplateVariantDialog} from "@/components/domain/template/template-variant-dialog";
-import {TemplateRepoAlerts} from "@/routes/app/stacks/components/template-repo-alerts";
+import {TemplatesCatalog} from "@/routes/app/stacks/components/templates-catalog";
 import type {TemplateSummary} from "@/lib/templates-api";
 import {AlertTriangle} from "lucide-react";
 import {Alert, AlertDescription} from "@/components/ui/alert";
 import {Button} from "@/components/ui/button";
-import {Skeleton} from "@/components/ui/skeleton";
 import {Page, PageContent} from "@/components/common/layout/page";
 import {TemplatesPageHeader} from "@/routes/app/stacks/components/templates-page-header";
 import type {TemplatesPageVariant} from "@/routes/app/stacks/components/templates-page-header";
@@ -58,19 +56,13 @@ export default function TemplateBrowsePage() {
                     </Alert>
                 )}
 
-                {loading ? (
-                    <div className="space-y-4">
-                        <p className="text-sm text-muted-foreground">Templates are loading for the first time — this can take a moment.</p>
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                            {[0, 1, 2].map((i) => <Skeleton key={i} className="h-48 w-full" />)}
-                        </div>
-                    </div>
-                ) : (
-                    catalog && <>
-                        <TemplateRepoAlerts repos={catalog.repos} onRetry={handleRetry} retryingRepoId={retryingRepoId} />
-                        <TemplateGrid templates={catalog.templates} onUse={handleUse} />
-                    </>
-                )}
+                <TemplatesCatalog
+                    catalog={catalog}
+                    loading={loading}
+                    onUse={handleUse}
+                    onRetryRepo={handleRetry}
+                    retryingRepoId={retryingRepoId}
+                />
             </PageContent>
 
             <TemplateVariantDialog
