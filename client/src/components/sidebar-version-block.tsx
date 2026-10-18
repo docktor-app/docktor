@@ -8,6 +8,14 @@ export interface SidebarVersionBlockProps {
     readonly links: ProjectLinks;
 }
 
+function versionText(version: string): string {
+    return version === "" ? "Docktor" : `v${version}`;
+}
+
+function productLabel(version: string): string {
+    return version === "" ? "Docktor" : `Docktor v${version}`;
+}
+
 export function SidebarVersionBlock({version, links}: Readonly<SidebarVersionBlockProps>): JSX.Element {
     return (
         <div
@@ -15,8 +23,11 @@ export function SidebarVersionBlock({version, links}: Readonly<SidebarVersionBlo
             aria-label="About Docktor"
             className="flex h-8 items-center justify-between gap-1 px-2 max-md:h-11 group-data-[collapsible=icon]:hidden"
         >
-            <span className="min-w-0 truncate text-xs tabular-nums text-sidebar-foreground/70">
-                v{version}
+            <span
+                className="min-w-0 truncate text-xs tabular-nums text-sidebar-foreground/70"
+                title={productLabel(version)}
+            >
+                {versionText(version)}
             </span>
             <div className="flex shrink-0 items-center gap-1">
                 <Button
