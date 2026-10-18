@@ -1,7 +1,7 @@
 ---
 phase: 19-sidebar-templates-and-version-block
 verified: 2026-10-18T17:20:00Z
-status: human_needed
+status: passed
 score: 15/18 must-haves verified
 covered_files:
   - ".planning/phases/19-sidebar-templates-and-version-block/19-01-PLAN.md"
