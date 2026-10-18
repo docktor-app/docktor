@@ -1,5 +1,12 @@
+import {readFileSync} from "node:fs";
+import {resolve} from "node:path";
 import {expect, test} from "./fixtures";
 import type {Page} from "@playwright/test";
+
+// client/package.json always carries a version field
+const {version: appVersion} = JSON.parse(readFileSync(resolve(__dirname, "../../package.json"), "utf8")) as {
+    version: string;
+};
 
 const mockUser = {id: "1", name: "E2E Tester", email: "test@example.com"};
 const mockSession = {session: {id: "sess-1", userId: "1"}, user: mockUser};
@@ -87,5 +94,68 @@ test.describe("Sidebar (UI-06)", () => {
 
         await sidebar.getByRole("link", {name: "Stacks", exact: true}).click();
         await expect(page).toHaveURL("/stacks");
+    });
+});
+
+test.describe("Sidebar version block (UI-01)", () => {
+    test.beforeEach(async ({page}) => {
+        await mockSidebarSurface(page);
+    });
+
+    test("the expanded sidebar shows the client/package.json version and both project links above the account menu", async ({
+        page,
+    }) => {
+        await page.goto("/stacks/create/templates");
+        const sidebar = page.locator('[data-sidebar="sidebar"]');
+        const about = sidebar.getByRole("group", {name: "About Docktor"});
+
+        await expect(about).toContainText(`v${appVersion}`);
+        const github = about.getByRole("link", {name: "Docktor on GitHub (opens in a new tab)"});
+        const docs = about.getByRole("link", {name: "Docktor documentation (opens in a new tab)"});
+        await expect(github).toBeVisible();
+        await expect(docs).toBeVisible();
+        await expect(github).toHaveAttribute("href", "https://github.com/docktor-app/docktor");
+        await expect(docs).toHaveAttribute("href", "https://getdocktor.dev");
+        for (const link of [github, docs]) {
+            await expect(link).toHaveAttribute("target", "_blank");
+            await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+        }
+
+        const aboutBox = await about.boundingBox();
+        const accountBox = await sidebar.getByRole("button", {name: /E2E Tester/}).boundingBox();
+        expect(aboutBox?.y ?? Infinity).toBeLessThan(accountBox?.y ?? 0);
+    });
+
+    test("collapsed to icons the version menu button opens the version and both links by click and by Enter", async ({
+        page,
+    }) => {
+        await page.goto("/stacks/create/templates");
+        const sidebar = page.locator('[data-sidebar="sidebar"]');
+
+        await page.getByRole("button", {name: "Toggle Sidebar"}).click();
+
+        const about = sidebar.locator('[role="group"][aria-label="About Docktor"]');
+        await expect(about).toHaveCount(1);
+        await expect(about).toBeHidden();
+
+        const trigger = page.getByRole("button", {name: `Docktor v${appVersion} links`});
+        await expect(trigger).toBeVisible();
+        await trigger.hover();
+        await expect(
+            page.locator('[data-slot="tooltip-content"]').filter({hasText: `Docktor v${appVersion}`}),
+        ).toBeVisible();
+
+        await trigger.click();
+        const github = page.getByRole("menuitem", {name: "Docktor on GitHub (opens in a new tab)"});
+        const docs = page.getByRole("menuitem", {name: "Docktor documentation (opens in a new tab)"});
+        await expect(github).toHaveAttribute("href", "https://github.com/docktor-app/docktor");
+        await expect(docs).toHaveAttribute("href", "https://getdocktor.dev");
+
+        await page.keyboard.press("Escape");
+        await expect(github).toBeHidden();
+
+        await trigger.focus();
+        await page.keyboard.press("Enter");
+        await expect(github).toBeVisible();
     });
 });

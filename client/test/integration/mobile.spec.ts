@@ -323,6 +323,11 @@ test.describe("Mobile (D-17, 390-412px viewport)", () => {
         }
         await expectNoHorizontalOverflow(page);
 
+        // The collapsed Info menu button exists but is never displayed inside the sheet
+        const railTrigger = nav.locator('[data-sidebar="menu-button"][aria-label$=" links"]');
+        await expect(railTrigger).toHaveCount(1);
+        await expect(railTrigger).toBeHidden();
+
         await page.setViewportSize({width: 360, height: 780});
         await expect(about).toBeVisible();
         await expectNoHorizontalOverflow(page);
