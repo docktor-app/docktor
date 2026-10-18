@@ -1,6 +1,7 @@
-import {describe, expect, it, vi} from "vitest";
-import {render} from "@testing-library/react";
-import {MemoryRouter} from "react-router";
+import {afterEach, describe, expect, it, vi} from "vitest";
+import {render, screen, waitFor, within} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import {MemoryRouter, Route, Routes} from "react-router";
 import {AppSidebar} from "@/components/app-sidebar";
 import {SidebarProvider} from "@/components/ui/sidebar";
 
@@ -9,10 +10,18 @@ vi.mock("@/lib/auth-client", () => ({
     useSession: () => ({data: {user: {name: "Ada Lovelace", email: "ada@example.com"}}}),
 }));
 
-function renderSidebar(path: string) {
+if (typeof globalThis.ResizeObserver === "undefined") {
+    globalThis.ResizeObserver = class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+    } as unknown as typeof ResizeObserver;
+}
+
+function renderSidebar(path: string, defaultOpen = true) {
     return render(
         <MemoryRouter initialEntries={[path]}>
-            <SidebarProvider>
+            <SidebarProvider defaultOpen={defaultOpen}>
                 <AppSidebar/>
             </SidebarProvider>
         </MemoryRouter>,
@@ -72,5 +81,78 @@ describe("AppSidebar sections (UI-06)", () => {
         const {container} = renderSidebar("/account");
 
         expect(navLinks(container).some((link) => link.hasAttribute("aria-current"))).toBe(false);
+    });
+});
+
+describe("AppSidebar icon rail (UI-SPEC D-02)", () => {
+    it("collapses to the icon rail when the provider starts closed", () => {
+        const {container} = renderSidebar("/", false);
+
+        const sidebar = container.querySelector('[data-slot="sidebar"]');
+        expect(sidebar).toHaveAttribute("data-state", "collapsed");
+        expect(sidebar).toHaveAttribute("data-collapsible", "icon");
+    });
+
+    it("shows the entry label in a tooltip on hover", async () => {
+        const user = userEvent.setup();
+        renderSidebar("/", false);
+
+        await user.hover(screen.getByRole("link", {name: "Stacks"}));
+
+        const tooltip = await screen.findByRole("tooltip");
+        expect(tooltip).toHaveTextContent(/^Stacks$/);
+    });
+
+    it("has no collapsible marker while expanded", () => {
+        const {container} = renderSidebar("/");
+
+        expect(container.querySelector('[data-slot="sidebar"]')).toHaveAttribute("data-collapsible", "");
+    });
+
+    it("swaps the full logo for the mark in the rail", () => {
+        renderSidebar("/");
+
+        const images = screen.getAllByRole("img", {name: "Docktor"});
+        expect(images).toHaveLength(4);
+        expect(images[0].parentElement).toHaveClass("group-data-[collapsible=icon]:hidden");
+        expect(images[2].parentElement).toHaveClass("hidden", "group-data-[collapsible=icon]:block");
+        expect(images[2]).toHaveClass("size-8");
+    });
+});
+
+describe("AppSidebar mobile sheet (UI-SPEC D-09)", () => {
+    const originalWidth = Object.getOwnPropertyDescriptor(window, "innerWidth");
+
+    afterEach(() => {
+        if (originalWidth) {
+            Object.defineProperty(window, "innerWidth", originalWidth);
+        }
+    });
+
+    it("closes the sheet after following an internal nav link", async () => {
+        Object.defineProperty(window, "innerWidth", {configurable: true, value: 500});
+        const user = userEvent.setup();
+        render(
+            <MemoryRouter initialEntries={["/"]}>
+                <SidebarProvider>
+                    <AppSidebar/>
+                    <Routes>
+                        <Route path="/" element={<p>Home page</p>}/>
+                        <Route path="/stacks" element={<p>Stacks page</p>}/>
+                    </Routes>
+                </SidebarProvider>
+            </MemoryRouter>,
+        );
+
+        await user.keyboard("{Control>}b{/Control}");
+        const dialog = await screen.findByRole("dialog");
+        expect(within(dialog).getByText("Platform")).toBeInTheDocument();
+        expect(within(dialog).getByText("System")).toBeInTheDocument();
+        expect(within(dialog).getByRole("link", {name: "Templates"})).toBeInTheDocument();
+
+        await user.click(within(dialog).getByRole("link", {name: "Stacks"}));
+
+        expect(await screen.findByText("Stacks page")).toBeInTheDocument();
+        await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     });
 });
