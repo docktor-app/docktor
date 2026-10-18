@@ -15,7 +15,10 @@ import {
 } from "@/components/ui/sidebar";
 import {BrandLogo} from "@/components/common/brand-logo";
 import {NavUser} from "@/components/nav-user";
+import {SidebarVersionBlock} from "@/components/sidebar-version-block";
 import {Separator} from "@/components/ui/separator";
+import {APP_VERSION} from "@/lib/app-version";
+import {PROJECT_LINKS} from "@/lib/project-links";
 import {isNavItemActive, NAV_SECTIONS} from "@/lib/sidebar-nav";
 
 export function AppSidebar(): JSX.Element {
@@ -66,6 +69,7 @@ export function AppSidebar(): JSX.Element {
             </SidebarContent>
             <Separator />
             <SidebarFooter>
+                <SidebarVersionBlock version={APP_VERSION} links={PROJECT_LINKS}/>
                 <NavUser/>
             </SidebarFooter>
         </Sidebar>
