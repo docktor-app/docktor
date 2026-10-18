@@ -2,6 +2,7 @@ import type {FastifyPluginAsyncZod} from "fastify-type-provider-zod";
 import {onboardingService} from "../application/onboarding-service.js";
 import {migrationService} from "../application/migration-service.js";
 import {migrationOperationService} from "../application/migration-operation-service.js";
+import {requireAuth} from "../lib/auth-middleware.js";
 import {BadRequestError} from "../lib/errors.js";
 import {
     brownfieldAdoptSchema,
@@ -17,17 +18,23 @@ import {
 } from "@docktor/shared";
 
 /**
- * WR-03: the setup migrate routes can stop compose projects and read compose
- * files, so they are closed until the admin account exists (mirrors step6's
- * hasAnyUser guard). Requiring the step-1 session on the setup brownfield
- * routes after the admin exists is out of scope and tracked as residual risk
- * (T-18-23).
+ * WR-03: the brownfield routes can scan host files, stop compose projects and
+ * copy directories, so they are closed until the admin account exists (mirrors
+ * step6's hasAnyUser guard).
  */
 async function requireAdminAccount(): Promise<void> {
     if (!(await onboardingService.hasAnyUser())) {
-        throw new BadRequestError("Create the admin account before previewing or running a migration");
+        throw new BadRequestError("Create the admin account before scanning, previewing or running a migration");
     }
 }
+
+/**
+ * WR-02: once the admin exists the wizard is signed in as that admin, so every
+ * brownfield route also demands that session. Before the admin exists the
+ * account guard refuses first (400); an anonymous caller never reaches a scan,
+ * adopt or migration, however long the wizard stays unfinished.
+ */
+const requireWizardSession = [requireAdminAccount, requireAuth];
 
 const setupRoutes: FastifyPluginAsyncZod = async (app) => {
     // CR-01/T-05-09: every /api/setup/* route beyond step 1 must stop being
@@ -121,6 +128,7 @@ const setupRoutes: FastifyPluginAsyncZod = async (app) => {
     app.post(
         "/api/setup/scan",
         {
+            preHandler: requireWizardSession,
             schema: {
                 body: wizardStep5Schema,
             },
@@ -136,6 +144,7 @@ const setupRoutes: FastifyPluginAsyncZod = async (app) => {
     app.post(
         "/api/setup/adopt",
         {
+            preHandler: requireWizardSession,
             schema: {
                 body: brownfieldAdoptSchema,
             },
@@ -153,7 +162,7 @@ const setupRoutes: FastifyPluginAsyncZod = async (app) => {
     app.post(
         "/api/setup/migrate/preview",
         {
-            preHandler: requireAdminAccount,
+            preHandler: requireWizardSession,
             schema: {
                 body: migrationPreviewSchema,
             },
@@ -171,7 +180,7 @@ const setupRoutes: FastifyPluginAsyncZod = async (app) => {
     app.post(
         "/api/setup/migrate",
         {
-            preHandler: requireAdminAccount,
+            preHandler: requireWizardSession,
             schema: {
                 body: migrationExecuteSchema,
             },
@@ -187,7 +196,7 @@ const setupRoutes: FastifyPluginAsyncZod = async (app) => {
     );
 
     // List running and recent operations, e.g. to resync after a reload
-    app.get("/api/setup/migrations", {preHandler: requireAdminAccount}, async () => ({
+    app.get("/api/setup/migrations", {preHandler: requireWizardSession}, async () => ({
         operations: migrationOperationService.list(),
     }));
 
@@ -195,7 +204,7 @@ const setupRoutes: FastifyPluginAsyncZod = async (app) => {
     app.get(
         "/api/setup/migrations/:operationId",
         {
-            preHandler: requireAdminAccount,
+            preHandler: requireWizardSession,
             schema: {
                 params: migrationOperationParamsSchema,
             },

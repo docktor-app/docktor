@@ -40,7 +40,8 @@ import {serializerCompiler, validatorCompiler, type ZodTypeProvider} from "fasti
 import importRoutes from "../../../src/routes/imports.js";
 import setupRoutes from "../../../src/routes/setup.js";
 import {migrationService, type MigrationPlan} from "../../../src/application/migration-service.js";
-import {ConflictError} from "../../../src/lib/errors.js";
+import {requireAuth} from "../../../src/lib/auth-middleware.js";
+import {ConflictError, UnauthorizedError} from "../../../src/lib/errors.js";
 
 const COMPOSE_FIXTURE = [
     "services:",
@@ -76,6 +77,8 @@ describe("brownfield routes", () => {
 
     afterEach(async () => {
         vi.restoreAllMocks();
+        vi.mocked(requireAuth).mockClear();
+        onboardingFake.scan.mockReset();
         onboardingFake.adoptInPlace.mockReset();
         onboardingFake.isWizardComplete.mockReset();
         onboardingFake.isWizardComplete.mockResolvedValue(false);
@@ -216,6 +219,43 @@ describe("brownfield routes", () => {
             const res = await app.inject({method: "POST", url, payload: payload()});
 
             expect(res.statusCode).toBe(410);
+        });
+    });
+
+    describe("setup brownfield routes without a session (WR-02)", () => {
+        const composeBody = () => ({
+            composePath,
+            displayName: "My App",
+            volumeSelections: [],
+            namedVolumeSelections: {},
+            backup: true,
+            stopOldStack: true,
+        });
+
+        it.each([
+            ["POST", "/api/setup/scan", () => ({directories: [tmpDir]})],
+            ["POST", "/api/setup/adopt", () => ({composePath, displayName: "My App"})],
+            ["POST", "/api/setup/migrate/preview", composeBody],
+            ["POST", "/api/setup/migrate", composeBody],
+            ["GET", "/api/setup/migrations", () => undefined],
+            ["GET", "/api/setup/migrations/some-id", () => undefined],
+        ] as const)("%s %s answers 401 and does no work", async (method, url, payload) => {
+            vi.mocked(requireAuth).mockRejectedValueOnce(new UnauthorizedError());
+
+            const res = await app.inject({method, url, payload: payload()});
+
+            expect(res.statusCode).toBe(401);
+            expect(onboardingFake.scan).not.toHaveBeenCalled();
+            expect(onboardingFake.adoptInPlace).not.toHaveBeenCalled();
+        });
+
+        it("answers 400 before an admin exists without consulting the session", async () => {
+            onboardingFake.hasAnyUser.mockResolvedValue(false);
+
+            const res = await app.inject({method: "POST", url: "/api/setup/scan", payload: {directories: [tmpDir]}});
+
+            expect(res.statusCode).toBe(400);
+            expect(requireAuth).not.toHaveBeenCalled();
         });
     });
 
