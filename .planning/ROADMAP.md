@@ -43,7 +43,7 @@ Deferred past v0.1.0 and still tracked in GitHub Issues: public demo instance (#
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 17: Backup Repository and Port-Check Fixes** - Backups use the configured SFTP/S3 repository, and deploy-time port warnings stop flagging a stack's own ports (completed 2026-10-14)
-- [ ] **Phase 18: Import and Migration Flow** - Docktor's own stack is not offered for import, and the migration dialog shows a real diff with explicit backup and stop-old-stack choices
+- [x] **Phase 18: Import and Migration Flow** - Docktor's own stack is not offered for import, and the migration dialog shows a real diff with explicit backup and stop-old-stack choices (completed 2026-10-18)
 - [ ] **Phase 19: Sidebar, Templates and Version Block** - Labelled sidebar sections, a standalone Templates page, and the running version plus project links above the account menu
 - [ ] **Phase 20: Visual Consistency, Dashboard Clarity and Touch Targets** - One status casing, monospace KPIs, scrollbar-free tabs, shared form spacing and table look, an honest "Backups Configured" card, and 44px mobile touch targets
 - [ ] **Phase 21: Release v0.1.1** - Versions bumped to 0.1.1, changelog updated, CI green on `release/v0.1.1`
@@ -88,7 +88,7 @@ Notes: server-side work (backup service and repository environment construction,
   4. The pre-migration backup is its own explicit step the user can opt out of: opting out creates no backup, opting in creates one whether or not the compose file is renamed
   5. The user can choose to stop (undeploy) the old stack as part of the migration, so the new draft stack does not run alongside it; if they decline, the old stack is left running
 
-**Plans:** 26/26 plans executed (5 gap-closure plans pending, round 3)
+**Plans:** 26/26 plans complete (5 gap-closure plans pending, round 3)
 
 Plans:
 **Wave 1**
@@ -211,7 +211,7 @@ Phases execute in numeric order: 17 → 18 → 19 → 20 → 21
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 17. Backup Repository and Port-Check Fixes | 3/3 | Complete    | 2026-10-14 |
-| 18. Import and Migration Flow | 26/26 | In Progress | - |
+| 18. Import and Migration Flow | 26/26 | Complete    | 2026-10-18 |
 | 19. Sidebar, Templates and Version Block | 0/TBD | Not started | - |
 | 20. Visual Consistency, Dashboard Clarity and Touch Targets | 0/TBD | Not started | - |
 | 21. Release v0.1.1 | 0/TBD | Not started | - |

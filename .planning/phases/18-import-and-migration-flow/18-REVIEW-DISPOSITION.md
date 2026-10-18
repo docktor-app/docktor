@@ -5,23 +5,23 @@ titles: json
 findings:
   - id: CR-01
     severity: critical
-    disposition: open
+    disposition: fixed
     title: "Bind-mount copy loses file ownership and rewrites relative symlinks (`fs.cp`)"
   - id: CR-02
     severity: critical
-    disposition: open
+    disposition: fixed
     title: "Equal env keys across services are collapsed into one `.env` entry, silently changing values"
   - id: CR-03
     severity: critical
-    disposition: open
+    disposition: fixed
     title: "Absolute bind mounts are read from the container's view of the filesystem; a missing source becomes an empty directory and the migration reports success"
   - id: WR-01
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Request-controlled paths are validated only inside `execute` (after the old stack is stopped), and the copy source is still unconfined"
   - id: WR-02
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Setup migrate/preview routes are reachable without authentication for as long as the wizard is incomplete (prior WR-03, only partly mitigated)"
   - id: WR-03
     severity: warning
@@ -33,7 +33,7 @@ findings:
     title: "Named-volume migration uses the unprefixed compose key as the Docker volume name (prior WR-08)"
   - id: WR-05
     severity: warning
-    disposition: open
+    disposition: deferred
     title: "Old-stack stop relies on an inferred project name and the UI claims it was stopped (prior WR-07)"
   - id: WR-06
     severity: warning
@@ -49,11 +49,11 @@ findings:
     title: "Migration operation lifecycle is bound to a mounted component; the loading toast can stick forever"
   - id: WR-09
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`.env` extraction emits invalid variable names and unescaped values"
   - id: WR-10
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Managed-stack and in-place detection ignore the `/host` alias of a managed directory"
   - id: WR-11
     severity: warning
@@ -79,7 +79,7 @@ findings:
     severity: info
     disposition: open
     title: "Rollback restart and backup behaviour (prior IN-03)"
-open: 19
+open: 11
 total: 19
 recorded: 2026-10-16T11:09:59.461Z
 ---
@@ -88,19 +88,19 @@ recorded: 2026-10-16T11:09:59.461Z
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| CR-01 | critical | open | - |
-| CR-02 | critical | open | - |
-| CR-03 | critical | open | - |
-| WR-01 | warning | open | - |
-| WR-02 | warning | open | - |
+| CR-01 | critical | fixed | 18-18 |
+| CR-02 | critical | fixed | 18-20 |
+| CR-03 | critical | fixed | 18-19, 18-21 |
+| WR-01 | warning | fixed | 18-19 |
+| WR-02 | warning | fixed | 2cbacb5 |
 | WR-03 | warning | open | - |
 | WR-04 | warning | open | - |
-| WR-05 | warning | open | - |
+| WR-05 | warning | deferred | user, 2026-10-18 (known issue) |
 | WR-06 | warning | open | - |
 | WR-07 | warning | open | - |
 | WR-08 | warning | open | - |
-| WR-09 | warning | open | - |
-| WR-10 | warning | open | - |
+| WR-09 | warning | fixed | 18-20 |
+| WR-10 | warning | fixed | 18-22 |
 | WR-11 | warning | open | - |
 | IN-01 | info | open | - |
 | IN-02 | info | open | - |
