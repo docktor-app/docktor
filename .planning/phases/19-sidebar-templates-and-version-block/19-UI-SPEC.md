@@ -1,7 +1,8 @@
 ---
 phase: "19"
 slug: sidebar-templates-and-version-block
-status: draft
+status: approved
+reviewed_at: 2026-10-18
 shadcn_initialized: true
 preset: "new-york / neutral / cssVariables (components.json), no third-party registries"
 created: "2026-10-18"
@@ -300,12 +301,12 @@ No third-party registries are declared (`components.json` `registries: {}`), so 
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
-- [ ] Dimension 7 Inventory Provenance: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
+- [x] Dimension 7 Inventory Provenance: PASS
 
-**Approval:** pending
+**Approval:** approved 2026-10-18 (checker: 5 PASS, 2 FLAG non-blocking)
