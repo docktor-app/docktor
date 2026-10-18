@@ -1,5 +1,5 @@
 import {useState} from "react";
-import {Link, useNavigate} from "react-router";
+import {useLocation, useNavigate} from "react-router";
 import {toast} from "sonner";
 import {useTemplates} from "@/hooks/use-templates";
 import {TemplateGrid} from "@/components/domain/template/template-grid";
@@ -10,26 +10,18 @@ import {AlertTriangle} from "lucide-react";
 import {Alert, AlertDescription} from "@/components/ui/alert";
 import {Button} from "@/components/ui/button";
 import {Skeleton} from "@/components/ui/skeleton";
-import {Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator} from "@/components/ui/breadcrumb";
-import {Page, PageContent, PageHeader, PageTitle} from "@/components/common/layout/page";
+import {Page, PageContent} from "@/components/common/layout/page";
+import {TemplatesPageHeader} from "@/routes/app/stacks/components/templates-page-header";
+import type {TemplatesPageVariant} from "@/routes/app/stacks/components/templates-page-header";
 
-const BREADCRUMB = (
-    <Breadcrumb>
-        <BreadcrumbList>
-            <BreadcrumbItem><BreadcrumbLink asChild><Link to="/stacks">Stacks</Link></BreadcrumbLink></BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem><BreadcrumbLink asChild><Link to="/stacks/create">Create</Link></BreadcrumbLink></BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem><BreadcrumbPage>Templates</BreadcrumbPage></BreadcrumbItem>
-        </BreadcrumbList>
-    </Breadcrumb>
-);
-
-// Issue #19/D-07: the template browse page at /stacks/create/templates (not
-// /stacks/templates — a stack id can never contain "/", so this path can
-// never collide with a stack whose slug is "templates").
+// The template browse page, served at two routes: /templates (#94, standalone
+// catalog) and /stacks/create/templates (#19/D-07; not /stacks/templates — a
+// stack id can never contain "/", so this path can never collide with a stack
+// whose slug is "templates"). handleUse behaves identically on both (UI-SPEC D-05).
 export default function TemplateBrowsePage() {
     const navigate = useNavigate();
+    const {pathname} = useLocation();
+    const variant: TemplatesPageVariant = pathname.startsWith("/stacks/create") ? "create-flow" : "catalog";
     const {catalog, loading, error, refetch, retryRepo} = useTemplates();
     const [dialogTemplate, setDialogTemplate] = useState<TemplateSummary | null>(null);
     const [retryingRepoId, setRetryingRepoId] = useState<string | null>(null);
@@ -53,9 +45,7 @@ export default function TemplateBrowsePage() {
 
     return (
         <Page>
-            <PageHeader breadcrumbs={BREADCRUMB}>
-                <PageTitle>Start from a Template</PageTitle>
-            </PageHeader>
+            <TemplatesPageHeader variant={variant} />
 
             <PageContent>
                 {error && (

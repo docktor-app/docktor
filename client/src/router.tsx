@@ -57,6 +57,7 @@ export const router = ReactRouterCore.createBrowserRouter(
                 <Route path="/stacks" element={<StacksPage />} />
                 <Route path="/stacks/create" element={<CreateStackPage />} />
                 <Route path="/stacks/create/templates" element={<TemplateBrowsePage />} />
+                <Route path="/templates" element={<TemplateBrowsePage />} />
                 <Route path="/stacks/import" element={<ImportStackPage />} />
                 <Route path="/stacks/:id/backups/:backupId" element={<BackupDetailPage />} />
                 <Route path="/stacks/:id/:tab?" element={<StackDetailPage />} />
