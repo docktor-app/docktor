@@ -268,7 +268,7 @@ test.describe("Mobile (D-17, 390-412px viewport)", () => {
         await expectNoHorizontalOverflow(page);
     });
 
-    test("sidebar: the trigger opens the mobile navigation and Stacks navigates", async ({page}) => {
+    test("sidebar: the trigger opens the labelled mobile navigation and following Stacks closes it", async ({page}) => {
         await mockStacksList(page);
         await mockBackupDefaults(page);
 
@@ -277,11 +277,15 @@ test.describe("Mobile (D-17, 390-412px viewport)", () => {
 
         await page.getByRole("button", {name: "Toggle Sidebar"}).click();
         const nav = page.getByRole("dialog");
+        await expect(nav.getByText("Platform", {exact: true})).toBeVisible();
+        await expect(nav.getByText("System", {exact: true})).toBeVisible();
+        await expect(nav.getByRole("link", {name: "Templates"})).toBeVisible();
         await expect(nav.getByRole("link", {name: "Stacks"})).toBeVisible();
         await expectNoHorizontalOverflow(page);
 
         await nav.getByRole("link", {name: "Stacks"}).click();
         await expect(page).toHaveURL("/stacks");
+        await expect(page.getByRole("dialog")).toBeHidden();
         await expectNoHorizontalOverflow(page);
     });
 
