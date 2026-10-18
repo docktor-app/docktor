@@ -5,16 +5,16 @@ milestone_name: Release Follow-ups
 current_phase: 19
 current_phase_name: Sidebar, Templates and Version Block
 status: executing
-stopped_at: Phase 19 context gathered
-last_updated: "2026-10-18T14:51:19.079Z"
+stopped_at: Completed 19-01-PLAN.md
+last_updated: "2026-10-18T14:55:56.771Z"
 last_activity: 2026-10-18
 last_activity_desc: Phase 19 execution started
-state_head: f42d47d7ed4c017add3caf8ce377b741b6f816b1
+state_head: 28d3c3a2e5c1a0f7ac4c8ce51dcfc4ca43b11c5c
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 32
-  completed_plans: 29
+  completed_plans: 30
   percent: 40
 ---
 
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-10-14)
 ## Current Position
 
 Phase: 19 (Sidebar, Templates and Version Block) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 19
+Plan: 2 of 3
+Status: Ready to execute
 Last activity: 2026-10-18 — Phase 19 execution started
 
 Progress: [████░░░░░░] 40%
@@ -91,6 +91,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 18 P24 | 10min | 2 tasks | 4 files |
 | Phase 18 P25 | 12min | 2 tasks | 8 files |
 | Phase 18 P26 | 6min | 3 tasks | 12 files |
+| Phase 19 P01 | 4 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -143,6 +144,7 @@ Roadmap decisions for v0.1.1:
 - [Phase 18]: 18-23: Docker events and reconcile of one compose project run in order under withKeyedLock('state-poller:<project>'); kill is no longer subscribed
 - [Phase 18]: 18-25: containers attributed to a stack by compose project AND compose directory via canonical identity; unlabelled containers and unknown mounts keep the project-only rule
 - [Phase 18]: 18-26: refuse (not auto-rename) a stop-off migration whose old and new stack share the compose project name; prediction follows .env COMPOSE_PROJECT_NAME, name:, directory
+- [Phase 19]: 19-01: sidebar section labels/order/items live only in sidebar-nav.ts; active state is segment-aware (no startsWith); mobile sheet closes via setOpenMobile(false) on nav Link click
 
 ### Pending Todos
 
@@ -166,6 +168,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-18T12:05:08.474Z
-Stopped at: Phase 19 context gathered
-Resume file: .planning/phases/19-sidebar-templates-and-version-block/19-CONTEXT.md
+Last session: 2026-10-18T14:55:56.385Z
+Stopped at: Completed 19-01-PLAN.md
+Resume file: None

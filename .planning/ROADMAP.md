@@ -165,11 +165,11 @@ Notes: STK-03 sits here rather than in Phase 17 because it is the same "Import e
   3. Above the account menu the sidebar shows the running version, read from the build rather than hard-coded, together with working GitHub and docs links
   4. The version block and links stay usable when the sidebar is collapsed to icons and inside the mobile sidebar sheet
 
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 
 Plans:
 **Wave 1**
-- [ ] 19-01-PLAN.md — Labelled Platform/System sections from a pure nav model with segment-aware highlight, icon rail with tooltips and logo/mark swap, mobile sheet closes on internal nav (UI-06, #93)
+- [x] 19-01-PLAN.md — Labelled Platform/System sections from a pure nav model with segment-aware highlight, icon rail with tooltips and logo/mark swap, mobile sheet closes on internal nav (UI-06, #93)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 19-02-PLAN.md — Templates catalog at /templates beside /stacks/create/templates, path-derived header, zero-templates empty state, page under 80 lines, sidebar journey e2e (UI-07, #94; after 19-01)
@@ -221,7 +221,7 @@ Phases execute in numeric order: 17 → 18 → 19 → 20 → 21
 |-------|----------------|--------|-----------|
 | 17. Backup Repository and Port-Check Fixes | 3/3 | Complete    | 2026-10-14 |
 | 18. Import and Migration Flow | 26/26 | Complete    | 2026-10-18 |
-| 19. Sidebar, Templates and Version Block | 0/TBD | Not started | - |
+| 19. Sidebar, Templates and Version Block | 1/3 | In Progress | - |
 | 20. Visual Consistency, Dashboard Clarity and Touch Targets | 0/TBD | Not started | - |
 | 21. Release v0.1.1 | 0/TBD | Not started | - |
 
