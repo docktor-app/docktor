@@ -60,7 +60,7 @@ export interface ProxyCertStatusEvent {
     proxyConfigId: string
     stackId: string
     domain: string
-    status: "pending" | "issued" | "failed"
+    status: "pending" | "issued" | "failed" | "expiring"
     message?: string
 }
 
@@ -90,7 +90,16 @@ export function useContainerEvents(onEvent: (event: StateEvent) => void, options
     useEffect(() => {
         const es = new EventSource(`${BASE}/api/events`, {withCredentials: true})
         es.onopen = () => onOpen.current?.()
-        es.onmessage = (e) => handler.current(JSON.parse(e.data))
+        es.onmessage = (e) => {
+            let event: StateEvent
+            try {
+                event = JSON.parse(e.data)
+            } catch {
+                // A malformed frame must not break the stream; the next frame is independent.
+                return
+            }
+            handler.current(event)
+        }
         es.onerror = () => {} // Native EventSource auto-reconnects
         return () => es.close()
     }, [])

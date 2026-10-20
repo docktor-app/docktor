@@ -57,6 +57,17 @@ describe("useContainerEvents (OBS-08)", () => {
         expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({containerId: "abc"}));
     });
 
+    it("ignores a malformed SSE frame and keeps handling later ones", () => {
+        const onEvent = vi.fn();
+        renderHook(() => useContainerEvents(onEvent));
+
+        expect(() => mockEventSourceInstance.onmessage?.(new MessageEvent("message", {data: "{not json"}))).not.toThrow();
+        expect(onEvent).not.toHaveBeenCalled();
+
+        mockEventSourceInstance.onmessage?.(new MessageEvent("message", {data: JSON.stringify({containerId: "abc"})}));
+        expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({containerId: "abc"}));
+    });
+
     it("closes EventSource on unmount", () => {
         const onEvent = vi.fn();
         const {unmount} = renderHook(() => useContainerEvents(onEvent));
