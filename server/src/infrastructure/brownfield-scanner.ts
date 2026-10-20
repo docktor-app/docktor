@@ -45,6 +45,11 @@ export class BrownfieldScanner implements BrownfieldScannerPort {
         // file, which the glob patterns above would otherwise offer as a new
         // importable stack (duplicate-slug adoption risk).
         "**/pre-migration-backup/**",
+        // An in-place migration keeps the original as <id>-pre-migration[-N]
+        // next to the stacks (see domain/migration-target.ts); it still holds
+        // a compose file and must not be offered as a new stack either.
+        "**/*-pre-migration/**",
+        "**/*-pre-migration-[0-9]*/**",
     ];
 
     private readonly SYSTEM_DIRS = ["/proc", "/sys", "/dev"];

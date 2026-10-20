@@ -163,6 +163,18 @@ describe("BrownfieldScanner", () => {
             );
         });
 
+        it("should exclude kept <id>-pre-migration originals from scan", async () => {
+            mockFg.mockResolvedValue([]);
+
+            const scanner = new BrownfieldScanner(mockAnalyzer);
+            await scanner.scan(["/opt/stacks"]);
+
+            const callOptions = mockFg.mock.calls[0][1];
+            expect(callOptions.ignore).toEqual(
+                expect.arrayContaining(["**/*-pre-migration/**", "**/*-pre-migration-[0-9]*/**"]),
+            );
+        });
+
         it("should return absolute paths for discovered compose files", async () => {
             mockFg.mockResolvedValue(["/opt/myapp/docker-compose.yml"]);
 
