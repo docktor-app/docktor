@@ -192,7 +192,26 @@ Notes: the three requirements share one component tree (`app-sidebar.tsx`, `nav-
   4. Forms across the app share one label-to-input and field-to-button spacing, and every data table shares one restyled look that matches the shadcn blocks while keeping sorting, status pills and row actions
   5. The stack tab bar shows no scrollbar at desktop and tablet widths and stays usable on narrow screens, and the stack actions trigger, theme toggle, certificate delete button and table pagination buttons have a 44px touch target below `md` and keep the compact size at `md` and up
 
-**Plans**: TBD
+**Plans:** 11 plans
+
+Plans:
+**Wave 1**
+- [ ] 20-01-PLAN.md — One lowercase status vocabulary from lib/status-labels.ts (badges, timeline) and a shared StackBreadcrumb that links the stack name to the overview; UI-09 added to requirements (wave 1)
+- [ ] 20-02-PLAN.md — Shared DataTable look and capabilities: TableFrame, SortableHead (uncontrolled + controlled sort), ExpandedRow, footer, required empty copy, card layout below md (wave 1)
+- [ ] 20-03-PLAN.md — TOUCH_TARGET constant; 44px-below-md pagination buttons (named), stack actions trigger and theme toggle; wrapping pagination footer (wave 1)
+- [ ] 20-04-PLAN.md — FormStack/FormActions primitives; login, signup, two-factor, create stack, health probe and setup-wizard forms adopt them (wave 1)
+- [ ] 20-05-PLAN.md — Self-hosted Geist Mono via @fontsource-variable/geist-mono and the --font-mono token; mono deploy-warning values and sidebar version (wave 1)
+- [ ] 20-06-PLAN.md — StackTabBar section: no vertical/horizontal scrollbar, swipe kept, active tab scrolled into view (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 20-07-PLAN.md — hasBackup on GET /api/stacks (BackupRepository groupBy behind a StackService port) → Backup Coverage n/total card with hint; mono KPIs; refetch after a first backup (wave 2, after 20-01)
+- [ ] 20-08-PLAN.md — Storage backups/stacks, backup history and snapshots on DataTable; env editor and brownfield import framed (wave 2, after 20-02/20-03)
+- [ ] 20-09-PLAN.md — Certificates and notification log on DataTable (44px delete, ToneBadge pills, mono domain); certificate upload and dialog forms on FormStack/FormActions (wave 2, after 20-02/20-03/20-04)
+- [ ] 20-10-PLAN.md — Services, proxy domains and incidents on DataTable with mono technical values and the lowercase upgrade-blocked label (wave 2, after 20-01/20-02/20-03)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 20-11-PLAN.md — Playwright proof (status casing, font origin, tab bar at 1280/768/375, table frame light/dark, 44px vs compact targets), phase-wide guards, isolated CTA relabels (wave 3)
+
 **UI hint**: yes
 
 Notes: client-side polish (`components/common/`, `components/domain/`, route components); `components/ui/` is not edited, so touch-target sizing is applied at call sites and the `SidebarTrigger` stays out of scope. Every light-only color utility needs a `dark:` counterpart, and status/config pills keep rendering through `ToneBadge` and `StatusDot`. Settings cards are not migrated to react-hook-form here (separate refactoring target). Source issues [#71](https://github.com/docktor-app/docktor/issues/71), [#85](https://github.com/docktor-app/docktor/issues/85), [#89](https://github.com/docktor-app/docktor/issues/89), [#90](https://github.com/docktor-app/docktor/issues/90), [#91](https://github.com/docktor-app/docktor/issues/91), [#92](https://github.com/docktor-app/docktor/issues/92), [#95](https://github.com/docktor-app/docktor/issues/95).
