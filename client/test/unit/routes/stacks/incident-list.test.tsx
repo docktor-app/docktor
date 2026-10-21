@@ -66,10 +66,10 @@ describe("IncidentList", () => {
         const [, ongoingRow, closedRow] = screen.getAllByRole("row");
         expect(within(ongoingRow).getByText("Ongoing")).toBeInTheDocument();
         expect(within(ongoingRow).getByText("1h 30m")).toBeInTheDocument();
-        expect(within(ongoingRow).getByText("Unhealthy")).toBeInTheDocument();
+        expect(within(ongoingRow).getByText("unhealthy")).toBeInTheDocument();
         expect(within(closedRow).queryByText("Ongoing")).not.toBeInTheDocument();
         expect(within(closedRow).getByText("2m 5s")).toBeInTheDocument();
-        expect(within(closedRow).getByText("Error")).toBeInTheDocument();
+        expect(within(closedRow).getByText("error")).toBeInTheDocument();
     });
 
     it("keeps start and end times on one line", () => {
