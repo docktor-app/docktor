@@ -5,6 +5,7 @@ import {Button} from "@/components/ui/button";
 import {Card, CardContent} from "@/components/ui/card";
 import {cn} from "@/lib/utils";
 import type {DataTableLayout, TableColumn} from "./data-table";
+import {ItemLink} from "./item-link";
 import {sortIconFor} from "./sortable-head";
 
 const CARDS_LAYOUT: DataTableLayout = {mode: "cards"};
@@ -13,7 +14,7 @@ function visibleColumns<T>(columns: readonly TableColumn<T>[]): readonly TableCo
     return columns.filter((col) => !col.hideHeader);
 }
 
-function titleColumn<T>(columns: readonly TableColumn<T>[]): TableColumn<T> {
+export function titleColumn<T>(columns: readonly TableColumn<T>[]): TableColumn<T> {
     return columns.find((col) => col.isKey) ?? visibleColumns(columns)[0] ?? columns[0];
 }
 
@@ -47,13 +48,22 @@ function SortToolbar<T>({columns}: Readonly<{columns: readonly TableColumn<T>[]}
     );
 }
 
-function CardFields<T>({item, columns}: Readonly<{item: T; columns: readonly TableColumn<T>[]}>): JSX.Element {
+interface CardFieldsProps<T> {
+    readonly item: T;
+    readonly columns: readonly TableColumn<T>[];
+    readonly route?: string;
+}
+
+function CardFields<T>({item, columns, route}: Readonly<CardFieldsProps<T>>): JSX.Element {
     const title = titleColumn(columns);
     const others = columns.filter((col) => col !== title);
+    const titleContent = title.render(item);
 
     return (
         <>
-            <div className={cn("font-medium", title.className)}>{title.render(item)}</div>
+            <div className={cn("font-medium", title.className)}>
+                {route ? <ItemLink to={route}>{titleContent}</ItemLink> : titleContent}
+            </div>
             {others
                 .filter((col) => !col.hideHeader)
                 .map((col) => (
@@ -89,7 +99,7 @@ function ItemCard<T>({item, columns, route, expanded}: Readonly<ItemCardProps<T>
             onClick={route ? () => navigate(route) : undefined}
         >
             <CardContent className="p-4 space-y-2">
-                <CardFields item={item} columns={columns} />
+                <CardFields item={item} columns={columns} route={route} />
                 {expanded}
             </CardContent>
         </Card>

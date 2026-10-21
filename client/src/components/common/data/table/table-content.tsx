@@ -13,7 +13,8 @@ import {
 import {cn} from "@/lib/utils";
 import type {DataTableLayout, TableColumn} from "./data-table";
 import {SortableHead} from "./sortable-head";
-import {TableCards} from "./table-cards";
+import {ItemLink} from "./item-link";
+import {TableCards, titleColumn} from "./table-cards";
 import {TableFrame} from "./table-frame";
 
 function cellClass<T>(col: TableColumn<T>): string {
@@ -87,6 +88,7 @@ export function TableContent<T>({
     }
 
     const layout: DataTableLayout = {mode: "table", columnCount: columns.length};
+    const linkColumn = itemRoute ? titleColumn(columns) : undefined;
 
     return (
         <TableFrame>
@@ -107,7 +109,11 @@ export function TableContent<T>({
                             >
                                 {columns.map((col) => (
                                     <TableCell key={col.name} className={cellClass(col)}>
-                                        {col.render(item)}
+                                        {itemRoute && col === linkColumn ? (
+                                            <ItemLink to={itemRoute(item)}>{col.render(item)}</ItemLink>
+                                        ) : (
+                                            col.render(item)
+                                        )}
                                     </TableCell>
                                 ))}
                             </TableRow>

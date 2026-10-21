@@ -95,6 +95,42 @@ describe("DataTable frame (UI-08)", () => {
     });
 });
 
+describe("DataTable keyboard-operable item links (WR-02)", () => {
+    it("renders the first column as a real link to the item route", () => {
+        renderTable({itemRoute: (item) => `/items/${item.id}`});
+
+        expect(screen.getByRole("link", {name: "Alpha"})).toHaveAttribute("href", "/items/a");
+        expect(screen.getByRole("link", {name: "Beta"})).toHaveAttribute("href", "/items/b");
+        expect(screen.getAllByRole("link")).toHaveLength(2);
+    });
+
+    it("prefers the isKey column for the link", () => {
+        renderTable({
+            itemRoute: (item) => `/items/${item.id}`,
+            columns: [
+                {name: "Size", render: (item) => String(item.size)},
+                {name: "Name", isKey: true, render: (item) => item.name},
+            ],
+        });
+
+        expect(screen.getByRole("link", {name: "Alpha"})).toHaveAttribute("href", "/items/a");
+    });
+
+    it("renders no links without an itemRoute", () => {
+        renderTable();
+
+        expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    });
+
+    it("renders the card title as a link below md", async () => {
+        Object.defineProperty(window, "innerWidth", {configurable: true, value: 500});
+        renderTable({itemRoute: (item) => `/items/${item.id}`});
+
+        expect(await screen.findByRole("link", {name: "Alpha"})).toHaveAttribute("href", "/items/a");
+        Object.defineProperty(window, "innerWidth", {configurable: true, value: 1024});
+    });
+});
+
 describe("DataTable empty and loading states", () => {
     it("renders the message and the description without a table or frame", () => {
         const {container} = renderTable({data: [], emptyDescription: "Add the first item."});
