@@ -77,6 +77,20 @@ describe("StackActions — touch target (A11Y-01)", () => {
     });
 });
 
+describe("StackActions — CTA label (UI-SPEC verb + noun)", () => {
+    it("labels the primary action Redeploy Stack for a running stack", () => {
+        renderActions({status: "RUNNING"});
+
+        expect(screen.getByRole("button", {name: "Redeploy Stack"})).toBeInTheDocument();
+    });
+
+    it("labels the primary action Deploy Stack for a stopped stack", () => {
+        renderActions({status: "STOPPED"});
+
+        expect(screen.getByRole("button", {name: "Deploy Stack"})).toBeInTheDocument();
+    });
+});
+
 describe("StackActions — protected stack (D-12)", () => {
     it("disables Stop and Restart but keeps Deploy and Update Images enabled for a protected running stack", async () => {
         renderActions({isProtected: true, status: "RUNNING"});
