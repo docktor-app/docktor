@@ -7,12 +7,12 @@ import {PasswordConfirmInput, passwordConfirmSchema} from "@docktor/shared";
 import {twoFactor} from "@/lib/auth-client";
 import {classifyAuthError} from "@/lib/auth-errors";
 import {createRetryAfterProbe} from "@/lib/rate-limit";
+import {FormActions, FormStack} from "@/components/common/form-layout";
 import {Button} from "@/components/ui/button";
 import {
     Dialog,
     DialogContent,
     DialogDescription,
-    DialogFooter,
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
@@ -77,22 +77,24 @@ function DisableDialogBody({onOpenChange, onDisabled}: Readonly<BodyProps>): Rea
                 </DialogDescription>
             </DialogHeader>
             <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                    <ErrorBanner message={error}/>
-                    <PasswordField control={form.control}/>
-                    <DialogFooter>
-                        <Button
-                            type="button"
-                            variant="outline"
-                            className={FOOTER_BUTTON_CLASS}
-                            onClick={() => onOpenChange(false)}
-                        >
-                            Cancel
-                        </Button>
-                        <Button type="submit" variant="destructive" className={FOOTER_BUTTON_CLASS} disabled={pending}>
-                            {pending ? "Disabling..." : "Disable two-factor"}
-                        </Button>
-                    </DialogFooter>
+                <form onSubmit={form.handleSubmit(onSubmit)}>
+                    <FormStack>
+                        <ErrorBanner message={error}/>
+                        <PasswordField control={form.control}/>
+                        <FormActions variant="dialog">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className={FOOTER_BUTTON_CLASS}
+                                onClick={() => onOpenChange(false)}
+                            >
+                                Cancel
+                            </Button>
+                            <Button type="submit" variant="destructive" className={FOOTER_BUTTON_CLASS} disabled={pending}>
+                                {pending ? "Disabling..." : "Disable two-factor"}
+                            </Button>
+                        </FormActions>
+                    </FormStack>
                 </form>
             </Form>
         </DialogContent>
