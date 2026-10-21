@@ -383,6 +383,32 @@ describe("DataTable card layout below md (UI-SPEC A-02)", () => {
         expect(screen.queryByText("Actions")).not.toBeInTheDocument();
     });
 
+    it("keeps column typography classes but drops table-only layout classes", async () => {
+        const {container} = renderTable({
+            columns: [
+                {name: "Name", className: "font-medium", tableClassName: "w-full max-w-0", render: (item) => item.name},
+                {name: "Size", className: "font-mono tabular-nums", render: (item) => String(item.size)},
+                {name: "Actions", className: "text-xs", hideHeader: true, render: () => <span>Open</span>},
+            ],
+        });
+
+        await waitFor(() => expect(cards(container)).toHaveLength(2));
+        const card = cards(container)[0];
+        expect(tokens(screen.getAllByText("Alpha")[0])).toContain("font-medium");
+        expect(tokens(screen.getAllByText("Alpha")[0])).not.toContain("max-w-0");
+        expect(tokens(within(card).getByText("3"))).toEqual(expect.arrayContaining(["font-mono", "tabular-nums"]));
+        expect(tokens(within(card).getByText("Open").parentElement)).toContain("text-xs");
+    });
+
+    it("applies tableClassName only to table cells on desktop", () => {
+        Object.defineProperty(window, "innerWidth", {configurable: true, value: 1200});
+        renderTable({
+            columns: [{name: "Name", className: "font-medium", tableClassName: "max-w-0", render: (item) => item.name}],
+        });
+
+        expect(tokens(screen.getByText("Alpha"))).toEqual(expect.arrayContaining(["font-medium", "max-w-0"]));
+    });
+
     it("keeps sorting available through a Sort toolbar", async () => {
         const user = userEvent.setup();
         const {container} = renderTable({data: [...items].reverse(), columns: sortableColumns});

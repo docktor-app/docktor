@@ -20,7 +20,10 @@ export interface TableColumn<T> {
     name: string;
     render: (item: T) => ReactNode;
     isKey?: boolean;
+    /** Typography/colour classes; applied to the table cell and to the field in the mobile card layout. */
     className?: string;
+    /** Table-only layout classes (widths, truncation anchors); ignored in the mobile card layout. */
+    tableClassName?: string;
     headerClassName?: string;
     align?: "left" | "right";
     /** Keeps the header as a column header but visible to screen readers only. */

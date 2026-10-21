@@ -17,7 +17,7 @@ import {TableCards} from "./table-cards";
 import {TableFrame} from "./table-frame";
 
 function cellClass<T>(col: TableColumn<T>): string {
-    return cn(col.align === "right" && "text-right", col.className);
+    return cn(col.align === "right" && "text-right", col.className, col.tableClassName);
 }
 
 function ColumnHeader<T>({column}: Readonly<{column: TableColumn<T>}>): JSX.Element {

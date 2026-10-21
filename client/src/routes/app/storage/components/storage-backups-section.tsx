@@ -12,7 +12,8 @@ const COLUMNS: readonly TableColumn<StorageBackup>[] = [
     {
         name: "Stack",
         isKey: true,
-        className: "w-full max-w-0 font-medium",
+        className: "font-medium",
+        tableClassName: "w-full max-w-0",
         render: (backup) => (
             <span className="block truncate" title={backup.displayName}>
                 {backup.displayName}

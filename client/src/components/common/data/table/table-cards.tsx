@@ -3,6 +3,7 @@ import {useNavigate} from "react-router";
 
 import {Button} from "@/components/ui/button";
 import {Card, CardContent} from "@/components/ui/card";
+import {cn} from "@/lib/utils";
 import type {DataTableLayout, TableColumn} from "./data-table";
 import {sortIconFor} from "./sortable-head";
 
@@ -52,19 +53,19 @@ function CardFields<T>({item, columns}: Readonly<{item: T; columns: readonly Tab
 
     return (
         <>
-            <div className="font-medium">{title.render(item)}</div>
+            <div className={cn("font-medium", title.className)}>{title.render(item)}</div>
             {others
                 .filter((col) => !col.hideHeader)
                 .map((col) => (
                     <div key={col.name} className="flex items-center justify-between text-sm">
                         <span className="text-muted-foreground">{col.name}</span>
-                        <span>{col.render(item)}</span>
+                        <span className={cn("min-w-0", col.className)}>{col.render(item)}</span>
                     </div>
                 ))}
             {others
                 .filter((col) => col.hideHeader)
                 .map((col) => (
-                    <div key={col.name} className="text-sm">
+                    <div key={col.name} className={cn("text-sm", col.className)}>
                         {col.render(item)}
                     </div>
                 ))}

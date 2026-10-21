@@ -9,7 +9,7 @@ import {NotificationTypeBadge} from "@/components/domain/notification/notificati
 const NOTIFICATION_COLUMNS: readonly TableColumn<NotificationEntry>[] = [
     {name: "Type", isKey: true, render: (n) => <NotificationTypeBadge type={n.type} />},
     {name: "Stack", render: (n) => n.stack?.displayName ?? "—"},
-    {name: "Message", className: "max-w-xs truncate", render: (n) => n.message},
+    {name: "Message", className: "truncate", tableClassName: "max-w-xs", render: (n) => n.message},
     {
         name: "Email",
         render: (n) => (

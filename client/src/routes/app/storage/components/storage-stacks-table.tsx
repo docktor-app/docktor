@@ -161,7 +161,8 @@ export function StorageStacksTable({stacks, measuredAt, loading}: Readonly<Stora
         {
             name: "Stack",
             isKey: true,
-            className: "w-full max-w-0 font-medium",
+            className: "font-medium",
+            tableClassName: "w-full max-w-0",
             sort: {direction: directionFor("name"), onToggle: () => handleSort("name")},
             render: (stack) => <StackNameCell stack={stack}/>,
         },
