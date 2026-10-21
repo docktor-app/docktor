@@ -45,7 +45,7 @@ Patch release on branch `release/v0.1.1`: bug fixes and interface polish only, n
 
 ### Accessibility (A11Y)
 
-- [ ] **A11Y-01**: The stack actions trigger, theme toggle, certificate delete button and table pagination buttons have a 44px touch target below `md` and keep the compact size at `md` and up ([#71](https://github.com/docktor-app/docktor/issues/71))
+- [x] **A11Y-01**: The stack actions trigger, theme toggle, certificate delete button and table pagination buttons have a 44px touch target below `md` and keep the compact size at `md` and up ([#71](https://github.com/docktor-app/docktor/issues/71))
 
 ### Release (REL)
 
@@ -96,7 +96,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | UI-09 | Phase 20 | Complete |
 | DASH-01 | Phase 20 | Pending |
 | DASH-02 | Phase 20 | Pending |
-| A11Y-01 | Phase 20 | Pending |
+| A11Y-01 | Phase 20 | Complete |
 | REL-01 | Phase 21 | Pending |
 
 **Coverage:**
