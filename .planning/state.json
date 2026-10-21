@@ -26,13 +26,13 @@
     {
       "number": "21",
       "name": "Release v0.1.1",
-      "status": "pending"
+      "status": "in_progress"
     }
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step (plan phase 21)",
-    "reason": "Phase 21 of 5 — needs a plan"
+    "label": "Advance to the next step",
+    "reason": "Phase 21 of 5 · 80% · executing"
   },
-  "updated_at": "2026-10-21T10:43:26.748Z"
+  "updated_at": "2026-10-21T11:52:16.722Z"
 }
