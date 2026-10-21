@@ -37,7 +37,7 @@ Patch release on branch `release/v0.1.1`: bug fixes and interface polish only, n
 - [x] **UI-02**: Every status label across dashboard, stack list, stack header, services table and activity timeline uses one casing, from one shared mapping ([#89](https://github.com/docktor-app/docktor/issues/89))
 - [ ] **UI-03**: Dashboard KPI numbers and a defined set of labels use a self-hosted monospace font defined in the design tokens ([#90](https://github.com/docktor-app/docktor/issues/90))
 - [ ] **UI-04**: The tab bar shows no scrollbar at desktop and tablet widths, and stays usable on narrow screens ([#91](https://github.com/docktor-app/docktor/issues/91))
-- [ ] **UI-05**: Forms use one shared label-to-input and field-to-button spacing rule ([#92](https://github.com/docktor-app/docktor/issues/92))
+- [x] **UI-05**: Forms use one shared label-to-input and field-to-button spacing rule ([#92](https://github.com/docktor-app/docktor/issues/92))
 - [x] **UI-06**: Sidebar entries are grouped under labelled sections, with nested routes keeping the active highlight ([#93](https://github.com/docktor-app/docktor/issues/93))
 - [x] **UI-07**: A Templates sidebar entry opens a standalone catalog page whose "Use template" starts the create-stack flow ([#94](https://github.com/docktor-app/docktor/issues/94))
 - [x] **UI-08**: All data tables share one restyled look matching the shadcn blocks, keeping sorting, status pills and row actions ([#95](https://github.com/docktor-app/docktor/issues/95))
@@ -91,7 +91,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | UI-02 | Phase 20 | Complete |
 | UI-03 | Phase 20 | Pending |
 | UI-04 | Phase 20 | Pending |
-| UI-05 | Phase 20 | Pending |
+| UI-05 | Phase 20 | Complete |
 | UI-08 | Phase 20 | Complete |
 | UI-09 | Phase 20 | Complete |
 | DASH-01 | Phase 20 | Pending |
