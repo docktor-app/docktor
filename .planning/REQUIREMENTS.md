@@ -49,7 +49,7 @@ Patch release on branch `release/v0.1.1`: bug fixes and interface polish only, n
 
 ### Release (REL)
 
-- [ ] **REL-01**: Package versions are bumped to 0.1.1, the changelog is updated, and CI is green on `release/v0.1.1`
+- [x] **REL-01**: Package versions are bumped to 0.1.1, the changelog is updated, and CI is green on `release/v0.1.1`
 
 ## Future Requirements
 
@@ -97,7 +97,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DASH-01 | Phase 20 | Complete |
 | DASH-02 | Phase 20 | Complete |
 | A11Y-01 | Phase 20 | Complete |
-| REL-01 | Phase 21 | Pending |
+| REL-01 | Phase 21 | Complete |
 
 **Coverage:**
 - v0.1.1 requirements: 23 total

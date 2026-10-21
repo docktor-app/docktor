@@ -46,7 +46,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 18: Import and Migration Flow** - Docktor's own stack is not offered for import, and the migration dialog shows a real diff with explicit backup and stop-old-stack choices (completed 2026-10-18)
 - [x] **Phase 19: Sidebar, Templates and Version Block** - Labelled sidebar sections, a standalone Templates page, and the running version plus project links above the account menu (completed 2026-10-18)
 - [x] **Phase 20: Visual Consistency, Dashboard Clarity and Touch Targets** - One status casing, monospace KPIs, scrollbar-free tabs, shared form spacing and table look, an honest "Backups Configured" card, and 44px mobile touch targets (completed 2026-10-21)
-- [ ] **Phase 21: Release v0.1.1** - Versions bumped to 0.1.1, changelog updated, CI green on `release/v0.1.1`
+- [x] **Phase 21: Release v0.1.1** - Versions bumped to 0.1.1, changelog updated, CI green on `release/v0.1.1` (completed 2026-10-21)
 
 ## Phase Details
 
@@ -228,7 +228,7 @@ Notes: client-side polish (`components/common/`, `components/domain/`, route com
   2. A changelog entry for 0.1.1 lists the fixes and polish shipped in this release, each tied to its GitHub issue
   3. Every CI job is green on `release/v0.1.1`: build, typecheck and unit/integration/Playwright tests on Linux, unit tests on Windows and macOS, and the image build with its startup check
 
-**Plans:** 2/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 **Wave 1**
@@ -250,7 +250,7 @@ Phases execute in numeric order: 17 → 18 → 19 → 20 → 21
 | 18. Import and Migration Flow | 26/26 | Complete    | 2026-10-18 |
 | 19. Sidebar, Templates and Version Block | 3/3 | Complete    | 2026-10-18 |
 | 20. Visual Consistency, Dashboard Clarity and Touch Targets | 11/11 | Complete    | 2026-10-21 |
-| 21. Release v0.1.1 | 2/2 | In Progress | - |
+| 21. Release v0.1.1 | 2/2 | Complete    | 2026-10-21 |
 
 Phases 1-16 (v0.1.0) are complete and archived; see `.planning/milestones/v0.1.0-ROADMAP.md`.
 
