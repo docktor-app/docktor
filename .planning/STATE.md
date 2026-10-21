@@ -3,18 +3,18 @@ gsd_state_version: "1.0"
 milestone: v0.1.1
 milestone_name: Release Follow-ups
 current_phase: 20
-current_phase_name: visual-consistency-dashboard-clarity-and-touch-targets
+current_phase_name: Visual Consistency, Dashboard Clarity and Touch Targets
 status: executing
-stopped_at: Phase 20 UI-SPEC approved
-last_updated: "2026-10-20T21:57:57.699Z"
-last_activity: 2026-10-18
-last_activity_desc: Phase 19 complete, transitioned to Phase 20
-state_head: 7cc2decbf4902fb4eb375eab54c2a6d850f4400d
+stopped_at: Completed 20-01-PLAN.md
+last_updated: "2026-10-21T03:09:12.306Z"
+last_activity: 2026-10-21
+last_activity_desc: Phase 20 execution started
+state_head: b71a361399f66aaf26bd7b94475a2bd5b27c90cf
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 43
-  completed_plans: 32
+  completed_plans: 33
   percent: 60
 ---
 
@@ -25,14 +25,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-14)
 
 **Core value:** Users can deploy, monitor, and manage Docker Compose stacks through a browser UI without needing SSH or Docker CLI access.
-**Current focus:** Phase 19 — Sidebar, Templates and Version Block
+**Current focus:** Phase 20 — Visual Consistency, Dashboard Clarity and Touch Targets
 
 ## Current Position
 
-Phase: 20 (visual-consistency-dashboard-clarity-and-touch-targets) — READY TO EXECUTE
-Plan: Not started
+Phase: 20 (Visual Consistency, Dashboard Clarity and Touch Targets) — EXECUTING
+Plan: 2 of 11
 Status: Ready to execute
-Last activity: 2026-10-18 — Phase 19 complete, transitioned to Phase 20
+Last activity: 2026-10-21 — Phase 20 execution started
 
 Progress: [██████░░░░] 60%
 
@@ -95,6 +95,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 19 P01 | 4 min | 2 tasks | 6 files |
 | Phase 19 P02 | 8min | 2 tasks | 7 files |
 | Phase 19 P03 | 20min | 3 tasks | 13 files |
+| Phase 20 P01 | 10min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -151,6 +152,8 @@ Roadmap decisions for v0.1.1:
 - [Phase 19]: /templates and /stacks/create/templates share TemplateBrowsePage; header variant derives from pathname
 - [Phase 19]: Zero-templates EmptyState suppressed when any repo has a lastSyncError (its alert explains the empty catalog)
 - [Phase 19]: Version comes from client/package.json via Vite/Vitest define (no request); docs link targets getdocktor.dev; collapsed rail uses one Info dropdown button
+- [Phase 20]: Status casing owned by formatStatusLabel in lib/status-labels.ts; badge files re-export (D-01/D-02)
+- [Phase 20]: Stack-name breadcrumb always links to the stack overview via shared StackBreadcrumb (D-12, UI-09)
 
 ### Pending Todos
 
@@ -174,6 +177,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-20T13:26:18.988Z
-Stopped at: Phase 20 UI-SPEC approved
-Resume file: .planning/phases/20-visual-consistency-dashboard-clarity-and-touch-targets/20-UI-SPEC.md
+Last session: 2026-10-21T03:09:11.884Z
+Stopped at: Completed 20-01-PLAN.md
+Resume file: None
