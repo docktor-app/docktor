@@ -12,6 +12,10 @@ export interface ColumnSort {
     readonly onToggle: () => void;
 }
 
+export type DataTableLayout =
+    | {readonly mode: "table"; readonly columnCount: number}
+    | {readonly mode: "cards"};
+
 export interface TableColumn<T> {
     name: string;
     render: (item: T) => ReactNode;
@@ -37,6 +41,10 @@ export interface DataTableProps<T> {
     emptyDescription?: string;
     pagination?: boolean;
     defaultPageSize?: number;
+    /** Content rendered directly after an item's row (table) or inside its card (cards). */
+    renderExpanded?: (item: T, layout: DataTableLayout) => ReactNode;
+    /** One cell per column; a TableFooter row on desktop, a summary line below the cards on mobile. */
+    footer?: readonly ReactNode[];
 }
 
 function defaultGetRowKey<T>(_item: T, index: number): string {
@@ -53,6 +61,8 @@ export function DataTable<T>({
     emptyDescription,
     pagination = true,
     defaultPageSize = 10,
+    renderExpanded,
+    footer,
 }: Readonly<DataTableProps<T>>): JSX.Element {
     const [searchParams] = useSearchParams();
     const {columns: resolvedColumns, data: sortedData} = useColumnSort(data, columns);
@@ -96,6 +106,8 @@ export function DataTable<T>({
                 columns={resolvedColumns}
                 itemRoute={itemRoute}
                 getRowKey={getRowKey}
+                renderExpanded={renderExpanded}
+                footer={footer}
             />
             {pagination && data.length > pageSize && (
                 <TablePagination
