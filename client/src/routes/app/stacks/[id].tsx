@@ -2,14 +2,15 @@ import {useState} from "react";
 import {Navigate, useNavigate, useParams} from "react-router";
 import {useStack} from "@/hooks/use-stack";
 import {useStackConfigFiles} from "@/hooks/use-stack-config-files";
-import {isStackTabPath, resolveStackTab, STACK_TAB_LABELS, STACK_TABS} from "@/lib/stack-tabs";
+import {isStackTabPath, resolveStackTab} from "@/lib/stack-tabs";
 import {LogViewer} from "@/components/domain/stack/log-viewer";
-import {Tabs, TabsContent, TabsList, TabsTrigger} from "@/components/ui/tabs";
+import {Tabs, TabsContent} from "@/components/ui/tabs";
 import {Page, PageContent} from "@/components/common/layout/page";
 import {UnsavedChangesGuard} from "@/components/common/unsaved-changes-guard";
 import {StackPageState} from "./components/stack-page-state";
 import {StackDetailHeader} from "./components/stack-detail-header";
 import {StackAlerts} from "./components/stack-alerts";
+import {StackTabBar} from "./components/stack-tab-bar";
 import {OverviewTab} from "./components/overview-tab";
 import {ConfigTab} from "./components/config-tab";
 import {BackupsTab} from "./components/backups-tab";
@@ -49,13 +50,7 @@ export default function StackDetailPage() {
                 <StackAlerts stack={stack} />
 
                 <Tabs value={activeTab} onValueChange={(v) => navigate(`/stacks/${id}/${v}`)}>
-                    <div className="-mx-1 overflow-x-auto px-1">
-                        <TabsList className="w-max">
-                            {STACK_TABS.map((t) => (
-                                <TabsTrigger key={t} value={t}>{STACK_TAB_LABELS[t]}</TabsTrigger>
-                            ))}
-                        </TabsList>
-                    </div>
+                    <StackTabBar activeTab={activeTab} />
 
                     <TabsContent value="overview" className="mt-4">
                         <OverviewTab
