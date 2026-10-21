@@ -1,12 +1,15 @@
+import type {JSX} from "react";
 import {useNavigate} from "react-router";
 import {useIsMobile} from "@/hooks/use-mobile";
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow,} from "@/components/ui/table";
 import {Card, CardContent} from "@/components/ui/card";
+import {cn} from "@/lib/utils";
 import type {TableColumn} from "./data-table";
+import {TableFrame} from "./table-frame";
 
 interface TableContentProps<T> {
-    data: T[];
-    columns: TableColumn<T>[];
+    data: readonly T[];
+    columns: readonly TableColumn<T>[];
     itemRoute?: (item: T) => string;
     getRowKey: (item: T, index: number) => string;
 }
@@ -16,7 +19,7 @@ export function TableContent<T>({
     columns,
     itemRoute,
     getRowKey,
-}: Readonly<TableContentProps<T>>) {
+}: Readonly<TableContentProps<T>>): JSX.Element {
     const isMobile = useIsMobile();
     const navigate = useNavigate();
 
@@ -55,33 +58,35 @@ export function TableContent<T>({
     }
 
     return (
-        <Table>
-            <TableHeader>
-                <TableRow>
-                    {columns.map((col) => (
-                        <TableHead key={col.name}>{col.name}</TableHead>
-                    ))}
-                </TableRow>
-            </TableHeader>
-            <TableBody>
-                {data.map((item, index) => (
-                    <TableRow
-                        key={getRowKey(item, index)}
-                        className={itemRoute ? "cursor-pointer" : ""}
-                        onClick={
-                            itemRoute
-                                ? () => navigate(itemRoute(item))
-                                : undefined
-                        }
-                    >
+        <TableFrame>
+            <Table>
+                <TableHeader className="bg-muted/50">
+                    <TableRow className="hover:bg-transparent">
                         {columns.map((col) => (
-                            <TableCell key={col.name}>
-                                {col.render(item)}
-                            </TableCell>
+                            <TableHead key={col.name}>{col.name}</TableHead>
                         ))}
                     </TableRow>
-                ))}
-            </TableBody>
-        </Table>
+                </TableHeader>
+                <TableBody>
+                    {data.map((item, index) => (
+                        <TableRow
+                            key={getRowKey(item, index)}
+                            className={cn("hover:bg-muted/30", itemRoute && "cursor-pointer")}
+                            onClick={
+                                itemRoute
+                                    ? () => navigate(itemRoute(item))
+                                    : undefined
+                            }
+                        >
+                            {columns.map((col) => (
+                                <TableCell key={col.name}>
+                                    {col.render(item)}
+                                </TableCell>
+                            ))}
+                        </TableRow>
+                    ))}
+                </TableBody>
+            </Table>
+        </TableFrame>
     );
 }

@@ -89,6 +89,7 @@ export function StackList({stacks, loading, pagination, uptimes}: Readonly<Stack
             itemRoute={(stack) => `/stacks/${stack.id}`}
             loading={loading}
             emptyMessage="No stacks yet"
+            emptyDescription="Create a stack or import an existing one to get started."
             pagination={pagination}
         />
     );

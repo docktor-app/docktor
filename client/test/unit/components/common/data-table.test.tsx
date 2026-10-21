@@ -1,3 +1,4 @@
+import type {ComponentProps} from "react";
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import {render, screen} from "@testing-library/react";
 import {MemoryRouter} from "react-router";
@@ -36,7 +37,7 @@ const columns: TableColumn<Item>[] = [
     {name: "Size", render: (item) => String(item.size)},
 ];
 
-function renderTable(props: Partial<React.ComponentProps<typeof DataTable<Item>>> = {}): ReturnType<typeof render> {
+function renderTable(props: Partial<ComponentProps<typeof DataTable<Item>>> = {}): ReturnType<typeof render> {
     return render(
         <MemoryRouter>
             <DataTable<Item>

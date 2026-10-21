@@ -1,4 +1,4 @@
-import {type ReactNode, useMemo} from "react";
+import {type JSX, type ReactNode, useMemo} from "react";
 import {useSearchParams} from "react-router";
 import {Skeleton} from "@/components/ui/skeleton";
 import {TableContent} from "./table-content";
@@ -11,12 +11,13 @@ export interface TableColumn<T> {
 }
 
 export interface DataTableProps<T> {
-    data: T[];
-    columns: TableColumn<T>[];
+    data: readonly T[];
+    columns: readonly TableColumn<T>[];
     getRowKey?: (item: T, index: number) => string;
     itemRoute?: (item: T) => string;
     loading?: boolean;
-    emptyMessage?: string;
+    emptyMessage: string;
+    emptyDescription?: string;
     pagination?: boolean;
     defaultPageSize?: number;
 }
@@ -31,10 +32,11 @@ export function DataTable<T>({
     getRowKey = defaultGetRowKey,
     itemRoute,
     loading = false,
-    emptyMessage = "No data",
+    emptyMessage,
+    emptyDescription,
     pagination = true,
     defaultPageSize = 10,
-}: Readonly<DataTableProps<T>>) {
+}: Readonly<DataTableProps<T>>): JSX.Element {
     const [searchParams] = useSearchParams();
 
     const page = pagination ? Math.max(1, Number(searchParams.get("page")) || 1) : 1;
@@ -62,8 +64,9 @@ export function DataTable<T>({
 
     if (data.length === 0) {
         return (
-            <div className="text-center py-12 text-muted-foreground">
-                <p>{emptyMessage}</p>
+            <div className="space-y-1 py-12 text-center">
+                <p className="text-sm font-medium">{emptyMessage}</p>
+                {emptyDescription && <p className="text-sm text-muted-foreground">{emptyDescription}</p>}
             </div>
         );
     }
