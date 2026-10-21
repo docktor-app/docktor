@@ -19,7 +19,8 @@ export function DashboardStatCards({
     defaultsError,
 }: Readonly<DashboardStatCardsProps>) {
     const value = (count: number): number | string => (stacksError ? "—" : count);
-    const backupsValue: number | string = stacksError || defaultsError ? "—" : `${stats.backupCoverage}/${stats.total}`;
+    const backupsUnavailable = Boolean(stacksError || defaultsError);
+    const backupsValue: number | string = backupsUnavailable ? "—" : `${stats.backupCoverage}/${stats.total}`;
 
     return (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
@@ -58,6 +59,7 @@ export function DashboardStatCards({
             <StatCard
                 label="Backup Coverage"
                 value={backupsValue}
+                hint={backupsUnavailable ? "data unavailable" : "with a schedule or snapshot"}
                 icon={<Archive className="h-4 w-4 text-muted-foreground" aria-hidden="true" />}
                 loading={loading}
             />
