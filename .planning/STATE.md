@@ -5,16 +5,16 @@ milestone_name: Release Follow-ups
 current_phase: 20
 current_phase_name: Visual Consistency, Dashboard Clarity and Touch Targets
 status: executing
-stopped_at: Completed 20-01-PLAN.md
-last_updated: "2026-10-21T03:09:12.306Z"
+stopped_at: Completed 20-02-PLAN.md
+last_updated: "2026-10-21T03:15:08.612Z"
 last_activity: 2026-10-21
 last_activity_desc: Phase 20 execution started
-state_head: b71a361399f66aaf26bd7b94475a2bd5b27c90cf
+state_head: ca101f8002f9c0d6c4d7d4d96e2ca96fb09bc36e
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 43
-  completed_plans: 33
+  completed_plans: 34
   percent: 60
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-14)
 ## Current Position
 
 Phase: 20 (Visual Consistency, Dashboard Clarity and Touch Targets) — EXECUTING
-Plan: 2 of 11
+Plan: 3 of 11
 Status: Ready to execute
 Last activity: 2026-10-21 — Phase 20 execution started
 
@@ -96,6 +96,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 19 P02 | 8min | 2 tasks | 7 files |
 | Phase 19 P03 | 20min | 3 tasks | 13 files |
 | Phase 20 P01 | 10min | 3 tasks | 13 files |
+| Phase 20 P02 | 10min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -154,6 +155,7 @@ Roadmap decisions for v0.1.1:
 - [Phase 19]: Version comes from client/package.json via Vite/Vitest define (no request); docs link targets getdocktor.dev; collapsed rail uses one Info dropdown button
 - [Phase 20]: Status casing owned by formatStatusLabel in lib/status-labels.ts; badge files re-export (D-01/D-02)
 - [Phase 20]: Stack-name breadcrumb always links to the stack overview via shared StackBreadcrumb (D-12, UI-09)
+- [Phase 20]: 20-02: uncontrolled and controlled table sorting share one SortableHead; card layout in table-cards.tsx keeps Sort toolbar, expanded content and footer below md
 
 ### Pending Todos
 
@@ -177,6 +179,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-21T03:09:11.884Z
-Stopped at: Completed 20-01-PLAN.md
+Last session: 2026-10-21T03:15:08.076Z
+Stopped at: Completed 20-02-PLAN.md
 Resume file: None
