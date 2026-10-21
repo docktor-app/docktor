@@ -1,10 +1,10 @@
+import {DataTable, type TableColumn} from "@/components/common/data/table";
 import {Section, SectionDescription, SectionHeader, SectionTitle} from "@/components/common/layout/section";
 import {ToneBadge} from "@/components/common/tone-badge";
 import {StackStatusBadge} from "@/components/domain/stack/stack-status-badge";
 import {Alert, AlertDescription} from "@/components/ui/alert";
 import {Button} from "@/components/ui/button";
 import {Skeleton} from "@/components/ui/skeleton";
-import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from "@/components/ui/table";
 import {useNow} from "@/hooks/use-now";
 import {formatIncidentDuration} from "@/lib/format-incident-duration";
 import type {Incident} from "@/lib/uptime-api";
@@ -53,61 +53,68 @@ export function IncidentList({incidents, windowDays, loading, error, onRetry}: R
                     <Skeleton className="h-4 w-full"/>
                     <Skeleton className="h-4 w-full"/>
                 </div>
-            ) : incidents.length === 0 ? (
-                <div className="space-y-1 py-8 text-center">
-                    <p className="text-sm font-medium">No incidents</p>
-                    <p className="text-sm text-muted-foreground">
-                        This stack hasn't been unhealthy or in error during {windowText}.
-                    </p>
-                </div>
             ) : (
-                <div className="max-h-96 overflow-y-auto">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Started</TableHead>
-                                <TableHead>Ended</TableHead>
-                                <TableHead className="text-right">Duration</TableHead>
-                                <TableHead>Cause</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {incidents.map((incident) => (
-                                <IncidentRow key={incident.id} incident={incident} now={now}/>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </div>
+                <IncidentTable incidents={incidents} now={now} windowText={windowText}/>
             )}
         </Section>
     );
 }
 
-interface IncidentRowProps {
-    readonly incident: Incident;
+interface IncidentTableProps {
+    readonly incidents: readonly Incident[];
     readonly now: number;
+    readonly windowText: string;
 }
 
-function IncidentRow({incident, now}: Readonly<IncidentRowProps>) {
-    const ongoing = incident.endedAt === null;
-    const durationMs = ongoing
+function incidentDurationMs(incident: Incident, now: number): number {
+    return incident.endedAt === null
         ? now - new Date(incident.startedAt).getTime()
         : (incident.durationMs ?? 0);
+}
 
-    return (
-        <TableRow>
-            <TableCell className="whitespace-nowrap">{new Date(incident.startedAt).toLocaleString()}</TableCell>
-            <TableCell className="whitespace-nowrap">
-                {incident.endedAt === null ? (
+function buildColumns(now: number): TableColumn<Incident>[] {
+    return [
+        {
+            name: "Started",
+            isKey: true,
+            className: "whitespace-nowrap",
+            render: (incident) => new Date(incident.startedAt).toLocaleString(),
+        },
+        {
+            name: "Ended",
+            className: "whitespace-nowrap",
+            render: (incident) =>
+                incident.endedAt === null ? (
                     <ToneBadge tone="red">Ongoing</ToneBadge>
                 ) : (
                     new Date(incident.endedAt).toLocaleString()
-                )}
-            </TableCell>
-            <TableCell className="text-right tabular-nums">{formatIncidentDuration(durationMs)}</TableCell>
-            <TableCell>
-                <StackStatusBadge status={incident.cause} display="compact"/>
-            </TableCell>
-        </TableRow>
+                ),
+        },
+        {
+            name: "Duration",
+            align: "right",
+            className: "tabular-nums",
+            render: (incident) => formatIncidentDuration(incidentDurationMs(incident, now)),
+        },
+        {
+            name: "Cause",
+            render: (incident) => <StackStatusBadge status={incident.cause} display="compact"/>,
+        },
+    ];
+}
+
+// The scroll box only wraps a real table, so the empty copy is never clipped by it.
+function IncidentTable({incidents, now, windowText}: Readonly<IncidentTableProps>) {
+    const table = (
+        <DataTable
+            data={incidents}
+            columns={buildColumns(now)}
+            getRowKey={(incident) => incident.id}
+            pagination={false}
+            emptyMessage="No incidents"
+            emptyDescription={`This stack hasn't been unhealthy or in error during ${windowText}.`}
+        />
     );
+    if (incidents.length === 0) return table;
+    return <div className="max-h-96 overflow-y-auto">{table}</div>;
 }
