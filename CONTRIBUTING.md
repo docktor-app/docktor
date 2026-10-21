@@ -155,10 +155,11 @@ Releases are for maintainers. The Publish workflow (`.github/workflows/publish.y
 
 Procedure:
 
-1. Merge to `main` and check that the Publish run is green and publishes `edge` and `sha-<short>`.
-2. Tag a release candidate first (`vX.Y.Z-rc.N`) and confirm the run is green, the registry lists only the `X.Y.Z-rc.N` tag, and the image index has both `linux/amd64` and `linux/arm64`.
-3. Then tag `vX.Y.Z`. `latest` moves only on a non-prerelease release tag.
-4. Bump the quickstart ref (the `vX.Y.Z` in the `curl` URLs in `README.md` and in the Get started page of [docktor-app/docks](https://github.com/docktor-app/docks)) to the new tag.
-5. The phase or release pull request closes the issues it implements with `Closes #<n>`.
+1. On the release branch, bump `version` in `package.json`, `shared/package.json`, `server/package.json` and `client/package.json` (the sidebar shows the client version, and a unit test fails if the four differ), add the release's section to `CHANGELOG.md` with its date and one issue link per entry, and merge only after CI on the release pull request is green.
+2. Merge to `main` and check that the Publish run is green and publishes `edge` and `sha-<short>`.
+3. Tag a release candidate first (`vX.Y.Z-rc.N`) and confirm the run is green, the registry lists only the `X.Y.Z-rc.N` tag, and the image index has both `linux/amd64` and `linux/arm64`.
+4. Then tag `vX.Y.Z`. `latest` moves only on a non-prerelease release tag.
+5. Bump the quickstart ref (the `vX.Y.Z` in the `curl` URLs in `README.md` and in the Get started page of [docktor-app/docks](https://github.com/docktor-app/docks)) to the new tag.
+6. The phase or release pull request closes the issues it implements with `Closes #<n>`.
 
 Never move or delete a published tag. If a candidate fails, fix forward and cut the next one (`-rc.2`, ...). The failed tag stays in the registry.
