@@ -65,3 +65,51 @@ export function getStackStatusPresentation(status: string): StackStatusPresentat
     const style = isKnownStackStatus(status) ? STACK_STATUS_STYLES[status] : UNKNOWN_STACK_STATUS_STYLE;
     return {label: formatStatusLabel(status), ...style};
 }
+
+export interface ServiceStatusPresentation {
+    label: string;
+    tone: Tone;
+    dotPulse: boolean;
+}
+
+/**
+ * A running container with no health info reads the same "running" green as
+ * a running+healthy container - health status only narrows the label/tone
+ * when Docker actually reports it. Labels go through `formatStatusLabel`.
+ */
+export function getServiceStatusPresentation(
+    containerState: string | null,
+    healthStatus: string | null,
+): ServiceStatusPresentation {
+    if (!containerState) {
+        return {label: formatStatusLabel("unknown"), tone: "neutral", dotPulse: false};
+    }
+
+    if (containerState === "running" && healthStatus === "healthy") {
+        return {label: formatStatusLabel("healthy"), tone: "green", dotPulse: true};
+    }
+
+    if (containerState === "running" && healthStatus === "unhealthy") {
+        return {label: formatStatusLabel("unhealthy"), tone: "red", dotPulse: false};
+    }
+
+    // D-08/14-06: a probed service reports "starting" during its 60s grace
+    // period after each start, so the wait reads as in-progress, not healthy.
+    if (containerState === "running" && healthStatus === "starting") {
+        return {label: formatStatusLabel("starting"), tone: "yellow", dotPulse: false};
+    }
+
+    if (containerState === "running") {
+        return {label: formatStatusLabel("running"), tone: "green", dotPulse: true};
+    }
+
+    if (containerState === "exited") {
+        return {label: formatStatusLabel("exited"), tone: "neutral", dotPulse: false};
+    }
+
+    if (containerState === "restarting") {
+        return {label: formatStatusLabel("restarting"), tone: "yellow", dotPulse: false};
+    }
+
+    return {label: formatStatusLabel(containerState), tone: "neutral", dotPulse: false};
+}

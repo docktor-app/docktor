@@ -373,7 +373,7 @@ test.describe("Mobile (D-17, 390-412px viewport)", () => {
         await expect(deployButton).toBeEnabled();
 
         // Status badge (header) visible.
-        await expect(page.getByText("Running", {exact: true}).first()).toBeVisible();
+        await expect(page.getByText("running", {exact: true}).first()).toBeVisible();
 
         // Timeline filter changes to "Deployments".
         await page.getByRole("combobox", {name: "Filter activity by type"}).click();
