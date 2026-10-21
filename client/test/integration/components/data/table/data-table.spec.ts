@@ -46,17 +46,16 @@ async function mockStacks(page: Page, stacks: ReturnType<typeof makeStack>[]) {
 }
 
 /**
- * Returns a locator for the four icon-only pagination navigation buttons
- * (First, Prev, Next, Last). Scoped via the "Rows per page" label which is
- * unique to the pagination section. Its grandparent div also contains the
- * nav button group.
- *
- * Button order: 0 = First, 1 = Prev, 2 = Next, 3 = Last
+ * Returns the four pagination navigation buttons, located by their
+ * accessible names.
  */
 function paginationNavButtons(page: Page) {
-    // "Rows per page" <span> → parent <div> → grandparent flex container
-    // that also holds the page counter and the nav button group
-    return page.getByText("Rows per page").locator("xpath=../..").getByRole("button");
+    return {
+        first: page.getByRole("button", {name: "First page"}),
+        previous: page.getByRole("button", {name: "Previous page"}),
+        next: page.getByRole("button", {name: "Next page"}),
+        last: page.getByRole("button", {name: "Last page"}),
+    };
 }
 
 test.describe("DataTable", () => {
@@ -221,8 +220,8 @@ test.describe("DataTable", () => {
         await page.goto("/stacks");
 
         const navButtons = paginationNavButtons(page);
-        await expect(navButtons.nth(0)).toBeDisabled(); // First page
-        await expect(navButtons.nth(1)).toBeDisabled(); // Previous page
+        await expect(navButtons.first).toBeDisabled(); // First page
+        await expect(navButtons.previous).toBeDisabled(); // Previous page
     });
 
     test("next and last buttons are enabled on the first page", async ({page}) => {
@@ -232,8 +231,8 @@ test.describe("DataTable", () => {
         await page.goto("/stacks");
 
         const navButtons = paginationNavButtons(page);
-        await expect(navButtons.nth(2)).toBeEnabled(); // Next page
-        await expect(navButtons.nth(3)).toBeEnabled(); // Last page
+        await expect(navButtons.next).toBeEnabled(); // Next page
+        await expect(navButtons.last).toBeEnabled(); // Last page
     });
 
     test("next and last buttons are disabled on the last page", async ({page}) => {
@@ -243,8 +242,8 @@ test.describe("DataTable", () => {
         await page.goto("/stacks?page=2");
 
         const navButtons = paginationNavButtons(page);
-        await expect(navButtons.nth(2)).toBeDisabled(); // Next page
-        await expect(navButtons.nth(3)).toBeDisabled(); // Last page
+        await expect(navButtons.next).toBeDisabled(); // Next page
+        await expect(navButtons.last).toBeDisabled(); // Last page
     });
 
     test("clicking next advances to the next page", async ({page}) => {
@@ -253,7 +252,7 @@ test.describe("DataTable", () => {
 
         await page.goto("/stacks");
 
-        await paginationNavButtons(page).nth(2).click(); // Next
+        await paginationNavButtons(page).next.click(); // Next
 
         await expect(page.getByText("Page 2 of 2")).toBeVisible();
         await expect(page.getByText("Stack 11")).toBeVisible();
@@ -265,7 +264,7 @@ test.describe("DataTable", () => {
 
         await page.goto("/stacks?page=2");
 
-        await paginationNavButtons(page).nth(1).click(); // Prev
+        await paginationNavButtons(page).previous.click(); // Prev
 
         await expect(page.getByText("Page 1 of 2")).toBeVisible();
         await expect(page.getByText("Stack 1", {exact: true})).toBeVisible();
@@ -277,7 +276,7 @@ test.describe("DataTable", () => {
 
         await page.goto("/stacks");
 
-        await paginationNavButtons(page).nth(3).click(); // Last
+        await paginationNavButtons(page).last.click(); // Last
 
         await expect(page.getByText("Page 2 of 2")).toBeVisible();
         await expect(page.getByText("Stack 15")).toBeVisible();
@@ -289,7 +288,7 @@ test.describe("DataTable", () => {
 
         await page.goto("/stacks?page=2");
 
-        await paginationNavButtons(page).nth(0).click(); // First
+        await paginationNavButtons(page).first.click(); // First
 
         await expect(page.getByText("Page 1 of 2")).toBeVisible();
         await expect(page.getByText("Stack 1", {exact: true})).toBeVisible();

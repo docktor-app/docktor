@@ -1,6 +1,7 @@
 import {ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,} from "lucide-react";
 import {useSearchParams} from "react-router";
 import {Button} from "@/components/ui/button";
+import {TOUCH_TARGET} from "@/lib/touch-target";
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue,} from "@/components/ui/select";
 
 interface TablePaginationProps {
@@ -17,7 +18,7 @@ export function TablePagination({
     totalPages,
     pageSize,
     totalItems,
-}: Readonly<TablePaginationProps>) {
+}: Readonly<TablePaginationProps>): React.JSX.Element {
     const [, setSearchParams] = useSearchParams();
 
     function goToPage(page: number) {
@@ -38,18 +39,18 @@ export function TablePagination({
     }
 
     return (
-        <div className="flex items-center justify-between px-2">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-2">
             <div className="text-sm text-muted-foreground">
                 {totalItems} item{totalItems === 1 ? "" : "s"}
             </div>
-            <div className="flex items-center gap-6">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
                 <div className="flex items-center gap-2">
                     <span className="text-sm text-muted-foreground">Rows per page</span>
                     <Select
                         value={String(pageSize)}
                         onValueChange={changePageSize}
                     >
-                        <SelectTrigger className="h-8 w-[70px]">
+                        <SelectTrigger className="h-8 w-[70px] max-md:h-11">
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent side="top">
@@ -64,42 +65,46 @@ export function TablePagination({
                 <div className="text-sm text-muted-foreground">
                     Page {currentPage} of {totalPages}
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-2 md:gap-1">
                     <Button
                         variant="outline"
-                        size="icon"
-                        className="h-8 w-8"
+                        size="icon-sm"
+                        className={TOUCH_TARGET}
+                        aria-label="First page"
                         onClick={() => goToPage(1)}
                         disabled={currentPage <= 1}
                     >
-                        <ChevronsLeft className="h-4 w-4" />
+                        <ChevronsLeft className="h-4 w-4" aria-hidden="true" />
                     </Button>
                     <Button
                         variant="outline"
-                        size="icon"
-                        className="h-8 w-8"
+                        size="icon-sm"
+                        className={TOUCH_TARGET}
+                        aria-label="Previous page"
                         onClick={() => goToPage(currentPage - 1)}
                         disabled={currentPage <= 1}
                     >
-                        <ChevronLeft className="h-4 w-4" />
+                        <ChevronLeft className="h-4 w-4" aria-hidden="true" />
                     </Button>
                     <Button
                         variant="outline"
-                        size="icon"
-                        className="h-8 w-8"
+                        size="icon-sm"
+                        className={TOUCH_TARGET}
+                        aria-label="Next page"
                         onClick={() => goToPage(currentPage + 1)}
                         disabled={currentPage >= totalPages}
                     >
-                        <ChevronRight className="h-4 w-4" />
+                        <ChevronRight className="h-4 w-4" aria-hidden="true" />
                     </Button>
                     <Button
                         variant="outline"
-                        size="icon"
-                        className="h-8 w-8"
+                        size="icon-sm"
+                        className={TOUCH_TARGET}
+                        aria-label="Last page"
                         onClick={() => goToPage(totalPages)}
                         disabled={currentPage >= totalPages}
                     >
-                        <ChevronsRight className="h-4 w-4" />
+                        <ChevronsRight className="h-4 w-4" aria-hidden="true" />
                     </Button>
                 </div>
             </div>
