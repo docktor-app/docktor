@@ -5,16 +5,16 @@ milestone_name: Release Follow-ups
 current_phase: 20
 current_phase_name: Visual Consistency, Dashboard Clarity and Touch Targets
 status: executing
-stopped_at: Completed 20-07-PLAN.md
-last_updated: "2026-10-21T03:38:35.494Z"
+stopped_at: Completed 20-08-PLAN.md
+last_updated: "2026-10-21T03:45:23.772Z"
 last_activity: 2026-10-21
 last_activity_desc: Phase 20 execution started
-state_head: 5e22f59f0e180119b2985f41a3b9c789d0f61f00
+state_head: f35bee89143c4f56e9b86ff632c630477ad754fd
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 43
-  completed_plans: 39
+  completed_plans: 40
   percent: 60
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-14)
 ## Current Position
 
 Phase: 20 (Visual Consistency, Dashboard Clarity and Touch Targets) — EXECUTING
-Plan: 8 of 11
+Plan: 9 of 11
 Status: Ready to execute
 Last activity: 2026-10-21 — Phase 20 execution started
 
@@ -102,6 +102,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 20 P05 | 10min | 2 tasks | 8 files |
 | Phase 20 P06 | 10min | 2 tasks | 4 files |
 | Phase 20 P07 | 12min | 3 tasks | 17 files |
+| Phase 20 P08 | 15min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -166,6 +167,7 @@ Roadmap decisions for v0.1.1:
 - [Phase 20]: 20-05: Geist Mono family name is 'Geist Mono Variable'; --font-mono token set in @theme inline, font self-hosted via @fontsource-variable/geist-mono 5.3.0
 - [Phase 20]: 20-06: stack tab bar extracted to StackTabBar; overflow-y-hidden + 4px padding wrapper, scrollIntoView optional-called (no global jsdom stub)
 - [Phase 20]: 20-07: hasBackup derived from completed MANUAL/SCHEDULED Backup rows via StackBackupReadRepo port; merged in listStacks only; StatCard hint prop is generic
+- [Phase 20]: 20-08: storage stacks fully migrated to DataTable with controlled sort and renderExpanded volume rows (no TableFrame fallback needed)
 
 ### Pending Todos
 
@@ -189,6 +191,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-21T03:38:34.969Z
-Stopped at: Completed 20-07-PLAN.md
+Last session: 2026-10-21T03:45:23.199Z
+Stopped at: Completed 20-08-PLAN.md
 Resume file: None
