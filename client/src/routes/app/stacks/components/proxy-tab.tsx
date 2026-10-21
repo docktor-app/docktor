@@ -80,21 +80,12 @@ export function ProxyTab({stackId, services}: Readonly<ProxyTabProps>) {
                 </SectionActions>
             </SectionHeader>
 
-            {configs.length === 0 ? (
-                <div className="space-y-2">
-                    <p className="text-sm font-semibold">No domains configured</p>
-                    <p className="text-sm text-muted-foreground">
-                        Assign a domain to a service to make it available at a custom URL with automatic HTTPS.
-                    </p>
-                </div>
-            ) : (
-                <ProxyDomainsTable
-                    configs={configs}
-                    statuses={statuses}
-                    onEdit={(config) => setDialogTarget({mode: "edit", config})}
-                    onRemove={setRemoveTarget}
-                />
-            )}
+            <ProxyDomainsTable
+                configs={configs}
+                statuses={statuses}
+                onEdit={(config) => setDialogTarget({mode: "edit", config})}
+                onRemove={setRemoveTarget}
+            />
 
             {dialogTarget && (
                 <ProxyAssignDialog
