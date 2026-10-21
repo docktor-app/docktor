@@ -71,7 +71,7 @@ export function StackActions({stackId, stackName, status, isProtected, onAction}
     const isBackingUp = status === "BACKING_UP";
     const isBlocked = BLOCKED_STATES.includes(status);
 
-    const deployLabel = isRunning ? "Redeploy" : "Deploy";
+    const deployLabel = isRunning ? "Redeploy Stack" : "Deploy Stack";
 
     function handleDeploy() {
         toast.promise(

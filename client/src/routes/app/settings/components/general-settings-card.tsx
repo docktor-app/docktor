@@ -126,7 +126,7 @@ export function GeneralSettingsCard() {
             </CardContent>
             <CardFooter>
                 <Button onClick={handleSaveGeneral} disabled={saving || loading}>
-                    {saving ? "Saving..." : "Save"}
+                    {saving ? "Saving..." : "Save Settings"}
                 </Button>
             </CardFooter>
         </Card>
