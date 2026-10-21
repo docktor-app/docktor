@@ -4,11 +4,11 @@ import {toast} from "sonner";
 import {RefreshCw} from "lucide-react";
 
 import {getSnapshots, triggerRestore, type ResticSnapshot} from "@/lib/backups-api";
+import {DataTable, type TableColumn} from "@/components/common/data/table";
 import {RestoreConfirmDialog} from "@/components/domain/backup/restore-confirm-dialog";
 import {Button} from "@/components/ui/button";
 import {Alert, AlertDescription} from "@/components/ui/alert";
 import {Skeleton} from "@/components/ui/skeleton";
-import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from "@/components/ui/table";
 
 interface SnapshotsSectionProps {
     readonly stackId: string;
@@ -18,7 +18,7 @@ interface SnapshotsSectionProps {
 
 const TRANSITIONAL_STATES = ["BACKING_UP", "RESTORING"];
 
-export function SnapshotsSection({stackId, stackName, stackStatus}: SnapshotsSectionProps) {
+export function SnapshotsSection({stackId, stackName, stackStatus}: Readonly<SnapshotsSectionProps>) {
     const navigate = useNavigate();
     const [snapshots, setSnapshots] = useState<ResticSnapshot[]>([]);
     const [loading, setLoading] = useState(true);
@@ -79,6 +79,41 @@ export function SnapshotsSection({stackId, stackName, stackStatus}: SnapshotsSec
 
     const isLocked = TRANSITIONAL_STATES.includes(stackStatus);
 
+    const columns: readonly TableColumn<ResticSnapshot>[] = [
+        {
+            name: "Snapshot ID",
+            isKey: true,
+            className: "font-mono text-xs",
+            render: (snapshot) => snapshot.short_id.slice(0, 8),
+        },
+        {
+            name: "Date",
+            className: "text-sm text-muted-foreground",
+            render: (snapshot) => new Date(snapshot.time).toLocaleString(),
+        },
+        {
+            name: "Tags",
+            className: "text-sm text-muted-foreground",
+            render: (snapshot) => (snapshot.tags ? snapshot.tags.join(", ") : "-"),
+        },
+        {
+            name: "Actions",
+            hideHeader: true,
+            render: (snapshot) => (
+                <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                        setSelectedSnapshot(snapshot);
+                        setDialogOpen(true);
+                    }}
+                >
+                    Restore
+                </Button>
+            ),
+        },
+    ];
+
     return (
         <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -117,51 +152,15 @@ export function SnapshotsSection({stackId, stackName, stackStatus}: SnapshotsSec
                         Retry
                     </Button>
                 </div>
-            ) : snapshots.length === 0 ? (
-                <div className="text-center py-8 space-y-1">
-                    <p className="text-sm font-medium">No snapshots found</p>
-                    <p className="text-sm text-muted-foreground">
-                        Run a backup to create the first snapshot in this repository.
-                    </p>
-                </div>
             ) : (
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Snapshot ID</TableHead>
-                            <TableHead>Date</TableHead>
-                            <TableHead>Tags</TableHead>
-                            <TableHead></TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {snapshots.map((snapshot) => (
-                            <TableRow key={snapshot.id}>
-                                <TableCell className="font-mono text-xs">
-                                    {snapshot.short_id.slice(0, 8)}
-                                </TableCell>
-                                <TableCell className="text-sm text-muted-foreground">
-                                    {new Date(snapshot.time).toLocaleString()}
-                                </TableCell>
-                                <TableCell className="text-sm text-muted-foreground">
-                                    {snapshot.tags ? snapshot.tags.join(", ") : "-"}
-                                </TableCell>
-                                <TableCell>
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => {
-                                            setSelectedSnapshot(snapshot);
-                                            setDialogOpen(true);
-                                        }}
-                                    >
-                                        Restore
-                                    </Button>
-                                </TableCell>
-                            </TableRow>
-                        ))}
-                    </TableBody>
-                </Table>
+                <DataTable
+                    data={snapshots}
+                    columns={columns}
+                    getRowKey={(snapshot) => snapshot.id}
+                    emptyMessage="No snapshots found"
+                    emptyDescription="Run a backup to create the first snapshot in this repository."
+                    pagination={false}
+                />
             )}
 
             {selectedSnapshot && (

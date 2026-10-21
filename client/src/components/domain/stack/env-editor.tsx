@@ -5,6 +5,7 @@ import {z} from "zod";
 import {checkDuplicateEnvKeys, envVariableRowSchema} from "@docktor/shared";
 import {Eye, EyeOff, Plus, Trash2} from "lucide-react";
 import {CodeEditor} from "@/components/common/code-editor";
+import {TableFrame} from "@/components/common/data/table";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {Label} from "@/components/ui/label";
@@ -20,6 +21,7 @@ import {
     toTableRows,
     type EnvTableRow,
 } from "@/lib/env-file";
+import {TOUCH_TARGET} from "@/lib/touch-target";
 
 export interface EnvEditorProps {
     readonly value: string;
@@ -48,7 +50,6 @@ type ClientEnvTableFormInput = z.infer<typeof clientEnvTableFormSchema>;
 
 const LONG_VALUE_THRESHOLD = 40;
 const ROW_SCROLL_THRESHOLD = 8;
-const ICON_BUTTON_CLASS = "min-h-11 min-w-11 md:min-h-9 md:min-w-9";
 
 /**
  * D-06/D-20/D-21/D-22: the structured .env editor — an inline-editable
@@ -207,107 +208,109 @@ export function EnvEditor({
                 <div className="space-y-3">
                     {(() => {
                         const table = (
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Name</TableHead>
-                                        <TableHead>Value</TableHead>
-                                        <TableHead className="w-0" />
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {fields.map((field, index) => {
-                                        const rowValues = watchedVariables?.[index];
-                                        const key = rowValues?.key ?? "";
-                                        const currentValue = rowValues?.value ?? "";
-                                        const secret = isSecretKey(key);
-                                        const revealed = revealedIds.has(field.id);
-                                        const showAsPassword = secret && !revealed;
-                                        const displayName = key || `variable ${index + 1}`;
-                                        const keyError = form.formState.errors.variables?.[index]?.key;
-                                        const keyErrorId = `${field.id}-key-error`;
-                                        const keyRegister = form.register(`variables.${index}.key`);
+                            <TableFrame>
+                                <Table>
+                                    <TableHeader className="bg-muted/50">
+                                        <TableRow className="hover:bg-transparent">
+                                            <TableHead>Name</TableHead>
+                                            <TableHead>Value</TableHead>
+                                            <TableHead className="w-0" />
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {fields.map((field, index) => {
+                                            const rowValues = watchedVariables?.[index];
+                                            const key = rowValues?.key ?? "";
+                                            const currentValue = rowValues?.value ?? "";
+                                            const secret = isSecretKey(key);
+                                            const revealed = revealedIds.has(field.id);
+                                            const showAsPassword = secret && !revealed;
+                                            const displayName = key || `variable ${index + 1}`;
+                                            const keyError = form.formState.errors.variables?.[index]?.key;
+                                            const keyErrorId = `${field.id}-key-error`;
+                                            const keyRegister = form.register(`variables.${index}.key`);
 
-                                        const valueInput = (
-                                            <Input
-                                                type={showAsPassword ? "password" : "text"}
-                                                className="min-w-48"
-                                                aria-label={`Value for ${displayName}`}
-                                                {...form.register(`variables.${index}.value`)}
-                                            />
-                                        );
+                                            const valueInput = (
+                                                <Input
+                                                    type={showAsPassword ? "password" : "text"}
+                                                    className="min-w-48"
+                                                    aria-label={`Value for ${displayName}`}
+                                                    {...form.register(`variables.${index}.value`)}
+                                                />
+                                            );
 
-                                        return (
-                                            <TableRow key={field.id}>
-                                                <TableCell>
-                                                    <Input
-                                                        className="min-w-32"
-                                                        aria-label={`Variable name ${index + 1}`}
-                                                        aria-invalid={!!keyError}
-                                                        aria-describedby={keyError ? keyErrorId : undefined}
-                                                        {...keyRegister}
-                                                        ref={(el) => {
-                                                            keyRegister.ref(el);
-                                                            keyInputRefs.current[index] = el;
-                                                        }}
-                                                    />
-                                                    {keyError && (
-                                                        <p id={keyErrorId} className="text-xs text-destructive mt-1">
-                                                            {keyError.message as string}
-                                                        </p>
-                                                    )}
-                                                </TableCell>
-                                                <TableCell>
-                                                    {!showAsPassword && currentValue.length > LONG_VALUE_THRESHOLD ? (
-                                                        <TooltipProvider>
-                                                            <Tooltip>
-                                                                <TooltipTrigger asChild>{valueInput}</TooltipTrigger>
-                                                                <TooltipContent>{currentValue}</TooltipContent>
-                                                            </Tooltip>
-                                                        </TooltipProvider>
-                                                    ) : (
-                                                        valueInput
-                                                    )}
-                                                </TableCell>
-                                                <TableCell>
-                                                    <div className="flex items-center gap-1">
-                                                        {secret && (
+                                            return (
+                                                <TableRow key={field.id} className="hover:bg-muted/30">
+                                                    <TableCell>
+                                                        <Input
+                                                            className="min-w-32"
+                                                            aria-label={`Variable name ${index + 1}`}
+                                                            aria-invalid={!!keyError}
+                                                            aria-describedby={keyError ? keyErrorId : undefined}
+                                                            {...keyRegister}
+                                                            ref={(el) => {
+                                                                keyRegister.ref(el);
+                                                                keyInputRefs.current[index] = el;
+                                                            }}
+                                                        />
+                                                        {keyError && (
+                                                            <p id={keyErrorId} className="text-xs text-destructive mt-1">
+                                                                {keyError.message as string}
+                                                            </p>
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        {!showAsPassword && currentValue.length > LONG_VALUE_THRESHOLD ? (
+                                                            <TooltipProvider>
+                                                                <Tooltip>
+                                                                    <TooltipTrigger asChild>{valueInput}</TooltipTrigger>
+                                                                    <TooltipContent>{currentValue}</TooltipContent>
+                                                                </Tooltip>
+                                                            </TooltipProvider>
+                                                        ) : (
+                                                            valueInput
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <div className="flex items-center gap-1">
+                                                            {secret && (
+                                                                <Button
+                                                                    type="button"
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    className={TOUCH_TARGET}
+                                                                    aria-label={
+                                                                        revealed
+                                                                            ? `Hide value for ${key}`
+                                                                            : `Show value for ${key}`
+                                                                    }
+                                                                    onClick={() => toggleReveal(field.id)}
+                                                                >
+                                                                    {revealed ? (
+                                                                        <EyeOff className="h-4 w-4" />
+                                                                    ) : (
+                                                                        <Eye className="h-4 w-4" />
+                                                                    )}
+                                                                </Button>
+                                                            )}
                                                             <Button
                                                                 type="button"
                                                                 variant="ghost"
                                                                 size="icon"
-                                                                className={ICON_BUTTON_CLASS}
-                                                                aria-label={
-                                                                    revealed
-                                                                        ? `Hide value for ${key}`
-                                                                        : `Show value for ${key}`
-                                                                }
-                                                                onClick={() => toggleReveal(field.id)}
+                                                                className={TOUCH_TARGET}
+                                                                aria-label={`Remove ${displayName}`}
+                                                                onClick={() => remove(index)}
                                                             >
-                                                                {revealed ? (
-                                                                    <EyeOff className="h-4 w-4" />
-                                                                ) : (
-                                                                    <Eye className="h-4 w-4" />
-                                                                )}
+                                                                <Trash2 className="h-4 w-4" />
                                                             </Button>
-                                                        )}
-                                                        <Button
-                                                            type="button"
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            className={ICON_BUTTON_CLASS}
-                                                            aria-label={`Remove ${displayName}`}
-                                                            onClick={() => remove(index)}
-                                                        >
-                                                            <Trash2 className="h-4 w-4" />
-                                                        </Button>
-                                                    </div>
-                                                </TableCell>
-                                            </TableRow>
-                                        );
-                                    })}
-                                </TableBody>
-                            </Table>
+                                                        </div>
+                                                    </TableCell>
+                                                </TableRow>
+                                            );
+                                        })}
+                                    </TableBody>
+                                </Table>
+                            </TableFrame>
                         );
                         return fields.length > ROW_SCROLL_THRESHOLD ? (
                             <ScrollArea className="h-96">{table}</ScrollArea>

@@ -9,6 +9,7 @@ import {Label} from "@/components/ui/label";
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from "@/components/ui/card";
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from "@/components/ui/table";
 import {Skeleton} from "@/components/ui/skeleton";
+import {TableFrame} from "@/components/common/data/table";
 import {ToneBadge} from "@/components/common/tone-badge";
 import {CompatibilityBadge} from "@/components/domain/stack/compatibility-badge";
 import {DiscoveredStackActions} from "@/components/domain/stack/discovered-stack-actions";
@@ -211,10 +212,10 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
           {scanned && !scanning && stacks.length > 0 && (
             <div className="space-y-4">
               <h3 className="text-sm font-medium">Discovered Stacks ({stacks.length})</h3>
-              <div className="border rounded-md">
+              <TableFrame>
                 <Table>
-                  <TableHeader>
-                    <TableRow>
+                  <TableHeader className="bg-muted/50">
+                    <TableRow className="hover:bg-transparent">
                       <TableHead>Directory</TableHead>
                       <TableHead>Services</TableHead>
                       <TableHead>Compatibility</TableHead>
@@ -227,7 +228,7 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
                       const isAdopting = adoptingId === stack.path;
 
                       return (
-                        <TableRow key={stack.path}>
+                        <TableRow key={stack.path} className="hover:bg-muted/30">
                           <TableCell className="font-mono text-sm whitespace-normal break-all min-w-48">
                             {stack.directory}
                           </TableCell>
@@ -257,7 +258,7 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
                     })}
                   </TableBody>
                 </Table>
-              </div>
+              </TableFrame>
               <p className="text-xs text-muted-foreground">
                 <strong>Green</strong> stacks can be adopted in-place safely.
                 <strong> Yellow/red</strong> stacks should be migrated for full Docktor compatibility (backups, env editing).
