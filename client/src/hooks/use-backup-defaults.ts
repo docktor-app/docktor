@@ -9,8 +9,9 @@ export interface UseBackupDefaultsResult {
 
 // Fetches the global backup-defaults schedule once on mount. The dashboard
 // combines this with each stack's own `backupSchedule` (via
-// computeDashboardStats) to count "Backups Configured" without an
-// N+1 per-stack request (prohibition in 11-04-PLAN.md).
+// computeDashboardStats) together with each stack's hasBackup flag to compute
+// Backup Coverage without an N+1 per-stack request (prohibition in
+// 11-04-PLAN.md).
 export function useBackupDefaults(): UseBackupDefaultsResult {
     const [defaultSchedule, setDefaultSchedule] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);

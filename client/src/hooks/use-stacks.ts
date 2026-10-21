@@ -59,11 +59,17 @@ export function useStacks() {
                     : stack
             ));
         } else if (event.type === "stack_status") {
+            // A finished backup can flip hasBackup (D-04), so re-read the
+            // list when a stack leaves BACKING_UP instead of polling.
+            const previousStatus = stacks.find(stack => stack.id === event.stackId)?.status;
             setStacks(prev => prev.map(stack =>
                 stack.id === event.stackId
                     ? {...stack, status: event.stackStatus}
                     : stack
             ));
+            if (previousStatus === "BACKING_UP" && event.stackStatus !== "BACKING_UP") {
+                void fetchStacks("background");
+            }
         } else if (event.type === "config_changed" || event.type === "config_error" || event.type === "update_available") {
             void fetchStacks("background");
         }

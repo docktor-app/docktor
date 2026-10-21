@@ -898,7 +898,8 @@ test.describe("Stacks", () => {
     test("dashboard shows stack stats and recent stacks", async ({page}) => {
         await mockAuthenticated(page);
         // D-14: give one stack a service with an update and a backup
-        // schedule, so both new stat cards report a non-zero count.
+        // schedule, so the Updates Available and Backup Coverage cards
+        // report a non-zero count.
         const dashboardStacks = [
             {
                 ...mockStacks[0],
@@ -922,9 +923,28 @@ test.describe("Stacks", () => {
         await expect(updatesCard).toBeVisible();
         await expect(updatesCard.getByText("1", {exact: true})).toBeVisible();
 
-        const backupsCard = page.locator('[data-slot="stat-card"]', {hasText: "Backups Configured"});
-        await expect(backupsCard).toBeVisible();
-        await expect(backupsCard.getByText("1", {exact: true})).toBeVisible();
+        // Backup Coverage: the scheduled stack counts, the other has neither
+        // a schedule nor a snapshot, so the card reads 1 of 2.
+        const coverageCard = page.locator('[data-slot="stat-card"]', {hasText: "Backup Coverage"});
+        await expect(coverageCard).toBeVisible();
+        await expect(coverageCard.getByText("1/2", {exact: true})).toBeVisible();
+        await expect(coverageCard.getByText("with a schedule or snapshot")).toBeVisible();
+    });
+
+    test("Backup Coverage counts a manual-snapshot-only stack (DASH-02)", async ({page}) => {
+        await mockAuthenticated(page);
+        const snapshotOnlyStacks = [
+            {...mockStacks[0], backupSchedule: null, hasBackup: true},
+            {...mockStacks[1], backupSchedule: null},
+        ];
+        await mockStacksList(page, snapshotOnlyStacks);
+        await mockBackupDefaults(page, null);
+
+        await page.goto("/");
+
+        const coverageCard = page.locator('[data-slot="stat-card"]', {hasText: "Backup Coverage"});
+        await expect(coverageCard).toBeVisible();
+        await expect(coverageCard.getByText("1/2", {exact: true})).toBeVisible();
     });
 
     test("breadcrumbs show correct navigation on detail page", async ({page}) => {
