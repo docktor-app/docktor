@@ -1,4 +1,4 @@
-import {useRef} from "react";
+import {useEffect, useRef} from "react";
 import type {JSX} from "react";
 import {STACK_TAB_LABELS, STACK_TABS} from "@/lib/stack-tabs";
 import type {StackTab} from "@/lib/stack-tabs";
@@ -16,8 +16,16 @@ export interface StackTabBarProps {
 }
 
 // Must render inside a Radix <Tabs> (TabsList/TabsTrigger need its context).
-export function StackTabBar(_props: Readonly<StackTabBarProps>): JSX.Element {
+export function StackTabBar({activeTab}: Readonly<StackTabBarProps>): JSX.Element {
     const wrapperRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        // block "nearest" prevents a page-level vertical jump; scrollIntoView is
+        // optional-called because jsdom does not implement it.
+        wrapperRef.current
+            ?.querySelector('[role="tab"][data-state="active"]')
+            ?.scrollIntoView?.({inline: "nearest", block: "nearest"});
+    }, [activeTab]);
 
     return (
         <div ref={wrapperRef} className={STACK_TAB_BAR_WRAPPER_CLASS}>
