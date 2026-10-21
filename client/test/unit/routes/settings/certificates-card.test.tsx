@@ -318,4 +318,41 @@ describe("CertificatesCard", () => {
         ).toBeInTheDocument();
         expect(screen.queryByRole("table")).not.toBeInTheDocument();
     });
+
+    it("lays the upload form out in a form stack with the submit button as its last child", async () => {
+        mockGetCertificates.mockResolvedValue([]);
+
+        const {container} = renderCard();
+        await screen.findByText("No certificates uploaded yet");
+
+        const stack = container.querySelector('[data-slot="form-stack"]');
+        expect(stack).not.toBeNull();
+        const fields = [
+            screen.getByLabelText(/domain pattern/i),
+            screen.getByLabelText(/certificate file/i),
+            screen.getByLabelText(/private key file/i),
+            screen.getByLabelText(/ca bundle/i),
+        ];
+        for (const field of fields) {
+            expect(stack).toContainElement(field);
+        }
+
+        const actions = screen.getByRole("button", {name: "Upload Certificate"}).closest('[data-slot="form-actions"]');
+        expect(actions).not.toBeNull();
+        expect(stack?.lastElementChild).toBe(actions);
+    });
+
+    it("pairs each file input with its label inside one form item", async () => {
+        mockGetCertificates.mockResolvedValue([]);
+
+        renderCard();
+        await screen.findByText("No certificates uploaded yet");
+
+        for (const name of [/certificate file/i, /private key file/i, /ca bundle/i]) {
+            const input = screen.getByLabelText(name);
+            const item = input.closest('[data-slot="form-item"]');
+            expect(item).not.toBeNull();
+            expect(item?.querySelector(`label[for="${input.id}"]`)).not.toBeNull();
+        }
+    });
 });
