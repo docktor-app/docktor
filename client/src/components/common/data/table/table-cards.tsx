@@ -6,7 +6,7 @@ import {Card, CardContent} from "@/components/ui/card";
 import {cn} from "@/lib/utils";
 import type {DataTableLayout, TableColumn} from "./data-table";
 import {ItemLink} from "./item-link";
-import {sortIconFor} from "./sortable-head";
+import {type SortDirection, sortIconFor} from "./sortable-head";
 
 const CARDS_LAYOUT: DataTableLayout = {mode: "cards"};
 
@@ -16,6 +16,11 @@ function visibleColumns<T>(columns: readonly TableColumn<T>[]): readonly TableCo
 
 export function titleColumn<T>(columns: readonly TableColumn<T>[]): TableColumn<T> {
     return columns.find((col) => col.isKey) ?? visibleColumns(columns)[0] ?? columns[0];
+}
+
+function sortLabel(name: string, direction: SortDirection): string {
+    if (direction === "none") return `Sort by ${name}`;
+    return `Sort by ${name}, ${direction === "asc" ? "ascending" : "descending"}`;
 }
 
 function SortToolbar<T>({columns}: Readonly<{columns: readonly TableColumn<T>[]}>): JSX.Element | null {
@@ -37,6 +42,7 @@ function SortToolbar<T>({columns}: Readonly<{columns: readonly TableColumn<T>[]}
                         size="sm"
                         className="min-h-11"
                         aria-pressed={direction !== "none"}
+                        aria-label={sortLabel(col.name, direction)}
                         onClick={col.sort?.onToggle}
                     >
                         {col.name}

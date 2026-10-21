@@ -450,13 +450,20 @@ describe("DataTable card layout below md (UI-SPEC A-02)", () => {
         const {container} = renderTable({data: [...items].reverse(), columns: sortableColumns});
 
         const toolbar = await screen.findByRole("group", {name: "Sort"});
-        await user.click(within(toolbar).getByRole("button", {name: "Name"}));
+        await user.click(within(toolbar).getByRole("button", {name: "Sort by Name"}));
 
-        expect(within(toolbar).getByRole("button", {name: "Name"})).toHaveAttribute("aria-pressed", "true");
+        expect(within(toolbar).getByRole("button", {name: "Sort by Name, ascending"})).toHaveAttribute(
+            "aria-pressed",
+            "true",
+        );
         expect(cards(container).map((card) => card.textContent)).toEqual([
             expect.stringContaining("Alpha"),
             expect.stringContaining("Beta"),
         ]);
+
+        await user.click(within(toolbar).getByRole("button", {name: "Sort by Name, ascending"}));
+
+        expect(within(toolbar).getByRole("button", {name: "Sort by Name, descending"})).toBeInTheDocument();
     });
 
     it("renders expanded content inside the item's card", async () => {
