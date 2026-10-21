@@ -382,6 +382,47 @@ describe("DataTable footer and pagination switch", () => {
     });
 });
 
+describe("DataTable pagination query params (WR-04)", () => {
+    const many: Item[] = Array.from({length: 25}, (_, i) => ({id: `i${String(i)}`, name: `Item ${String(i)}`, size: i}));
+
+    function renderAt(search: string): HTMLElement {
+        const {container} = render(
+            <MemoryRouter initialEntries={[`/items${search}`]}>
+                <DataTable<Item>
+                    data={many}
+                    columns={columns}
+                    getRowKey={(item) => item.id}
+                    emptyMessage="Nothing here"
+                />
+            </MemoryRouter>,
+        );
+        return container;
+    }
+
+    it.each(["?pageSize=-3", "?pageSize=0.5", "?pageSize=abc", "?pageSize=7", "?pageSize=0"])(
+        "falls back to the default page size for %s",
+        (search) => {
+            expect(bodyRows(renderAt(search))).toHaveLength(10);
+        },
+    );
+
+    it("accepts an allowed page size", () => {
+        expect(bodyRows(renderAt("?pageSize=25"))).toHaveLength(25);
+    });
+
+    it("floors a fractional page and clamps invalid pages to the first", () => {
+        expect(screen.queryByText("Item 10")).not.toBeInTheDocument();
+        const container = renderAt("?page=2.9");
+        expect(bodyRows(container)).toHaveLength(10);
+        expect(screen.getByText("Item 10")).toBeInTheDocument();
+    });
+
+    it("treats a negative page as the first page", () => {
+        renderAt("?page=-4");
+        expect(screen.getByText("Item 0")).toBeInTheDocument();
+    });
+});
+
 describe("DataTable card layout below md (UI-SPEC A-02)", () => {
     const originalWidth = Object.getOwnPropertyDescriptor(window, "innerWidth");
 

@@ -3,7 +3,7 @@ import {useSearchParams} from "react-router";
 import {Skeleton} from "@/components/ui/skeleton";
 import type {SortDirection} from "./sortable-head";
 import {TableContent} from "./table-content";
-import {TablePagination} from "./table-pagination";
+import {PAGE_SIZE_OPTIONS, TablePagination} from "./table-pagination";
 import {useColumnSort} from "./use-column-sort";
 
 /** Controlled sort: the consumer owns the order and only learns about toggles. */
@@ -54,6 +54,17 @@ function defaultGetRowKey<T>(_item: T, index: number): string {
     return String(index);
 }
 
+// The page and pageSize query params are user-controlled URL input, so only accept sane values.
+function parsePage(raw: string | null): number {
+    const parsed = Math.floor(Number(raw));
+    return Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
+}
+
+function parsePageSize(raw: string | null, fallback: number): number {
+    const requested = Number(raw);
+    return PAGE_SIZE_OPTIONS.includes(requested) ? requested : fallback;
+}
+
 export function DataTable<T>({
     data,
     columns,
@@ -70,10 +81,8 @@ export function DataTable<T>({
     const [searchParams] = useSearchParams();
     const {columns: resolvedColumns, data: sortedData} = useColumnSort(data, columns);
 
-    const page = pagination ? Math.max(1, Number(searchParams.get("page")) || 1) : 1;
-    const pageSize = pagination
-        ? Number(searchParams.get("pageSize")) || defaultPageSize
-        : sortedData.length;
+    const page = pagination ? parsePage(searchParams.get("page")) : 1;
+    const pageSize = pagination ? parsePageSize(searchParams.get("pageSize"), defaultPageSize) : sortedData.length;
     const totalPages = Math.max(1, Math.ceil(sortedData.length / pageSize));
     const currentPage = Math.min(page, totalPages);
 
