@@ -15,6 +15,7 @@ import {twoFactor} from "@/lib/auth-client";
 import {classifyAuthError} from "@/lib/auth-errors";
 import {copyToClipboard} from "@/lib/clipboard";
 import {createRetryAfterProbe} from "@/lib/rate-limit";
+import {TOUCH_TARGET} from "@/lib/touch-target";
 import {RecoveryCodesPanel} from "@/components/domain/auth/recovery-codes-panel";
 import {FormActions, FormStack} from "@/components/common/form-layout";
 import {Button} from "@/components/ui/button";
@@ -170,6 +171,7 @@ function SetupKey({setupKey}: Readonly<{ setupKey: string }>): React.JSX.Element
                     type="button"
                     variant="outline"
                     size="icon"
+                    className={TOUCH_TARGET}
                     aria-label="Copy setup key"
                     onClick={() => void copyToClipboard(setupKey)}
                 >

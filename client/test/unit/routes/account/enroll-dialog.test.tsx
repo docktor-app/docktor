@@ -106,6 +106,14 @@ describe("EnrollDialog", () => {
             expect(writeText).toHaveBeenCalledWith(SECRET);
         });
 
+        it("gives the Copy setup key button the mobile touch target (A11Y-01)", async () => {
+            const user = userEvent.setup();
+            renderDialog();
+            await reachStep3(user);
+
+            expect(screen.getByRole("button", {name: "Copy setup key"})).toHaveClass("max-md:size-11");
+        });
+
         it("toasts a copy failure when the clipboard API is missing", async () => {
             const user = userEvent.setup();
             renderDialog();
