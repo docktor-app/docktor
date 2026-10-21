@@ -79,12 +79,43 @@ Issue numbers refer to `docktor-app/docktor`. Research: `.planning/research/SUMM
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
+| MIG-05 | Phase 22 | Pending |
+| MIG-06 | Phase 22 | Pending |
+| MIG-07 | Phase 22 | Pending |
+| MIG-08 | Phase 22 | Pending |
+| MIG-09 | Phase 22 | Pending |
+| MIG-10 | Phase 22 | Pending |
+| MIG-11 | Phase 22 | Pending |
+| MIG-12 | Phase 22 | Pending |
+| MIG-13 | Phase 22 | Pending |
+| PRX-01 | Phase 23 | Pending |
+| PRX-02 | Phase 23 | Pending |
+| PRX-03 | Phase 23 | Pending |
+| PRX-04 | Phase 23 | Pending |
+| PRX-05 | Phase 23 | Pending |
+| OIDC-05 | Phase 24 | Pending |
+| RBAC-01 | Phase 24 | Pending |
+| RBAC-02 | Phase 24 | Pending |
+| RBAC-03 | Phase 24 | Pending |
+| RBAC-05 | Phase 24 | Pending |
+| AUD-01 | Phase 25 | Pending |
+| AUD-02 | Phase 25 | Pending |
+| RBAC-04 | Phase 25 | Pending |
+| RST-01 | Phase 26 | Pending |
+| RST-02 | Phase 26 | Pending |
+| RST-03 | Phase 26 | Pending |
+| USR-01 | Phase 26 | Pending |
+| USR-02 | Phase 26 | Pending |
+| OIDC-01 | Phase 27 | Pending |
+| OIDC-02 | Phase 27 | Pending |
+| OIDC-03 | Phase 27 | Pending |
+| OIDC-04 | Phase 27 | Pending |
 
 **Coverage:**
 - v0.2.0 requirements: 31 total
-- Mapped to phases: 0
-- Unmapped: 31 ⚠️
+- Mapped to phases: 31 (Phase 22: 9, Phase 23: 5, Phase 24: 5, Phase 25: 3, Phase 26: 5, Phase 27: 4)
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-10-21*
-*Last updated: 2026-10-21 after initial definition*
+*Last updated: 2026-10-21 after roadmap creation (traceability mapped)*
