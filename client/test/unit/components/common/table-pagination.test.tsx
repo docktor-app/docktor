@@ -49,7 +49,7 @@ describe("TablePagination", () => {
     it("makes the rows-per-page select 44px tall below md and wraps the footer", () => {
         const {container} = renderPagination();
 
-        expect(screen.getByRole("combobox")).toHaveClass("h-8", "max-md:h-11");
+        expect(screen.getByRole("combobox")).toHaveClass("h-8", "max-md:data-[size=default]:h-11");
         expect(container.firstElementChild).toHaveClass("flex-wrap");
     });
 
