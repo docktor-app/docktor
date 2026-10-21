@@ -193,7 +193,7 @@ Notes: the three requirements share one component tree (`app-sidebar.tsx`, `nav-
   5. The stack tab bar shows no scrollbar at desktop and tablet widths and stays usable on narrow screens, and the stack actions trigger, theme toggle, certificate delete button and table pagination buttons have a 44px touch target below `md` and keep the compact size at `md` and up
   6. On a stack's non-overview tab the stack-name breadcrumb links to the stack overview and the tab name is the current page
 
-**Plans:** 9/11 plans executed
+**Plans:** 10/11 plans executed
 
 Plans:
 **Wave 1**
@@ -208,7 +208,7 @@ Plans:
 - [x] 20-07-PLAN.md — hasBackup on GET /api/stacks (BackupRepository groupBy behind a StackService port) → Backup Coverage n/total card with hint; mono KPIs; refetch after a first backup (wave 2, after 20-01)
 - [x] 20-08-PLAN.md — Storage backups/stacks, backup history and snapshots on DataTable; env editor and brownfield import framed (wave 2, after 20-02/20-03)
 - [x] 20-09-PLAN.md — Certificates and notification log on DataTable (44px delete, ToneBadge pills, mono domain); certificate upload and dialog forms on FormStack/FormActions (wave 2, after 20-02/20-03/20-04)
-- [ ] 20-10-PLAN.md — Services, proxy domains and incidents on DataTable with mono technical values and the lowercase upgrade-blocked label (wave 2, after 20-01/20-02/20-03)
+- [x] 20-10-PLAN.md — Services, proxy domains and incidents on DataTable with mono technical values and the lowercase upgrade-blocked label (wave 2, after 20-01/20-02/20-03)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 20-11-PLAN.md — Playwright proof (status casing, font origin, tab bar at 1280/768/375, table frame light/dark, 44px vs compact targets), phase-wide guards, isolated CTA relabels (wave 3)
@@ -242,7 +242,7 @@ Phases execute in numeric order: 17 → 18 → 19 → 20 → 21
 | 17. Backup Repository and Port-Check Fixes | 3/3 | Complete    | 2026-10-14 |
 | 18. Import and Migration Flow | 26/26 | Complete    | 2026-10-18 |
 | 19. Sidebar, Templates and Version Block | 3/3 | Complete    | 2026-10-18 |
-| 20. Visual Consistency, Dashboard Clarity and Touch Targets | 9/11 | In Progress | - |
+| 20. Visual Consistency, Dashboard Clarity and Touch Targets | 10/11 | In Progress | - |
 | 21. Release v0.1.1 | 0/TBD | Not started | - |
 
 Phases 1-16 (v0.1.0) are complete and archived; see `.planning/milestones/v0.1.0-ROADMAP.md`.

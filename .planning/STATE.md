@@ -5,16 +5,16 @@ milestone_name: Release Follow-ups
 current_phase: 20
 current_phase_name: Visual Consistency, Dashboard Clarity and Touch Targets
 status: executing
-stopped_at: Completed 20-09-PLAN.md
-last_updated: "2026-10-21T03:52:21.723Z"
+stopped_at: Completed 20-10-PLAN.md
+last_updated: "2026-10-21T03:57:53.010Z"
 last_activity: 2026-10-21
 last_activity_desc: Phase 20 execution started
-state_head: b5a9df2b63aff6a0bddc40ead3ab1d2493e24569
+state_head: 949b2560679b422fba29ec2b3c2fc5c7d1e50730
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 43
-  completed_plans: 41
+  completed_plans: 42
   percent: 60
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-14)
 ## Current Position
 
 Phase: 20 (Visual Consistency, Dashboard Clarity and Touch Targets) — EXECUTING
-Plan: 10 of 11
+Plan: 11 of 11
 Status: Ready to execute
 Last activity: 2026-10-21 — Phase 20 execution started
 
@@ -104,6 +104,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 20 P07 | 12min | 3 tasks | 17 files |
 | Phase 20 P08 | 15min | 3 tasks | 10 files |
 | Phase 20 P09 | 8min | 3 tasks | 9 files |
+| Phase 20 P10 | 10min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -171,6 +172,7 @@ Roadmap decisions for v0.1.1:
 - [Phase 20]: 20-08: storage stacks fully migrated to DataTable with controlled sort and renderExpanded volume rows (no TableFrame fallback needed)
 - [Phase 20]: 20-09: certificate file fields use FormItem + Label inside FormStack so the shared 8px label gap applies
 - [Phase 20]: 20-09: dialog forms use FormStack + FormActions variant=dialog; backup-schedule switch rows shrink gap-3 to 8px under the descendant rule
+- [Phase 20]: 20-10: proxy aggregation stays in the consumer; incident scroll box wraps DataTable only when incidents exist
 
 ### Pending Todos
 
@@ -194,6 +196,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-21T03:52:21.281Z
-Stopped at: Completed 20-09-PLAN.md
+Last session: 2026-10-21T03:57:52.417Z
+Stopped at: Completed 20-10-PLAN.md
 Resume file: None
