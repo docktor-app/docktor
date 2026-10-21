@@ -133,6 +133,50 @@ describe("useStacks", () => {
             expect(mockListStacks).toHaveBeenCalledTimes(1);
         });
 
+        it("refetches once when two events land before a re-render and the first one leaves BACKING_UP", async () => {
+            const stacks = [{id: "my-app", displayName: "My App", status: "BACKING_UP", services: []}];
+            const refetched = [{id: "my-app", displayName: "My App", status: "RUNNING", hasBackup: true, services: []}];
+            mockListStacks.mockResolvedValueOnce(stacks as any);
+            mockListStacks.mockResolvedValueOnce(refetched as any);
+
+            const {result} = renderHook(() => useStacks());
+            await waitFor(() => expect(result.current.loading).toBe(false));
+
+            // Both handlers run against the same render; the second must see the
+            // status written by the first, not the stale BACKING_UP snapshot.
+            act(() => {
+                capturedHandler!({type: "stack_status", stackId: "my-app", stackStatus: "RUNNING"});
+                capturedHandler!({type: "stack_status", stackId: "my-app", stackStatus: "RUNNING"});
+            });
+
+            await waitFor(() => expect(result.current.stacks).toEqual(refetched));
+            expect(mockListStacks).toHaveBeenCalledTimes(2);
+        });
+
+        it("refetches when a container_state event carries the stack out of BACKING_UP", async () => {
+            const stacks = [{id: "my-app", displayName: "My App", status: "BACKING_UP", services: []}];
+            const refetched = [{id: "my-app", displayName: "My App", status: "RUNNING", hasBackup: true, services: []}];
+            mockListStacks.mockResolvedValueOnce(stacks as any);
+            mockListStacks.mockResolvedValueOnce(refetched as any);
+
+            const {result} = renderHook(() => useStacks());
+            await waitFor(() => expect(result.current.loading).toBe(false));
+
+            act(() => {
+                capturedHandler!({
+                    type: "container_state",
+                    stackId: "my-app",
+                    serviceName: "web",
+                    containerState: "running",
+                    healthStatus: "healthy",
+                    stackStatus: "RUNNING",
+                } as StateEvent);
+            });
+
+            await waitFor(() => expect(result.current.stacks).toEqual(refetched));
+            expect(mockListStacks).toHaveBeenCalledTimes(2);
+        });
+
         it("does not refetch for an unknown stack id", async () => {
             const stacks = [{id: "my-app", displayName: "My App", status: "BACKING_UP", services: []}];
             mockListStacks.mockResolvedValueOnce(stacks as any);
