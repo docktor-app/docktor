@@ -1,6 +1,11 @@
 import {describe, expect, it} from "vitest";
 
-import {KNOWN_STACK_STATUSES, formatStatusLabel, getStackStatusPresentation} from "@/lib/status-labels";
+import {
+    KNOWN_STACK_STATUSES,
+    formatStatusLabel,
+    getServiceStatusPresentation,
+    getStackStatusPresentation,
+} from "@/lib/status-labels";
 
 describe("formatStatusLabel", () => {
     it.each([
@@ -59,5 +64,32 @@ describe("getStackStatusPresentation", () => {
 
     it("does not throw on an empty string", () => {
         expect(getStackStatusPresentation("").label).toBe("");
+    });
+});
+
+describe("getServiceStatusPresentation", () => {
+    it.each([
+        [null, null, "unknown", "neutral", false],
+        ["running", "healthy", "healthy", "green", true],
+        ["running", "unhealthy", "unhealthy", "red", false],
+        ["running", "starting", "starting", "yellow", false],
+        ["running", null, "running", "green", true],
+        ["exited", null, "exited", "neutral", false],
+        ["restarting", null, "restarting", "yellow", false],
+    ])("maps (%s, %s) to %s", (containerState, healthStatus, label, tone, dotPulse) => {
+        const presentation = getServiceStatusPresentation(containerState, healthStatus);
+        expect(presentation).toEqual({label, tone, dotPulse});
+        expect(presentation.label).toMatch(/^[a-z ]+$/);
+    });
+
+    it.each([
+        ["Paused", "paused"],
+        ["dead_ish", "dead ish"],
+    ])("formats the unknown container state %j as %j with a neutral static tone", (containerState, label) => {
+        expect(getServiceStatusPresentation(containerState, null)).toEqual({
+            label,
+            tone: "neutral",
+            dotPulse: false,
+        });
     });
 });
