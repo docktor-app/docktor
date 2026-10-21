@@ -92,7 +92,7 @@ export const deployPreflightService = new DeployPreflightService(composeReviewSe
 // constructed before stackService since it is its 10th dependency.
 export const containerStateCatchUp = new ContainerStateCatchUp(dockerodeClient, repo, domainEventBus, probedServiceRegistry);
 
-export const stackService = new StackService(repo, fs, docker, stackEventRepository, domainEventBus, settingsService, imageUpdateCheckRepository, composeReviewService, deployPreflightService, containerStateCatchUp);
+export const stackService = new StackService(repo, fs, docker, stackEventRepository, domainEventBus, settingsService, imageUpdateCheckRepository, composeReviewService, deployPreflightService, containerStateCatchUp, backupRepository);
 
 // Issue #19: stackService (above) is TemplateService's TemplateStackCreator
 // dependency — the single create path (StackService.createStack) that
