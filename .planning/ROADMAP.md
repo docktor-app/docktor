@@ -228,14 +228,14 @@ Notes: client-side polish (`components/common/`, `components/domain/`, route com
   2. A changelog entry for 0.1.1 lists the fixes and polish shipped in this release, each tied to its GitHub issue
   3. Every CI job is green on `release/v0.1.1`: build, typecheck and unit/integration/Playwright tests on Linux, unit tests on Windows and macOS, and the image build with its startup check
 
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans executed
 
 Plans:
 **Wave 1**
 - [x] 21-01-PLAN.md — Root, shared, server and client at 0.1.1 with a guard test that the sidebar version equals the release version; CHANGELOG.md (Keep a Changelog, one issue link per 0.1.1 entry) and the changelog step in CONTRIBUTING's release procedure; docs/design.md and the bug report form describe v0.1.1 (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 21-02-PLAN.md — Fast-forward push to release/v0.1.1, PR #99 description closing exactly the shipped issues, all five CI checks green on the release head incl. the Playwright sidebar version test; no tag (maintainer's call), release-day handoff (wave 2, after 21-01)
+- [x] 21-02-PLAN.md — Fast-forward push to release/v0.1.1, PR #99 description closing exactly the shipped issues, all five CI checks green on the release head incl. the Playwright sidebar version test; no tag (maintainer's call), release-day handoff (wave 2, after 21-01)
 
 Notes: the repository has no changelog file yet, so this phase creates one. Heavy verification (integration tests, full builds) runs in GitHub Actions, not locally.
 
@@ -250,7 +250,7 @@ Phases execute in numeric order: 17 → 18 → 19 → 20 → 21
 | 18. Import and Migration Flow | 26/26 | Complete    | 2026-10-18 |
 | 19. Sidebar, Templates and Version Block | 3/3 | Complete    | 2026-10-18 |
 | 20. Visual Consistency, Dashboard Clarity and Touch Targets | 11/11 | Complete    | 2026-10-21 |
-| 21. Release v0.1.1 | 1/2 | In Progress | - |
+| 21. Release v0.1.1 | 2/2 | In Progress | - |
 
 Phases 1-16 (v0.1.0) are complete and archived; see `.planning/milestones/v0.1.0-ROADMAP.md`.
 
