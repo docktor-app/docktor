@@ -41,6 +41,7 @@ Patch release on branch `release/v0.1.1`: bug fixes and interface polish only, n
 - [x] **UI-06**: Sidebar entries are grouped under labelled sections, with nested routes keeping the active highlight ([#93](https://github.com/docktor-app/docktor/issues/93))
 - [x] **UI-07**: A Templates sidebar entry opens a standalone catalog page whose "Use template" starts the create-stack flow ([#94](https://github.com/docktor-app/docktor/issues/94))
 - [ ] **UI-08**: All data tables share one restyled look matching the shadcn blocks, keeping sorting, status pills and row actions ([#95](https://github.com/docktor-app/docktor/issues/95))
+- [ ] **UI-09**: On a stack's non-overview pages the stack-name breadcrumb links back to the stack overview, and the tab name is the current page ([#96](https://github.com/docktor-app/docktor/issues/96))
 
 ### Accessibility (A11Y)
 
@@ -92,16 +93,17 @@ Which phases cover which requirements. Updated during roadmap creation.
 | UI-04 | Phase 20 | Pending |
 | UI-05 | Phase 20 | Pending |
 | UI-08 | Phase 20 | Pending |
+| UI-09 | Phase 20 | Pending |
 | DASH-01 | Phase 20 | Pending |
 | DASH-02 | Phase 20 | Pending |
 | A11Y-01 | Phase 20 | Pending |
 | REL-01 | Phase 21 | Pending |
 
 **Coverage:**
-- v0.1.1 requirements: 22 total
-- Mapped to phases: 22
+- v0.1.1 requirements: 23 total
+- Mapped to phases: 23
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-10-14*
-*Last updated: 2026-10-14 after roadmap creation (traceability mapped to Phases 17-21)*
+*Last updated: 2026-10-20 - UI-09 added during Phase 20 discussion*

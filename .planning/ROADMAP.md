@@ -183,7 +183,7 @@ Notes: the three requirements share one component tree (`app-sidebar.tsx`, `nav-
 
 **Goal**: The interface reads as one consistent system: status labels, KPI typography, tabs, forms and tables follow shared rules, the dashboard's backup card is honest, and icon-only controls are comfortable to tap on a phone
 **Depends on**: Phase 19 (the new Templates page and sidebar must exist so the shared rules apply to them too), Phase 17 (the backup behaviour the dashboard card reports)
-**Requirements**: UI-02, UI-03, UI-04, UI-05, UI-08, DASH-01, DASH-02, A11Y-01
+**Requirements**: UI-02, UI-03, UI-04, UI-05, UI-08, UI-09, DASH-01, DASH-02, A11Y-01
 **Success Criteria** (what must be TRUE):
 
   1. The same status (for example running) reads with identical casing on the dashboard, stack list, stack header, services table and activity timeline, all driven by one shared mapping
@@ -191,6 +191,7 @@ Notes: the three requirements share one component tree (`app-sidebar.tsx`, `nav-
   3. The "Backups Configured" card states exactly what it counts (or counts what its label says), and a stack that has a manual snapshot but no schedule is not silently invisible on the dashboard
   4. Forms across the app share one label-to-input and field-to-button spacing, and every data table shares one restyled look that matches the shadcn blocks while keeping sorting, status pills and row actions
   5. The stack tab bar shows no scrollbar at desktop and tablet widths and stays usable on narrow screens, and the stack actions trigger, theme toggle, certificate delete button and table pagination buttons have a 44px touch target below `md` and keep the compact size at `md` and up
+  6. On a stack's non-overview tab the stack-name breadcrumb links to the stack overview and the tab name is the current page
 
 **Plans:** 11 plans
 
