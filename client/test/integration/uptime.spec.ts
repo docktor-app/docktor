@@ -182,7 +182,9 @@ test.describe("Stack uptime (#24, #27)", () => {
         await mockStackPage(page, {...uptimeSummary, incidents});
 
         await page.goto("/stacks/my-app");
-        await expect(page.getByRole("columnheader", {name: "Ended"})).toBeVisible();
+        // Below md the table renders as cards, which label fields instead of
+        // exposing column headers.
+        await expect(page.getByText("Ended", {exact: true}).first()).toBeVisible();
 
         const measures = await page.evaluate(() => {
             const wrapper = document.querySelector<HTMLElement>(".max-h-96.overflow-y-auto");

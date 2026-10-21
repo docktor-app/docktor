@@ -50,7 +50,7 @@ export function TablePagination({
                         value={String(pageSize)}
                         onValueChange={changePageSize}
                     >
-                        <SelectTrigger className="h-8 w-[70px] max-md:h-11">
+                        <SelectTrigger className="h-8 w-[70px] max-md:data-[size=default]:h-11">
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent side="top">
