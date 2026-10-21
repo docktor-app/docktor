@@ -1,4 +1,4 @@
-import {beforeEach, describe, expect, it, vi} from "vitest";
+import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {render, screen, waitFor, within} from "@testing-library/react";
 import {createMemoryRouter, RouterProvider} from "react-router";
 import StackDetailPage from "../../../../src/routes/app/stacks/[id]";
@@ -202,6 +202,24 @@ describe("StackDetailPage — composition (D-01/D-02)", () => {
         const wrapper = screen.getByRole("tablist").parentElement;
         expect(wrapper).toHaveClass("overflow-y-hidden");
         expect(wrapper).toHaveClass("[scrollbar-width:none]");
+    });
+
+    describe("without Element.prototype.scrollIntoView", () => {
+        const original = Element.prototype.scrollIntoView;
+
+        afterEach(() => {
+            Element.prototype.scrollIntoView = original;
+        });
+
+        it("renders without throwing when scrollIntoView is unavailable (jsdom guard)", async () => {
+            // @ts-expect-error simulate an environment lacking the method (jsdom)
+            delete Element.prototype.scrollIntoView;
+
+            renderPage("/stacks/my-app/proxy");
+            await waitFor(() =>
+                expect(screen.getByRole("tab", {name: "Proxy", selected: true})).toBeInTheDocument(),
+            );
+        });
     });
 
     it("shows the active tab's label in the breadcrumb", async () => {
