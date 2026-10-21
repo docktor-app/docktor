@@ -4,6 +4,7 @@ import {Archive, MoreHorizontal, Play, RefreshCw, RotateCcw, Square, Trash2} fro
 
 import {deployStack, stopStack, restartStack, deleteStack} from "@/lib/stacks-api";
 import {triggerBackup} from "@/lib/backups-api";
+import {TOUCH_TARGET} from "@/lib/touch-target";
 import {Button} from "@/components/ui/button";
 import {
     DropdownMenu,
@@ -158,7 +159,7 @@ export function StackActions({stackId, stackName, status, isProtected, onAction}
 
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="icon" aria-label="Stack actions">
+                    <Button variant="outline" size="icon" aria-label="Stack actions" className={TOUCH_TARGET}>
                         <MoreHorizontal className="h-4 w-4" />
                     </Button>
                 </DropdownMenuTrigger>
