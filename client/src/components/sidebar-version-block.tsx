@@ -34,7 +34,7 @@ export function SidebarVersionBlock({version, links}: Readonly<SidebarVersionBlo
                 className="flex h-8 items-center justify-between gap-1 px-2 max-md:h-11 group-data-[collapsible=icon]:hidden"
             >
                 <span
-                    className="min-w-0 truncate text-xs tabular-nums text-sidebar-foreground/70"
+                    className="min-w-0 truncate font-mono text-xs tabular-nums text-sidebar-foreground/70"
                     title={productLabel(version)}
                 >
                     {versionText(version)}
@@ -87,7 +87,7 @@ export function SidebarVersionBlock({version, links}: Readonly<SidebarVersionBlo
                             </SidebarMenuButton>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent side="right" align="end" sideOffset={4} className="min-w-56 rounded-lg">
-                            <DropdownMenuLabel className="font-normal tabular-nums">
+                            <DropdownMenuLabel className="font-mono font-normal tabular-nums">
                                 {productLabel(version)}
                             </DropdownMenuLabel>
                             <DropdownMenuSeparator/>
