@@ -1,9 +1,10 @@
 import {useForm} from "react-hook-form";
 import {standardSchemaResolver} from "@hookform/resolvers/standard-schema";
 import {wizardStep3Schema, type WizardStep3Input} from "@docktor/shared";
+import {FormActions, FormStack} from "@/components/common/form-layout";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
-import {Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle} from "@/components/ui/card";
+import {Card, CardContent, CardDescription, CardHeader, CardTitle} from "@/components/ui/card";
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/components/ui/select";
 import {Alert, AlertDescription} from "@/components/ui/alert";
 import {Form, FormControl, FormField, FormItem, FormLabel, FormMessage} from "@/components/ui/form";
@@ -41,61 +42,63 @@ export function BackupStep({onNext, onBack, onSkip, loading}: Readonly<BackupSte
       </CardHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onNext)}>
-          <CardContent className="space-y-4">
-            <FormField
-              control={form.control}
-              name="repoType"
-              render={({field}) => (
-                <FormItem>
-                  <FormLabel>Repository Type</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger id="repoType">
-                        <SelectValue placeholder="Select type..." />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="local">Local</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {repoType === "local" && (
-              <Alert>
-                <AlertDescription>
-                  Backups are stored in a <code className="text-sm">backups/</code> subdirectory within each stack's directory.
-                </AlertDescription>
-              </Alert>
-            )}
-
-            {repoType && (
+          <CardContent>
+            <FormStack>
               <FormField
                 control={form.control}
-                name="password"
+                name="repoType"
                 render={({field}) => (
                   <FormItem>
-                    <FormLabel>Restic Password</FormLabel>
-                    <FormControl>
-                      <Input type="password" {...field} value={field.value ?? ""} placeholder="Encryption password" />
-                    </FormControl>
+                    <FormLabel>Repository Type</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger id="repoType">
+                          <SelectValue placeholder="Select type..." />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="local">Local</SelectItem>
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-            )}
+
+              {repoType === "local" && (
+                <Alert>
+                  <AlertDescription>
+                    Backups are stored in a <code className="text-sm">backups/</code> subdirectory within each stack's directory.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {repoType && (
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({field}) => (
+                    <FormItem>
+                      <FormLabel>Restic Password</FormLabel>
+                      <FormControl>
+                        <Input type="password" {...field} value={field.value ?? ""} placeholder="Encryption password" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+              <FormActions align="between">
+                <Button type="button" variant="outline" onClick={onBack}>Back</Button>
+                <div className="flex gap-2">
+                  <Button type="button" variant="ghost" onClick={onSkip}>Skip</Button>
+                  <Button type="submit" disabled={loading}>
+                    {loading ? "Saving..." : "Next"}
+                  </Button>
+                </div>
+              </FormActions>
+            </FormStack>
           </CardContent>
-          <CardFooter className="flex justify-between">
-            <Button type="button" variant="outline" onClick={onBack}>Back</Button>
-            <div className="flex gap-2">
-              <Button type="button" variant="ghost" onClick={onSkip}>Skip</Button>
-              <Button type="submit" disabled={loading}>
-                {loading ? "Saving..." : "Next"}
-              </Button>
-            </div>
-          </CardFooter>
         </form>
       </Form>
     </Card>
