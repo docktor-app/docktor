@@ -90,6 +90,24 @@ describe("LoginForm", () => {
         expect(view.getByText(/sign up/i)).toBeInTheDocument();
     });
 
+    it("lays out fields in FormStack with the submit in FormActions (UI-05)", () => {
+        const {container} = render(
+            <MemoryRouter>
+                <LoginForm />
+            </MemoryRouter>,
+        );
+
+        const stack = container.querySelector('[data-slot="form-stack"]');
+        expect(stack).toBeInTheDocument();
+        expect(stack).toContainElement(screen.getByLabelText(/email/i));
+        expect(stack).toContainElement(screen.getByLabelText(/password/i));
+
+        const actions = screen.getByRole("button", {name: "Sign in"}).closest('[data-slot="form-actions"]');
+        expect(actions).toBeInTheDocument();
+        expect(stack?.lastElementChild).toBe(actions);
+        expect(container.querySelector("form")?.className.split(/\s+/)).not.toContain("space-y-4");
+    });
+
     it("shows validation errors on empty submit", async () => {
         const user = userEvent.setup();
         const view = renderLoginForm();
