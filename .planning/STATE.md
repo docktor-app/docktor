@@ -1,20 +1,16 @@
 ---
 gsd_state_version: "1.0"
-milestone: v0.1.1
-milestone_name: Release Follow-ups
-current_phase: 21
-status: completed
-stopped_at: Phase 21 complete — all phases complete
-last_updated: "2026-10-21T13:34:58.937Z"
+milestone: v0.2.0
+milestone_name: Migration Hardening, Proxy & Access
+status: planning
+last_updated: "2026-10-21T15:54:30.716Z"
 last_activity: 2026-10-21
-last_activity_desc: Phase 21 complete
-state_head: d908749beaa0222e6ddfa1a11a9df10b9ab6baeb
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 45
-  completed_plans: 45
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -28,12 +24,10 @@ See: .planning/PROJECT.md (updated 2026-10-14)
 
 ## Current Position
 
-Phase: 21
-Plan: Not started
-Status: All phases complete
-Last activity: 2026-10-21 — Phase 21 complete
-
-Progress: [██████████] 100%
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-10-21 — Milestone v0.2.0 started
 
 ## Performance Metrics
 
