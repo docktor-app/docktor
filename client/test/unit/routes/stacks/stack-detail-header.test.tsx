@@ -1,5 +1,5 @@
 import {describe, expect, it, vi} from "vitest";
-import {render, screen} from "@testing-library/react";
+import {render, screen, within} from "@testing-library/react";
 import {MemoryRouter} from "react-router";
 import {ThemeProvider} from "@/components/common/theme-provider";
 import {SidebarProvider} from "@/components/ui/sidebar";
@@ -111,5 +111,15 @@ describe("StackDetailHeader (Issue #19/D-08)", () => {
         renderHeader({stack: makeStack()});
 
         expect(screen.queryByText("template updated")).not.toBeInTheDocument();
+    });
+});
+
+describe("StackDetailHeader breadcrumb (UI-09, D-12)", () => {
+    it("on a non-overview tab the stack-name crumb links to the overview", () => {
+        renderHeader({activeTab: "config"});
+        const nav = within(screen.getByLabelText("breadcrumb"));
+
+        expect(nav.getByRole("link", {name: "My App"})).toHaveAttribute("href", "/stacks/my-app");
+        expect(nav.getByText("Config")).toHaveAttribute("aria-current", "page");
     });
 });

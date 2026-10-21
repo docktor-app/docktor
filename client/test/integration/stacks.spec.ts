@@ -945,15 +945,15 @@ test.describe("Stacks", () => {
 
         await page.goto("/stacks/my-app");
 
-        // Breadcrumb preserves tab context (04-CONTEXT locked decision):
-        // "Stacks" and the stack name are links, the active tab label
-        // ("Overview" here, the default tab) is the current page.
+        // "Stacks" and the stack name are links (the stack-name crumb always
+        // targets the overview, D-12); the active tab label ("Overview" here,
+        // the default tab) is the current page.
         await expect(page.getByLabel("breadcrumb").getByRole("link", {name: "Stacks"})).toBeVisible();
         await expect(page.getByLabel("breadcrumb").getByRole("link", {name: "My App"})).toBeVisible();
         await expect(page.locator("[aria-current='page']", {hasText: "Overview"})).toBeVisible();
     });
 
-    test("breadcrumb stack-name link preserves tab context when clicked from a non-Overview tab (WR-01 regression)", async ({page}) => {
+    test("breadcrumb stack-name link returns to the stack overview from a non-Overview tab (UI-09, D-12)", async ({page}) => {
         await mockAuthenticated(page);
         await page.route("**/api/stacks/my-app", (route) => {
             if (route.request().url().endsWith("/compose") || route.request().url().endsWith("/env")) {
@@ -972,15 +972,14 @@ test.describe("Stacks", () => {
         await page.goto("/stacks/my-app/config");
         await expect(page.locator("[aria-current='page']", {hasText: "Config"})).toBeVisible();
 
-        // The breadcrumb stack-name link must navigate to the path form
-        // (/stacks/:id/:tab), not a query string the router doesn't consume —
-        // otherwise clicking it silently drops back to Overview.
+        // The stack-name crumb always leads back to the overview (D-12), so the
+        // link is never the page the user is already on.
         const breadcrumbLink = page.getByLabel("breadcrumb").getByRole("link", {name: "My App"});
-        await expect(breadcrumbLink).toHaveAttribute("href", "/stacks/my-app/config");
+        await expect(breadcrumbLink).toHaveAttribute("href", "/stacks/my-app");
 
         await breadcrumbLink.click();
-        await expect(page.locator("[aria-current='page']", {hasText: "Config"})).toBeVisible();
-        await expect(page).toHaveURL(/\/stacks\/my-app\/config$/);
+        await expect(page.locator("[aria-current='page']", {hasText: "Overview"})).toBeVisible();
+        await expect(page).toHaveURL(/\/stacks\/my-app$/);
     });
 
     test("stack detail shows 404 for non-existent stack", async ({page}) => {
