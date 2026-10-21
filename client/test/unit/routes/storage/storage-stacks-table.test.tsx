@@ -158,6 +158,36 @@ describe("StorageStacksTable volume expansion", () => {
     });
 });
 
+describe("StorageStacksTable shared table look", () => {
+    it("renders the table inside the shared frame", () => {
+        const {container} = renderTable();
+        expect(container.querySelector('[data-slot="table-frame"] table')).not.toBeNull();
+    });
+
+    it("keeps the expander column header for screen readers only", () => {
+        renderTable();
+        const headers = screen.getAllByRole("columnheader");
+        expect(headers).toHaveLength(3);
+        const volumes = screen.getByText("Volumes");
+        expect(volumes.classList.contains("sr-only")).toBe(true);
+        expect(headers[0]).toContainElement(volumes);
+    });
+
+    it("keeps a 36px slot at md and up for a stack without an expander", () => {
+        renderTable();
+        const row = screen.getByRole("link", {name: "ghost"}).closest("tr") as HTMLElement;
+        const spacer = row.querySelector('span[aria-hidden="true"]') as HTMLElement;
+        expect(spacer.classList.contains("size-9")).toBe(true);
+        expect(spacer.classList.contains("max-md:size-11")).toBe(true);
+    });
+
+    it("gives the expander button the shared touch target", () => {
+        renderTable();
+        const button = screen.getByRole("button", {name: "Show volumes for alpha"});
+        expect(button.classList.contains("max-md:size-11")).toBe(true);
+    });
+});
+
 describe("StorageStacksTable states", () => {
     it("shows skeleton rows and no table while loading", () => {
         const {container} = renderTable({loading: true});

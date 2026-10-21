@@ -53,3 +53,8 @@ export class ConfirmationRequiredError extends AppError {
         super(message, 428);
     }
 }
+
+/** Narrows a Node errno error (e.g. `ENOENT`, `EEXIST`) without an unchecked cast. */
+export function hasErrorCode(err: unknown, code: string): boolean {
+    return typeof err === "object" && err !== null && "code" in err && err.code === code;
+}

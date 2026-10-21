@@ -1,14 +1,5 @@
-import {Link} from "react-router";
-
 import {PageHeader, PageTitle} from "@/components/common/layout/page";
-import {
-    Breadcrumb,
-    BreadcrumbItem,
-    BreadcrumbLink,
-    BreadcrumbList,
-    BreadcrumbPage,
-    BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
+import {StackBreadcrumb} from "@/components/domain/stack/stack-breadcrumb";
 
 interface BackupDetailHeaderProps {
     readonly stackId: string;
@@ -29,31 +20,12 @@ export function BackupDetailHeader({stackId, stackLabel, crumb, title}: Readonly
     return (
         <PageHeader
             breadcrumbs={
-                <Breadcrumb>
-                    <BreadcrumbList>
-                        <BreadcrumbItem>
-                            <BreadcrumbLink asChild>
-                                <Link to="/stacks">Stacks</Link>
-                            </BreadcrumbLink>
-                        </BreadcrumbItem>
-                        <BreadcrumbSeparator />
-                        <BreadcrumbItem>
-                            <BreadcrumbLink asChild>
-                                <Link to={`/stacks/${stackId}`}>{stackLabel}</Link>
-                            </BreadcrumbLink>
-                        </BreadcrumbItem>
-                        <BreadcrumbSeparator />
-                        <BreadcrumbItem>
-                            <BreadcrumbLink asChild>
-                                <Link to={`/stacks/${stackId}/backups`}>Backups</Link>
-                            </BreadcrumbLink>
-                        </BreadcrumbItem>
-                        <BreadcrumbSeparator />
-                        <BreadcrumbItem>
-                            <BreadcrumbPage>{crumb}</BreadcrumbPage>
-                        </BreadcrumbItem>
-                    </BreadcrumbList>
-                </Breadcrumb>
+                <StackBreadcrumb
+                    stackId={stackId}
+                    stackName={stackLabel}
+                    trail={[{label: "Backups", to: `/stacks/${stackId}/backups`}]}
+                    current={crumb}
+                />
             }
         >
             <PageTitle>{title}</PageTitle>

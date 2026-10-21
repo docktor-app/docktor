@@ -1,9 +1,15 @@
 import type {FastifyPluginAsyncZod} from "fastify-type-provider-zod";
-import {z} from "zod";
 import {requireAuth} from "../lib/auth-middleware.js";
 import {onboardingService} from "../application/onboarding-service.js";
 import {migrationService} from "../application/migration-service.js";
-import {wizardStep5Schema} from "@docktor/shared";
+import {migrationOperationService} from "../application/migration-operation-service.js";
+import {
+    brownfieldAdoptSchema,
+    migrationExecuteSchema,
+    migrationOperationParamsSchema,
+    migrationPreviewSchema,
+    wizardStep5Schema,
+} from "@docktor/shared";
 
 // T-05.1-32/T-05.1-33: this plugin gives an authenticated user, after the
 // setup wizard has closed, its own reachable copy of the brownfield
@@ -34,10 +40,7 @@ const importRoutes: FastifyPluginAsyncZod = async (app) => {
         "/api/stacks/import/adopt",
         {
             schema: {
-                body: z.object({
-                    composePath: z.string(),
-                    displayName: z.string().min(1),
-                }),
+                body: brownfieldAdoptSchema,
             },
         },
         async (request) => {
@@ -52,53 +55,51 @@ const importRoutes: FastifyPluginAsyncZod = async (app) => {
         "/api/stacks/import/migrate/preview",
         {
             schema: {
-                body: z.object({
-                    composePath: z.string(),
-                    volumeSelections: z.array(z.object({
-                        originalPath: z.string(),
-                        newPath: z.string(),
-                        convert: z.boolean(),
-                    })),
-                    namedVolumeSelections: z.record(z.string(), z.boolean()),
-                }),
+                body: migrationPreviewSchema,
             },
         },
         async (request) => {
-            const {composePath, volumeSelections, namedVolumeSelections} = request.body;
-            const namedVolMap = new Map(Object.entries(namedVolumeSelections) as [string, boolean][]);
-            const result = await migrationService.previewMigration(composePath, volumeSelections, namedVolMap);
-            return result;
+            const {namedVolumeSelections, ...rest} = request.body;
+            return migrationService.previewMigration({
+                ...rest,
+                namedVolumeSelections: new Map(Object.entries(namedVolumeSelections)),
+            });
         },
     );
 
-    // Execute migration
+    // Start a migration as a background operation (G-18-job): refusals answer
+    // synchronously, an accepted migration answers 202 with its operation.
     app.post(
         "/api/stacks/import/migrate",
         {
             schema: {
-                body: z.object({
-                    composePath: z.string(),
-                    displayName: z.string().min(1),
-                    volumeSelections: z.array(z.object({
-                        originalPath: z.string(),
-                        newPath: z.string(),
-                        convert: z.boolean(),
-                    })),
-                    namedVolumeSelections: z.record(z.string(), z.boolean()),
-                }),
+                body: migrationExecuteSchema,
             },
         },
-        async (request) => {
-            const {composePath, displayName, volumeSelections, namedVolumeSelections} = request.body;
-            const namedVolMap = new Map(Object.entries(namedVolumeSelections) as [string, boolean][]);
-            const result = await migrationService.migrate({
-                composePath,
-                displayName,
-                volumeSelections,
-                namedVolumeSelections: namedVolMap,
+        async (request, reply) => {
+            const {namedVolumeSelections, ...rest} = request.body;
+            const operation = await migrationOperationService.start({
+                ...rest,
+                namedVolumeSelections: new Map(Object.entries(namedVolumeSelections)),
             });
-            return result;
+            return reply.status(202).send(operation);
         },
+    );
+
+    // List running and recent operations, e.g. to resync after a reload
+    app.get("/api/stacks/import/migrations", async () => ({
+        operations: migrationOperationService.list(),
+    }));
+
+    // Read one operation, e.g. to resync after a reload
+    app.get(
+        "/api/stacks/import/migrations/:operationId",
+        {
+            schema: {
+                params: migrationOperationParamsSchema,
+            },
+        },
+        async (request) => migrationOperationService.get(request.params.operationId),
     );
 };
 

@@ -1,14 +1,66 @@
+import {Fragment, type JSX, type ReactNode} from "react";
 import {useNavigate} from "react-router";
 import {useIsMobile} from "@/hooks/use-mobile";
-import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow,} from "@/components/ui/table";
-import {Card, CardContent} from "@/components/ui/card";
-import type {TableColumn} from "./data-table";
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableFooter,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from "@/components/ui/table";
+import {cn} from "@/lib/utils";
+import type {DataTableLayout, TableColumn} from "./data-table";
+import {SortableHead} from "./sortable-head";
+import {ItemLink} from "./item-link";
+import {TableCards, titleColumn} from "./table-cards";
+import {TableFrame} from "./table-frame";
+
+function cellClass<T>(col: TableColumn<T>): string {
+    return cn(col.align === "right" && "text-right", col.className, col.tableClassName);
+}
+
+function ColumnHeader<T>({column}: Readonly<{column: TableColumn<T>}>): JSX.Element {
+    if (column.sort) {
+        return (
+            <SortableHead
+                label={column.name}
+                direction={column.sort.direction}
+                onToggle={column.sort.onToggle}
+                align={column.align}
+                className={column.headerClassName}
+            />
+        );
+    }
+    return (
+        <TableHead className={cn(column.align === "right" && "text-right", column.headerClassName)}>
+            {column.hideHeader ? <span className="sr-only">{column.name}</span> : column.name}
+        </TableHead>
+    );
+}
+
+function FooterRow<T>({columns, footer}: Readonly<{columns: readonly TableColumn<T>[]; footer: readonly ReactNode[]}>): JSX.Element {
+    return (
+        <TableFooter>
+            <TableRow className="hover:bg-transparent">
+                {columns.map((col, index) => (
+                    <TableCell key={col.name} className={cellClass(col)}>
+                        {footer[index]}
+                    </TableCell>
+                ))}
+            </TableRow>
+        </TableFooter>
+    );
+}
 
 interface TableContentProps<T> {
-    data: T[];
-    columns: TableColumn<T>[];
+    data: readonly T[];
+    columns: readonly TableColumn<T>[];
     itemRoute?: (item: T) => string;
     getRowKey: (item: T, index: number) => string;
+    renderExpanded?: (item: T, layout: DataTableLayout) => ReactNode;
+    footer?: readonly ReactNode[];
 }
 
 export function TableContent<T>({
@@ -16,72 +68,61 @@ export function TableContent<T>({
     columns,
     itemRoute,
     getRowKey,
-}: Readonly<TableContentProps<T>>) {
+    renderExpanded,
+    footer,
+}: Readonly<TableContentProps<T>>): JSX.Element {
     const isMobile = useIsMobile();
     const navigate = useNavigate();
 
     if (isMobile) {
-        const keyColumn = columns.find((c) => c.isKey) ?? columns[0];
-        const otherColumns = columns.filter((c) => c !== keyColumn);
-
         return (
-            <div className="space-y-3">
-                {data.map((item, index) => (
-                    <Card
-                        key={getRowKey(item, index)}
-                        className={itemRoute ? "cursor-pointer hover:bg-accent/50 transition-colors" : ""}
-                        onClick={itemRoute ? () => navigate(itemRoute(item)) : undefined}
-                    >
-                        <CardContent className="p-4 space-y-2">
-                            <div className="font-medium">
-                                {keyColumn.render(item)}
-                            </div>
-                            {otherColumns.map((col) => (
-                                <div
-                                    key={col.name}
-                                    className="flex items-center justify-between text-sm"
-                                >
-                                    <span className="text-muted-foreground">
-                                        {col.name}
-                                    </span>
-                                    <span>{col.render(item)}</span>
-                                </div>
-                            ))}
-                        </CardContent>
-                    </Card>
-                ))}
-            </div>
+            <TableCards
+                data={data}
+                columns={columns}
+                getRowKey={getRowKey}
+                itemRoute={itemRoute}
+                renderExpanded={renderExpanded}
+                footer={footer}
+            />
         );
     }
 
+    const layout: DataTableLayout = {mode: "table", columnCount: columns.length};
+    const linkColumn = itemRoute ? titleColumn(columns) : undefined;
+
     return (
-        <Table>
-            <TableHeader>
-                <TableRow>
-                    {columns.map((col) => (
-                        <TableHead key={col.name}>{col.name}</TableHead>
-                    ))}
-                </TableRow>
-            </TableHeader>
-            <TableBody>
-                {data.map((item, index) => (
-                    <TableRow
-                        key={getRowKey(item, index)}
-                        className={itemRoute ? "cursor-pointer" : ""}
-                        onClick={
-                            itemRoute
-                                ? () => navigate(itemRoute(item))
-                                : undefined
-                        }
-                    >
+        <TableFrame>
+            <Table>
+                <TableHeader className="bg-muted/50">
+                    <TableRow className="hover:bg-transparent">
                         {columns.map((col) => (
-                            <TableCell key={col.name}>
-                                {col.render(item)}
-                            </TableCell>
+                            <ColumnHeader key={col.name} column={col} />
                         ))}
                     </TableRow>
-                ))}
-            </TableBody>
-        </Table>
+                </TableHeader>
+                <TableBody>
+                    {data.map((item, index) => (
+                        <Fragment key={getRowKey(item, index)}>
+                            <TableRow
+                                className={cn("hover:bg-muted/30", itemRoute && "cursor-pointer")}
+                                onClick={itemRoute ? () => navigate(itemRoute(item)) : undefined}
+                            >
+                                {columns.map((col) => (
+                                    <TableCell key={col.name} className={cellClass(col)}>
+                                        {itemRoute && col === linkColumn ? (
+                                            <ItemLink to={itemRoute(item)}>{col.render(item)}</ItemLink>
+                                        ) : (
+                                            col.render(item)
+                                        )}
+                                    </TableCell>
+                                ))}
+                            </TableRow>
+                            {renderExpanded?.(item, layout)}
+                        </Fragment>
+                    ))}
+                </TableBody>
+                {footer && <FooterRow columns={columns} footer={footer} />}
+            </Table>
+        </TableFrame>
     );
 }

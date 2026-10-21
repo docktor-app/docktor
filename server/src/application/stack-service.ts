@@ -60,6 +60,16 @@ export interface ImageUpdateCheckReadRepo {
 }
 
 /**
+ * Read port for backup snapshots. Declared here rather than importing the
+ * concrete BackupRepository, so this service stays unit-testable with a
+ * plain object and the dependency arrow keeps pointing inward (application
+ * depends on a port, not on repositories/; D-04).
+ */
+export interface StackBackupReadRepo {
+    findStackIdsWithSnapshot(): Promise<ReadonlySet<string>>;
+}
+
+/**
  * Narrow port onto ComposeReviewService (Issue #18/D-01/D-03). Declared here
  * rather than importing the concrete class, for the same reason as
  * StackEventReadRepo/ImageUpdateCheckReadRepo above: this service stays
@@ -139,6 +149,7 @@ export class StackService {
         private readonly review: StackChangeReviewer,
         private readonly preflight: DeployPreflight,
         private readonly stateCatchUp: StackStateCatchUp,
+        private readonly backups: StackBackupReadRepo,
     ) {}
 
     async createStack(input: CreateStackInput, options: CreateStackOptions = {}) {
@@ -205,12 +216,20 @@ export class StackService {
      * sharing its single batched lookup and matching semantics with
      * getStackWithUpdateInfo() (11-05, D-09) — the list surface used to be
      * the only place these fields were never populated (RESEARCH Pitfall 1).
+     *
+     * Every listed stack also carries hasBackup (D-04): true when it has at
+     * least one completed manual or scheduled backup, read in one batched
+     * query alongside the stacks and merged after the protected filter.
      */
     async listStacks() {
-        const all = await this.repo.findAll();
-        const {showInDashboard} = await this.settings.getProxySettings();
+        const [all, {showInDashboard}, withSnapshot] = await Promise.all([
+            this.repo.findAll(),
+            this.settings.getProxySettings(),
+            this.backups.findStackIdsWithSnapshot(),
+        ]);
         const filtered = showInDashboard ? all : all.filter((s) => !s.isProtected);
-        return this.withServiceUpdateInfo(filtered.map((stack) => toStackSizeDto(stack)));
+        const enriched = await this.withServiceUpdateInfo(filtered.map((stack) => toStackSizeDto(stack)));
+        return enriched.map((stack) => ({...stack, hasBackup: withSnapshot.has(stack.id)}));
     }
 
     // Also the BigInt boundary of getStackWithUpdateInfo(): it reads through

@@ -1,19 +1,14 @@
-import {Fragment, useState} from "react";
+import {type ReactNode, useState} from "react";
 import {ArrowUpCircle, FileText, History} from "lucide-react";
 import {Button} from "@/components/ui/button";
 import {Section, SectionHeader, SectionTitle} from "@/components/common/layout/section";
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/components/ui/tooltip";
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@/components/ui/table";
+import {DataTable, ExpandedRow, type DataTableLayout, type TableColumn} from "@/components/common/data/table";
 import {cn} from "@/lib/utils";
 import type {Service} from "@/lib/stacks-api";
 import type {ServiceHealthEvent} from "@/lib/health-api";
+import {formatStatusLabel} from "@/lib/status-labels";
+import {TOUCH_TARGET} from "@/lib/touch-target";
 import {getServiceColor} from "@/lib/service-color";
 import {formatPorts, parsePorts} from "@/lib/service-ports";
 import {ToneBadge} from "@/components/common/tone-badge";
@@ -32,6 +27,86 @@ import {ServiceHealthTimeline} from "./service-health-timeline";
 const UPGRADE_BLOCKED_STATES = ["BACKING_UP", "RESTORING", "DEPLOYING", "UPDATING", "MIGRATING"];
 
 const NO_HEALTH_EVENTS: readonly ServiceHealthEvent[] = [];
+
+interface ServiceActionsProps {
+    readonly service: Service;
+    readonly isUpgradeBlocked: boolean;
+    readonly blockedLabel: string;
+    readonly isExpanded: boolean;
+    readonly onUpgrade: (service: Service) => void;
+    readonly onViewLogs: (serviceName: string) => void;
+    readonly onToggleHistory: (serviceName: string) => void;
+}
+
+function ServiceActions({
+    service,
+    isUpgradeBlocked,
+    blockedLabel,
+    isExpanded,
+    onUpgrade,
+    onViewLogs,
+    onToggleHistory,
+}: Readonly<ServiceActionsProps>) {
+    const upgradeLabel = isUpgradeBlocked ? blockedLabel : `Upgrade ${service.serviceName}`;
+    const logsLabel = `View logs for ${service.serviceName}`;
+    const historyLabel = `${isExpanded ? "Hide" : "Show"} health history for ${service.serviceName}`;
+
+    return (
+        <TooltipProvider>
+            <div className="flex items-center gap-1">
+                {service.updateAvailable && (
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <span>
+                                <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className={TOUCH_TARGET}
+                                    disabled={isUpgradeBlocked}
+                                    aria-label={upgradeLabel}
+                                    onClick={() => onUpgrade(service)}
+                                >
+                                    <ArrowUpCircle className="h-4 w-4"/>
+                                </Button>
+                            </span>
+                        </TooltipTrigger>
+                        <TooltipContent>{upgradeLabel}</TooltipContent>
+                    </Tooltip>
+                )}
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            size="icon"
+                            variant="ghost"
+                            className={TOUCH_TARGET}
+                            aria-label={logsLabel}
+                            onClick={() => onViewLogs(service.serviceName)}
+                        >
+                            <FileText className="h-4 w-4"/>
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{logsLabel}</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            size="icon"
+                            variant="ghost"
+                            className={TOUCH_TARGET}
+                            aria-label={historyLabel}
+                            aria-expanded={isExpanded}
+                            aria-controls={`health-history-${service.serviceName}`}
+                            onClick={() => onToggleHistory(service.serviceName)}
+                        >
+                            <History className="h-4 w-4"/>
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{historyLabel}</TooltipContent>
+                </Tooltip>
+            </div>
+        </TooltipProvider>
+    );
+}
 
 export interface ServicesSectionProps {
     readonly services: Service[];
@@ -77,153 +152,107 @@ export function ServicesSection({
         });
     };
 
+    // RESEARCH Open Question 4: there is no DB probe column, so a service
+    // reads as probed once it has any http-probe event.
+    const eventsFor = (serviceName: string): readonly ServiceHealthEvent[] =>
+        healthEventsByService.get(serviceName) ?? NO_HEALTH_EVENTS;
+    const isProbed = (serviceName: string): boolean =>
+        eventsFor(serviceName).some((event) => event.source === "http-probe");
+
+    const blockedLabel = `Cannot upgrade while the stack is ${formatStatusLabel(stackStatus)}`;
+
+    const columns: TableColumn<Service>[] = [
+        {
+            name: "Name",
+            isKey: true,
+            render: (svc) => (
+                <span className="inline-flex items-center gap-2">
+                    <span
+                        className={cn("size-2 shrink-0 rounded-full bg-current", getServiceColor(svc.serviceName))}
+                        aria-hidden="true"
+                    />
+                    <span className="font-mono text-xs">{svc.serviceName}</span>
+                </span>
+            ),
+        },
+        {
+            name: "Status",
+            render: (svc) => (
+                <div className="flex flex-wrap items-center gap-1">
+                    <ServiceStatusBadge
+                        containerState={svc.containerState}
+                        healthStatus={svc.healthStatus}
+                        display="compact"
+                    />
+                    {isProbed(svc.serviceName) && <ToneBadge tone="neutral">HTTP probe</ToneBadge>}
+                </div>
+            ),
+        },
+        {
+            name: "Image",
+            render: (svc) => (
+                <div className="flex flex-row flex-wrap items-center gap-2">
+                    <span className="font-mono text-xs break-all">{svc.image}</span>
+                    <ServiceUpdateBadge updateAvailable={svc.updateAvailable} latestTag={svc.latestTag}/>
+                </div>
+            ),
+        },
+        {
+            name: "Tag",
+            render: (svc) => <span className="font-mono text-xs">{svc.imageTag ?? "latest"}</span>,
+        },
+        {
+            name: "Ports",
+            className: "font-mono text-xs text-muted-foreground",
+            render: (svc) => formatPorts(parsePorts(svc.ports)),
+        },
+        {
+            name: "Actions",
+            hideHeader: true,
+            render: (svc) => (
+                <ServiceActions
+                    service={svc}
+                    isUpgradeBlocked={isUpgradeBlocked}
+                    blockedLabel={blockedLabel}
+                    isExpanded={expanded.has(svc.serviceName)}
+                    onUpgrade={setUpgradeTarget}
+                    onViewLogs={onViewLogs}
+                    onToggleHistory={toggleExpanded}
+                />
+            ),
+        },
+    ];
+
+    const renderExpanded = (svc: Service, layout: DataTableLayout): ReactNode => {
+        if (!expanded.has(svc.serviceName)) return null;
+        const timeline = (
+            <ServiceHealthTimeline
+                serviceName={svc.serviceName}
+                events={eventsFor(svc.serviceName)}
+                loading={healthEventsLoading}
+                error={healthEventsError}
+                onRetry={onRetryHealthEvents}
+            />
+        );
+        if (layout.mode === "cards") return timeline;
+        return <ExpandedRow columnCount={layout.columnCount}>{timeline}</ExpandedRow>;
+    };
+
     return (
         <Section>
             <SectionHeader>
                 <SectionTitle>Services</SectionTitle>
             </SectionHeader>
 
-            {services.length === 0 ? (
-                <p className="text-muted-foreground">No services defined</p>
-            ) : (
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Name</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Image</TableHead>
-                            <TableHead>Tag</TableHead>
-                            <TableHead>Ports</TableHead>
-                            <TableHead></TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {services.map((svc) => {
-                            const isExpanded = expanded.has(svc.serviceName);
-                            const serviceEvents = healthEventsByService.get(svc.serviceName) ?? NO_HEALTH_EVENTS;
-                            // RESEARCH Open Question 4: there is no DB probe column, so a
-                            // service reads as probed once it has any http-probe event.
-                            const isProbed = serviceEvents.some((event) => event.source === "http-probe");
-                            const historyLabel = `${isExpanded ? "Hide" : "Show"} health history for ${svc.serviceName}`;
-
-                            return (
-                                <Fragment key={svc.id}>
-                                    <TableRow>
-                                        <TableCell className="font-medium">
-                                            <span className="inline-flex items-center gap-2">
-                                                <span
-                                                    className={cn("size-2 shrink-0 rounded-full bg-current", getServiceColor(svc.serviceName))}
-                                                    aria-hidden="true"
-                                                />
-                                                {svc.serviceName}
-                                            </span>
-                                        </TableCell>
-                                        <TableCell>
-                                            <div className="flex flex-wrap items-center gap-1">
-                                                <ServiceStatusBadge
-                                                    containerState={svc.containerState}
-                                                    healthStatus={svc.healthStatus}
-                                                    display="compact"
-                                                />
-                                                {isProbed && <ToneBadge tone="neutral">HTTP probe</ToneBadge>}
-                                            </div>
-                                        </TableCell>
-                                        <TableCell>
-                                            <div className="flex flex-row flex-wrap items-center gap-2">
-                                                <span>{svc.image}</span>
-                                                <ServiceUpdateBadge
-                                                    updateAvailable={svc.updateAvailable}
-                                                    latestTag={svc.latestTag}
-                                                />
-                                            </div>
-                                        </TableCell>
-                                        <TableCell>{svc.imageTag ?? "latest"}</TableCell>
-                                        <TableCell className="text-sm text-muted-foreground">
-                                            {formatPorts(parsePorts(svc.ports))}
-                                        </TableCell>
-                                        <TableCell>
-                                            <TooltipProvider>
-                                                <div className="flex items-center gap-1">
-                                                    {svc.updateAvailable && (
-                                                        <Tooltip>
-                                                            <TooltipTrigger asChild>
-                                                                <span>
-                                                                    <Button
-                                                                        size="icon"
-                                                                        variant="ghost"
-                                                                        className="min-h-11 min-w-11 md:min-h-9 md:min-w-9"
-                                                                        disabled={isUpgradeBlocked}
-                                                                        aria-label={
-                                                                            isUpgradeBlocked
-                                                                                ? `Cannot upgrade while the stack is ${stackStatus}`
-                                                                                : `Upgrade ${svc.serviceName}`
-                                                                        }
-                                                                        onClick={() => setUpgradeTarget(svc)}
-                                                                    >
-                                                                        <ArrowUpCircle className="h-4 w-4"/>
-                                                                    </Button>
-                                                                </span>
-                                                            </TooltipTrigger>
-                                                            <TooltipContent>
-                                                                {isUpgradeBlocked
-                                                                    ? `Cannot upgrade while the stack is ${stackStatus}`
-                                                                    : `Upgrade ${svc.serviceName}`}
-                                                            </TooltipContent>
-                                                        </Tooltip>
-                                                    )}
-                                                    <Tooltip>
-                                                        <TooltipTrigger asChild>
-                                                            <Button
-                                                                size="icon"
-                                                                variant="ghost"
-                                                                className="min-h-11 min-w-11 md:min-h-9 md:min-w-9"
-                                                                aria-label={`View logs for ${svc.serviceName}`}
-                                                                onClick={() => onViewLogs(svc.serviceName)}
-                                                            >
-                                                                <FileText className="h-4 w-4"/>
-                                                            </Button>
-                                                        </TooltipTrigger>
-                                                        <TooltipContent>{`View logs for ${svc.serviceName}`}</TooltipContent>
-                                                    </Tooltip>
-                                                    <Tooltip>
-                                                        <TooltipTrigger asChild>
-                                                            <Button
-                                                                size="icon"
-                                                                variant="ghost"
-                                                                className="min-h-11 min-w-11 md:min-h-9 md:min-w-9"
-                                                                aria-label={historyLabel}
-                                                                aria-expanded={isExpanded}
-                                                                aria-controls={`health-history-${svc.serviceName}`}
-                                                                onClick={() => toggleExpanded(svc.serviceName)}
-                                                            >
-                                                                <History className="h-4 w-4"/>
-                                                            </Button>
-                                                        </TooltipTrigger>
-                                                        <TooltipContent>{historyLabel}</TooltipContent>
-                                                    </Tooltip>
-                                                </div>
-                                            </TooltipProvider>
-                                        </TableCell>
-                                    </TableRow>
-                                    {isExpanded && (
-                                        <TableRow>
-                                            <TableCell colSpan={6} className="bg-muted/50">
-                                                <ServiceHealthTimeline
-                                                    serviceName={svc.serviceName}
-                                                    events={serviceEvents}
-                                                    loading={healthEventsLoading}
-                                                    error={healthEventsError}
-                                                    onRetry={onRetryHealthEvents}
-                                                />
-                                            </TableCell>
-                                        </TableRow>
-                                    )}
-                                </Fragment>
-                            );
-                        })}
-                    </TableBody>
-                </Table>
-            )}
+            <DataTable
+                data={services}
+                columns={columns}
+                getRowKey={(svc) => svc.id}
+                pagination={false}
+                emptyMessage="No services defined"
+                emptyDescription="Add a service to the compose file and deploy to see it here."
+                renderExpanded={renderExpanded}
+            />
 
             {upgradeTarget && (
                 <ServiceUpgradeDialog

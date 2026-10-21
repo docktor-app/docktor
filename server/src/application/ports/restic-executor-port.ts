@@ -1,6 +1,8 @@
+import type {ResticRepositoryTarget} from "../../domain/restic-repository.js";
 import type {
     BackupRepoConfig,
     RetentionPolicy,
+    ResticRunOptions,
     ResticRunResult,
     ResticSnapshot,
 } from "../../infrastructure/restic-executor.js";
@@ -12,13 +14,17 @@ import type {
  * dependency arrow keeps pointing inward (application depends on a port,
  * not on infrastructure/). The constructor is not part of the port — only
  * instance behaviour is.
+ *
+ * Callers hand over the resolved repository target; the executor alone turns it
+ * into process env and, for SFTP, ssh arguments.
  */
 export interface ResticExecutorPort {
     run(
         args: string[],
-        env: Record<string, string>,
+        repository: ResticRepositoryTarget,
         onLine?: (line: string) => void,
         cwd?: string,
+        options?: ResticRunOptions,
     ): Promise<ResticRunResult>;
 
     buildBackupArgs(stackPath: string, stackId: string): string[];
@@ -29,13 +35,9 @@ export interface ResticExecutorPort {
 
     buildInitArgs(): string[];
 
-    snapshots(env: Record<string, string>, tag: string): Promise<ResticSnapshot[]>;
-
-    buildEnv(config: BackupRepoConfig): Record<string, string>;
-
-    buildRepoUrl(config: BackupRepoConfig): string;
+    snapshots(repository: ResticRepositoryTarget, tag: string): Promise<ResticSnapshot[]>;
 
     checkVersion(): Promise<{available: boolean; version?: string}>;
 }
 
-export type {BackupRepoConfig, RetentionPolicy, ResticRunResult, ResticSnapshot};
+export type {BackupRepoConfig, ResticRepositoryTarget, ResticRunOptions, RetentionPolicy, ResticRunResult, ResticSnapshot};

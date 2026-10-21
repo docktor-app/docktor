@@ -23,5 +23,12 @@ export function ServiceUpdateBadge({updateAvailable, latestTag}: Readonly<Servic
     const text = describeServiceUpdate(updateAvailable, latestTag);
     if (!text) return null;
 
-    return <ToneBadge tone="blue">{text}</ToneBadge>;
+    if (!latestTag) return <ToneBadge tone="blue">{text}</ToneBadge>;
+
+    // The tag is a technical value (D-06): same copy as describeServiceUpdate, tag in mono.
+    return (
+        <ToneBadge tone="blue">
+            Update available → <span className="font-mono">{latestTag}</span>
+        </ToneBadge>
+    );
 }

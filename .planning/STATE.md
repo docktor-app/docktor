@@ -1,41 +1,45 @@
 ---
 gsd_state_version: "1.0"
-milestone: v0.1.0
-current_phase: 16
-current_phase_name: Release Readiness for v0.1.0
-current_plan: 8
-status: "Phases 1-13 complete (v0.1.0 scope: ROADMAP Phases 10-16, sourced from GitHub issues in docktor-app/docktor; product tracking lives in GitHub Issues). Phase 14 (Health, Uptime and Disk Visibility): all 14 plans executed, code review done, verification found gaps (9/13 truths) — CR-01 probe Docker calls lack timeouts, WR-01/WR-05 probe results not tied to current container. Gap-closure plan (14-15) being created via /gsd-plan-phase 14 --gaps. Phases 15 (Access Hardening) and 16 (Release Readiness) not started."
-stopped_at: Completed 16-08-PLAN.md
-last_updated: "2026-10-11T22:03:03.314Z"
-state_head: 2260430f35bbc3017ec2e23e9af00948927ee637
+milestone: v0.1.1
+milestone_name: Release Follow-ups
+current_phase: 21
+status: completed
+stopped_at: Phase 21 complete — all phases complete
+last_updated: "2026-10-21T13:34:58.937Z"
+last_activity: 2026-10-21
+last_activity_desc: Phase 21 complete
+state_head: d908749beaa0222e6ddfa1a11a9df10b9ab6baeb
 progress:
-  total_phases: 17
-  completed_phases: 9
-  total_plans: 166
-  completed_plans: 163
-milestone_name: milestone
+  total_phases: 5
+  completed_phases: 5
+  total_plans: 45
+  completed_plans: 45
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-22)
+See: .planning/PROJECT.md (updated 2026-10-14)
 
 **Core value:** Users can deploy, monitor, and manage Docker Compose stacks through a browser UI without needing SSH or Docker CLI access.
-**Current focus:** Phase 16 — Release Readiness for v0.1.0
+**Current focus:** Phase 21 — Release v0.1.1
 
 ## Current Position
 
-Phase: 16 (Release Readiness for v0.1.0) — EXECUTING
-Current Plan: 8
-Total Plans in Phase: 10
+Phase: 21
+Plan: Not started
+Status: All phases complete
+Last activity: 2026-10-21 — Phase 21 complete
+
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 133
+- Total plans completed: 45 (v0.1.1)
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -43,18 +47,11 @@ Total Plans in Phase: 10
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 02 | 16 | - | - |
-| 04 | 17 | - | - |
-| 05 | 11 | - | - |
-| 05.1 | 12 | - | - |
-| 06 | 7 | - | - |
-| 07 | 2 | - | - |
-| 09 | 8 | - | - |
-| 10 | 17 | - | - |
-| 11 | 13 | - | - |
-| 13 | 3 | - | - |
-| 14 | 20 | - | - |
-| 15 | 7 | - | - |
+| 17 | 3 | - | - |
+| 18 | 26 | - | - |
+| 19 | 3 | - | - |
+| 20 | 11 | - | - |
+| 21 | 2 | - | - |
 
 **Recent Trend:**
 
@@ -62,503 +59,147 @@ Total Plans in Phase: 10
 - Trend: -
 
 *Updated after each plan completion*
-| Phase 01-mvp-completion P01 | 284 | 2 tasks | 6 files |
-| Phase 01-mvp-completion P02 | 19 | 2 tasks | 8 files |
-| Phase 01-mvp-completion P03 | 15 | 2 tasks | 4 files |
-| Phase 01-mvp-completion P04 | 6 | 2 tasks | 5 files |
-| Phase 01-mvp-completion P06 | 35 | 2 tasks | 7 files |
-| Phase 01-mvp-completion P07 | 20 | 2 tasks | 5 files |
-| Phase 01-mvp-completion P05 | 15 | 2 tasks | 5 files |
-| Phase 02-observability P02 | 12 | 2 tasks | 6 files |
-| Phase 02-observability P03 | 6 | 2 tasks | 4 files |
-| Phase 02-observability P04 | 6 | 2 tasks | 5 files |
-| Phase 02-observability P05 | 25 | 2 tasks | 9 files |
-| Phase 02-observability P06 | 2 | 2 tasks | 2 files |
-| Phase 02-observability P07 | 3 | 2 tasks | 8 files |
-| Phase 02-observability P08 | - | 3 tasks | 13 files |
-| Phase 03-notifications P01 | 12 | 2 tasks | 7 files |
-| Phase 03-notifications P02 | 10 | 2 tasks | 10 files |
-| Phase 03-notifications P03 | 10 | 2 tasks | 3 files |
-| Phase 03-notifications P04 | 35 | 3 tasks | 3 files |
-| Phase 03-notifications P05 | 52 | 2 tasks | 12 files |
-| Phase 04-backup-restore P01 | 4 | 2 tasks | 6 files |
-| Phase 04-backup-restore P02 | 2 | 2 tasks | 2 files |
-| Phase 04-backup-restore P05 | 171 | 2 tasks | 5 files |
-| Phase 04-backup-restore P04 | 2 | 1 tasks | 2 files |
-| Phase 04 P06 | 15 | 3 tasks | 9 files |
-| Phase 04-backup-restore P08 | 133 | 3 tasks | 1 files |
-| Phase 04 P07 | 6 | 2 tasks | 0 files |
-| Phase 04 P11 | 3 | 3 tasks | 1 files |
-| Phase 04 P10 | 7 | 3 tasks | 2 files |
-| Phase 04 P12 | 161 | 2 tasks | 4 files |
-| Phase 04 P13 | 373 | 2 tasks | 4 files |
-| Phase 04 P14 | 5 | 2 tasks | 2 files |
-| Phase 05-onboarding P01 | 5 | 3 tasks | 6 files |
-| Phase 05 P02 | 7 | 2 tasks | 4 files |
-| Phase 05 P03 | 8 | 2 tasks | 4 files |
-| Phase 05 P08 | 91 | 2 tasks | 2 files |
-| Phase 05 P05 | 7 | 2 tasks | 4 files |
-| Phase 05 P04 | 7 | 2 tasks | 4 files |
-| Phase 05 P07 | 3 | 3 tasks | 5 files |
-| Phase 05 P06 | 4 | 3 tasks | 4 files |
+
+v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milestones/v0.1.0-STATE.md`.
 **Per-Plan Metrics:**
 
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
-| Phase 02-observability P13 | 25min | 2 tasks | 4 files |
-| Phase 02-observability P14 | 15min | 2 tasks | 3 files |
-| Phase 02-observability P15 | 19min | 2 tasks | 7 files |
-| Phase 02-observability P16 | 25min | 2 tasks | 8 files |
-| Phase 04-backup-restore P15 | 15min | 2 tasks | 5 files |
-| Phase 04-backup-restore P16 | 10min | 2 tasks | 4 files |
-| Phase 04-backup-restore P17 | 35min | 3 tasks | 7 files |
-| Phase 04 P18 | 14min | 3 tasks | 8 files |
-| Phase 05.1 P01 | 2h30m | 3 tasks | 9 files |
-| Phase 05.1 P02 | 40min | 3 tasks | 6 files |
-| Phase 05.1 P03 | 35min | 3 tasks | 5 files |
-| Phase 05.1 P04 | 13min | 3 tasks | 3 files |
-| Phase 05.1 P05 | 40min | 3 tasks | 4 files |
-| Phase 05.1 P06 | 55min | 3 tasks | 11 files |
-| Phase 05.1 P07 | 45min | 3 tasks | 14 files |
-| Phase 05.1 P08 | 2h30m | 3 tasks | 10 files |
-| Phase 05.1 P09 | 20min | 3 tasks | 5 files |
-| Phase 05.1 P10 | 25min | 2 tasks | 4 files |
-| Phase 05.1 P11 | 20min | 2 tasks | 4 files |
-| Phase 05.1 P12 | 20min | 2 tasks | 7 files |
-| Phase 06 P01 | 95min | 2 tasks | 13 files |
-| Phase 06 P02 | 65min | 2 tasks | 8 files |
-| Phase 06 P03 | 30min | 3 tasks | 12 files |
-| Phase 06 P04 | 25min | 2 tasks | 9 files |
-| Phase 06 P06 | 50min | 2 tasks | 11 files |
-| Phase 06 P05 | 90min | 3 tasks | 13 files |
-| Phase 06 P07 | 25min | 2 tasks | 5 files |
-| Phase 07 P01 | 40min | 3 tasks | 4 files |
-| Phase 08 P01 | 30min | 3 tasks | 6 files |
-| Phase 09 P01 | 25min | 2 tasks | 3 files |
-| Phase 09 P02 | 53min | 3 tasks | 4 files |
-| Phase 09 P03 | 35min | 3 tasks | 5 files |
-| Phase 09 P04 | 30min | 2 tasks | 5 files |
-| Phase 09 P05 | 30min | 3 tasks | 5 files |
-| Phase 09 P06 | 1h | 3 tasks | 17 files |
-| Phase 09 P07 | 35min | 3 tasks | 7 files |
-| Phase 09 P08 | 1h35m | 3 tasks | 15 files |
-| Phase 08 P02 | 25min | 2 tasks | 5 files |
-| Phase 08 P03 | 18min | 1 tasks | 4 files |
-| Phase 08 P04 | 15min | 1 tasks | 2 files |
-| Phase 10-backend-architecture-refactor P01 | 22min | 3 tasks | 11 files |
-| Phase 11 P03 | 30min | 2 tasks | 11 files |
-| Phase 11 P04 | 55min | 2 tasks | 16 files |
-| Phase 11 P05 | 20min | 2 tasks | 3 files |
-| Phase 11 P06 | 50min | 2 tasks | 11 files |
-| Phase 11 P07 | 35min | 2 tasks | 14 files |
-| Phase 11 P09 | 55min | 3 tasks | 12 files |
-| Phase 11 P10 | 35min | 2 tasks | 9 files |
-| Phase 11 P11 | 55min | 2 tasks | 11 files |
-| Phase 11 P12 | 70min | 2 tasks | 9 files |
-| Phase 11 P13 | ~4h50m (interrupted) | 3 tasks | 16 files |
-| Phase 12 P01 | 54min | 3 tasks | 24 files |
-| Phase 12 P02 | 15min | 2 tasks | 22 files |
-| Phase 12 P03 | 25min | 2 tasks | 8 files |
-| Phase 12 P04 | 35min | 2 tasks | 10 files |
-| Phase 12 P05 | 75min | 3 tasks | 20 files |
-| Phase 12 P06 | ~5min (continuation verification session; implementation already committed) | 2 tasks | 11 files |
-| Phase 12 P07 | 50min | 3 tasks | 19 files |
-| Phase 12 P08 | ~50min | 2 tasks | 20 files |
-| Phase 12 P09 | ~55min | 2 tasks | 19 files |
-| Phase 12 P10 | ~45min | 2 tasks | 11 files |
-| Phase 12 P11 | 24min | 2 tasks | 16 files |
-| Phase 13 P01 | 15 min | 2 tasks | 14 files |
-| Phase 13 P02 | 13 min | 2 tasks | 9 files |
-| Phase 13 P03 | 5 min | 2 tasks | 7 files |
-| Phase 14 P01 | 7 min | 1 tasks | 24 files |
-| Phase 14 P02 | 9 min | 1 tasks | 23 files |
-| Phase 14 P03 | 19 min | 2 tasks | 14 files |
-| Phase 14 P08 | 19 min | 2 tasks | 9 files |
-| Phase 14 P11 | 10 min | 1 tasks | 4 files |
-| Phase 14 P04 | 10 min | 1 tasks | 18 files |
-| Phase 14 P05 | 18min | 2 tasks | 20 files |
-| Phase 14 P14 | 5 min | 1 tasks | 6 files |
-| Phase 14 P07 | 14 min | 2 tasks | 17 files |
-| Phase 14 P12 | 6 min | 2 tasks | 16 files |
-| Phase 14 P06 | 14 min | 1 tasks | 20 files |
-| Phase 14 P10 | 22 min | 2 tasks | 16 files |
-| Phase 14 P13 | 22 min | 1 tasks | 9 files |
-| Phase 14 P09 | 18 min | 2 tasks | 18 files |
-| Phase 14 P15 | 13 min | 3 tasks | 13 files |
-| Phase 14 P16 | 12 min | 3 tasks | 8 files |
-| Phase 14 P17 | 4 min | 2 tasks | 6 files |
-| Phase 14 P18 | 9 min | 2 tasks | 4 files |
-| Phase 14 P19 | 11 min | 3 tasks | 6 files |
-| Phase 14 P20 | 6 min | 3 tasks | 13 files |
-| Phase 16 P01 | 9min | 2 tasks | 15 files |
-| Phase 16 P02 | 15min | 3 tasks | 11 files |
-| Phase 16 P04 | 14 min | 3 tasks | 5 files |
-| Phase 16 P03 | 5 min | 2 tasks | 11 files |
-| Phase 16 P05 | 30 min | 2 tasks | 2 files |
-| Phase 16 P06 | 25 min | 3 tasks | 13 files |
-| Phase 16 P08 | 15 min | 3 tasks | 14 files |
+| Phase 17 P01 | 25min | 2 tasks | 4 files |
+| Phase 17 P02 | 15min | 2 tasks | 4 files |
+| Phase 17 P03 | 20min | 2 tasks | 6 files |
+| Phase 18 P01 | 4 min | 3 tasks | 10 files |
+| Phase 18 P02 | 8 min | 3 tasks | 10 files |
+| Phase 18 P03 | 4 min | 3 tasks | 10 files |
+| Phase 18 P04 | 3 min | 2 tasks | 9 files |
+| Phase 18 P05 | 8 min | 3 tasks | 11 files |
+| Phase 18 P06 | 28 min | 2 tasks | 8 files |
+| Phase 18 P08 | 8 min | 2 tasks | 3 files |
+| Phase 18 P09 | 8 min | 2 tasks | 12 files |
+| Phase 18 P07 | 8 min | 3 tasks | 9 files |
+| Phase 18 P10 | 5 min | 3 tasks | 6 files |
+| Phase 18 P11 | 18 min | 3 tasks | 17 files |
+| Phase 18 P12 | 10 min | 3 tasks | 13 files |
+| Phase 18 P14 | 14 min | 3 tasks | 10 files |
+| Phase 18 P15 | 30 min | 3 tasks | 10 files |
+| Phase 18 P16 | 25 min | 2 tasks | 10 files |
+| Phase 18 P17 | 15 min | 3 tasks | 16 files |
+| Phase 18 P18 | 10min | 2 tasks | 3 files |
+| Phase 18 P19 | 40min | 3 tasks | 9 files |
+| Phase 18 P20 | 15min | 3 tasks | 8 files |
+| Phase 18 P21 | 6 min | 2 tasks | 6 files |
+| Phase 18 P22 | 6 min | 3 tasks | 16 files |
+| Phase 18 P23 | 20min | 2 tasks | 6 files |
+| Phase 18 P24 | 10min | 2 tasks | 4 files |
+| Phase 18 P25 | 12min | 2 tasks | 8 files |
+| Phase 18 P26 | 6min | 3 tasks | 12 files |
+| Phase 19 P01 | 4 min | 2 tasks | 6 files |
+| Phase 19 P02 | 8min | 2 tasks | 7 files |
+| Phase 19 P03 | 20min | 3 tasks | 13 files |
+| Phase 20 P01 | 10min | 3 tasks | 13 files |
+| Phase 20 P02 | 10min | 3 tasks | 11 files |
+| Phase 20 P03 | 8min | 2 tasks | 9 files |
+| Phase 20 P04 | 6min | 3 tasks | 16 files |
+| Phase 20 P05 | 10min | 2 tasks | 8 files |
+| Phase 20 P06 | 10min | 2 tasks | 4 files |
+| Phase 20 P07 | 12min | 3 tasks | 17 files |
+| Phase 20 P08 | 15min | 3 tasks | 10 files |
+| Phase 20 P09 | 8min | 3 tasks | 9 files |
+| Phase 20 P10 | 10min | 3 tasks | 9 files |
+| Phase 20 P11 | 12min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
+Roadmap decisions for v0.1.1:
 
-- Single Fastify process: No separate frontend server; SSE via reply.hijack() + reply.raw
-- YAML-first: Compose file on disk is source of truth; DB stores derived metadata only
-- Bind mounts only: Named Docker volumes rejected; all data in ./volumes/ subdir
-- [Phase 01-mvp-completion]: StatePoller accepts DockerodeClient and StackRepository via constructor for testability (not module-level mocks)
-- [Phase 01-mvp-completion]: log-viewer tests use it.todo() for render-level assertions that need the component to exist
-- [Phase 01-mvp-completion]: DockerodeClient uses factory pattern (not new) to support vi.fn() arrow function mocking in tests
-- [Phase 01-mvp-completion]: vitest.config.ts regex resolve alias added to handle deep relative test imports (../../../../src/)
-- [Phase 01-mvp-completion]: StatePoller uses lazy dynamic import() for StackRepository to avoid db.ts in module graph during unit tests
-- [Phase 01-mvp-completion]: StatePoller TRANSITIONAL_STATES uses Set<string> (not StackStatus enum) to avoid importing missing prisma enums in test env
-- [Phase 01-mvp-completion]: IANA timezone validation uses Intl.supportedValuesOf + Intl.DateTimeFormat fallback because some Node.js environments omit UTC from supportedValuesOf
-- [Phase 01-mvp-completion Plan 06]: Native <select> HTML element used in LogViewer toolbar — Radix Select renders two role=combobox elements in jsdom; native select has exactly one as expected by tests
-- [Phase 01-mvp-completion Plan 06]: afterEach(cleanup) explicitly added to test/setup.ts — React Testing Library v16 auto-cleanup requires vitest globals:true which is not configured
-- [Phase 01-mvp-completion Plan 06]: Global EventSource stub added to test/setup.ts — jsdom lacks EventSource; component tests using useLogStream would throw without it
-- [Phase 01-mvp-completion Plan 07]: Used radix-ui Popover directly (not shadcn CLI) for popover.tsx - consistent with existing dialog.tsx and select.tsx pattern
-- [Phase 01-mvp-completion Plan 07]: TimezoneCombobox is unexported component in settings.tsx - no other page needs it in Phase 1
-- [Phase 01-mvp-completion]: Added healthStatus to Service interface — SSE events include it but DB type was missing it
-- [Phase 01-mvp-completion]: ServiceStatusBadge inline in [id].tsx — too small to warrant separate file
-- [Phase 02-observability]: Used db push instead of migrate dev due to DB schema drift in dev environment — appropriate for dev without strict migration history
-- [Phase 02-observability]: FileWatcher.stop() is async to properly await chokidar watcher.close() Promise
-- [Phase 02-observability]: FileWatcherRepo uses composeFilePath/hash field names matching 02-01 test scaffold (not hostPath/lastKnownHash from plan spec)
-- [Phase 02-observability]: Jobs registry pattern: all background jobs registered in jobs/index.ts; app.ts only calls startJobs/stopJobs
-- [Phase 02-observability]: Date tag parsing runs before semver coerce in compareVersions() — semver.coerce('2024-01-01') yields '2024.0.0' losing month/day
-- [Phase 02-observability]: getNextImageToCheck() exported as pure function matching 02-01 test scaffold; UpdateCheckerRepo interface uses test mock method names with production adapter in createProductionRepo()
-- [Phase 02-observability]: DockerExecutor singleton export added (dockerExecutor) for UpdateChecker DI; existing code continues using new DockerExecutor() per service
-- [Phase 02-observability]: clearConfigChanged() added to restartStack() success path — restart applies current config intent, clearing the flag is correct
-- [Phase 02-observability]: GET /api/stacks/:id augments response inline with imageUpdateCheckRepository (route-level join) — keeps StackService free of cross-repo concerns
-- [Phase 02-observability]: parseComposeContent throws for missing/empty services key instead of returning [] — enables FileWatcher catch block to broadcast config_error SSE events
-- [Phase 02-observability]: FileWatcher calls replaceServices before updateStackHash — if service sync fails, hash stays stale and reconcile retries, ensuring data consistency
-- [Phase 02-observability]: Update Images button uses inline async onClick instead of handleAction — handleAction discards return value, noUpdates detection requires reading the response
-- [Phase 02-observability]: noUpdates detection: pullOutput.toLowerCase().includes('up to date') OR empty stdout — covers docker compose pull messages and edge cases
-- [Phase 02-observability P08]: syncServicesFromCompose() writes only image/imageTag/ports/volumes on config-only sync — never touches containerId/containerState/healthStatus/restartCount, so StatePoller-owned runtime state survives an external compose edit; replaceServices() (deploy path) keeps its wipe-and-recreate semantics unchanged
-- [Phase 02-observability P08]: chokidar ignored filter must key off stats?.isFile() defaulting falsy, not stats?.isDirectory() ?? false — the inverted form silently blocks all directory traversal (not just on Windows); root-caused via live diagnostic scripting after 3 other hypotheses were refuted
-- [Phase 02-observability P08]: DOCKTOR_FS_POLLING env override added — process.platform inside the container is always "linux" even when the Docker host is Windows/Mac Desktop, so platform auto-detection can't see through Docker Desktop's virtualized bind mounts
-- [Phase 02-observability P08]: BETTER_AUTH_URL (not DOCKTOR_BASE_URL) is the canonical env var per .env.example/.env.development/INTEGRATIONS.md/STACK.md; DOCKTOR_BASE_URL is separately confirmed dead code
-- [Phase 02-observability P08]: DOCKTOR_STACKS_DIR/DOCKTOR_DATA_DIR/DOCKTOR_BACKUP_DIR moved from docker-compose.yml environment to fixed Dockerfile ENV — they're container-side mount points, not deployment-varying config
-- [Phase 02-observability P08]: deployStack()/updateImages() now wrap all post-docker-call logic in try/catch that transitions to ERROR on failure — previously an unhandled failure there (compose re-parse, DB write) permanently wedged the stack in DEPLOYING/UPDATING with no recoverable action and no StatePoller self-heal
-- [Phase 03-notifications]: AES-256-GCM storage format: iv(12 bytes) + tag(16 bytes) + ciphertext, all hex-encoded as single string
-- [Phase 03-notifications]: getKey() validates both presence and exact 32-byte length of ENCRYPTION_KEY env var
-- [Phase 03-notifications]: NotificationService.notify() delegates to this.settings.getSmtpConfig() — matches test scaffold mock expectations and separates config retrieval
-- [Phase 03-notifications]: getSmtpConfig() added to SettingsService with decrypt support — SMTP config retrieval is a settings concern; NotificationSettings interface enables DI flexibility
-- [Phase 03-notifications]: vi.hoisted() + vi.mock() used for ESM nodemailer mocking in vitest — vi.doMock cannot intercept already-loaded ESM modules
-- [Phase 03-notifications]: NotificationWatcher constructor takes two positional args (notificationService, broadcaster) matching test scaffold — no stackRepo needed as displayName falls back to stackId
-- [Phase 03-notifications]: DiskChecker uses combined settings object (getMany + findLastDiskAlert + setDiskAlertActive) and imports from ../application/index.js for production singletons
-- [Phase 03-notifications]: Notifications Settings UI sub-components (SmtpCard, NotificationTriggersCard, NotificationLogCard) defined inline in settings.tsx — no other route needs them
-- [Phase 03-notifications]: DOCKER_DATA_PATH env var for platform-specific disk monitoring (Windows: '.', Linux: '/var/lib/docker')
-- [Phase 03-notifications]: notification_created SSE event type for real-time notification log updates
-- [Phase 03-notifications]: SMTP 'from' field saved before password encryption to avoid silent save failures
-- [Phase 04-backup-restore]: RESTORE added to BackupTrigger enum to track restore operations in Backup audit trail
-- [Phase 04-backup-restore]: logLines String[] on Backup model stores restic stdout for detail page without extra table
-- [Phase 04-backup-restore]: backupSettingsSchema superRefine validates conditional required fields per repoType (local/sftp/s3)
-- [Phase 04-backup-restore]: ResticExecutor.run() uses positional args (args, env, onLine?) not ResticRunOptions object — matches test scaffold API contract
-- [Phase 04-backup-restore]: buildBackupArgs omits 'backup' subcommand from returned array — test expects stackPath at args[0]
-- [Phase 04-backup-restore]: BackupRepository.update() is unified method — test mock expects single update fn; named helpers also provided for production clarity
-- [Phase 04-backup-restore]: BackupRepositoryCard and BackupDefaultsCard defined inline in settings.tsx following established inline sub-component pattern
-- [Phase 04-backup-restore]: saveBackupSettings/saveBackupDefaults accept Record<string, unknown> to avoid coupling client to server schema for conditional fields
-- [Phase 04-backup-restore]: BackupService.runBackup route fetches (backupRecord, stack, repoConfig) via Promise.all — actual signature differs from plan interface spec
-- [Phase 04]: Action bar uses Deploy primary + ellipsis dropdown (per 04-CONTEXT locked decision)
-- [Phase 04]: Section components co-located in routes/app/stacks/components/ (only used by stack detail page)
-- [Phase 04-backup-restore]: ResticExecutor.run() throws Error with exitCode property on non-zero exit codes for proper error handling
-- [Phase 04]: Prisma 7 requires --config flag when config is not in default location
-- [Phase 04-11]: Fire-and-forget pattern for scheduled backup execution matches routes/backups.ts pattern
-- [Phase 04-backup-restore]: ResticExecutor emits stderr lines to onLine callback with [stderr] prefix for UI diagnosis
-- [Phase 04]: Breadcrumb preserves tab context for all non-overview tabs (not just backups)
-- [Phase 04]: ScrollArea limited to h-96 (384px) for backup history table
-- [Phase 04]: Snapshots sorted by time descending using Date.getTime() comparison
-- [Phase 04]: Invalid restic commands removed entirely; TODO added for docker compose orchestration
-- [Phase 04-backup-restore]: Use path.resolve() instead of path.join() for absolute path concatenation on Windows to prevent drive letter duplication
-- [Phase 04-backup-restore]: Hide repository path field for local backend in Settings UI with informational alert - field is never used for local backups
-- [Phase 04-14]: buildBackupArgs() excludes both /logs and /backups directories to prevent circular backup and log noise
-- [Phase 05-01]: Per-step Zod schemas (wizardStep1Schema through wizardStep5Schema) for granular wizard validation
-- [Phase 05-01]: Reuse backupSettingsSchema from Phase 4 for wizard step 3 (backup config)
-- [Phase 05-01]: Server unit tests use expect(true).toBe(false) for RED state; E2E tests use test.skip()
-- [Phase 05-03]: OnboardingService uses constructor DI for better-auth, settings, crypto, stack repo
-- [Phase 05-05]: Custom WizardStepper component built instead of third-party to avoid registry safety gate
-- [Phase 05-06]: Fire-and-forget migration pattern with toast notifications — modal closes immediately after user confirms, migration runs in background
-- [Phase 02]: [Phase 02-observability P13]: noUpdates decision moved from free-text pull-output scanning to before/after local image digest comparison (imageDigest); toImageRef() duplicates buildImageRefFromService()'s normalization to keep domain/ free of jobs/'s module graph, guarded by a parity test
-- [Phase 02]: [Phase 02-observability P14]: fetchStack(mode) replaces useStack's single fetch() — 'initial' mode preserves the existing loading/error behavior; 'background' mode (SSE handlers + refetch()) sets isRefreshing only and never touches loading or error, so a full-tree remount can no longer be triggered by a background refresh
-- [Phase 02]: [Phase 02-observability P14]: StackDetailPage's placeholder early-return changed from 'if (loading)' to 'if (loading && !stack)' — reachable only before the first successful load, closing UAT gap G-02-12 (FW-02)
-- [Phase 02]: [Phase 02-observability P15]: getStackEvents() forwards an absent limit through unchanged rather than inventing a service-level default — StackEventRepository.findRecentByStack()'s own default (20) is the single definition; the route schema separately owns the HTTP-facing default
-- [Phase 02]: [Phase 02-observability P15]: createFileWatcherRepo's two parameters are narrow structural interfaces declared locally in file-watcher.ts, not the concrete repository classes — preserves getRepo()'s lazy-import pattern (keeps db.ts out of the unit-test module graph) while getting compiler-enforced shape checking instead of a cast
-- [Phase 02]: [Phase 02-observability P15]: StackRepository.createStackEvent() (ad-hoc write method with an as any enum cast) deleted outright, not deprecated — FileWatcher was its only caller (confirmed by grep); StackEventRepository.createEvent() is now the single write path to the StackEvent table
-- [Phase 02]: [Phase 02-observability P16]: useStackEvents mirrors useStack's fetchMode('initial'|'background') split — SSE-triggered refreshes never clear loaded entries or touch loading/error
-- [Phase 02]: [Phase 02-observability P16]: describeStackEvent() badge variants spread across all three Badge variants (default/secondary/destructive) so every event type is visually distinct from every other, not just error standing out from a pair
-- [Phase 02]: [Phase 02-observability P16]: EventLogCard's error UI gates on events===null (not the error flag alone) since background failures never clear error — a successful retry flips the card out of the error view once entries exist
-- [Phase 04]: [Phase 04-15]: abortBackup() targets stack status ERROR (not previousStatus), matching runBackup's existing catch-block behavior and BCK-11
-- [Phase 04]: [Phase 04-15]: UAT Test 22's reported single-argument runBackup crash is judged stale re-test data predating plan 04-11 — as of 04-11, runScheduledBackup already calls runBackup with three defined arguments via Promise.all in every path
-- [Phase 04]: [Phase 04-16]: loadBackup(mode, isCancelled) shared by mount and resync effects — each effect owns its own cancellation closure rather than a shared mounted ref
-- [Phase 04]: [Phase 04-16]: a rejected resync is swallowed (console.warn) and never touches error state — the page keeps rendering the previously fetched record instead of flipping to its full-page error branch
-- [Phase 04]: [Phase 04-16]: disconnected is treated identically to completed/failed by the resync effect — a dropped SSE connection is never trusted as a claim about the backup's outcome, the server is always re-read
-- [Phase 04]: [Phase 04-17]: abortBackup's post-guard body runs in try/finally (not try/catch) — a rejected notify() still propagates, but the terminal done emit and broadcaster disposal always run
-- [Phase 04]: [Phase 04-17]: EVENT_SOURCE_CLOSED is inlined (not read off EventSource.CLOSED) in use-backup-stream.ts because the hook's unit test substitutes a mock EventSource with no static members
-- [Phase 04]: [Phase 04-17]: BACKUP_RESYNC_POLL_INTERVAL_MS/BACKUP_RESYNC_MAX_POLLS stay module-private in the backup detail page; tests hardcode mirrored literal values rather than importing them
-- [Phase 04]: [Phase 04-18] Server-side replay chosen over client-side clear-gating to close WR-01 — the alternative would trade WR-01 for a log-duplication bug when the backup finishes during the disconnect window
-- [Phase 04]: [Phase 04-18] backupLogBuffers reuses the same array runBackup/runRestore already persist as logLines — zero memory delta, freed by the existing disposeBackupBroadcaster call
-- [Phase 04]: [Phase 04-18] streamLiveBackupLog's replay snapshot, replay writes, and listener attachment run in one synchronous block with no await, so Node cannot interleave an emit across the replay/live boundary
-- [Phase 05.1]: [Phase 05.1-01]: Task 1's P1001 discriminator confirmed environmental (host-level TCP-to-Docker-published-port block), not a repo defect — verified with pg Client, python, node, nc, curl, and bash /dev/tcp; prisma.config.ts left untouched
-- [Phase 05.1]: [Phase 05.1-01]: Playwright fixtures.ts gained an _apiRouteGuard auto-fixture that fails any spec loudly on an unstubbed **/api/** request instead of letting it fall through to :3000 or hang
-- [Phase 05.1]: [Phase 05.1-01]: client/playwright.config.ts workers fixed at 1 locally (was Playwright's own default) — this host's memory pressure from unrelated Docker workloads was starving parallel Chromium instances into false timeouts
-- [Phase 05.1]: [Phase 05.1-02]: StackService now takes a broadcaster (Pick<StateBroadcaster,'publish'>) 5th constructor param and routes every repo.transitionStatus() call through a single private transitionStatus() wrapper that publishes stack_status and never lets a throwing subscriber strand a transitional status
-- [Phase 05.1]: [Phase 05.1-02]: updateStack()'s env branch unconditionally flags configChanged: true (no hashing) and publishes config_changed reusing the stack's current lastKnownHash; lastKnownHash stays compose-only
-- [Phase 05.1]: [Phase 05.1-03] Task 1 checkpoint (user-confirmed): canonical stacks path /opt/docktor/stacks, driven by a single new compose variable DOCKTOR_STACKS_HOST_DIR on both sides of the volume plus DOCKTOR_STACKS_DIR — reverses part of [Phase 02-observability P08]'s decision to move DOCKTOR_STACKS_DIR into a fixed Dockerfile ENV
-- [Phase 05.1]: [Phase 05.1-03] Task 1 checkpoint (user-confirmed): no-rebase existing-install strategy — no automatic Stack.hostPath rewrite; a path mismatch fails loudly at boot via assertStacksDirMatchesHost() and the operator relocates the directory and reconfigures deliberately
-- [Phase 05.1]: [Phase 05.1-03] getStackPath() now throws if the joined path escapes getStacksDir() — defense-in-depth for threat T-05.1-11, alongside the existing slugify() guarantee
-- [Phase 05.1]: [Phase 05.1-03] restic install moved into a dedicated Dockerfile build stage (not a single RUN in the final stage) because node:22-slim lacks bzip2 by default and the plan's acceptance criteria requires the final apt-get layer to list exactly ca-certificates and curl
-- [Phase 05.1]: [Phase 05.1-04]: initiateRestore() has no assertTransition() call (unlike initiateBackup()) — pre-existing gap left out of scope since RESTORE's allowed-from list isn't a stranding risk the same way missing-repo was; runRestoreProcess() unconditionally stops before restoring regardless of starting status
-- [Phase 05.1]: [Phase 05.1-04]: BackupService.writeStackStatus() is the single call site for every stackRepo.update({status}) call including recoverInProgressBackups() (server-startup recovery), mirroring StackService's transitionStatus() broadcaster convention from 05.1-02
-- [Phase 05.1]: [Phase 05.1-05] syncDatabaseSchema() uses a raw pg Client (not Prisma) for reachability probing and the advisory lock, justified per CLAUDE.md's Prisma-access rule — lib/db.ts's lazy Proxy must not be touched before the schema exists
-- [Phase 05.1]: [Phase 05.1-05] Startup order in server/src/index.ts is now: assertStacksDirMatchesHost() -> syncDatabaseSchema() -> buildApp() -> listen (reordered from buildApp()-first); the stacks-path assertion now logs via console.error since app doesn't exist yet at that point
-- [Phase 05.1]: [Phase 05.1-05] Task 3's live cold-start proof (GET /api/setup/status -> 200) could not be completed this session — confirmed environmental TCP-payload-to-Docker-published-port block (same class as 05.1-01), now also confirmed on the app's own HTTP port, not just Postgres; requires human/unrestricted-environment re-run
-- [Phase 05.1]: [Phase 05.1-06]: configError and configChanged are independent facts (neither is a StackStatus, verified against stack-status-machine.ts) — both can be true simultaneously
-- [Phase 05.1]: [Phase 05.1-06]: clearConfigChanged(id) is the single choke point that also nulls configError, so every existing deploy/restart/update/backup caller gets the clearing behavior without being edited
-- [Phase 05.1]: [Phase 05.1-06]: Stack.lastEnvHash tracks .env content hash fully separate from lastKnownHash (compose-only) — separate repository method, separate FileWatcher handler, no shared code path (T-05.1-29)
-- [Phase 05.1]: [Phase 05.1-06]: chokidar's ignored predicate switched from an endsWith() suffix check to an exact-basename Set membership check when admitting .env, avoiding a false-positive match on a file like backup.env
-- [Phase 05.1]: [Phase 05.1-07]: requireAuth alone gates /api/stacks/import/* — verified not double-covered by app.ts's onRequest first-run exemption (exact /api/setup/ and /api/auth/ prefix match only)
-- [Phase 05.1]: [Phase 05.1-07]: BrownfieldImport takes its four API functions as an injected prop object instead of importing setup-api or import-api directly, so one component drives both the wizard (/api/setup/*) and the post-setup page (/api/stacks/import/*)
-- [Phase 05.1]: [Phase 05.1-07]: compatibility-badge.tsx promoted from routes/setup/components/ to components/domain/stack/ per CLAUDE.md's multi-consumer rule, since BrownfieldImport (a domain component) is now its consumer alongside the wizard
-- [Phase 05.1]: [Phase 05.1-08]: .env.example/.env.production are the docker-compose deployment templates (not the yarn-dev .env.development); DATABASE_URL host fixed to compose service name db, DOCKTOR_STACKS_HOST_DIR defaulted live so assertStacksDirMatchesHost() is active out of the box, DOCKER_DATA_PATH defaulted to /host/var/lib/docker
-- [Phase 05.1]: [Phase 05.1-08]: docker-compose.yml drops the decorative /data and /backups mounts and no longer publishes Postgres 5432 (T-05.1-42); docker-compose.dev.yml's Postgres bumped 17->18 to match
-- [Phase 05.1]: [Phase 05.1-08]: found and fixed two live-discovered bugs blocking the documented quickstart — schema-sync.ts's --skip-generate argv was an invalid flag for this Prisma CLI (db push silently never applied the schema since 05.1-05 shipped), and DiskChecker.check()'s unguarded settings query crashed the whole server via an unhandled promise rejection on a fresh database
-- [Phase 05.1]: [Phase 05.1-09]: resolvePrismaCliEntrypoint() anchors CLI resolution on import.meta.url module identity (createRequire) rather than process.cwd() or relative-directory-segment counting — one implementation correct in vitest/tsx-from-source/built-image layouts; both Prisma CLI call sites now launch via process.execPath with no shell option, closing a native-Windows spawnSync ENOENT defect (G-05.1-1)
-- [Phase 05.1]: [Phase 05.1-10]: docker-compose.yml env_file: renamed .env.local -> .env (both services) so Compose's top-level ${VAR} interpolation can see DOCKTOR_STACKS_HOST_DIR; a flag-based (--env-file) alternative was explicitly rejected since any future bare docker compose command would silently reintroduce the mismatch
-- [Phase 05.1]: [Phase 05.1-10]: Task 3 (.env.example/.env.production header comment fixes) halted per its own precondition — Read/Bash/Write access to .env* paths denied by workspace permission settings; exact edits reported in 05.1-10-SUMMARY.md for a developer with access to apply
-- [Phase 05.1]: [Phase 05.1-11]: ensureStacksDir() lives in lib/stacks-dir.ts (not inline fs.mkdir in index.ts) — keeps index.ts a thin startup sequence and makes directory creation unit-testable
-- [Phase 05.1]: [Phase 05.1-11]: ensureStacksDir() and assertStacksDirMatchesHost() share one try/catch in index.ts, assertion first — a path mismatch must never let a directory get created at a path already known to be wrong
-- [Phase 05.1]: [Phase 05.1-12]: Normalize fast-glob's scanner output at the foundFiles boundary (single call site) instead of at path/directory derivation — fixes both fields and canonicalizes spelling ahead of dedup
-- [Phase 05.1]: [Phase 05.1-12]: directoryDisplayName() lives in a new client/src/lib/path-display.ts (not utils.ts) as an import-free pure string utility tolerant of POSIX/Windows/mixed separators
-- [Phase 06]: [Phase 06-01]: Resolved LETSENCRYPT_HOST vs ACME_HOST via a deterministic grep of the actual acme-companion:2.6.3 image (not doc pages) — both LETSENCRYPT_HOST/LETSENCRYPT_EMAIL confirmed present
-- [Phase 06]: [Phase 06-01]: Added StackRepository.findById() (Rule 3) — required by ProxyService's constructor Pick<> type, did not exist before
-- [Phase 06]: [Phase 06-02] hasIn-guarded deleteEnvKeyIfPresent fixes removeServiceProxyEnv throwing when a service has no environment block at all (not just a missing key)
-- [Phase 06]: [Phase 06-02] assignDomain/removeDomain wrap their entire body (not just the compose write) in withKeyedLock(stackId, ...) — T-06-09 serialization empirically verified via a manual two-call race reproduction with the lock bypassed
-- [Phase 06]: [Phase 06-03] renderProxyStackCompose is a template literal (not a yaml Document-API edit) since the proxy stack's compose file is Docktor-authored with no prior content to preserve
-- [Phase 06]: [Phase 06-03] deployAndSurfaceFailure relays StackService.deployStack's real errorMessage verbatim through BadRequestError (never a paraphrase), the single choke point for D-11's fail-loudly requirement
-- [Phase 06]: [Phase 06-04] PROXY_STACK_ID redeclared as a local literal in jobs/proxy-cert-poller.ts (not imported from proxy-service.ts) — keeps this job's unit-test module graph free of the Prisma/compose-editor/StackService import chain, matching state-poller.ts/file-watcher.ts's precedent
-- [Phase 06]: [Phase 06-04] ProxyCertPoller.reconcile() aborts the whole pass untouched (no writes, no publishes, one log line) on a certs-directory read failure, and fetches the acme-companion log tail at most once per reconcile only when at least one TLS-enabled row still lacks a certificate file
-- [Phase 06]: handleWizardStep6 saves via ProxyService.updateProxySettingsAndSync then unconditionally calls deployProxyStack() — save-before-deploy without a third wizard-specific ProxyService method — A failed deploy still leaves the email persisted for a retry from Settings; deployProxyStack's own first-deploy/redeploy branching handles ensuring the stack is actually deployed either way
-- [Phase 06]: brownfield-step.tsx's Finish Setup button relabeled to Next (Rule 1 deviation, file not in plan's declared scope) — Import (step 5) is no longer the wizard's terminal step after this plan's renumbering; the old label would have been directly misleading
-- [Phase 06]: [Phase 06-05] Proxy tab's Domains/TLS/Certificate cells each stack one entry per domain (not per row) since tlsEnabled/certStatus are independently tracked per ProxyConfig row, so a two-domain service can show mixed states in one row
-- [Phase 06]: [Phase 06-05] ProxySettingsCard's Deploy Proxy Stack button uses variant="outline" not the primary/default variant — --primary is reserved for the card's one primary submit (Save Proxy Settings)
-- [Phase 06]: [Phase 06-05] client/src/routes/app/settings/components/ created as a new directory for ProxySettingsCard per CLAUDE.md's Known Refactoring Target for settings.tsx, rather than adding a fifth inline card to the monolith
-- [Phase 06]: [Phase 06-05] standardSchemaResolver(assignDomainSchema) cast to Resolver<AssignDomainInput> in proxy-tab.tsx, mirroring notifications-step.tsx's established fix for z.coerce.number() fields breaking useForm<T> generic inference
-- [Phase 06]: [Phase 06-07] Chained yarn workspace @docktor/shared build && onto every server/client test script and the root dev script instead of pretest/predev hooks — Yarn Berry does not run pre/post lifecycle scripts
-- [Phase 06]: [Phase 06-07] Parity test (shared-schema-parity.test.ts) lives in server/test/unit/, not shared/ — asserts from the module context that G-06-3 actually fooled
-- [Phase 07]: 07-01: mountinfo-based deepest-covering-entry match chosen over exact-match-only so a persistent parent-directory mount is recognized correctly; container-root+DOCKTOR_STACKS_HOST_DIR also treated as ephemeral to catch non-overlay storage drivers
-- [Phase 07]: 07-01: gsd_run check tdd-red-evidence is incompatible with this project's vitest TAP output (nested TAP-13 vs Node --test's flat # tests/# pass/# fail format) — RED evidence confirmed manually instead; workflow.tdd_mode is not enabled for this project
-- [Phase 07]: Post-verification gap fix: assertStacksDirIsMounted()'s container-root+DOCKTOR_STACKS_HOST_DIR heuristic (07-01) false-positived on an ordinary persistent bare-metal/VM root filesystem, since that combination alone can't be told apart from a container's own ephemeral layer. Gated the heuristic behind a real containerization signal (`/.dockerenv`, injectable as `isContainerized` for tests) so it only fires when actually inside a container. Re-verified 6/6 (was 5/6) — confirmed the original ephemeral-storage (tmpfs/overlay) detection was not weakened by the fix.
-- [Phase 08]: [Phase 08-01]: Branch B taken (TCP-payload block reconfirmed at both 127.0.0.1:5432 and the container's own bridge address) — no live verification pass attempted; six items handed to UAT as a self-contained script
-- [Phase 08]: [Phase 08-01]: Full client test suite flake (4 unrelated files, host contention — load avg 2-4/6 cores, swap fully allocated) not attributed to this plan's change per Task 1's own precondition; all 4 files pass 28/28 in isolation
-- [Phase 08]: [Phase 08-01]: Todos closed now (not after UAT) per plan decision PD-5 — each Resolution states a failing UAT item reopens it through normal gap closure
-- [Phase 09]: [Phase 09-01]: Fixed .env.example's .env.local->.env header drift confirmed by 09-RESEARCH.md; found and fixed a second undocumented drift in docs/deployment.md (DOCKTOR_FS_POLLING's stated default disagreed with Dockerfile's baked ENV); closed the item-1 deployment-docs todo with a resolution tracing all 8 original defects to their fixing plans; .env.production remains blocked by a workspace secret-file access guard, exact edit recorded in 09-01-SUMMARY.md — Root-caused via a direct fact-by-fact audit of docs/deployment.md against docker-compose.yml/.env.example/Dockerfile per the plan's Task 2 mandate; the Dockerfile is the authoritative source for baked ENV defaults per CLAUDE.md and 09-RESEARCH.md's architectural map.
-- [Phase 09]: [Phase 09-02]: Added cross-platform-unit CI job (windows-latest + macos-latest matrix, fail-fast:false) as sibling of build-and-test, with explicit yarn workspace @docktor/server test:unit step since root test:unit excludes the server workspace
-- [Phase 09]: [Phase 09-02]: D-07 applied as a from-scratch minimal main branch protection rule (none existed before) requiring both cross-platform-unit checks; user accepted windows-latest being required despite currently failing on 3 real platform bugs
-- [Phase 09]: [Phase 09-02]: 3 genuine Windows-only unit test failures (stacks-dir.ts mount detection, brownfield-scanner.ts path separators, proxy-cert-poller.ts mock/timezone assertion) found by the first real CI run are out of this plan's scope and filed as a new todo rather than fixed inline; they now block all merges to main via the required windows-latest check
-- [Phase 09]: [Phase 09-03]: Task 1 checkpoint (developer-confirmed): proceed with Prisma migrate cutover (D-02), replace not supplement the guarded db push step (D-04), and unattended D-05 auto-baseline with a post-baseline drift probe as the mitigation instead of an interactive boot prompt
-- [Phase 09]: [Phase 09-03]: buildDriftProbeArgv() resolves the schema directory as a sibling of the already-resolved prisma.config.ts path (no second candidate search); needsBaseline()/hasApplicationTables() consume a narrow QueryFn port added to the acquired LockAcquisitionResult rather than the raw pg.Client
-- [Phase 09]: [Phase 09-03]: DOCKTOR_DB_AUTO_MIGRATE is the new opt-out; DOCKTOR_DB_AUTO_PUSH=false is honoured as a deprecated alias only when the new var is unset, with a console.warn naming both variables
-- [Phase 09]: [Phase 09-04]: Verified migrations-in-image by actually building the server-build Docker stage and running ls inside the resulting image, rather than relying only on static .dockerignore/COPY analysis
-- [Phase 09]: [Phase 09-04]: docs/deployment.md's Database schema section carries an explicit live-verification note since 09-03's SUMMARY recorded Branch B — the automatic upgrade baseline is unit-tested but not yet exercised against a live database
-- [Phase 09]: [Phase 09]: [Phase 09-05]: certSource promote framing implemented exactly as D-11 specifies — ProxyConfig.certSource String @default("acme") backfills every existing row explicitly via the migration's NOT NULL DEFAULT, never by absence
-- [Phase 09]: [Phase 09]: [Phase 09-05]: domainPatternRegex kept as a second, separate regex (not a hostnamePattern widening) — Certificate.domainPattern accepts one leading wildcard label, ProxyConfig.domain continues rejecting wildcards via unmodified hostnamePattern
-- [Phase 09]: [Phase 09]: [Phase 09-05]: Task 3 Branch B taken (same environmental TCP-to-Postgres-protocol block as 09-03/05.1-01/05.1-05/05.1-06/06-01/06-07/08-01) — add_certificate migration generated via the from-schema-copy diff technique and not applied to any live database; WINDOWS.md entry #11 records the gap
-- [Phase 09]: [Phase 09]: [Phase 09-06]: certificate-service.ts's constructor Pick<> grew incrementally across Task 2 (create-only) and Task 3 (adds findAll/findByIdOrThrow/findReferencingDomains/removeCertificateFiles) rather than over-provisioning the interface up front
-- [Phase 09]: [Phase 09]: [Phase 09-06]: CertificateFilesystem owns leaf+CA-bundle concatenation, not the service — the service passes the leaf certificate and optional bundle through as separate fields to writeCertificateFiles
-- [Phase 09]: [Phase 09]: [Phase 09-06]: app.ts's global error handler does not map @fastify/multipart's RequestFileTooLargeError (statusCode 413, not an AppError) to a 4xx on its own — routes/certificates.ts explicitly catches FST_REQ_FILE_TOO_LARGE and re-throws BadRequestError
-- [Phase 09]: [Phase 09]: [Phase 09-07]: renderProxyEnvForService's issuance-host filter is TLS-enabled AND certSource==='acme' — the single place ACME suppression happens; no second code path for custom rows
-- [Phase 09]: [Phase 09]: [Phase 09-07]: ProxyCertPoller.reconcile() splits into reconcileAcmeRows()/reconcileCustomRows() sharing one applyStatus() choke point; custom rows resolve their file via the linked Certificate's own domainPattern (certFileBaseName), never ProxyConfig.domain, and a missing file classifies failed not pending
-- [Phase 09]: [Phase 09]: [Phase 09-08]: proxy-tab.tsx's automatic-source Select label reads 'Automatic (Let's Encrypt)' (not bare 'Automatic') to avoid exact-text collision with the per-domain listing's own 'Automatic' cell, both on screen simultaneously once any config exists
-- [Phase 09]: [Phase 09]: [Phase 09-08]: certificate-source validity rules (custom requires certificateId, acme forbids it, custom requires tlsEnabled) stay entirely in assignDomainSchema's superRefine — proxy-tab.tsx only surfaces the resulting field messages, never re-implements the pairing logic
-- [Phase 08]: [Phase 08-02]: ConfigChangedEvent.source made required (not optional) — every publisher must declare its origin explicitly, so a future third publisher can't silently ship an untagged broadcast
-- [Phase 08]: [Phase 08-02]: clearConfigError(id) in updateStack's compose branch is unconditional on hashChanged — a successful parse is positive evidence of validity regardless of whether the content actually differs from lastKnownHash
-- [Phase 08]: [Phase 08-03]: ConfigChangedEvent.source is required (not optional), matching the server-side field from companion plan 08-02, so a future third publisher cannot ship an untagged event that silently no-ops the toast unnoticed
-- [Phase 08]: [Phase 08-03]: every pre-existing config_changed test literal not asserting toast behavior was tagged source: "app" (not "external") per plan guidance, keeping the silent-refresh path exercised across the broadest set of scenarios
-- [Phase 08]: [Phase 08]: [Phase 08-04]: BACKING_UP's statusColors entry set byte-identical to DEPLOYING/UPDATING's existing string (not a near-duplicate) so all three blue-pulsing statuses share one literal value; RESTORING and MIGRATING deliberately left untouched per G-08-7's scoped root_cause
-- [Phase 10]: [Phase 10-01]: SmtpClientPort.sendMail(config, message) takes the full SmtpConfig on every call so notify() and testSmtp() share one transport operation shape, not two divergent paths
-- [Phase 10]: [Phase 10-01]: settingsRepository singleton added directly to settings-repository.ts (matching the other 6 repos), keeping repositories/index.ts a pure re-export list with no new-instance exceptions
-- [Phase 10]: [Phase 10-01]: application/index.ts keeps its original export names (settingsRepository, repo, certificateRepositoryInstance) now pointing at repositories/index.ts singletons, so out-of-scope route files needed zero edits
-- [Phase null]: [Phase 11-ui-rework 11-03]: Pre-paint flash prevention is a hand-authored static <script> in index.html (not next-themes' own SSR-oriented injected script) — this app is a client-rendered Vite SPA with no hydration step
-- [Phase null]: [Phase 11-ui-rework 11-03]: ThemeToggle is a DropdownMenu (Light/Dark/System), not a two-state button, so users always retain a way back to "follow OS" after overriding
-- [Phase null]: [Phase 11-ui-rework 11-03]: test/setup.ts's global matchMedia stub is guarded by typeof window.matchMedia !== "function" so the pre-existing per-test stubs in stack-detail-page.test.tsx and backup-detail-page.test.tsx become no-ops with zero edits to those files
-- [Phase 11]: [Phase 11-ui-rework 11-04]: dashboard.tsx decomposed into StatCard/computeDashboardStats/useBackupDefaults/DashboardStatCards; useStacks() gained the same fetchStacks(mode) initial/background split use-stack.ts already has, so update_available events refetch in the background without flipping loading back to true. — Matches the existing use-stack.ts precedent exactly and keeps StatCard reusable/generic per CLAUDE.md's components/common checklist.
-- [Phase null]: [Phase 11-ui-rework 11-05]: withServiceUpdateInfo<T> shared by listStacks() and getStackWithUpdateInfo() — one batched findByImageRefs lookup across the de-duplicated union of refs, protected-stack filtering runs before enrichment so hidden stacks' refs are never looked up, and the call is skipped entirely when there are no refs.
-- [Phase null]: [Phase 11-ui-rework 11-06]: TimelineEntry keys are type:id (not bare id) since deployment/statusLog/event ids come from three different tables and can collide
-- [Phase null]: [Phase 11-ui-rework 11-06]: ActivityTimeline owns the type-filter's local useState itself rather than lifting it into useStackTimeline, keeping the merge a pure function over the three source lists
-- [Phase null]: [Phase 11-ui-rework 11-06]: services-section.tsx wraps each row's action buttons in their own TooltipProvider (stack-actions.tsx precedent), with the disabled Upgrade button's Tooltip trigger on a wrapping span since a disabled Radix trigger stops receiving hover/focus
-- [Phase null]: [Phase 11-07]: ProxyAssignDialog keeps service selection as plain useState (not RHF) since assignDomainSchema has no serviceName field; BackupScheduleDialog uses a dedicated BackupScheduleFormValues type (not stackBackupConfigSchema's own z.infer) so retention.keepDaily-style FormField paths stay concrete instead of nullable
-- [Phase 11]: [Phase 11] [11-09]: EditorView.contentAttributes.of wires the accessible aria-label onto CodeMirror's built-in role=textbox content element; create.tsx renders ComposeEditor directly inside FormItem (not FormControl, whose Slot would misdirect the generated id onto CodeMirror's wrapper div)
-- [Phase 11]: [Phase 11] [11-09]: E2E invalid-YAML fixture uses duplicate mapping keys, not an unclosed quote — CodeMirror renders a zero-width/line-break-only lint range as a .cm-lintPoint widget instead of a .cm-lintRange mark, so duplicate keys (pointing at a real character) were needed to exercise the plan's .cm-lintRange-error acceptance criterion
-- [Phase 11]: [Phase 11-10]: App-wide migration to react-router's createBrowserRouter/RouterProvider (from declarative BrowserRouter) so useBlocker is available for the new UnsavedChangesGuard; same route tree, verified via the full 88-test Playwright suite
-- [Phase 11]: [Phase 11-10]: UnsavedChangesGuard is generic (when/description/isSameContext props, no stack vocabulary) and reusable by any future page with dirty-state; the UI-SPEC's env table/raw mode-switch trigger is deliberately not wired since 11-12 makes both modes lossless views over one string
-- [Phase 11]: [Phase 11-11] Verbatim card extraction treated as refactor-with-regression-net, not literal RED-GREEN, since there is no new behaviour to fail first — tdd.md's own principle only applies where behaviour can be described as expect(fn).toBe(output) before writing fn; genuine RED-GREEN was reserved for the new describeNotificationType/NotificationTypeBadge pure function
-- [Phase 11]: [Phase 11-11] settings-page.test.tsx reuses SidebarProvider/matchMedia/ResizeObserver test scaffolding from stack-detail-page.test.tsx and proxy-tab.test.tsx — PageHeader's SidebarTrigger requires SidebarProvider context and ProxySettingsCard's Radix Switch requires ResizeObserver in jsdom; reusing established patterns avoids re-solving the same jsdom gaps
-- [Phase 11]: [Phase 11-12] client/src/lib/env-file.ts: a line is a table "variable" only when it matches `^KEY=value$` exactly (KEY per the shared ENV_VARIABLE_KEY_PATTERN); every other line (comments, blanks, export lines, malformed lines, CRLF remnants) is an opaque passthrough line kept verbatim in its original position — serializeEnvFile(parseEnvFile(s)) === s for every string (RESEARCH Pitfall 4)
-- [Phase 11]: [Phase 11-12] EnvEditor splits its reconciliation ref into `lastEmittedRef` (self-vs-external value-prop change detection) and a separate `baseLinesRef` that only advances on genuine external changes, never on the editor's own emission — the plan's own suggested single-ref design corrupts the document with a duplicate/stray line the first time a newly-added row passes through its empty-key state, since re-parsing an empty-key line can't match the variable pattern; caught via TDD/E2E before merge and covered by a regression unit test
-- [Phase 11]: [Phase 11-12] isSecretKey's D-22 heuristic (`/password|secret|key|token/i`) is left exactly as broad as specified (e.g. it also masks a key merely containing "KEY"); Playwright tests disambiguate a masked value input from its own Show/Hide reveal button with `{exact: true}` rather than narrowing the regex
-- [Phase 11]: [Phase 11-13]: D-17 mobile audit found two real overflow bugs (EnvEditor grid-item min-width, WizardStepper flex fit-content sizing), both fixed with min-w-0/w-full rather than touching the shadcn-managed ancestor; icon-only touch-target findings triaged as issue-not-fix-now (#71) since none break a core flow
-- [Phase 11]: [Phase 11-13]: CLAUDE.md's Known Refactoring Targets table now tracks component-level debt (5 Settings cards' ad-hoc useState form state, flagged by 11-11) instead of the three now-closed page-file monoliths ([id].tsx, settings.tsx, dashboard.tsx)
-- [Phase 12]: [Phase 12-01]: diff@^9.0.0 (jsdiff) approved by raphael@muesseler.de via blocking-human package-legitimacy checkpoint — installed with no @types/diff
-- [Phase 12]: [Phase 12-01]: StackService.updateStack's review-before-apply confirmation check runs immediately after findByIdOrThrow and strictly before fs.writeCompose/writeEnv (Pitfall 2) — enforced via a new 8th constructor param (StackChangeReviewer), never bypassable by a direct API call
-- [Phase 12]: [Phase 12-01]: useStackConfigFiles' applyChange uses toast.loading/success/error/dismiss directly instead of toast.promise, because the 428-retry branch must resolve with neither a success nor an error toast — toast.promise always renders once its success option is structurally present
-- [Phase 12]: Severity names are danger/warning (not PATTERNS.md's draft blocking-style) — nothing in this phase blocks
-- [Phase 12]: resolveHostPath expands a leading ~ to the real home directory (os.homedir()) rather than lexically joining it against the stack directory, so a ~-prefixed bind mount is never misclassified as inside the stack
-- [Phase 12]: DOCKER_SOCKET_PATHS exported from docker-socket-rule.ts and reused by bind-outside-stack-rule.ts so a Docker-socket mount is never double-reported by both always-on rules
-- [Phase 12]: [Phase 12-03]: extractRequestedHostPorts() dedupes by port/protocol only (not hostIp), keeping the first service in compose declaration order
-- [Phase 12]: [Phase 12-03]: tier-2 container-to-stack attribution ignores the stack's DB status — a running container with a matching compose project label proves it holds the port regardless of a stale status column
-- [Phase 12]: [Phase 12-03]: ${VAR:-default} falls back on unset-or-empty (shell colon-dash semantics); ${VAR-default} falls back only on unset, using VAR's value even if empty
-- [Phase 12]: [Phase 12-03]: SocketInspector's 'neither ss nor lsof available' warning is rate-limited to once per instance, not once per call
-- [Phase 12]: [Phase 12-04]: ssh://git@host is rejected (not just https://user:pw@host) — isAllowedGitRemoteUrl treats any non-empty URL username as embedded credentials on every transport, consistent with #19's public-repos-only scope
-- [Phase 12]: [Phase 12-04]: file:// is opt-in only via GitExecutor's {allowedProtocols: ["file"]} constructor option — production code never passes it; it exists solely for the test suite to clone a local bare repo without a network dependency
-- [Phase 12]: [Phase 12-04]: MAX_VARIANTS_PER_REPO (500) is a global counter across the whole checkout, not per-template, closing the per-template-cap bypass
-- [Phase 12]: [Phase 12-04]: contentHash hashes the validated variant manifest object (not raw variant.yml bytes) plus compose/env content, so a whitespace-only manifest edit never bumps the pinned D-08 update-badge hash
-- [Phase 12]: [Phase 12-05]: Tasks 1-3 implemented as one engineering pass (not three independently-buildable states) because they modify the same tightly-coupled files (compose-review-service.ts, stacks-api.ts, diff-confirm-dialog.tsx) in ways that genuinely build on each other within single functions; commits split along each task's exclusive files instead
-- [Phase 12]: [Phase 12-05]: previewStackChange now always reads both compose AND env files on every preview call (not just the file being edited) — the rule engine's hasEnvFile context needs current .env state even for a compose-only edit
-- [Phase 12]: [Phase 12-05]: D-04 x #20 reconciliation formula: confirmationRequired = hasChanges && (!skipReview || findings.some(f => f.introduced)) — skip only ever suppresses confirmation for an edit introducing zero findings
-- [Phase 12]: [Phase 12-06]: useCreateStack's create option is injected (not imported from stacks-api.ts directly) so plan 12-09's template-based creation can reuse the hook unchanged
-- [Phase 12]: [Phase 12-06]: CreateStackForm keeps its own useForm/EnvEditor-validity state rather than lifting it into useCreateStack, so Keep Editing returns to intact fields without coupling the hook to react-hook-form
-- [Phase 12]: [Phase 12-06]: ComposeChecksCard's always-on rule list is derived as COMPOSE_RULE_IDS minus CONFIGURABLE_COMPOSE_RULE_IDS rather than hardcoded, preserving 12-05's no-code-path-can-disable-an-always-on-check invariant
-- [Phase 12]: [Phase 12-07] Migration generated via Branch B (from-schema-copy diff technique) — dev DB reachable at TCP level but Postgres wire-protocol handshake never completes (P1001), same documented environmental block as prior phases; WINDOWS.md entry #16 tracks the unapplied migration
-- [Phase 12]: [Phase 12-07] TemplateStackCreator's createStack signature is typed against the pre-widened signature in Task 2's commit, then widened to accept CreateStackOptions in Task 3's commit — avoids a throwaway intermediate interface
-- [Phase 12]: [Phase 12-07] TemplateRepository.recordSyncSuccess replaces a repo's whole template/variant index in one $transaction (upsert by composite key, prune the rest) so ids stay stable across re-syncs
-- [Phase 12]: 12-08: runPreflight() never-throws contract: a preflight-computation failure returns EMPTY_DEPLOY_WARNINGS; a setDeployWarnings persistence failure still returns the already-computed warnings — resolves a plan wording ambiguity in favor of the more detailed <action> text
-- [Phase 12]: 12-08: upgradeServiceImage's idempotent no-op path skips the preflight entirely and returns EMPTY_DEPLOY_WARNINGS, keeping the return shape uniform across both branches
-- [Phase 12]: 12-08: client PortHolder.process.pid is typed number | null (looser than the server's non-null domain type) since the value crosses Stack.deployWarnings' JSON round-trip
-- [Phase 12]: [Phase 12-09] useCreateStackSource() returns a create-source-agnostic `create` function (createStackFromTemplate when a variant is active, otherwise plain createStack) injected straight into 12-06's useCreateStack — the Create Stack page never branches on template-vs-blank itself
-- [Phase 12]: [Phase 12-09] The template browse route is /stacks/create/templates (static, registered ahead of the dynamic /stacks/:id/:tab? route) rather than /stacks/templates, since a stack id can never contain "/" and this keeps the two path shapes structurally distinct
-- [Phase 12]: [Phase 12-09] TemplateVariantDialog uses the dismissible shadcn Dialog (not AlertDialog) per UI-SPEC — a forward-navigation choice, not a destructive gate, so Escape/outside-click closing without choosing is correct
-- [Phase 12]: [Phase 12-10]: TemplateReposCard's add-form uses a manual toast.loading/success/error/dismiss lifecycle instead of toast.promise — a 409 duplicate-url response must set a field error with no generic error toast, which toast.promise's single error callback can't express
-- [Phase 12]: [Phase 12-10]: TemplateService.addRepo(url) composes existing 12-07 primitives (repo.createRepo then syncRepo) with no new persistence logic
-- [Phase 12]: [Phase 12-11]: Task 1/Task 2 split kept exactly as planned — straight-line tracer first (no per-write try/catch), then a separate hardening commit adding per-stack-write and per-job-step failure isolation
-- [Phase 12]: [Phase 12-11]: TemplateUpdateService depends only on two narrow ports (find-pinned-stacks + set-flag; current-index-hashes) — structurally incapable of writing a stack's compose/env files or any column other than templateUpdateAvailable (T-12-40), proven by a fake whose every other method throws if invoked
-- [Phase 13]: D-06: moving-tag set has one server-side definition (domain/image-update-detection.ts); client branches only on the server-provided isMovingTag
-- [Phase 13]: D-05: moving-tag dialog Update Images shortcut calls shared runUpdateImages directly; dialog closes first, toast reports outcome
-- [Phase 13]: 13-02: finishOperation also swallows a catch-up rejection so a misbehaving catch-up can never flip a successful deploy to ERROR
-- [Phase 13]: 13-02: StatePoller and ContainerStateCatchUp share one deriveStackStatus in domain/stack-state-derivation (D-09)
-- [Phase 13]: D-10/D-11: ImageUpdateCheckPruner (daily + startup) prunes ImageUpdateCheck rows outside the shared findTrackedImageRefs set; update-checker.ts has no Prisma access left
-- [Phase 14]: [14-01] ServiceHealthEvent keyed by (stackId, serviceName) with no FK to Service so deploys (replaceServices) cannot drop or orphan health history
-- [Phase 14]: [14-01] service.health_changed emitted only after the Service row write and only on a real normalized-health change for an existing Service row; migration generated via Branch B (migrate diff) and not applied to dev DB (WINDOWS.md)
-- [Phase 14]: 14-02: disk measurement covers exactly <stack>/volumes/*; a missing volumes folder is recorded as 0 bytes (measured), no Service.volumes fallback
-- [Phase 14]: 14-02: StackService converts BigInt disk sizes to numbers at its boundary (toStackSizeDto); per-volume sizes in a dedicated StackVolumeUsage model
-- [Phase 14]: 14-03: Retry on the health history panel refetches in initial mode (skeleton, error cleared); SSE container_state refetches stay background
-- [Phase 14]: 14-03: free text rendered inside a shadcn TableCell needs whitespace-normal plus wrap-anywhere, because TableCell is whitespace-nowrap and Radix ScrollArea sizes to max-content
-- [Phase 14]: 14-08: readHealthProbes treats a missing/empty services key as zero services (ok:true); only a non-map services, non-map root or a parse error disables the probe form
-- [Phase 14]: 14-08: probe form writes the compose buffer on blur or switch change only, and skips writes that match the buffer or lack a URL, so a blur never dirties the compose file
-- [Phase 14]: 14-08: shared healthProbeSchema is the single definition of the amended D-05 loopback host guard; 14-06 must re-apply it server-side
-- [Phase 14]: 14-11: one private emitHealthTransition in StatePoller serves handleEvent (inspect and 404) and reconcile; inspect failure keeps stored health (never null)
-- [Phase 14]: 14-04: StatusLog is not pruned (D-11 over RESEARCH A9); it gets a (stackId, createdAt) index instead and 14-12's pruner deletes only the Phase 14 history tables
-- [Phase 14]: 14-05: Storage page shows only the error alert and em-dash totals on a failed load, never 'No stacks to measure'
-- [Phase 14]: 14-05: volume expander aria-controls targets the first child row (storage-volumes-{stackId}); formatBytes renders null as an em dash
-- [Phase 14]: 14-14: <stack>/backups is sized only when lstat reports a real directory; any null measurement skips the stack so previous stored values are kept
-- [Phase 14]: 14-07: uptime percent truncates (never rounds up) with a 1e-9 epsilon so 99.9 stays 99.9 and only exactly 100 reads 100%
-- [Phase 14]: 14-07: uptime refetch signal is the SSE-driven stack.status prop compared against a ref; no extra SSE subscription and no polling
-- [Phase 14]: 14-12: StatusLog is not pruned (D-11 over RESEARCH A9); HealthHistoryPruner deletes only ServiceHealthEvent and resolved StackIncident rows
-- [Phase 14]: 14-12: StackIncident.open is a plain create serialised by withKeyedLock(incident:<stackId>), never an upsert on the NULL-distinct unique
-- [Phase 14]: 14-06: probe connects via explicit container address plus Host header (lookup alone is skipped for IP-literal hosts); probe results for non-running services are ignored; invalid x-docktor blocks stay unprobed until 14-13
-- [Phase 14]: 14-10: shorten-retention confirm button uses the secondary variant (UI-SPEC reserves accent for Save and forbids a destructive-styled button); Keep leaves the typed value in the field
-- [Phase 14]: 14-10: useStackUptimes refetches only on stack_status or statusLog-bearing container_state frames; failures degrade silently to em dashes
-- [Phase 14]: 14-13: a read failure or unparseable compose file keeps a stack's last good probes; a container-not-running clear is ignored if the container is running again by handling time
-- [Phase 14]: 14-09: ContainerStateCatchUp takes probeOwnership as an optional 4th ctor param defaulting to the shared registry so pre-existing 3-arg tests pass unmodified
-- [Phase 14]: 14-09: A network Docktor already holds (without the probe alias) is used without attach, ahead of <project>_default; a failed connect is dropped immediately so the next probe retries
-- [Phase 14]: 14-15: probe-path bounds are 10s per Docker call, timeout+50s per probe, 30s per start step, 5 min per tick; a deadline miss is a network-unreachable failed probe (D-02, D-08)
-- [Phase 14]: 14-16: a probe result is applied only when row.containerId equals the event containerId; a null row id drops it (WR-01)
-- [Phase 14]: 14-16: Docker observers reset a probe-owned service on a new container to starting (null if not running); id-based reset only for single-container services, start event resets regardless of id (WR-05)
-- [Phase 14]: 14-16: ServiceHealthService continues from the Service row when remembered probe health disagrees with it; StatePoller attributes every health transition by ownership incl. the 404 clear (WR-11)
-- [Phase 14]: 14-17: a skipped overlapping DiskUsageJob run resolves normally and counts as a run on the health reporter
-- [Phase 14]: 14-17: a symlinked <stack>/volumes folder is measured as 0 bytes with no rows, like a missing one
-- [Phase 14]: 14-17: 18 review findings dispositioned, 7 fixed and 11 deferred with reasons, none open
-- [Phase 14]: 14-18: HealthEventRow message is a block p under a flex-wrap header; transition whitespace-nowrap; rows divide-y with py-3 below sm (G-14-2)
-- [Phase 14]: 14-19: graceful shutdown order is probe job (5 s), app.close() (2.5 s), 9 s hard stop; compose and Dockerfile unchanged (no init: true or stop_grace_period) because a SIGTERM handler lets Node as PID 1 exit 0 in under 1 s
-- [Phase 14]: 14-19: a probe result arriving after the shutdown drain gave up is discarded, since the sweep detached its network and recording it would count a failure the service never had
-- [Phase 14]: 14-20 spec amendment: a daemon stall yields an unhealthy http-probe history entry after 3 consecutive failed probes (about 70-100 s), not for a single failed probe (D-08); replaces the UAT G-14-1 truth
-- [Phase 14]: 14-20: no logging change (log-pipe mechanism refuted); history outbox is in-memory only; pg pool max left at default with idle reaping off
-- [Phase 16]: [Phase 16-01]: Blocking env set stays exactly D-10; malformed-but-present DATABASE_URL/BETTER_AUTH_URL only warn
-- [Phase 16]: [Phase 16-01]: index.ts loads app.js via dynamic import after the env check; layering test walks static imports to keep lib/auth.ts unreachable
-- [Phase 16]: [Phase 16-02]: MIT license confirmed (Copyright (c) 2026 Docktor contributors, no CLA/DCO); docs links use interim GitHub style (DOCS_BASE_URL https://github.com/docktor-app/docks/blob/main); security/CoC contact info@raphael-muesseler.de; quickstart ref v0.1.0
-- [Phase 16]: 16-04: publish gate is reusable workflow_call (call-suppress-zero); bare major tag suppressed while major is 0; latest only on non-prerelease v* tags
-- [Phase 16]: 16-03: environment banner lives in AppLayout above the Outlet; dismissal is per-browser localStorage keyed code:variable with stale-key pruning
-- [Phase 16]: 16-05: CONTRIBUTING tells contributors BETTER_AUTH_URL=http://localhost:3000; Vite origin localhost:5173 is a default trusted origin
-- [Phase 16]: 16-05: design.md uses interim GitHub-style docs links (docks/blob/main) that must be rewritten when a docs site is hosted
-- [Phase 16]: 16-06: docs site lives in docktor-app/docks (VitePress 1.6.4 exact pin); site URL, project name and repo URLs are constants at the top of .vitepress/config.mts, DOCS_SITE_URL empty for the interim GitHub link style
-- [Phase 16]: 16-06: docs/deployment.md and docs/templates.md here are pointer pages; the deployment reference was re-verified against server/src and drops pre-release-only troubleshooting rows
-- [Phase 16]: [16-08] Backups guide documents actual behaviour: all backups go to <stack>/backups regardless of repository type; SFTP/S3 settings are labelled not used in v0.1.0 (README and docs/design.md still claim them; needs a decision)
-- [Phase 16]: [16-08] Guides omit features with no UI or no producer in v0.1.0 (backup abort, template repo removal, password change, Update Available activity entries)
-
-### Quick Tasks Completed
-
-| # | Description | Date | Commit | Status | Directory |
-| --- | ------------- | ------ | -------- | -------- | ----------- |
-| Q001 | Fix restic restore target path (Windows permission error) · Duration: 10 min | — | 75b8db2 | — | — |
-| Q002 | Fix restic to use relative paths for backup/restore · Duration: 20 min | — | c0302fa | — | — |
-| Q003 | Complete restore operation with stop/restore/deploy cycle · Duration: 30 min | — | 5f4839c | — | — |
-| 261007-e5k | Show Update Images button in upgrade dialog for non-moving tags (e.g. semver) without the moving-tag warning | 2026-10-07 | a428ab0 | — | [261007-e5k-show-update-images-button-in-upgrade-dia](./quick/261007-e5k-show-update-images-button-in-upgrade-dia/) |
+- [Roadmap v0.1.1]: Five phases (17-21), numbering continues from v0.1.0 which ended at Phase 16
+- [Roadmap v0.1.1]: STK-03 (hide Docktor's own stack from "Import existing stack") is grouped with MIG-01..04 in Phase 18, not with the server fixes in Phase 17, because both live on the brownfield import surface (`brownfield-import.tsx`, `BrownfieldScanner`, migration wizard)
+- [Roadmap v0.1.1]: UI-01, UI-06 and UI-07 form one phase (19): sidebar sections, Templates entry and version/links block share `app-sidebar.tsx` / `nav-user.tsx` and the collapsed + mobile constraints
+- [Roadmap v0.1.1]: A11Y-01 (44px touch targets) and DASH-01/02 ride with the visual-polish phase (20) because they touch the same call sites (data-table pagination, dashboard cards); `components/ui/` stays untouched, so sizing is applied at call sites
+- [Roadmap v0.1.1]: REL-01 is its own final phase (21) so the version bump, changelog and green-CI gate run after every other change lands on the branch
+- [Phase 17]: Remote restic repos are per-stack sub-repos (s3 <bucket>/<stackId>, sftp <repoPath>/<stackId>); remote config errors hard-fail via BadRequestError, never falling back to local
+- [Phase 17]: Plan 17-02: tier-3 port-conflict self-exclusion keyed on the deploying stack's own running containers (compose project = stack id), kept in pure domain function (D-06)
+- [Phase 17]: SSH state for restic SFTP lives in <stacksDir>/.docktor/ssh so the host pin persists across container recreation; key file is 0600 per run and removed in finally
+- [Phase 18]: 18-01: Own-stack exclusion is exact compose-file equality via Docktor's own bind mounts, fail-open with no name/image heuristic, filtered in OnboardingService.scan (D-01/D-02/D-03)
+- [Phase 18]: 18-02: brownfield request bodies fully replaced by shared Zod schemas; composePath confined to compose file names (T-18-05); computeUnifiedDiff is the only server diff generator (D-04)
+- [Phase 18]: migrate requires explicit backup and stopOldStack booleans with no schema default (D-12)
+- [Phase 18]: A failed old-stack stop aborts migration fail-closed; rollback only removes what Docktor created and restarts via docker compose start iff it stopped the stack
+- [Phase 18]: 18-04: migration dialog widened via sm:max-w-5xl; reveal-secrets state kept local to MigrationReviewStep so unmount resets the mask; env masking shared via client/src/lib/env-mask.ts
+- [Phase 18]: 18-05: Migration step transitions use PREVIOUS_STEP/NEXT_STEP records; stale previews guarded by a request-id ref (bumped on request, close, open=false, unmount)
+- [Phase 18]: 18-06: Only ENOENT on a bind-mount source means an empty volume; copy and other access errors roll back the migration
+- [Phase 18]: 18-06: migrate() = execute(await preflight()); refusals are typed BadRequestError/ConflictError, step failures stay success:false; target dir created exclusively and record deleted only when recordCreated
+- [Phase 18]: 18-08: ComposeRewriter edits the original text through yaml node-range splices (never stringify); env keeps map form with KEY: ${KEY}
+- [Phase 18]: 18-09: skippedDirectories stays the count and always equals skipped.length; per-root reasons (not_found incl. ENOTDIR, permission_denied, system_directory) live in skipped[]
+- [Phase 18]: 18-09: scan DTOs (DiscoveredStack with relativePaths, SkippedDirectory, ScanResult) declared once as Zod schemas in @docktor/shared; server scanner, port and client re-export them
+- [Phase 18]: 18-07: own-stack refusal lives in MigrationService.preflight (after empty-slug check) and OnboardingService.adoptInPlace via shared own-stack-guard; fail-open per D-02
+- [Phase 18]: 18-07: setup migrate routes use requireAdminAccount preHandler throwing BadRequestError; full session requirement after admin creation accepted as residual risk T-18-23
+- [Phase 18]: 18-10: kept relative mounts are copied to their own relative path (newPath = originalPath, convert true); warning wording avoids claiming backups miss kept data because restic backs up the whole stack directory
+- [Phase 18]: 18-10: stack directory mounts ('.') are keep-only and consume no ./volumes/ name; named volume names are reserved before bind-mount targets get -2/-3 suffixes
+- [Phase 18]: 18-11: a compose file is already managed when its directory equals a stack's hostPath (separator-normalised, exact); scan rows always carry managedStack and adopt/migrate refuse them with ConflictError after the own-stack check
+- [Phase 18]: 18-12: in-place migration forces the old-stack stop, renames the original aside (validated single-segment name, must not exist) and keeps it as the backup; rollback renames it back only into a free path, otherwise leaves it untouched with manual instructions
+- [Phase 18]: 18-12: migration preview now requires displayName and returns target; client previewMigration callers must send it (plan 18-15)
+- [Phase 18]: 18-14: migration operations are an in-memory process-local registry (finished pruned after 1 h, max 50); a restart ends running migrations anyway
+- [Phase 18]: 18-14: in-flight guard holds stack:<slug> and compose:<path> keys synchronously before preflight, released in finally on refusal or run end
+- [Phase 18]: 18-15: Aside name and backup choice held as nullable user edits (string|null, boolean|null) with derived effective values; Back and re-previews never clobber an explicit choice
+- [Phase 18]: 18-15: Separate migrations default backup off (G-18-7 supersedes D-07 default-on); off-state warning replaced by a neutral note naming the untouched original path
+- [Phase 18]: 18-15: In-place confirms with backup false and stopOldStack true; renamed original is the backup, no extra copy
+- [Phase 18]: 18-16: operation service takes the event bus as a trailing constructor parameter (default domainEventBus); rolling_back is reported first in the rollback catch; listener failures are isolated in MigrationService.report
+- [Phase 18]: 18-17: migration list is read on mount and on every EventSource open; stale/duplicate operation snapshots are dropped in useMigrationOperations (finished never back to running, running never to an earlier step)
+- [Phase 18]: 18-17: migration toasts are one sonner toast per operation id; description notes derive from the operation (backup, stopOldStack, keptOriginalAt) so they survive a reload
+- [Phase 18]: 18-18: copyDirectory uses archive-mode cp (merge form cp -a src/. dest for existing dirs); win32 fs.cp fallback only for CI
+- [Phase 18]: 18-19: bind sources are host paths; inside a container they are read only through Docktor's own bind mounts, unreadable selected sources are refused (400) in preflight/preview, only visible-but-absent sources become empty dirs (emptySources)
+- [Phase 18]: 18-19: all request-controlled paths (declared source, destinations, volume names) validated in preflight via copyDestinationViolations; execute keeps assertWithin as backstop
+- [Phase 18]: 18-20: extracted env names are allocated per value (KEY, SERVICE_KEY, SERVICE_KEY_n); Docktor process env, COMPOSE_/DOCKER_ names, compose-referenced names and conflicting old .env keys are never used
+- [Phase 18]: 18-20: old .env is read ENOENT-only in preview and execute; unreadable fails and rolls back
+- [Phase 18]: 18-21: empty bind-mount sources render as escaped code text in a warning Alert on the review step (break-all, dark variants); no note for an empty list
+- [Phase 18]: 18-22: directory identity (namespace-tagged host:/container: keys from spelling, realpath and own bind mounts) replaces path-string comparison for migration target classification and managed-stack detection; in-place originals are addressed through the writable stacks-folder spelling
+- [Phase 18]: 18-23: Docker events and reconcile of one compose project run in order under withKeyedLock('state-poller:<project>'); kill is no longer subscribed
+- [Phase 18]: 18-25: containers attributed to a stack by compose project AND compose directory via canonical identity; unlabelled containers and unknown mounts keep the project-only rule
+- [Phase 18]: 18-26: refuse (not auto-rename) a stop-off migration whose old and new stack share the compose project name; prediction follows .env COMPOSE_PROJECT_NAME, name:, directory
+- [Phase 19]: 19-01: sidebar section labels/order/items live only in sidebar-nav.ts; active state is segment-aware (no startsWith); mobile sheet closes via setOpenMobile(false) on nav Link click
+- [Phase 19]: /templates and /stacks/create/templates share TemplateBrowsePage; header variant derives from pathname
+- [Phase 19]: Zero-templates EmptyState suppressed when any repo has a lastSyncError (its alert explains the empty catalog)
+- [Phase 19]: Version comes from client/package.json via Vite/Vitest define (no request); docs link targets getdocktor.dev; collapsed rail uses one Info dropdown button
+- [Phase 20]: Status casing owned by formatStatusLabel in lib/status-labels.ts; badge files re-export (D-01/D-02)
+- [Phase 20]: Stack-name breadcrumb always links to the stack overview via shared StackBreadcrumb (D-12, UI-09)
+- [Phase 20]: 20-02: uncontrolled and controlled table sorting share one SortableHead; card layout in table-cards.tsx keeps Sort toolbar, expanded content and footer below md
+- [Phase 20]: 20-03: single TOUCH_TARGET (max-md:size-11) applied per site via cn(); pagination buttons moved to icon-sm so the constant overrides the same size property
+- [Phase 20]: 20-04: label-to-input gap stays 8px; FormStack is the single place to change the form rhythm; setup steps drop CardFooter for FormActions
+- [Phase 20]: 20-05: Geist Mono family name is 'Geist Mono Variable'; --font-mono token set in @theme inline, font self-hosted via @fontsource-variable/geist-mono 5.3.0
+- [Phase 20]: 20-06: stack tab bar extracted to StackTabBar; overflow-y-hidden + 4px padding wrapper, scrollIntoView optional-called (no global jsdom stub)
+- [Phase 20]: 20-07: hasBackup derived from completed MANUAL/SCHEDULED Backup rows via StackBackupReadRepo port; merged in listStacks only; StatCard hint prop is generic
+- [Phase 20]: 20-08: storage stacks fully migrated to DataTable with controlled sort and renderExpanded volume rows (no TableFrame fallback needed)
+- [Phase 20]: 20-09: certificate file fields use FormItem + Label inside FormStack so the shared 8px label gap applies
+- [Phase 20]: 20-09: dialog forms use FormStack + FormActions variant=dialog; backup-schedule switch rows shrink gap-3 to 8px under the descendant rule
+- [Phase 20]: 20-10: proxy aggregation stays in the consumer; incident scroll box wraps DataTable only when incidents exist
+- [Phase 20]: 20-11: third-party-host proof compares request hostnames because the dev client addresses its stubbed API on :3000; font file held to exact app origin
+- [Phase 20]: 20-11: compose save button keeps aria-label 'Save compose file'; only visible text became 'Save Compose File'
 
 ### Pending Todos
 
-*Re-synced against .planning/todos/pending/ on disk 2026-09-19 — all Phase 09-related items (deployment docs, prisma migrate, Windows CI runner + its follow-up platform-bugs todo, custom TLS certs) plus several older blockers/majors were confirmed closed (moved to completed/) and removed from this list, which had drifted out of sync with the real pending/ directory.*
-
-- [minor] Service status badges show "unknown" for up to 60s after every deploy — `.planning/todos/pending/2026-08-28-container-status-unknown-after-deploy.md`
-- [minor] Redesign UI/UX — service colors, tab layout, mobile support — `.planning/todos/pending/2026-08-28-redesign-ui-ux-service-colors-mobile.md`
-- [minor] Add a sophisticated compose YAML editor and env editor — `.planning/todos/pending/2026-08-28-add-yaml-env-editor.md`
-- [minor] Redesign dashboard with richer statistics — `.planning/todos/pending/2026-08-28-redesign-dashboard-statistics.md`
-- [minor] Audit frontend for reusable-component refactors — `.planning/todos/pending/2026-08-28-frontend-refactor-audit.md`
-- [minor] Add configurable docker-compose linting/formatting checks — `.planning/todos/pending/2026-08-28-configurable-compose-linting.md`
-- [minor] Restic is installed via apt, pinning it to a 3+ year old version (0.14.0) — `.planning/todos/pending/2026-08-28-restic-version-pinned-too-old.md`
-- [minor] No way to manually trigger an image update check (6h/N stagger blocks re-checks after a fix ships) — `.planning/todos/pending/2026-08-28-no-manual-update-check-trigger.md`
-- [minor] "Update available" only shown per-service, never at the stack level — `.planning/todos/pending/2026-08-28-update-available-badge-missing-at-stack-level.md`
-- [cosmetic] Stale ImageUpdateCheck rows never pruned when a service's tag changes — `.planning/todos/pending/2026-08-28-stale-imageupdatecheck-rows-never-pruned.md`
-- [minor] Upgrade dialog shows "not checked yet" for a moving-tag service that was actually checked — `.planning/todos/pending/2026-08-28-upgrade-dialog-wrong-message-for-moving-tags.md`
-- [minor] "Update available" badge shows even when there's no latestTag to point to — `.planning/todos/pending/2026-08-28-update-badge-shown-with-null-latest-tag.md`
-- [minor] Support authenticated/private container registries for update checking — `.planning/todos/pending/2026-08-28-support-authenticated-custom-registries.md`
-- [minor] Add live resource stats to stacks (CPU, memory, disk) — `.planning/todos/pending/2026-09-11-add-live-resource-stats-to-stacks-cpu-memory-disk.md`
-- [cosmetic] Add stack/service topology visualization — `.planning/todos/pending/2026-09-11-add-stack-and-service-topology-visualization.md`
+Product work is tracked in GitHub Issues (`docktor-app/docktor`), not `.planning/todos/`. The v0.1.0-era `.planning/todos/pending/` list is preserved in `.planning/milestones/v0.1.0-STATE.md`.
 
 ### Blockers/Concerns
 
-- Phase 1: StatePoller must skip stacks in transitional states (DEPLOYING, UPDATING, BACKING_UP, RESTORING, MIGRATING) — use optimistic locking on DB writes. [Phase 02-observability P08]: this skip is unconditional with no staleness/timeout recovery — deployStack()/updateImages() were hardened to always exit their transitional state on failure, but a stack wedged by any other future bug still has no self-heal path. See also the deferred SSE-broadcast and unknown-status todos, which are downstream of this same skip.
-- Phase 1: dockerode log stream on SSE client disconnect — RESOLVED in P06: request.raw.on('close', () => streams.forEach(s => s.destroy())) wired in /api/stacks/:id/logs route
-- Phase 4: S3/SFTP restic backend auth has non-trivial patterns — may need /gsd:research-phase during Phase 4 planning
-- Phase 6: NPM API is undocumented and version-sensitive — needs /gsd:research-phase before Phase 6 implementation begins
-- [Phase 02]: A fresh `docker compose up` could crash the server entirely on cold start — `BackupService.recoverInProgressBackups()` hitting the DB before it was ready (ECONNREFUSED) propagated through an unguarded `startJobs()`, taking down the whole process. RESOLVED 2026-08-30 (commit 302eaec): each job's startup is now individually try/caught, so one job failing no longer blocks the HTTP server or the other jobs.
-- [Phase 02]: `.env.example`'s `DOCKTOR_STACKS_DIR=./dev-data/stacks` silently overrides the correct docker-compose `/stacks` default via `.env.local`'s `env_file`, so app-created stacks can write to a non-persisted container path with no error. Not yet fixed (blocked on `.env*` file access in this session) — see `.planning/todos/pending/2026-08-30-env-example-stacks-dir-breaks-docker-compose.md`.
-- [Phase 02]: Code review + goal-backward verification flagged 3 non-blocking hygiene items, unresolved as of phase close: `routes/stacks.ts` bypasses `StackService` in a few GET handlers (layering violation, no correctness impact); `semver` is used directly but only resolves as a phantom transitive dependency; `update-checker.ts`'s `triggerUpdate()` is unreachable dead code with an unexplained `as any` cast. See `02-REVIEW.md` and `02-VERIFICATION.md` Anti-Patterns.
-- [Phase 02]: `config_error` still has no client-side UI indicator (only visible as an Event Log row) — confirmed still open by both UAT (test 18) and the UI audit (top priority fix). Deliberately out of Phase 02's scope; tracked as `.planning/todos/pending/2026-08-28-config-error-ui-indication-missing.md`. RESOLVED 2026-09-14 (Phase 08 plan 08-01): client handling and both indicators (destructive `Alert` on the detail page, red pill in the stack list) shipped in Phase 05.1 plan 05.1-06; the todo was closed in Phase 08 with live confirmation tracked as UAT item V6 — see `.planning/todos/completed/2026-08-28-config-error-ui-indication-missing.md`.
-- Server integration suite (yarn workspace @docktor/server test:integration) cannot be verified to exit 0 in a network-restricted execution environment — confirmed host-level TCP-to-Docker-published-port block. A human must confirm on an unrestricted machine. See 05.1-01-SUMMARY.md and WINDOWS.md entries #1/#2.
-- [Phase 05.1-03] The execution host for this project is shared with unrelated real running Docker workloads (confirmed: a real user Memos instance at /home/raphael/docker/memos, plus other unrelated stacks). A live 'docker compose up --remove-orphans' DooD verification test on 2026-09-02 used the project-name-colliding directory 'memos' and stopped+removed the real memos-server/memos-db containers as orphans before the collision was noticed; they were restored from their own compose file with no apparent data loss (bind-mounted data untouched, Postgres reused its existing database). Any future live docker-compose E2E test on this host MUST use a randomly-generated, collision-proof project/directory name — never a plain or example-derived name like 'memos', 'app', or 'test'. See 05.1-03-SUMMARY.md Issues Encountered for full details.
-- [Phase 05.1-05] A human (or an unrestricted execution environment) must run Task 3's live cold-start check (throwaway postgres:18 + built image with /var/run/docker.sock mounted, polling GET /api/setup/status) to confirm the applied/already-current happy path and close D3 coverage — see 05.1-05-SUMMARY.md Known Limitation
-- [Phase 05.1-06] yarn db:push could not reach the dev DB in this sandboxed session (same TCP-payload-block class as 05.1-01/05.1-05, now reconfirmed at the raw-socket level) — a human on an unrestricted host must run it to apply Stack.configError/lastEnvHash before this plan's server behavior is live. WINDOWS.md #8.
-- [Phase 05.1-08] Human-check item 5 from the plan's <verify> block (creating a stack with a relative bind-mount volume through the app's UI/API and confirming the data lands at the documented host path) was deliberately not re-exercised live in this session — it would run docker compose up -d --remove-orphans via Docktor's own deploy pipeline on the same shared host where 05.1-03's identical live test caused a real incident. A human should complete this check (and click through the setup wizard in a real browser) before treating the quickstart as fully proven. See 05.1-08-SUMMARY.md coverage D5 rationale.
-- [Phase 05.1-10] .env.example line 3 and .env.production line 12 still tell operators to copy the template to .env.local instead of .env — blocked on workspace permission settings denying Read/Bash/Write access to .env* paths. A developer with access must apply the two one-line header edits documented in 05.1-10-SUMMARY.md before G-05.1-2 is fully closed.
-- [Phase 06-01] Live dev-DB schema push (Task 2) and the new integration test (server/test/integration/proxy.test.ts) could not run in this sandboxed session — same documented host-level TCP-to-Docker-published-port block as 05.1-01/05.1-05/05.1-06. A developer on an unrestricted host must run: yarn dotenv -e .env.development -- prisma db push --accept-data-loss --config=server/prisma/prisma.config.ts && yarn db:generate, then verify via information_schema.columns, and separately run yarn workspace @docktor/server test:integration test/integration/proxy.test.ts
-- [Phase 06-03] Task 3 human-check (live proxy-stack deploy on host ports 80/443, docker ps/network ls confirmation, dashboard-hiding + stop/restart/delete-refusal check) not performed live in this session — execution host is shared with real unrelated Docker workloads and STATE.md documents a prior incident (05.1-03) where a live docker compose test on this host stopped real production containers. A human on a dedicated/verified-clear host must perform this before phase UAT closes.
-- [Phase 06-06] Task 2's human-check (fresh-install browser walkthrough of the 6-step wizard, confirming Skip deploys nothing and Deploy Proxy Stack with free ports 80/443 leaves two running proxy containers) not performed live in this session — same shared-host risk documented for 06-03's D-human-check. A human on a dedicated/verified-clear host must perform this before phase UAT closes.
-- [Phase 06-05] Full-suite yarn workspace @docktor/client test / playwright test runs are unreliable on this host right now (uptime showed load avg ~85 on 6 cores, swap nearly exhausted, ps aux confirmed unrelated resident SonarQube/Immich/MySQL/MariaDB/Postgres/Tandoor workloads) — 17 vitest failures and 2 Playwright failures observed this session were all in files this plan does not touch (pre-existing flake, same class documented in 06-04-SUMMARY.md). All of this plan's own new/changed test files pass reliably in isolation and small groups; see 06-05-SUMMARY.md Issues Encountered for the full breakdown.
-- [Phase 06-07] Human-check (live DB-backed re-run of test/integration/proxy.test.ts 'returns 400 for an invalid hostname' on an unrestricted host) still not performed — same pre-existing TCP-payload-block class as 05.1-01/05.1-05/05.1-06/06-01. All database-free unit tests (40 files, 616 passed, 2 todo) and tsc --noEmit pass cleanly; G-06-3 stays open pending this live confirmation.
-- [Phase 09-02] cross-platform-unit (windows-latest) required-status-check history: RESOLVED — confirmed live green (all four jobs, including both platform matrices) by the 09-VERIFICATION.md goal-backward pass on 2026-09-19 (gh run view on the latest run). The 3 platform bugs that caused the original failure were fixed in a prior session (see git history: e470278, 12dcf58, 5c0d63a).
-- [Phase 09-03] Fresh-database migrate-deploy path: RESOLVED 2026-09-19 — live cold-start UAT (a genuine docker-compose deployment, Postgres volume cleared) found a real bug (schema-sync.ts's `prisma migrate deploy` silently created zero tables because `prisma.config.ts` never set `migrations.path`), fixed in commit 374b46b, and re-verified live: both `0_init` and `add_certificate` applied cleanly. **Still open:** the separate `db push`-era upgrade/auto-baseline branch (`needsBaseline`+`hasApplicationTables`→`migrate resolve --applied`) remains unexercised live — no such pre-migration install exists to test against yet. Tracked as WINDOWS.md entry #10, deliberately deferred by the developer in 09-UAT.md tests 12/26 as low-risk until a real v1.0.0 upgrade scenario exists.
-- [Phase 09-05] certSource='acme' backfill: same status as 09-03 above — the migration itself now applies live and cleanly (confirmed 2026-09-19), but the backfill onto *pre-existing* ProxyConfig rows (the upgrade scenario) is still unverified since no pre-09-05 database exists to backfill. Tracked as WINDOWS.md entry #11, same deferred status as #10.
-- [Phase 09-06] Live end-to-end certificate-on-disk placement: RESOLVED 2026-09-19 — developer confirmed live via 09-UAT.md test 33 against a real instance with a real domain.
-- [Phase 09-08] Custom-certificate feature live end-to-end (real nginx-proxy/acme-companion, real HTTPS, no ACME issuance attempt): RESOLVED 2026-09-19 — developer confirmed live via 09-UAT.md tests 39/46 against the same real instance. WINDOWS.md entry #12 can be closed; #10/#11 (the db-push upgrade path specifically) remain the only open Phase 09 live-verification gap.
-- [Phase 09, live UAT 2026-09-19] Also found and fixed: `server/src/lib/auth.ts`'s `trustedOrigins` never read the Settings/wizard "Base URL" field, so setting it through the setup wizard silently did nothing — users following the documented setup flow hit an unexplained "Invalid origin" login failure on a real deployment. Fixed in commit a5bfeaf to merge BETTER_AUTH_URL (env) and the Settings baseUrl (DB) dynamically, per-request, no restart required. Unit tested (server/test/unit/lib/auth.test.ts).
-- [Phase 09, live UAT 2026-09-19] Also found: `.env.example` never documents `POSTGRES_PASSWORD` even though `docker-compose.yml`'s own comment says to set it there and the `db` container refuses to boot without it — not yet filed as a todo or fixed; worth a follow-up.
-- [Phase 12-09] New Playwright templates.spec.ts (tracer + multi-variant dialog + no-match search + repo-sync-error/Retry) was written per plan but not executed in this session per the orchestrator's resource_constraint (no Playwright/integration suites on this host). All unit `<verify>` commands and tsc -b ran clean (31/31 tests). Tracked as WINDOWS.md entry #19 — a developer/CI must run PLAYWRIGHT_PORT=5215 yarn workspace @docktor/client test:integration templates.spec.ts to confirm these live.
-- [Phase 08-03] yarn workspace @docktor/client test:unit showed 5 unrelated test files (proxy-tab.test.tsx, certificates-card.test.tsx, service-upgrade-dialog.test.tsx, stack-actions.test.tsx, stack-detail-page.test.tsx) timing out at 15000ms under severe host contention (uptime load avg 86, swap exhausted) — same pre-existing flake class as Phase 06-05/08-01; touch this plans scope; this plans own two test files pass 28/28 in isolation. A human should re-confirm the full suite on an unloaded host.
-- 16-04: GitHub Actions in publish.yml/ci.yml are on major tags (PIN-PENDING); resolve full commit SHAs before the 16-09 release candidate (gh api was denied in-session)
-- 16-07 pending: record docs/assets/docktor-demo.gif, dashboard.png, stack-detail.png, backups.png (README links 404 until then); also fix 3 stale docs/deployment.md comments in server/src/lib/environment-check.ts (lines 96, 125, 166)
+- Docs site (`docktor-app/docks`) Backups guide labels SFTP/S3 settings "not used in v0.1.0" (16-08 decision); README and `docs/design.md` claim they work. Update after Phase 17 ships BKP-01. Outside this repo.
+- The execution host is shared with real unrelated Docker workloads: run no heavy local actions (full `tsc --build`, integration tests, Playwright, full builds); GitHub Actions CI runs them. Any live `docker compose` test must use a collision-proof, randomly generated project/directory name (05.1-03 incident).
+- Older open concerns (db-push upgrade-path live verification, GitHub Actions SHA pinning, README screenshots/GIF still to record) are recorded in `.planning/milestones/v0.1.0-STATE.md`.
 
-### Roadmap Evolution
+## Deferred Items
 
-- Phase 05.1 inserted after Phase 5: Stabilization phase for 11 bugs/gaps found during testing (4 blockers, 6 majors, 1 minor: restic version pin) — inserted before Phase 6 (Proxy Configuration) (URGENT)
-- Phase 7 added: Release Hardening — Data Safety and Core Workflows (backup-wedge bug, unreachable brownfield import, bind-mount safety check)
-- Phase 8 added: Live State Consistency (config_error UI indicator, config-changed badge on env edits, SSE broadcasts on manual actions)
-- Phase 9 added: Deployment and Release Readiness (deployment docs cleanup, prisma migrate adoption, CI Windows runner, custom TLS certs)
-- Phase 10 added: UX Redesign (service colors/log-viewer, stack detail tabs, mobile support, dashboard stats, compose/env editors, component reuse audit) — user explicitly wants this fixed for v1.0.0 despite `minor` severity classification. Excludes configurable-compose-linting (unrelated backend validation, per its own todo text).
-- Reviewed all 25 remaining `.planning/todos/pending/` items for v1.0.0 scope (2026-09-11): 3 stale "blocker" todos closed (already fixed by Phase 05.1 — DooD bind-mount, integration-test CLI resolution, startup schema-sync). Of the 10 `major`-severity items, user chose to promote all 10 into Phases 7-9 above as release-blocking. The 13 `minor` + 2 `cosmetic` items (UI redesigns, dashboard stats, registry auth, badge polish, topology viz) remain in the todo backlog as v1.1+ candidates, not release-blocking.
+Items acknowledged and deferred at milestone close, most recent first:
+
+| Category | Item | Status | Deferred At | Milestone |
+|----------|------|--------|-------------|-----------|
+| Demo | Public demo instance that resets hourly (#53) | Open in GitHub Issues | v0.1.0 close | v0.1.0 |
+| Backlog | Phase 999.1: container-name variable follow-up from Phase 12 UAT | Backlog | 2026-10-04 | v0.1.0 |
+| Features | Remote backups feature (#81), warning suppression (#83), WebSocket proxy (#86), uptime reset (#84), fresh template images (#82), YAML checks (#77), password reset (#79), OIDC (#87), structured logging (#70) | Future requirements (see REQUIREMENTS.md) | 2026-10-14 | v0.1.1 |
 
 ## Session Continuity
 
-Last session: 2026-10-11T22:03:02.774Z
-Stopped at: Completed 16-08-PLAN.md
+Last session: 2026-10-21T04:04:27.375Z
+Stopped at: Phase 21 complete — all phases complete
 Resume file: None

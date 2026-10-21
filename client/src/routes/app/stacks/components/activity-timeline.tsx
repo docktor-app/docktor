@@ -8,6 +8,7 @@ import {Button} from "@/components/ui/button";
 import {ToneBadge} from "@/components/common/tone-badge";
 import {StackStatusBadge} from "@/components/domain/stack/stack-status-badge";
 import {describeStackEvent} from "@/lib/stack-event-description";
+import {formatStatusLabel} from "@/lib/status-labels";
 import {filterTimeline, type TimelineEntry, type TimelineFilter} from "@/hooks/use-stack-timeline";
 
 export interface ActivityTimelineProps {
@@ -127,7 +128,9 @@ function TimelineEntryBody({entry}: Readonly<{entry: TimelineEntry}>) {
         return (
             <span className="flex min-w-0 flex-wrap items-center gap-1.5">
                 <span className="min-w-0 break-words text-sm">
-                    {entry.fromStatus ? `${entry.fromStatus} → ${entry.toStatus}` : entry.toStatus}
+                    {entry.fromStatus
+                        ? `${formatStatusLabel(entry.fromStatus)} → ${formatStatusLabel(entry.toStatus)}`
+                        : formatStatusLabel(entry.toStatus)}
                 </span>
                 <StackStatusBadge status={entry.toStatus} display="compact"/>
                 {entry.message && (

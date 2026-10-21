@@ -20,8 +20,11 @@ describe("describeServiceUpdate", () => {
 describe("ServiceUpdateBadge", () => {
     it("renders the concrete-tag copy in the blue tone", () => {
         render(<ServiceUpdateBadge updateAvailable={true} latestTag="1.2.3" />);
-        const badge = screen.getByText("Update available → 1.2.3");
+        const tag = screen.getByText("1.2.3");
+        const badge = tag.closest("[data-tone]");
         expect(badge).toHaveAttribute("data-tone", "blue");
+        expect(badge).toHaveTextContent("Update available → 1.2.3");
+        expect(tag).toHaveClass("font-mono");
     });
 
     it('renders "Content updated" when there is no latestTag', () => {

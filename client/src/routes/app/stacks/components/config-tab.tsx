@@ -60,7 +60,7 @@ export function ConfigTab({files, stackName}: Readonly<ConfigTabProps>) {
                             onClick={files.saveCompose}
                         >
                             <Save className="h-4 w-4 mr-1" />
-                            Save
+                            Save Compose File
                         </Button>
                     </SectionActions>
                 </SectionHeader>

@@ -15,14 +15,16 @@ import {
     uploadCertificate,
     type Certificate,
 } from "@/lib/certificates-api";
+import {DataTable, type TableColumn} from "@/components/common/data/table";
+import {FormActions, FormStack} from "@/components/common/form-layout";
+import {ToneBadge} from "@/components/common/tone-badge";
+import {TOUCH_TARGET} from "@/lib/touch-target";
 import {Card, CardContent, CardHeader, CardTitle} from "@/components/ui/card";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {Label} from "@/components/ui/label";
-import {Badge} from "@/components/ui/badge";
 import {Skeleton} from "@/components/ui/skeleton";
 import {Alert, AlertDescription} from "@/components/ui/alert";
-import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from "@/components/ui/table";
 import {Form, FormControl, FormField, FormItem, FormLabel, FormMessage} from "@/components/ui/form";
 import {
     AlertDialog,
@@ -45,6 +47,15 @@ function isExpiringSoon(expiresAt: string | null): boolean {
     const msUntilExpiry = new Date(expiresAt).getTime() - Date.now();
     const daysUntilExpiry = msUntilExpiry / (1000 * 60 * 60 * 24);
     return daysUntilExpiry <= CERTIFICATE_EXPIRY_WARNING_DAYS;
+}
+
+function ExpiryCell({expiresAt}: Readonly<{expiresAt: string | null}>): React.JSX.Element {
+    return (
+        <div className="flex items-center gap-2">
+            <span>{formatExpiry(expiresAt)}</span>
+            {isExpiringSoon(expiresAt) && <ToneBadge tone="yellow">Expiring soon</ToneBadge>}
+        </div>
+    );
 }
 
 // This is a new directory: settings.tsx is a CLAUDE.md-listed refactoring
@@ -167,6 +178,34 @@ export function CertificatesCard() {
         }
     }
 
+    const certificateColumns: TableColumn<Certificate>[] = [
+        {
+            name: "Domain Pattern",
+            isKey: true,
+            className: "font-mono text-xs",
+            render: (cert) => cert.domainPattern,
+        },
+        {
+            name: "Expires",
+            render: (cert) => <ExpiryCell expiresAt={cert.expiresAt} />,
+        },
+        {
+            name: "Actions",
+            hideHeader: true,
+            render: (cert) => (
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className={TOUCH_TARGET}
+                    aria-label={`Delete ${cert.domainPattern}`}
+                    onClick={() => setDeleteTarget(cert)}
+                >
+                    <Trash2 className="h-4 w-4" />
+                </Button>
+            ),
+        },
+    ];
+
     return (
         <>
             <Card>
@@ -194,51 +233,15 @@ export function CertificatesCard() {
                                 </Button>
                             </AlertDescription>
                         </Alert>
-                    ) : certificates === null || certificates.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">
-                            No certificates uploaded yet. Once you upload one here, it becomes available to
-                            select as a domain's certificate source when assigning a domain to a service.
-                        </p>
                     ) : (
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Domain Pattern</TableHead>
-                                    <TableHead>Expires</TableHead>
-                                    <TableHead />
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {certificates.map((cert) => (
-                                    <TableRow key={cert.id}>
-                                        <TableCell>{cert.domainPattern}</TableCell>
-                                        <TableCell>
-                                            <div className="flex items-center gap-2">
-                                                <span>{formatExpiry(cert.expiresAt)}</span>
-                                                {isExpiringSoon(cert.expiresAt) && (
-                                                    <Badge
-                                                        variant="outline"
-                                                        className="text-amber-600 dark:text-amber-400 border-amber-300 dark:border-amber-800"
-                                                    >
-                                                        Expiring soon
-                                                    </Badge>
-                                                )}
-                                            </div>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                aria-label={`Delete ${cert.domainPattern}`}
-                                                onClick={() => setDeleteTarget(cert)}
-                                            >
-                                                <Trash2 className="h-4 w-4" />
-                                            </Button>
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
+                        <DataTable
+                            data={certificates ?? []}
+                            columns={certificateColumns}
+                            getRowKey={(cert) => cert.id}
+                            pagination={false}
+                            emptyMessage="No certificates uploaded yet"
+                            emptyDescription="Upload one to use it as a domain's certificate source when assigning a domain to a service."
+                        />
                     )}
 
                     {deleteError && (
@@ -249,81 +252,85 @@ export function CertificatesCard() {
                     )}
 
                     <Form {...form}>
-                        <form onSubmit={form.handleSubmit(handleUpload)} className="space-y-4 border-t pt-4">
-                            <FormField
-                                control={form.control}
-                                name="domainPattern"
-                                render={({field}) => (
-                                    <FormItem>
-                                        <FormLabel className="font-semibold">Domain Pattern</FormLabel>
-                                        <FormControl>
-                                            <Input {...field} placeholder="*.example.com" />
-                                        </FormControl>
-                                        <p className="text-xs text-muted-foreground">
-                                            A leading wildcard label is allowed — one wildcard certificate
-                                            covers every subdomain under it.
-                                        </p>
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
-                            />
-
-                            <div className="space-y-1">
-                                <Label htmlFor="certificate-file" className="font-semibold">
-                                    Certificate File
-                                </Label>
-                                <Input
-                                    id="certificate-file"
-                                    type="file"
-                                    ref={certFileInputRef}
-                                    onChange={(e) => setCertFile(e.target.files?.[0] ?? null)}
+                        <form onSubmit={form.handleSubmit(handleUpload)} className="border-t pt-4">
+                            <FormStack>
+                                <FormField
+                                    control={form.control}
+                                    name="domainPattern"
+                                    render={({field}) => (
+                                        <FormItem>
+                                            <FormLabel className="font-semibold">Domain Pattern</FormLabel>
+                                            <FormControl>
+                                                <Input {...field} placeholder="*.example.com" />
+                                            </FormControl>
+                                            <p className="text-xs text-muted-foreground">
+                                                A leading wildcard label is allowed — one wildcard certificate
+                                                covers every subdomain under it.
+                                            </p>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
                                 />
-                                {certFileError && (
-                                    <p className="text-sm text-destructive">{certFileError}</p>
+
+                                <FormItem>
+                                    <Label htmlFor="certificate-file" className="font-semibold">
+                                        Certificate File
+                                    </Label>
+                                    <Input
+                                        id="certificate-file"
+                                        type="file"
+                                        ref={certFileInputRef}
+                                        onChange={(e) => setCertFile(e.target.files?.[0] ?? null)}
+                                    />
+                                    {certFileError && (
+                                        <p className="text-sm text-destructive">{certFileError}</p>
+                                    )}
+                                </FormItem>
+
+                                <FormItem>
+                                    <Label htmlFor="private-key-file" className="font-semibold">
+                                        Private Key File
+                                    </Label>
+                                    <Input
+                                        id="private-key-file"
+                                        type="file"
+                                        ref={keyFileInputRef}
+                                        onChange={(e) => setKeyFile(e.target.files?.[0] ?? null)}
+                                    />
+                                    {keyFileError && (
+                                        <p className="text-sm text-destructive">{keyFileError}</p>
+                                    )}
+                                </FormItem>
+
+                                <FormItem>
+                                    <Label htmlFor="ca-bundle-file" className="font-semibold">
+                                        CA Bundle (optional)
+                                    </Label>
+                                    <Input
+                                        id="ca-bundle-file"
+                                        type="file"
+                                        ref={bundleFileInputRef}
+                                        onChange={(e) => setBundleFile(e.target.files?.[0] ?? null)}
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        Only needed when the issuer supplied a separate intermediate/CA chain
+                                        file — Docktor combines it with the certificate for you.
+                                    </p>
+                                </FormItem>
+
+                                {uploadError && (
+                                    <Alert variant="destructive">
+                                        <AlertTriangle className="h-4 w-4" />
+                                        <AlertDescription>{uploadError}</AlertDescription>
+                                    </Alert>
                                 )}
-                            </div>
 
-                            <div className="space-y-1">
-                                <Label htmlFor="private-key-file" className="font-semibold">
-                                    Private Key File
-                                </Label>
-                                <Input
-                                    id="private-key-file"
-                                    type="file"
-                                    ref={keyFileInputRef}
-                                    onChange={(e) => setKeyFile(e.target.files?.[0] ?? null)}
-                                />
-                                {keyFileError && (
-                                    <p className="text-sm text-destructive">{keyFileError}</p>
-                                )}
-                            </div>
-
-                            <div className="space-y-1">
-                                <Label htmlFor="ca-bundle-file" className="font-semibold">
-                                    CA Bundle (optional)
-                                </Label>
-                                <Input
-                                    id="ca-bundle-file"
-                                    type="file"
-                                    ref={bundleFileInputRef}
-                                    onChange={(e) => setBundleFile(e.target.files?.[0] ?? null)}
-                                />
-                                <p className="text-xs text-muted-foreground">
-                                    Only needed when the issuer supplied a separate intermediate/CA chain
-                                    file — Docktor combines it with the certificate for you.
-                                </p>
-                            </div>
-
-                            {uploadError && (
-                                <Alert variant="destructive">
-                                    <AlertTriangle className="h-4 w-4" />
-                                    <AlertDescription>{uploadError}</AlertDescription>
-                                </Alert>
-                            )}
-
-                            <Button type="submit" disabled={uploading}>
-                                {uploading ? "Uploading..." : "Upload Certificate"}
-                            </Button>
+                                <FormActions>
+                                    <Button type="submit" disabled={uploading}>
+                                        {uploading ? "Uploading..." : "Upload Certificate"}
+                                    </Button>
+                                </FormActions>
+                            </FormStack>
                         </form>
                     </Form>
                 </CardContent>

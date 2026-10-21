@@ -137,9 +137,25 @@ describe("ActivityTimeline", () => {
             />,
         );
 
-        expect(screen.getByText("DEPLOYING → RUNNING")).toBeInTheDocument();
+        expect(screen.getByText("deploying → running")).toBeInTheDocument();
         expect(screen.getByText("container healthy")).toBeInTheDocument();
-        expect(screen.getByText("Running")).toBeInTheDocument();
+        expect(screen.getByText("running")).toBeInTheDocument();
+    });
+
+    it("renders a status entry without a previous status as the lowercase target status only", () => {
+        const entries = buildTimeline([], [makeStatusLog({fromStatus: null, toStatus: "BACKING_UP"})], null);
+
+        render(
+            <ActivityTimeline
+                entries={entries}
+                eventsLoading={false}
+                eventsError={null}
+                onRetryEvents={vi.fn()}
+            />,
+        );
+
+        expect(screen.getAllByText("backing up").length).toBeGreaterThan(0);
+        expect(screen.queryByText("BACKING_UP")).not.toBeInTheDocument();
     });
 
     it("filters entries by type via the 'Filter activity by type' select", async () => {

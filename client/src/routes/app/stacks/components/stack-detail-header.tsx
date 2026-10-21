@@ -1,15 +1,7 @@
-import {Link} from "react-router";
 import {RefreshCw} from "lucide-react";
 import {cn} from "@/lib/utils";
-import {
-    Breadcrumb,
-    BreadcrumbItem,
-    BreadcrumbLink,
-    BreadcrumbList,
-    BreadcrumbPage,
-    BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
 import {PageActions, PageDescription, PageHeader, PageTitle} from "@/components/common/layout/page";
+import {StackBreadcrumb} from "@/components/domain/stack/stack-breadcrumb";
 import {StackStatusBadge} from "@/components/domain/stack/stack-status-badge";
 import {StackUpdateBadge} from "@/components/domain/stack/stack-update-badge";
 import {TemplateUpdatedBadge} from "@/components/domain/stack/template-updated-badge";
@@ -24,35 +16,20 @@ export interface StackDetailHeaderProps {
     readonly onAction: () => void;
 }
 
-// The stack detail page's header block — breadcrumb (with tab context
-// preserved), title/description, and the status/actions row. D-09: the
+// The stack detail page's header block — breadcrumb (the stack name returns
+// to the overview, D-12; the tab label is the current page), title/description,
+// and the status/actions row. D-09: the
 // stack-level "update available" pill sits immediately after
 // StackStatusBadge inside the same flex-wrap container.
 export function StackDetailHeader({stack, activeTab, isRefreshing, onAction}: Readonly<StackDetailHeaderProps>) {
     return (
         <PageHeader
             breadcrumbs={
-                <Breadcrumb>
-                    <BreadcrumbList>
-                        <BreadcrumbItem>
-                            <BreadcrumbLink asChild>
-                                <Link to="/stacks">Stacks</Link>
-                            </BreadcrumbLink>
-                        </BreadcrumbItem>
-                        <BreadcrumbSeparator/>
-                        <BreadcrumbItem>
-                            <BreadcrumbLink asChild>
-                                <Link to={`/stacks/${stack.id}${activeTab !== "overview" ? `/${activeTab}` : ""}`}>
-                                    {stack.displayName}
-                                </Link>
-                            </BreadcrumbLink>
-                        </BreadcrumbItem>
-                        <BreadcrumbSeparator/>
-                        <BreadcrumbItem>
-                            <BreadcrumbPage>{STACK_TAB_LABELS[activeTab]}</BreadcrumbPage>
-                        </BreadcrumbItem>
-                    </BreadcrumbList>
-                </Breadcrumb>
+                <StackBreadcrumb
+                    stackId={stack.id}
+                    stackName={stack.displayName}
+                    current={STACK_TAB_LABELS[activeTab]}
+                />
             }
         >
             <div>

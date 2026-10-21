@@ -1,4 +1,5 @@
 import {EventEmitter} from "node:events"
+import type {MigrationOperation} from "@docktor/shared"
 
 export interface ContainerStateEvent {
     type: "container_state"
@@ -66,6 +67,11 @@ export interface ProxyCertStatusEvent {
     message?: string
 }
 
+export interface MigrationProgressEvent {
+    type: "migration_progress"
+    operation: MigrationOperation
+}
+
 export type StateEvent =
     | ContainerStateEvent
     | StackStatusEvent
@@ -74,6 +80,7 @@ export type StateEvent =
     | UpdateAvailableEvent
     | NotificationCreatedEvent
     | ProxyCertStatusEvent
+    | MigrationProgressEvent
 
 export class StateBroadcaster extends EventEmitter {
     publish(event: StateEvent): void {

@@ -105,6 +105,12 @@ function createMockStateCatchUp() {
     };
 }
 
+function createMockBackups() {
+    return {
+        findStackIdsWithSnapshot: vi.fn().mockResolvedValue(new Set<string>()),
+    };
+}
+
 describe("toStackSizeDto (RESEARCH Finding 5)", () => {
     it("converts BigInt sizes to numbers and keeps null", () => {
         const dto = toStackSizeDto({id: "a", volumeSizeBytes: 1_050_624n, backupSizeBytes: null});
@@ -133,6 +139,7 @@ describe("StackService", () => {
     let reviewer: ReturnType<typeof createMockReviewer>;
     let preflight: ReturnType<typeof createMockPreflight>;
     let stateCatchUp: ReturnType<typeof createMockStateCatchUp>;
+    let backups: ReturnType<typeof createMockBackups>;
 
     beforeEach(() => {
         repo = createMockRepo();
@@ -145,7 +152,8 @@ describe("StackService", () => {
         reviewer = createMockReviewer();
         preflight = createMockPreflight();
         stateCatchUp = createMockStateCatchUp();
-        service = new StackService(repo as any, fs as any, docker as any, events as any, bus as any, settings as any, updateChecks as any, reviewer as any, preflight as any, stateCatchUp as any);
+        backups = createMockBackups();
+        service = new StackService(repo as any, fs as any, docker as any, events as any, bus as any, settings as any, updateChecks as any, reviewer as any, preflight as any, stateCatchUp as any, backups as any);
     });
 
     describe("createStack", () => {
@@ -346,7 +354,7 @@ describe("StackService", () => {
 
             const result = await service.listStacks();
 
-            expect(result).toEqual([allStacks[0]]);
+            expect(result).toEqual([{...allStacks[0], hasBackup: false}]);
         });
 
         it("includes protected stacks when showInDashboard is true", async () => {
@@ -355,7 +363,7 @@ describe("StackService", () => {
 
             const result = await service.listStacks();
 
-            expect(result).toEqual(allStacks);
+            expect(result).toEqual(allStacks.map((stack) => ({...stack, hasBackup: false})));
         });
 
         it("serves BigInt disk sizes as JSON-serializable numbers (RESEARCH Finding 5)", async () => {
@@ -458,6 +466,42 @@ describe("StackService", () => {
             expect(updateChecks.findByImageRefs).toHaveBeenCalledTimes(1);
             const refsArg = updateChecks.findByImageRefs.mock.calls[0]![0] as string[];
             expect(new Set(refsArg)).toEqual(new Set(["nginx:1.2.0", "redis:7"]));
+        });
+
+        it("marks hasBackup true only for stacks whose id is in the snapshot set (D-04)", async () => {
+            repo.findAll.mockResolvedValue([
+                {id: "my-app", displayName: "My App", isProtected: false, services: [], ...NO_SIZES},
+                {id: "other-app", displayName: "Other App", isProtected: false, services: [], ...NO_SIZES},
+            ]);
+            settings.getProxySettings.mockResolvedValue({acmeEmail: "", showInDashboard: true});
+            backups.findStackIdsWithSnapshot.mockResolvedValue(new Set(["my-app"]));
+
+            const result = await service.listStacks();
+
+            expect(result.find((s) => s.id === "my-app")!.hasBackup).toBe(true);
+            expect(result.find((s) => s.id === "other-app")!.hasBackup).toBe(false);
+        });
+
+        it("calls findStackIdsWithSnapshot exactly once per listStacks() call (no N+1)", async () => {
+            repo.findAll.mockResolvedValue([
+                {id: "a", displayName: "A", isProtected: false, services: [], ...NO_SIZES},
+                {id: "b", displayName: "B", isProtected: false, services: [], ...NO_SIZES},
+            ]);
+            settings.getProxySettings.mockResolvedValue({acmeEmail: "", showInDashboard: true});
+
+            await service.listStacks();
+
+            expect(backups.findStackIdsWithSnapshot).toHaveBeenCalledTimes(1);
+        });
+
+        it("keeps a hidden protected stack absent even when it has a snapshot (T-20-11)", async () => {
+            repo.findAll.mockResolvedValue(allStacks);
+            settings.getProxySettings.mockResolvedValue({acmeEmail: "", showInDashboard: false});
+            backups.findStackIdsWithSnapshot.mockResolvedValue(new Set(["docktor-proxy", "my-app"]));
+
+            const result = await service.listStacks();
+
+            expect(result.map((s) => s.id)).toEqual(["my-app"]);
         });
 
         it("excludes a protected stack's services from the batched lookup when showInDashboard is false", async () => {

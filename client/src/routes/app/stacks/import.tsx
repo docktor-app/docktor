@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import {Page, PageContent, PageHeader, PageTitle} from "@/components/common/layout/page";
 import {BrownfieldImport} from "@/components/domain/stack/brownfield-import";
-import {scanDirectories, adoptStack, previewMigration, executeMigration} from "@/lib/import-api";
+import {scanDirectories, adoptStack, previewMigration, executeMigration, listMigrationOperations} from "@/lib/import-api";
 
 // Post-setup entry point for brownfield scan/adopt/migrate (todo item M6).
 // No wizard footer — adopting or migrating a stack is complete on its own,
@@ -40,7 +40,7 @@ export default function ImportStackPage() {
 
       <PageContent>
         <BrownfieldImport
-          api={{scanDirectories, adoptStack, previewMigration, executeMigration}}
+          api={{scanDirectories, adoptStack, previewMigration, executeMigration, listMigrationOperations}}
         />
       </PageContent>
     </Page>

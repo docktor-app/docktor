@@ -1,5 +1,7 @@
 import {useEffect, useRef} from "react"
 
+import type {MigrationOperation} from "@docktor/shared"
+
 export interface ContainerStateEvent {
     type: "container_state"
     stackId: string
@@ -58,21 +60,46 @@ export interface ProxyCertStatusEvent {
     proxyConfigId: string
     stackId: string
     domain: string
-    status: "pending" | "issued" | "failed"
+    status: "pending" | "issued" | "failed" | "expiring"
     message?: string
 }
 
-export type StateEvent = ContainerStateEvent | StackStatusEvent | ConfigChangedEvent | ConfigErrorEvent | UpdateAvailableEvent | NotificationCreatedEvent | ProxyCertStatusEvent
+// Structurally identical to server/src/lib/state-broadcaster.ts's
+// MigrationProgressEvent (G-18-job) — the operation is the shared
+// MigrationOperation snapshot, so the mirror cannot drift from the REST shape.
+export interface MigrationProgressEvent {
+    type: "migration_progress"
+    operation: MigrationOperation
+}
+
+export type StateEvent = ContainerStateEvent | StackStatusEvent | ConfigChangedEvent | ConfigErrorEvent | UpdateAvailableEvent | NotificationCreatedEvent | ProxyCertStatusEvent | MigrationProgressEvent
 
 const BASE = globalThis.location?.port === "5173" ? "http://localhost:3000" : ""
 
-export function useContainerEvents(onEvent: (event: StateEvent) => void) {
+interface UseContainerEventsOptions {
+    /** Called each time the connection opens, the first time and after every automatic reconnect. */
+    onOpen?: () => void
+}
+
+export function useContainerEvents(onEvent: (event: StateEvent) => void, options?: UseContainerEventsOptions) {
     const handler = useRef(onEvent)
     handler.current = onEvent
+    const onOpen = useRef(options?.onOpen)
+    onOpen.current = options?.onOpen
 
     useEffect(() => {
         const es = new EventSource(`${BASE}/api/events`, {withCredentials: true})
-        es.onmessage = (e) => handler.current(JSON.parse(e.data))
+        es.onopen = () => onOpen.current?.()
+        es.onmessage = (e) => {
+            let event: StateEvent
+            try {
+                event = JSON.parse(e.data)
+            } catch {
+                // A malformed frame must not break the stream; the next frame is independent.
+                return
+            }
+            handler.current(event)
+        }
         es.onerror = () => {} // Native EventSource auto-reconnects
         return () => es.close()
     }, [])

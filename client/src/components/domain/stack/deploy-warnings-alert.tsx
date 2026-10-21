@@ -16,7 +16,7 @@ function describeHolder(holder: PortHolder, portLabel: string) {
     if (holder.kind === "stack") {
         return (
             <>
-                Port {portLabel} is already in use by{" "}
+                Port <code className="font-mono">{portLabel}</code> is already in use by{" "}
                 <Link to={`/stacks/${holder.stackId}`} className="font-semibold underline underline-offset-2">
                     {holder.stackDisplayName}
                 </Link>
@@ -25,17 +25,17 @@ function describeHolder(holder: PortHolder, portLabel: string) {
         );
     }
     if (holder.kind === "container") {
-        return <>Port {portLabel} is already in use by container {holder.containerName}.</>;
+        return <>Port <code className="font-mono">{portLabel}</code> is already in use by container <code className="font-mono">{holder.containerName}</code>.</>;
     }
     if (holder.kind === "process") {
         return (
             <>
-                Port {portLabel} is already in use by {holder.processName}
+                Port <code className="font-mono">{portLabel}</code> is already in use by {holder.processName}
                 {holder.pid != null ? ` (PID ${holder.pid})` : ""}.
             </>
         );
     }
-    return <>Port {portLabel} is already in use by another process.</>;
+    return <>Port <code className="font-mono">{portLabel}</code> is already in use by another process.</>;
 }
 
 /**

@@ -348,9 +348,9 @@ test.describe("Stacks", () => {
         await expect(page.getByRole("heading", {name: "My App"})).toBeVisible();
         await expect(page.getByText("A test application")).toBeVisible();
         // Scoped to the header: the Overview tab's activity timeline (11-06) also renders a
-        // compact "Running" status badge for the seeded DRAFT->RUNNING status-log entry, so an
+        // compact "running" status badge for the seeded DRAFT->RUNNING status-log entry, so an
         // unscoped page-wide match hits both and trips Playwright's strict-mode violation.
-        await expect(page.locator("header").getByText("Running", {exact: true})).toBeVisible();
+        await expect(page.locator("header").getByText("running", {exact: true})).toBeVisible();
 
         // Services table
         await expect(page.getByText("web")).toBeVisible();
@@ -898,7 +898,8 @@ test.describe("Stacks", () => {
     test("dashboard shows stack stats and recent stacks", async ({page}) => {
         await mockAuthenticated(page);
         // D-14: give one stack a service with an update and a backup
-        // schedule, so both new stat cards report a non-zero count.
+        // schedule, so the Updates Available and Backup Coverage cards
+        // report a non-zero count.
         const dashboardStacks = [
             {
                 ...mockStacks[0],
@@ -922,9 +923,28 @@ test.describe("Stacks", () => {
         await expect(updatesCard).toBeVisible();
         await expect(updatesCard.getByText("1", {exact: true})).toBeVisible();
 
-        const backupsCard = page.locator('[data-slot="stat-card"]', {hasText: "Backups Configured"});
-        await expect(backupsCard).toBeVisible();
-        await expect(backupsCard.getByText("1", {exact: true})).toBeVisible();
+        // Backup Coverage: the scheduled stack counts, the other has neither
+        // a schedule nor a snapshot, so the card reads 1 of 2.
+        const coverageCard = page.locator('[data-slot="stat-card"]', {hasText: "Backup Coverage"});
+        await expect(coverageCard).toBeVisible();
+        await expect(coverageCard.getByText("1/2", {exact: true})).toBeVisible();
+        await expect(coverageCard.getByText("with a schedule or snapshot")).toBeVisible();
+    });
+
+    test("Backup Coverage counts a manual-snapshot-only stack (DASH-02)", async ({page}) => {
+        await mockAuthenticated(page);
+        const snapshotOnlyStacks = [
+            {...mockStacks[0], backupSchedule: null, hasBackup: true},
+            {...mockStacks[1], backupSchedule: null},
+        ];
+        await mockStacksList(page, snapshotOnlyStacks);
+        await mockBackupDefaults(page, null);
+
+        await page.goto("/");
+
+        const coverageCard = page.locator('[data-slot="stat-card"]', {hasText: "Backup Coverage"});
+        await expect(coverageCard).toBeVisible();
+        await expect(coverageCard.getByText("1/2", {exact: true})).toBeVisible();
     });
 
     test("breadcrumbs show correct navigation on detail page", async ({page}) => {
@@ -945,15 +965,15 @@ test.describe("Stacks", () => {
 
         await page.goto("/stacks/my-app");
 
-        // Breadcrumb preserves tab context (04-CONTEXT locked decision):
-        // "Stacks" and the stack name are links, the active tab label
-        // ("Overview" here, the default tab) is the current page.
+        // "Stacks" and the stack name are links (the stack-name crumb always
+        // targets the overview, D-12); the active tab label ("Overview" here,
+        // the default tab) is the current page.
         await expect(page.getByLabel("breadcrumb").getByRole("link", {name: "Stacks"})).toBeVisible();
         await expect(page.getByLabel("breadcrumb").getByRole("link", {name: "My App"})).toBeVisible();
         await expect(page.locator("[aria-current='page']", {hasText: "Overview"})).toBeVisible();
     });
 
-    test("breadcrumb stack-name link preserves tab context when clicked from a non-Overview tab (WR-01 regression)", async ({page}) => {
+    test("breadcrumb stack-name link returns to the stack overview from a non-Overview tab (UI-09, D-12)", async ({page}) => {
         await mockAuthenticated(page);
         await page.route("**/api/stacks/my-app", (route) => {
             if (route.request().url().endsWith("/compose") || route.request().url().endsWith("/env")) {
@@ -972,15 +992,14 @@ test.describe("Stacks", () => {
         await page.goto("/stacks/my-app/config");
         await expect(page.locator("[aria-current='page']", {hasText: "Config"})).toBeVisible();
 
-        // The breadcrumb stack-name link must navigate to the path form
-        // (/stacks/:id/:tab), not a query string the router doesn't consume —
-        // otherwise clicking it silently drops back to Overview.
+        // The stack-name crumb always leads back to the overview (D-12), so the
+        // link is never the page the user is already on.
         const breadcrumbLink = page.getByLabel("breadcrumb").getByRole("link", {name: "My App"});
-        await expect(breadcrumbLink).toHaveAttribute("href", "/stacks/my-app/config");
+        await expect(breadcrumbLink).toHaveAttribute("href", "/stacks/my-app");
 
         await breadcrumbLink.click();
-        await expect(page.locator("[aria-current='page']", {hasText: "Config"})).toBeVisible();
-        await expect(page).toHaveURL(/\/stacks\/my-app\/config$/);
+        await expect(page.locator("[aria-current='page']", {hasText: "Overview"})).toBeVisible();
+        await expect(page).toHaveURL(/\/stacks\/my-app$/);
     });
 
     test("stack detail shows 404 for non-existent stack", async ({page}) => {

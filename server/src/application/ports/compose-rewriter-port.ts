@@ -15,9 +15,12 @@ export interface ComposeRewriterPort {
         originalCompose: string,
         volumeSelections: VolumeSelection[],
         namedVolumeSelections: Map<string, boolean>,
+        /**
+         * The old stack's `.env` text. Extracted names never collide with it or with anything
+         * else that would change how a variable resolves.
+         */
+        existingEnv?: string,
     ): RewriteResult;
-
-    generateDiff(originalCompose: string, rewrittenCompose: string): string;
 }
 
 export type {RewriteResult, VolumeSelection};

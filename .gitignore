@@ -49,7 +49,10 @@ Thumbs.db
 tsconfig.tsbuildinfo
 
 # AI
-.claude/
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/docktor-issues/
 .dual-graph/
 .gsd/
 .planning/*.lock

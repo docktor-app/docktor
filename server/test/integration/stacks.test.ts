@@ -123,6 +123,39 @@ describe("Stacks API", () => {
         }
     });
 
+    it("GET /api/stacks marks hasBackup only for a stack with a completed manual or scheduled backup (D-04)", async () => {
+        for (const displayName of ["Snapshot Stack", "Not A Snapshot Stack", "Never Backed Up Stack"]) {
+            await app.inject({
+                method: "POST",
+                url: "/api/stacks",
+                headers: {cookie},
+                payload: {displayName, composeContent: COMPOSE_CONTENT},
+            });
+        }
+
+        const now = new Date();
+        const seededStackIds = ["snapshot-stack", "not-a-snapshot-stack"];
+        await getPrisma().backup.createMany({
+            data: [
+                {stackId: "snapshot-stack", trigger: "MANUAL", status: "COMPLETED", resticSnapshotId: "", startedAt: now, completedAt: now},
+                {stackId: "not-a-snapshot-stack", trigger: "MANUAL", status: "FAILED", resticSnapshotId: "", startedAt: now},
+                {stackId: "not-a-snapshot-stack", trigger: "RESTORE", status: "COMPLETED", resticSnapshotId: "", startedAt: now, completedAt: now},
+            ],
+        });
+
+        try {
+            const res = await app.inject({method: "GET", url: "/api/stacks", headers: {cookie}});
+
+            expect(res.statusCode).toBe(200);
+            const byId = new Map(res.json().map((s: {id: string; hasBackup: boolean}) => [s.id, s.hasBackup]));
+            expect(byId.get("snapshot-stack")).toBe(true);
+            expect(byId.get("not-a-snapshot-stack")).toBe(false);
+            expect(byId.get("never-backed-up-stack")).toBe(false);
+        } finally {
+            await getPrisma().backup.deleteMany({where: {stackId: {in: seededStackIds}}});
+        }
+    });
+
     it("GET /api/stacks/:id/services/:serviceName/tags flags a moving-tag service and not a pinned one (D-06)", async () => {
         const composeContent = "services:\n  web:\n    image: nginx:latest\n  db:\n    image: postgres:16\n";
 

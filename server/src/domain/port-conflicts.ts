@@ -10,6 +10,11 @@
  * database), tier 2 (any running container via dockerode), tier 3
  * (listening sockets via SocketInspector, best-effort) — so a future tier
  * is additive, never a rewrite.
+ *
+ * The deploying stack never conflicts with itself: tiers 1 and 2 skip it by
+ * stack id / compose project, and tier 3 skips listeners on a (port,
+ * protocol) pair published by one of the stack's own running containers —
+ * typically docker-proxy on a redeploy (#76, D-06).
  */
 import type {RequestedHostPort} from "./host-ports.js";
 
@@ -135,15 +140,34 @@ function resolveContainerHolder(requested: RequestedHostPort, input: ResolvePort
 }
 
 /**
+ * True when one of the deploying stack's own running containers (compose
+ * project = stack id) publishes the listener's exact (port, protocol) pair.
+ * On a redeploy those containers are already up, so Docker's userland proxy
+ * (docker-proxy) listens on every published host port; such a listener is
+ * the stack's own socket, not a conflict (#76, D-06).
+ */
+function isPublishedByDeployingStack(listener: SocketListener, input: ResolvePortConflictsInput): boolean {
+    return input.containers.some(
+        (container) =>
+            container.composeProject === input.stackId &&
+            container.publishedPorts.some((p) => p.port === listener.port && p.protocol === listener.protocol),
+    );
+}
+
+/**
  * Tier 3 (D-13, best-effort last resort): a listening socket reported by
  * SocketInspector. A listener whose owning process could not be identified
  * (processName/pid null — e.g. the tool lacks permission, or ran inside a
  * namespace that can't see the owning process) is reported as "unknown"
- * rather than fabricating a name.
+ * rather than fabricating a name. A listener on a (port, protocol) pair that
+ * one of the deploying stack's own running containers publishes is skipped
+ * (see isPublishedByDeployingStack); a listener those containers do not
+ * account for still reports.
  */
 function resolveListenerHolder(requested: RequestedHostPort, input: ResolvePortConflictsInput): PortHolder | null {
     for (const listener of input.listeners) {
         if (listener.port !== requested.port || listener.protocol !== requested.protocol) continue;
+        if (isPublishedByDeployingStack(listener, input)) continue;
         if (listener.processName !== null && listener.pid !== null) {
             return {kind: "process", processName: listener.processName, pid: listener.pid};
         }

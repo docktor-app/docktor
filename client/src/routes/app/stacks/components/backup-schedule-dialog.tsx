@@ -9,10 +9,10 @@ import {ApiError} from "@/lib/api"
 import {
     Dialog,
     DialogContent,
-    DialogFooter,
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog"
+import {FormActions, FormStack} from "@/components/common/form-layout"
 import {Button} from "@/components/ui/button"
 import {Input} from "@/components/ui/input"
 import {Switch} from "@/components/ui/switch"
@@ -160,139 +160,141 @@ export function BackupScheduleDialog({
                     <DialogTitle>Edit Backup Schedule</DialogTitle>
                 </DialogHeader>
                 <Form {...form}>
-                    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                        <FormField
-                            control={form.control}
-                            name="useGlobalSchedule"
-                            render={({field}) => (
-                                <FormItem className="flex items-center gap-3 space-y-0">
-                                    <FormControl>
-                                        <Switch checked={field.value} onCheckedChange={field.onChange} />
-                                    </FormControl>
-                                    <FormLabel className="font-semibold">
-                                        Use global schedule
-                                        {config.globalSchedule && (
-                                            <span className="ml-1 font-normal text-xs text-muted-foreground">
-                                                ({config.globalSchedule})
-                                            </span>
-                                        )}
-                                    </FormLabel>
-                                </FormItem>
-                            )}
-                        />
-
-                        {!useGlobalSchedule && (
+                    <form onSubmit={form.handleSubmit(onSubmit)}>
+                        <FormStack>
                             <FormField
                                 control={form.control}
-                                name="schedule"
+                                name="useGlobalSchedule"
+                                render={({field}) => (
+                                    <FormItem className="flex items-center gap-3 space-y-0">
+                                        <FormControl>
+                                            <Switch checked={field.value} onCheckedChange={field.onChange} />
+                                        </FormControl>
+                                        <FormLabel className="font-semibold">
+                                            Use global schedule
+                                            {config.globalSchedule && (
+                                                <span className="ml-1 font-normal text-xs text-muted-foreground">
+                                                    ({config.globalSchedule})
+                                                </span>
+                                            )}
+                                        </FormLabel>
+                                    </FormItem>
+                                )}
+                            />
+
+                            {!useGlobalSchedule && (
+                                <FormField
+                                    control={form.control}
+                                    name="schedule"
+                                    render={({field}) => (
+                                        <FormItem>
+                                            <FormLabel className="font-semibold">Schedule</FormLabel>
+                                            <FormControl>
+                                                <Input {...field} placeholder="0 3 * * *" />
+                                            </FormControl>
+                                            <p className="text-xs text-muted-foreground">
+                                                5-field cron expression (minute hour day month weekday)
+                                            </p>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                            )}
+
+                            <FormField
+                                control={form.control}
+                                name="useGlobalRetention"
+                                render={({field}) => (
+                                    <FormItem className="flex items-center gap-3 space-y-0">
+                                        <FormControl>
+                                            <Switch checked={field.value} onCheckedChange={field.onChange} />
+                                        </FormControl>
+                                        <FormLabel className="font-semibold">Use global retention</FormLabel>
+                                    </FormItem>
+                                )}
+                            />
+
+                            {!useGlobalRetention && (
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                    <FormField
+                                        control={form.control}
+                                        name="retention.keepDaily"
+                                        render={({field}) => (
+                                            <FormItem>
+                                                <FormLabel>Keep daily</FormLabel>
+                                                <FormControl>
+                                                    <Input type="number" min={0} {...field} />
+                                                </FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                    <FormField
+                                        control={form.control}
+                                        name="retention.keepWeekly"
+                                        render={({field}) => (
+                                            <FormItem>
+                                                <FormLabel>Keep weekly</FormLabel>
+                                                <FormControl>
+                                                    <Input type="number" min={0} {...field} />
+                                                </FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                    <FormField
+                                        control={form.control}
+                                        name="retention.keepMonthly"
+                                        render={({field}) => (
+                                            <FormItem>
+                                                <FormLabel>Keep monthly</FormLabel>
+                                                <FormControl>
+                                                    <Input type="number" min={0} {...field} />
+                                                </FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                </div>
+                            )}
+
+                            <FormField
+                                control={form.control}
+                                name="preHook"
                                 render={({field}) => (
                                     <FormItem>
-                                        <FormLabel className="font-semibold">Schedule</FormLabel>
+                                        <FormLabel className="font-semibold">Pre-backup hook</FormLabel>
                                         <FormControl>
-                                            <Input {...field} placeholder="0 3 * * *" />
+                                            <Input {...field} placeholder="e.g. docker exec mydb pg_dump ..." />
                                         </FormControl>
-                                        <p className="text-xs text-muted-foreground">
-                                            5-field cron expression (minute hour day month weekday)
-                                        </p>
                                         <FormMessage />
                                     </FormItem>
                                 )}
                             />
-                        )}
 
-                        <FormField
-                            control={form.control}
-                            name="useGlobalRetention"
-                            render={({field}) => (
-                                <FormItem className="flex items-center gap-3 space-y-0">
-                                    <FormControl>
-                                        <Switch checked={field.value} onCheckedChange={field.onChange} />
-                                    </FormControl>
-                                    <FormLabel className="font-semibold">Use global retention</FormLabel>
-                                </FormItem>
-                            )}
-                        />
+                            <FormField
+                                control={form.control}
+                                name="postHook"
+                                render={({field}) => (
+                                    <FormItem>
+                                        <FormLabel className="font-semibold">Post-backup hook</FormLabel>
+                                        <FormControl>
+                                            <Input {...field} placeholder="e.g. /opt/scripts/notify.sh" />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
 
-                        {!useGlobalRetention && (
-                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                                <FormField
-                                    control={form.control}
-                                    name="retention.keepDaily"
-                                    render={({field}) => (
-                                        <FormItem>
-                                            <FormLabel>Keep daily</FormLabel>
-                                            <FormControl>
-                                                <Input type="number" min={0} {...field} />
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={form.control}
-                                    name="retention.keepWeekly"
-                                    render={({field}) => (
-                                        <FormItem>
-                                            <FormLabel>Keep weekly</FormLabel>
-                                            <FormControl>
-                                                <Input type="number" min={0} {...field} />
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={form.control}
-                                    name="retention.keepMonthly"
-                                    render={({field}) => (
-                                        <FormItem>
-                                            <FormLabel>Keep monthly</FormLabel>
-                                            <FormControl>
-                                                <Input type="number" min={0} {...field} />
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                            </div>
-                        )}
-
-                        <FormField
-                            control={form.control}
-                            name="preHook"
-                            render={({field}) => (
-                                <FormItem>
-                                    <FormLabel className="font-semibold">Pre-backup hook</FormLabel>
-                                    <FormControl>
-                                        <Input {...field} placeholder="e.g. docker exec mydb pg_dump ..." />
-                                    </FormControl>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
-
-                        <FormField
-                            control={form.control}
-                            name="postHook"
-                            render={({field}) => (
-                                <FormItem>
-                                    <FormLabel className="font-semibold">Post-backup hook</FormLabel>
-                                    <FormControl>
-                                        <Input {...field} placeholder="e.g. /opt/scripts/notify.sh" />
-                                    </FormControl>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
-
-                        <DialogFooter>
-                            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                                Cancel
-                            </Button>
-                            <Button type="submit" disabled={submitting}>
-                                Save Schedule
-                            </Button>
-                        </DialogFooter>
+                            <FormActions variant="dialog">
+                                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                                    Cancel
+                                </Button>
+                                <Button type="submit" disabled={submitting}>
+                                    Save Schedule
+                                </Button>
+                            </FormActions>
+                        </FormStack>
                     </form>
                 </Form>
             </DialogContent>

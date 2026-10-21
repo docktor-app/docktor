@@ -126,6 +126,15 @@ export const test = base.extend<{_coverage: void; _apiRouteGuard: void}>({
                 }),
             );
 
+            // G-18-job: BrownfieldImport (setup step 5 and /stacks/import) reads the
+            // migration operations on mount and whenever the event stream opens.
+            // Default to none running; setup-wizard.spec.ts overrides per test.
+            for (const path of ["**/api/setup/migrations", "**/api/stacks/import/migrations"]) {
+                await page.route(path, (route) =>
+                    route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({operations: []})}),
+                );
+            }
+
             await use();
 
             if (unstubbed.length > 0) {

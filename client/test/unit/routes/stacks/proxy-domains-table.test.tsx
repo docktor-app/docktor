@@ -1,5 +1,6 @@
 import {describe, expect, it, vi} from "vitest";
 import {render, screen} from "@testing-library/react";
+import {MemoryRouter} from "react-router";
 import {ProxyDomainsTable} from "@/routes/app/stacks/components/proxy-domains-table";
 import type {ProxyConfig} from "@/lib/proxy-api";
 
@@ -22,6 +23,23 @@ function makeConfig(overrides: Partial<ProxyConfig> = {}): ProxyConfig {
     };
 }
 
+// jsdom has no ResizeObserver; Radix tooltips need one.
+if (typeof globalThis.ResizeObserver === "undefined") {
+    globalThis.ResizeObserver = class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+    } as unknown as typeof ResizeObserver;
+}
+
+function renderTable(configs: ProxyConfig[]) {
+    return render(
+        <MemoryRouter>
+            <ProxyDomainsTable configs={configs} statuses={{}} onEdit={vi.fn()} onRemove={vi.fn()} />
+        </MemoryRouter>,
+    );
+}
+
 describe("ProxyDomainsTable", () => {
     // Regression for WR-01: internalPort is a per-domain (ProxyConfig) field,
     // not a per-service field — a service with two domains on different
@@ -33,19 +51,44 @@ describe("ProxyDomainsTable", () => {
             makeConfig({id: "cfg-2", serviceName: "web", domain: "app.example.com", internalPort: 80}),
         ];
 
-        render(
-            <ProxyDomainsTable
-                configs={configs}
-                statuses={{}}
-                onEdit={vi.fn()}
-                onRemove={vi.fn()}
-            />,
-        );
+        renderTable(configs);
 
         await screen.findByText("admin.example.com");
         const row = screen.getByText("web").closest("tr");
         expect(row).not.toBeNull();
         expect(screen.getByText("8080")).toBeInTheDocument();
         expect(screen.getByText("80")).toBeInTheDocument();
+    });
+
+    it("renders in the shared table frame", () => {
+        const {container} = renderTable([makeConfig()]);
+        expect(container.querySelector('[data-slot="table-frame"]')).toBeInTheDocument();
+    });
+
+    it("renders domain, service and internal port as mono technical values", () => {
+        renderTable([makeConfig({domain: "app.example.com", serviceName: "web", internalPort: 8080})]);
+        for (const element of [
+            screen.getByText("app.example.com"),
+            screen.getByText("web"),
+            screen.getByText("8080"),
+        ]) {
+            expect(element).toHaveClass("font-mono");
+        }
+    });
+
+    it("gives each domain Edit and Remove actions a compact size with a 44px target below md", () => {
+        renderTable([makeConfig({domain: "app.example.com"})]);
+        for (const name of ["Edit app.example.com", "Remove app.example.com"]) {
+            expect(screen.getByRole("button", {name})).toHaveClass("size-9", "max-md:size-11");
+        }
+    });
+
+    it("shows the empty copy instead of a table when there are no configs", () => {
+        const {container} = renderTable([]);
+        expect(screen.getByText("No domains configured")).toBeInTheDocument();
+        expect(
+            screen.getByText("Assign a domain to a service to make it available at a custom URL with automatic HTTPS."),
+        ).toBeInTheDocument();
+        expect(container.querySelector("table")).not.toBeInTheDocument();
     });
 });

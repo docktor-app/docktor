@@ -2,9 +2,10 @@ import {useForm} from "react-hook-form";
 import {standardSchemaResolver} from "@hookform/resolvers/standard-schema";
 import {wizardStep6Schema, type WizardStep6Input} from "@docktor/shared";
 import {AlertTriangle} from "lucide-react";
+import {FormActions, FormStack} from "@/components/common/form-layout";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
-import {Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle} from "@/components/ui/card";
+import {Card, CardContent, CardDescription, CardHeader, CardTitle} from "@/components/ui/card";
 import {Alert, AlertDescription} from "@/components/ui/alert";
 import {Form, FormControl, FormField, FormItem, FormLabel, FormMessage} from "@/components/ui/form";
 
@@ -40,45 +41,47 @@ export function ProxyStep({onSubmit, onBack, onSkip, loading, deployError}: Read
       </CardHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)}>
-          <CardContent className="space-y-4">
-            <FormField
-              control={form.control}
-              name="acmeEmail"
-              render={({field}) => (
-                <FormItem>
-                  <FormLabel className="font-semibold">ACME Email (optional)</FormLabel>
-                  <FormControl>
-                    <Input {...field} value={field.value ?? ""} type="email" placeholder="admin@example.com" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+          <CardContent>
+            <FormStack>
+              <FormField
+                control={form.control}
+                name="acmeEmail"
+                render={({field}) => (
+                  <FormItem>
+                    <FormLabel className="font-semibold">ACME Email (optional)</FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value ?? ""} type="email" placeholder="admin@example.com" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            {deployError && (
-              <Alert variant="destructive">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertDescription className="space-y-2">
-                  <p>
-                    Could not deploy the proxy stack — ports 80/443 are already in use.
-                    Free the ports and try again.
-                  </p>
-                  <pre className="max-h-32 overflow-auto rounded bg-muted p-2 text-xs font-mono whitespace-pre-wrap">
-                    {deployError}
-                  </pre>
-                </AlertDescription>
-              </Alert>
-            )}
+              {deployError && (
+                <Alert variant="destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription className="space-y-2">
+                    <p>
+                      Could not deploy the proxy stack — ports 80/443 are already in use.
+                      Free the ports and try again.
+                    </p>
+                    <pre className="max-h-32 overflow-auto rounded bg-muted p-2 text-xs font-mono whitespace-pre-wrap">
+                      {deployError}
+                    </pre>
+                  </AlertDescription>
+                </Alert>
+              )}
+              <FormActions align="between">
+                <Button type="button" variant="outline" onClick={onBack}>Back</Button>
+                <div className="flex gap-2">
+                  <Button type="button" variant="ghost" onClick={onSkip}>Skip</Button>
+                  <Button type="submit" disabled={loading}>
+                    {loading ? "Deploying..." : "Deploy Proxy Stack"}
+                  </Button>
+                </div>
+              </FormActions>
+            </FormStack>
           </CardContent>
-          <CardFooter className="flex justify-between">
-            <Button type="button" variant="outline" onClick={onBack}>Back</Button>
-            <div className="flex gap-2">
-              <Button type="button" variant="ghost" onClick={onSkip}>Skip</Button>
-              <Button type="submit" disabled={loading}>
-                {loading ? "Deploying..." : "Deploy Proxy Stack"}
-              </Button>
-            </div>
-          </CardFooter>
         </form>
       </Form>
     </Card>

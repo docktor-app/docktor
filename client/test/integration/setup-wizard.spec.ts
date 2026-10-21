@@ -11,8 +11,10 @@ const greenStack = {
     serviceCount: 1,
     namedVolumes: [] as string[],
     absolutePaths: [] as string[],
+    relativePaths: [] as string[],
     inlineEnvVars: false,
     unsupportedFeatures: [] as string[],
+    managedStack: null,
 };
 
 const yellowStack = {
@@ -22,8 +24,10 @@ const yellowStack = {
     serviceCount: 1,
     namedVolumes: ["pgdata"],
     absolutePaths: [] as string[],
+    relativePaths: [] as string[],
     inlineEnvVars: false,
     unsupportedFeatures: [] as string[],
+    managedStack: null,
 };
 
 const redStack = {
@@ -33,8 +37,10 @@ const redStack = {
     serviceCount: 1,
     namedVolumes: [] as string[],
     absolutePaths: [] as string[],
+    relativePaths: [] as string[],
     inlineEnvVars: false,
     unsupportedFeatures: ["configs"],
+    managedStack: null,
 };
 
 /** GET /api/setup/status — no admin user exists yet, wizard should render. */
@@ -329,7 +335,7 @@ test.describe("Setup Wizard", () => {
                 route.fulfill({
                     status: 200,
                     contentType: "application/json",
-                    body: JSON.stringify({stacks: [greenStack], skippedDirectories: 0}),
+                    body: JSON.stringify({stacks: [greenStack], skippedDirectories: 0, skipped: []}),
                 }),
             );
 
@@ -348,7 +354,7 @@ test.describe("Setup Wizard", () => {
                 route.fulfill({
                     status: 200,
                     contentType: "application/json",
-                    body: JSON.stringify({stacks: [greenStack, yellowStack, redStack], skippedDirectories: 0}),
+                    body: JSON.stringify({stacks: [greenStack, yellowStack, redStack], skippedDirectories: 0, skipped: []}),
                 }),
             );
 
@@ -360,22 +366,59 @@ test.describe("Setup Wizard", () => {
             await expect(page.getByText("Unsupported")).toBeVisible();
         });
 
-        test("should show skipped directories count when permission errors occur", async ({page}) => {
-            // BF-01: Permission handling
+        test("should list every skipped directory with its reason and the /host hint", async ({page}) => {
+            // G-18-3-scan: skip reasons are always visible
             await reachBrownfieldStep(page);
 
             await page.route("**/api/setup/scan", (route) =>
                 route.fulfill({
                     status: 200,
                     contentType: "application/json",
-                    body: JSON.stringify({stacks: [greenStack], skippedDirectories: 2}),
+                    body: JSON.stringify({
+                        stacks: [greenStack],
+                        skippedDirectories: 2,
+                        skipped: [
+                            {directory: "/root", reason: "permission_denied"},
+                            {directory: "/run/desktop/mnt/host/c/stacks", reason: "not_found"},
+                        ],
+                    }),
                 }),
             );
 
-            await page.getByLabel(/directories to scan/i).fill("/home/user, /root");
+            await page.getByLabel(/directories to scan/i).fill("/home/user, /root, /run/desktop/mnt/host/c/stacks");
             await page.getByRole("button", {name: /scan/i}).click();
 
-            await expect(page.getByText(/2 directories skipped \(permission denied\)/i)).toBeVisible();
+            const skipped = page.getByRole("region", {name: "Skipped directories"});
+            await expect(skipped).toContainText("/root");
+            await expect(skipped).toContainText("Permission denied");
+            await expect(skipped).toContainText("/run/desktop/mnt/host/c/stacks");
+            await expect(skipped).toContainText("Not found inside the Docktor container");
+            await expect(skipped).toContainText("/host");
+        });
+
+        test("should keep an already-managed stack listed with disabled actions and a link", async ({page}) => {
+            // G-18-2: managed rows cannot be adopted or migrated again
+            await reachBrownfieldStep(page);
+
+            await page.route("**/api/setup/scan", (route) =>
+                route.fulfill({
+                    status: 200,
+                    contentType: "application/json",
+                    body: JSON.stringify({
+                        stacks: [{...greenStack, managedStack: {id: "blog", displayName: "Blog"}}],
+                        skippedDirectories: 0,
+                        skipped: [],
+                    }),
+                }),
+            );
+
+            await page.getByLabel(/directories to scan/i).fill("/home/user");
+            await page.getByRole("button", {name: /scan/i}).click();
+
+            await expect(page.getByText("Already managed")).toBeVisible();
+            await expect(page.getByRole("button", {name: "Migrate"})).toBeDisabled();
+            await expect(page.getByRole("button", {name: "Adopt"})).toBeDisabled();
+            await expect(page.getByRole("link", {name: "View Blog"})).toHaveAttribute("href", "/stacks/blog");
         });
     });
 
@@ -386,7 +429,7 @@ test.describe("Setup Wizard", () => {
                 route.fulfill({
                     status: 200,
                     contentType: "application/json",
-                    body: JSON.stringify({stacks: [greenStack], skippedDirectories: 0}),
+                    body: JSON.stringify({stacks: [greenStack], skippedDirectories: 0, skipped: []}),
                 }),
             );
             await page.getByLabel(/directories to scan/i).fill("/home/user");
@@ -461,18 +504,158 @@ test.describe("Setup Wizard", () => {
     });
 
     test.describe("Migration wizard flow", () => {
-        async function scanForYellowStack(page: Page) {
+        // G-18-7: the preview says where the new stack goes. Not in place = the
+        // scanned directory lies outside Docktor's stacks folder.
+        const separateTarget = {
+            stackId: "db",
+            directory: "/opt/docktor/stacks/db",
+            originalDirectory: yellowStack.directory,
+            inPlace: false,
+            suggestedAsideName: null,
+            sharedProjectName: null,
+        };
+        const inPlaceTarget = {
+            stackId: "db",
+            directory: "/opt/docktor/stacks/db",
+            originalDirectory: "/opt/docktor/stacks/db",
+            inPlace: true,
+            suggestedAsideName: "db-pre-migration",
+            sharedProjectName: null,
+        };
+        const emptyPreview = {diff: {hunks: [], added: 0, removed: 0}, extractedEnv: "", emptySources: [], target: separateTarget};
+        const diffPreview = {
+            diff: {
+                added: 1,
+                removed: 1,
+                hunks: [
+                    {
+                        oldStart: 1,
+                        oldLines: 3,
+                        newStart: 1,
+                        newLines: 3,
+                        lines: [
+                            {kind: "context", text: "services:", oldLine: 1, newLine: 1},
+                            {kind: "removed", text: "      - pgdata:/var/lib/postgresql/data", oldLine: 2, newLine: null},
+                            {kind: "added", text: "      - ./volumes/pgdata:/var/lib/postgresql/data", oldLine: null, newLine: 2},
+                        ],
+                    },
+                ],
+            },
+            extractedEnv: "",
+            emptySources: [],
+            target: separateTarget,
+        };
+
+        async function scanForYellowStack(page: Page, stack: typeof yellowStack = yellowStack) {
             await reachBrownfieldStep(page);
             await page.route("**/api/setup/scan", (route) =>
                 route.fulfill({
                     status: 200,
                     contentType: "application/json",
-                    body: JSON.stringify({stacks: [yellowStack], skippedDirectories: 0}),
+                    body: JSON.stringify({stacks: [stack], skippedDirectories: 0, skipped: []}),
                 }),
             );
             await page.getByLabel(/directories to scan/i).fill("/home/user");
             await page.getByRole("button", {name: /scan/i}).click();
             await expect(page.getByText("Discovered Stacks (1)")).toBeVisible();
+        }
+
+        async function mockPreview(page: Page, body: unknown = emptyPreview) {
+            await page.route("**/api/setup/migrate/preview", (route) =>
+                route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(body)}),
+            );
+        }
+
+        interface MigrationRun {
+            /** JSON bodies received by POST /api/setup/migrate. */
+            bodies: unknown[];
+            /** Lets the mocked event stream and operation list report the finished state. */
+            finish: () => void;
+        }
+
+        type MigrationOutcome = {success: true} | {success: false; error: string};
+
+        /**
+         * G-18-job: POST /api/setup/migrate answers 202 with a running operation; the outcome
+         * arrives later as a migration_progress SSE frame (and through the operation list the
+         * client re-reads when the stream reopens). The run stays "running" until the test calls
+         * finish(), so the progress state can be asserted deterministically.
+         */
+        async function mockMigrationRun(
+            page: Page,
+            outcome: MigrationOutcome,
+            flags: {backup?: boolean; stopOldStack?: boolean} = {},
+        ): Promise<MigrationRun> {
+            const bodies: unknown[] = [];
+            let started = false;
+            let finished = false;
+            const running = {
+                id: "op-1",
+                stackId: "db",
+                displayName: "db",
+                composePath: yellowStack.path,
+                backup: flags.backup ?? false,
+                stopOldStack: flags.stopOldStack ?? true,
+                status: "running",
+                step: "copying_named_volume",
+                stepDetail: "pgdata",
+                startedAt: "2026-10-16T10:00:00.000Z",
+                finishedAt: null,
+                result: null,
+            };
+            const done = {
+                ...running,
+                status: outcome.success ? "succeeded" : "failed",
+                step: "finished",
+                stepDetail: null,
+                finishedAt: "2026-10-16T10:01:00.000Z",
+                result: outcome.success
+                    ? {success: true, stackId: "db", originalPath: yellowStack.directory}
+                    : {success: false, error: outcome.error, originalPath: yellowStack.directory},
+            };
+            const json = (body: unknown) => JSON.stringify(body);
+
+            await page.route("**/api/setup/migrate", (route) => {
+                bodies.push(route.request().postDataJSON());
+                started = true;
+                return route.fulfill({status: 202, contentType: "application/json", body: json(running)});
+            });
+            await page.route("**/api/setup/migrations", (route) =>
+                route.fulfill({
+                    status: 200,
+                    contentType: "application/json",
+                    body: json({operations: started ? [finished ? done : running] : []}),
+                }),
+            );
+            // Each (re)connect gets the current state; `retry: 100` makes the browser reconnect quickly.
+            await page.route("**/api/events", (route) =>
+                route.fulfill({
+                    status: 200,
+                    contentType: "text/event-stream",
+                    body: `retry: 100\n\n${finished ? `data: ${json({type: "migration_progress", operation: done})}\n\n` : ""}`,
+                }),
+            );
+
+            return {
+                bodies,
+                finish: () => {
+                    finished = true;
+                },
+            };
+        }
+
+        /** From the scan result: open the dialog and step through to step 4. */
+        async function openAndWalkToStep4(page: Page, options: {backupOn?: boolean} = {}) {
+            await page.getByRole("button", {name: "Migrate"}).click();
+            await page.getByRole("button", {name: "Preview Changes"}).click();
+            await expect(page.getByRole("heading", {name: "Review Changes"})).toBeVisible();
+            await page.getByRole("button", {name: "Choose Backup"}).click();
+            await expect(page.getByRole("heading", {name: "Back Up Before Migrating"})).toBeVisible();
+            if (options.backupOn) {
+                await page.getByRole("switch", {name: "Back up the old stack first"}).click();
+            }
+            await page.getByRole("button", {name: "Choose Old Stack Action"}).click();
+            await expect(page.getByRole("heading", {name: "Old Stack"})).toBeVisible();
         }
 
         test("should open migration wizard when clicking Migrate button", async ({page}) => {
@@ -482,7 +665,8 @@ test.describe("Setup Wizard", () => {
             await page.getByRole("button", {name: "Migrate"}).click();
 
             await expect(page.getByRole("dialog")).toBeVisible();
-            await expect(page.getByText("Select Data to Migrate")).toBeVisible();
+            await expect(page.getByRole("heading", {name: "Select Data to Migrate"})).toBeVisible();
+            await expect(page.getByText("Step 1 of 4")).toBeVisible();
         });
 
         test("should display volume selection checkboxes in step 1", async ({page}) => {
@@ -497,96 +681,234 @@ test.describe("Setup Wizard", () => {
             // BF-04: Diff preview
             await scanForYellowStack(page);
             await page.getByRole("button", {name: "Migrate"}).click();
+            await mockPreview(page, diffPreview);
 
-            await page.route("**/api/setup/migrate/preview", (route) =>
-                route.fulfill({
-                    status: 200,
-                    contentType: "application/json",
-                    body: JSON.stringify({diff: "  services:\n-   pgdata:\n+   ./volumes/pgdata:", extractedEnv: ""}),
-                }),
-            );
+            await page.getByRole("button", {name: "Preview Changes"}).click();
 
-            await page.getByRole("button", {name: "Next"}).click();
+            await expect(page.getByRole("heading", {name: "Review Changes"})).toBeVisible();
+            await expect(page.getByRole("region", {name: "Migration compose diff"})).toBeVisible();
+            await expect(page.getByText("./volumes/pgdata")).toBeVisible();
+            await expect(page.getByText("Compose file changes")).toBeVisible();
+        });
 
-            await expect(page.getByText("Review Changes")).toBeVisible();
-            await expect(page.getByText("Original")).toBeVisible();
-            await expect(page.getByText("Migrated", {exact: true})).toBeVisible();
+        test("should name a bind-mount source that starts empty on the review step", async ({page}) => {
+            // CR-03: a selected source that does not exist is surfaced before anything is stopped
+            await scanForYellowStack(page);
+            await page.getByRole("button", {name: "Migrate"}).click();
+            await mockPreview(page, {...emptyPreview, emptySources: ["./missing"]});
+
+            await page.getByRole("button", {name: "Preview Changes"}).click();
+
+            await expect(page.getByRole("heading", {name: "Review Changes"})).toBeVisible();
+            const note = page.getByRole("alert").filter({hasText: "starts with an empty folder"});
+            await expect(note).toBeVisible();
+            await expect(note.getByText("./missing")).toBeVisible();
         });
 
         test("should start background migration on confirm", async ({page}) => {
-            // BF-04: Background migration
+            // BF-04: Background migration; G-18-7 default is no backup (original untouched), stop on
             await scanForYellowStack(page);
-            await page.getByRole("button", {name: "Migrate"}).click();
-
-            await page.route("**/api/setup/migrate/preview", (route) =>
-                route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({diff: "", extractedEnv: ""})}),
-            );
-            await page.getByRole("button", {name: "Next"}).click();
-            await expect(page.getByText("Review Changes")).toBeVisible();
-
-            await page.route("**/api/setup/migrate", (route) =>
-                route.fulfill({
-                    status: 200,
-                    contentType: "application/json",
-                    body: JSON.stringify({success: true, stackId: "db", originalPath: yellowStack.directory}),
-                }),
-            );
+            await mockPreview(page);
+            const run = await mockMigrationRun(page, {success: true});
+            const {bodies} = run;
+            await openAndWalkToStep4(page);
 
             await page.getByRole("button", {name: "Confirm & Migrate"}).click();
 
             await expect(page.getByText(/migrating db/i)).toBeVisible();
+            // G-18-job: the row stays locked and shows the step while the operation runs
+            await expect(page.getByRole("button", {name: "Migrating..."})).toBeDisabled();
+            await expect(page.getByRole("button", {name: "Adopt"})).toBeDisabled();
+            await expect(page.getByText("Copying volume pgdata", {exact: true})).toBeVisible();
+            await expect.poll(() => bodies.length).toBe(1);
+            expect(bodies[0]).toMatchObject({
+                composePath: yellowStack.path,
+                displayName: "db",
+                namedVolumeSelections: {pgdata: true},
+                backup: false,
+                stopOldStack: true,
+            });
+            expect(bodies[0]).not.toHaveProperty("inPlaceAsideName");
+
+            run.finish();
+
+            await expect(page.getByText(/migration complete/i)).toBeVisible();
+            await expect(page.getByText("Imported")).toBeVisible();
+        });
+
+        test("should send backup true and stopOldStack false when the backup is turned on and the stop off", async ({page}) => {
+            // MIG-03 / MIG-04 / G-18-7: the explicit choices reach the server and the summary recaps them
+            await scanForYellowStack(page);
+            await mockPreview(page);
+            const {bodies} = await mockMigrationRun(page, {success: true}, {backup: true, stopOldStack: false});
+            await page.getByRole("button", {name: "Migrate"}).click();
+            await page.getByRole("button", {name: "Preview Changes"}).click();
+            await page.getByRole("button", {name: "Choose Backup"}).click();
+            await expect(page.getByText(/Your original stack stays untouched at/)).toBeVisible();
+            await page.getByRole("switch", {name: "Back up the old stack first"}).click();
+            await page.getByRole("button", {name: "Choose Old Stack Action"}).click();
+            await page.getByRole("switch", {name: "Stop the old stack before migrating"}).click();
+            await expect(page.getByText(/The old stack keeps running\./)).toBeVisible();
+
+            const summary = page.getByRole("region", {name: "Migration summary"});
+            await expect(summary).toContainText("Backup: Yes");
+            await expect(summary).toContainText("Stop old stack: No");
+
+            await page.getByRole("button", {name: "Confirm & Migrate"}).click();
+
+            await expect.poll(() => bodies.length).toBe(1);
+            expect(bodies[0]).toMatchObject({backup: true, stopOldStack: false});
+        });
+
+        test("should rename the original aside, force the stop and send inPlaceAsideName for an in-place migration", async ({page}) => {
+            // G-18-7: same name + stack already in the stacks folder
+            await scanForYellowStack(page);
+            const previewBodies: unknown[] = [];
+            await page.route("**/api/setup/migrate/preview", (route) => {
+                previewBodies.push(route.request().postDataJSON());
+                return route.fulfill({
+                    status: 200,
+                    contentType: "application/json",
+                    body: JSON.stringify({...emptyPreview, target: inPlaceTarget}),
+                });
+            });
+            const {bodies} = await mockMigrationRun(page, {success: true});
+            await page.getByRole("button", {name: "Migrate"}).click();
+            await page.getByRole("button", {name: "Preview Changes"}).click();
+            await expect(page.getByRole("heading", {name: "Review Changes"})).toBeVisible();
+            expect(previewBodies[0]).toMatchObject({composePath: yellowStack.path, displayName: "db"});
+
+            await page.getByRole("button", {name: "Choose Backup"}).click();
+            await expect(page.getByRole("textbox", {name: "Name for the original directory"})).toHaveValue("db-pre-migration");
+            await expect(page.getByRole("switch", {name: "Back up the old stack first"})).toHaveCount(0);
+            await page.getByRole("button", {name: "Choose Old Stack Action"}).click();
+
+            await expect(page.getByRole("switch", {name: "Stop the old stack before migrating"})).toBeDisabled();
+            await expect(page.getByRole("region", {name: "Migration summary"})).toContainText(
+                "Backup: Original kept as db-pre-migration",
+            );
+
+            await page.getByRole("button", {name: "Confirm & Migrate"}).click();
+
+            await expect.poll(() => bodies.length).toBe(1);
+            expect(bodies[0]).toMatchObject({inPlaceAsideName: "db-pre-migration", stopOldStack: true, backup: false});
+        });
+
+        test("should force the stop and explain the shared compose project name", async ({page}) => {
+            // G-18-22-status: the old and the new stack would both run under the project name "db"
+            await scanForYellowStack(page);
+            await page.route("**/api/setup/migrate/preview", (route) =>
+                route.fulfill({
+                    status: 200,
+                    contentType: "application/json",
+                    body: JSON.stringify({
+                        ...emptyPreview,
+                        target: {...separateTarget, sharedProjectName: {name: "db", source: "directory"}},
+                    }),
+                }),
+            );
+            const {bodies} = await mockMigrationRun(page, {success: true});
+            await openAndWalkToStep4(page);
+
+            await expect(page.getByRole("switch", {name: "Stop the old stack before migrating"})).toBeChecked();
+            await expect(page.getByRole("switch", {name: "Stop the old stack before migrating"})).toBeDisabled();
+            const explanation = page.getByText(/Docker Compose project name "db"/);
+            await expect(explanation).toBeVisible();
+            await expect(page.getByText(/choose a different stack name/)).toBeVisible();
+            await expect(page.getByRole("region", {name: "Migration summary"})).toContainText("Stop old stack: Yes");
+
+            await page.getByRole("button", {name: "Confirm & Migrate"}).click();
+
+            await expect.poll(() => bodies.length).toBe(1);
+            expect(bodies[0]).toMatchObject({stopOldStack: true});
+        });
+
+        test("should offer a relative bind mount, send it as ./volumes/ and warn when it is kept", async ({page}) => {
+            // G-18-4: relative bind mounts are listed, counted, sent, and a kept one warns
+            const memosStack = {...yellowStack, namedVolumes: [] as string[], relativePaths: ["./data"]};
+            await scanForYellowStack(page, memosStack);
+            const previewBodies: unknown[] = [];
+            await page.route("**/api/setup/migrate/preview", (route) => {
+                previewBodies.push(route.request().postDataJSON());
+                return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(emptyPreview)});
+            });
+            await page.getByRole("button", {name: "Migrate"}).click();
+
+            await expect(page.getByText("Relative Bind Mounts")).toBeVisible();
+            await expect(page.getByRole("checkbox", {name: "./data"})).toBeChecked();
+
+            await page.getByRole("button", {name: "Preview Changes"}).click();
+            await expect(page.getByRole("heading", {name: "Review Changes"})).toBeVisible();
+            expect(previewBodies[0]).toMatchObject({
+                volumeSelections: [{originalPath: "./data", newPath: "./volumes/data", convert: true}],
+            });
+
+            await page.getByRole("button", {name: "Choose Backup"}).click();
+            await page.getByRole("button", {name: "Choose Old Stack Action"}).click();
+            await expect(page.getByRole("region", {name: "Migration summary"})).toContainText("Volumes to copy: 1");
+
+            await page.getByRole("button", {name: "Back", exact: true}).click();
+            await page.getByRole("button", {name: "Back", exact: true}).click();
+            await page.getByRole("button", {name: "Back", exact: true}).click();
+            await page.getByRole("checkbox", {name: "./data"}).click();
+            await expect(page.getByText(/outside Docktor's managed \.\/volumes\/ layout/)).toBeVisible();
         });
 
         test("should show success toast with link to stack on completion", async ({page}) => {
             // BF-04: Migration feedback
             await scanForYellowStack(page);
-            await page.getByRole("button", {name: "Migrate"}).click();
+            await mockPreview(page);
+            const run = await mockMigrationRun(page, {success: true}, {backup: true});
+            await openAndWalkToStep4(page, {backupOn: true});
 
-            await page.route("**/api/setup/migrate/preview", (route) =>
-                route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({diff: "", extractedEnv: ""})}),
-            );
-            await page.getByRole("button", {name: "Next"}).click();
-
-            await page.route("**/api/setup/migrate", (route) =>
-                route.fulfill({
-                    status: 200,
-                    contentType: "application/json",
-                    body: JSON.stringify({success: true, stackId: "db", originalPath: yellowStack.directory}),
-                }),
-            );
             await page.getByRole("button", {name: "Confirm & Migrate"}).click();
+            await expect(page.getByText(/migrating db/i)).toBeVisible();
+            run.finish();
 
             await expect(page.getByText(/migration complete/i)).toBeVisible();
+            await expect(page.getByText(/backup saved to pre-migration-backup/i)).toBeVisible();
             await expect(page.getByRole("button", {name: /view stack/i})).toBeVisible();
         });
 
         test("should show error toast on migration failure", async ({page}) => {
             // BF-05: Rollback on failure — the service performs the rollback
-            // server-side and reports it in `result.error`; the client surfaces
-            // that message via a toast rather than a separate "Rollback complete"
-            // element (adapted to the actual MigrationResult contract).
+            // server-side and reports it in the finished operation's `result.error`;
+            // the client surfaces that message via a toast rather than a separate
+            // "Rollback complete" element, and the row becomes actionable again.
             await scanForYellowStack(page);
-            await page.getByRole("button", {name: "Migrate"}).click();
+            await mockPreview(page);
+            const run = await mockMigrationRun(page, {
+                success: false,
+                error: "Migration failed: disk full. Your original stack directory was not modified. The old stack was restarted.",
+            });
+            await openAndWalkToStep4(page);
 
-            await page.route("**/api/setup/migrate/preview", (route) =>
-                route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({diff: "", extractedEnv: ""})}),
-            );
-            await page.getByRole("button", {name: "Next"}).click();
-
-            await page.route("**/api/setup/migrate", (route) =>
-                route.fulfill({
-                    status: 200,
-                    contentType: "application/json",
-                    body: JSON.stringify({
-                        success: false,
-                        error: "Migration failed: disk full. Rollback complete.",
-                        originalPath: yellowStack.directory,
-                    }),
-                }),
-            );
             await page.getByRole("button", {name: "Confirm & Migrate"}).click();
+            await expect(page.getByRole("button", {name: "Migrating..."})).toBeDisabled();
+            run.finish();
 
-            await expect(page.getByText(/rollback complete/i)).toBeVisible();
+            await expect(page.getByText(/old stack was restarted/i)).toBeVisible();
+            await expect(page.getByRole("button", {name: "Migrate", exact: true})).toBeEnabled();
+        });
+
+        test("should fit a 360px viewport with the diff and the final action reachable", async ({page}) => {
+            // MIG-01 / D-06: the dialog is usable at phone width
+            await page.setViewportSize({width: 360, height: 740});
+            await scanForYellowStack(page);
+            await mockPreview(page, diffPreview);
+            await page.getByRole("button", {name: "Migrate"}).click();
+            await page.getByRole("button", {name: "Preview Changes"}).click();
+
+            await expect(page.getByRole("heading", {name: "Review Changes"})).toBeVisible();
+            await expect(page.getByRole("region", {name: "Migration compose diff"})).toBeVisible();
+            const box = await page.getByRole("dialog").boundingBox();
+            if (!box) throw new Error("dialog has no bounding box");
+            expect(box.x).toBeGreaterThanOrEqual(0);
+            expect(box.x + box.width).toBeLessThanOrEqual(360);
+
+            await page.getByRole("button", {name: "Choose Backup"}).click();
+            await page.getByRole("button", {name: "Choose Old Stack Action"}).click();
+            await expect(page.getByRole("button", {name: "Confirm & Migrate"})).toBeInViewport();
         });
     });
 });

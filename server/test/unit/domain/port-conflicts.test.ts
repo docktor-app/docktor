@@ -140,6 +140,96 @@ describe("resolvePortConflicts", () => {
         });
     });
 
+    describe("tier 3: the deploying stack's own sockets (D-06)", () => {
+        const OWN_CONTAINER_8080 = {
+            containerName: "/new-app-web-1",
+            composeProject: "new-app",
+            publishedPorts: [{port: 8080, protocol: "tcp" as const}],
+        };
+
+        it("ignores a docker-proxy listener on a (port, protocol) pair the deploying stack's own container publishes", () => {
+            const input = baseInput({
+                stacks: [],
+                containers: [OWN_CONTAINER_8080],
+                listeners: [{port: 8080, protocol: "tcp", processName: "docker-proxy", pid: 4321}],
+            });
+            expect(resolvePortConflicts(input)).toEqual([]);
+        });
+
+        it("ignores an unidentified listener on the stack's own published pair", () => {
+            const input = baseInput({
+                stacks: [],
+                containers: [OWN_CONTAINER_8080],
+                listeners: [{port: 8080, protocol: "tcp", processName: null, pid: null}],
+            });
+            expect(resolvePortConflicts(input)).toEqual([]);
+        });
+
+        it("still reports a listener on the same port number but a different protocol", () => {
+            const input = baseInput({
+                stacks: [],
+                containers: [OWN_CONTAINER_8080],
+                requested: [{port: 8080, protocol: "udp", serviceName: "dns", hostIp: null}],
+                listeners: [{port: 8080, protocol: "udp", processName: "dnsmasq", pid: 77}],
+            });
+            expect(resolvePortConflicts(input)).toEqual([
+                {port: 8080, protocol: "udp", serviceName: "dns", holder: {kind: "process", processName: "dnsmasq", pid: 77}},
+            ]);
+        });
+
+        it("only excludes the pairs the stack's containers publish, not other requested ports", () => {
+            const input = baseInput({
+                stacks: [],
+                containers: [OWN_CONTAINER_8080],
+                requested: [WEB_8080, {port: 9090, protocol: "tcp", serviceName: "admin", hostIp: null}],
+                listeners: [
+                    {port: 8080, protocol: "tcp", processName: "docker-proxy", pid: 4321},
+                    {port: 9090, protocol: "tcp", processName: "nginx", pid: 4242},
+                ],
+            });
+            expect(resolvePortConflicts(input)).toEqual([
+                {port: 9090, protocol: "tcp", serviceName: "admin", holder: {kind: "process", processName: "nginx", pid: 4242}},
+            ]);
+        });
+
+        it("tier 2 still attributes the port to another Docktor stack even when docker-proxy listens on it", () => {
+            const input = baseInput({
+                stacks: [blogStack({status: "STOPPED"})],
+                containers: [
+                    {containerName: "/blog-web-1", composeProject: "blog", publishedPorts: [{port: 8080, protocol: "tcp"}]},
+                ],
+                listeners: [{port: 8080, protocol: "tcp", processName: "docker-proxy", pid: 4321}],
+            });
+            expect(resolvePortConflicts(input)).toEqual([
+                {port: 8080, protocol: "tcp", serviceName: "web", holder: {kind: "stack", stackId: "blog", stackDisplayName: "Blog"}},
+            ]);
+        });
+
+        it("still reports a non-Docktor container holding the port while the stack's own container publishes another port", () => {
+            const input = baseInput({
+                stacks: [],
+                containers: [
+                    {containerName: "/legacy-nginx", composeProject: null, publishedPorts: [{port: 8080, protocol: "tcp"}]},
+                    {containerName: "/new-app-web-1", composeProject: "new-app", publishedPorts: [{port: 9090, protocol: "tcp"}]},
+                ],
+            });
+            expect(resolvePortConflicts(input)).toEqual([
+                {port: 8080, protocol: "tcp", serviceName: "web", holder: {kind: "container", containerName: "legacy-nginx"}},
+            ]);
+        });
+
+        it("applies no exclusion when the stack has no running container", () => {
+            const input = baseInput({
+                stacks: [],
+                containers: [],
+                listeners: [{port: 8080, protocol: "tcp", processName: "nginx", pid: 4242}],
+            });
+            expect(resolvePortConflicts(input)).toEqual([
+                {port: 8080, protocol: "tcp", serviceName: "web", holder: {kind: "process", processName: "nginx", pid: 4242}},
+            ]);
+        });
+    });
+
     it("precedence: a DB-tier stack holder wins over a matching container holder for the same port", () => {
         const input = baseInput({
             stacks: [blogStack()],

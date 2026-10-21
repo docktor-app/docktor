@@ -1,5 +1,6 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {act, fireEvent, render, screen, within} from "@testing-library/react";
+import {MemoryRouter} from "react-router";
 import {IncidentList} from "../../../../src/routes/app/stacks/components/incident-list";
 import type {Incident} from "@/lib/uptime-api";
 
@@ -27,14 +28,16 @@ const closed = makeIncident({
 
 function renderList(overrides: Partial<React.ComponentProps<typeof IncidentList>> = {}) {
     return render(
-        <IncidentList
-            incidents={[ongoing, closed]}
-            windowDays={30}
-            loading={false}
-            error={null}
-            onRetry={vi.fn()}
-            {...overrides}
-        />,
+        <MemoryRouter>
+            <IncidentList
+                incidents={[ongoing, closed]}
+                windowDays={30}
+                loading={false}
+                error={null}
+                onRetry={vi.fn()}
+                {...overrides}
+            />
+        </MemoryRouter>,
     );
 }
 
@@ -66,10 +69,10 @@ describe("IncidentList", () => {
         const [, ongoingRow, closedRow] = screen.getAllByRole("row");
         expect(within(ongoingRow).getByText("Ongoing")).toBeInTheDocument();
         expect(within(ongoingRow).getByText("1h 30m")).toBeInTheDocument();
-        expect(within(ongoingRow).getByText("Unhealthy")).toBeInTheDocument();
+        expect(within(ongoingRow).getByText("unhealthy")).toBeInTheDocument();
         expect(within(closedRow).queryByText("Ongoing")).not.toBeInTheDocument();
         expect(within(closedRow).getByText("2m 5s")).toBeInTheDocument();
-        expect(within(closedRow).getByText("Error")).toBeInTheDocument();
+        expect(within(closedRow).getByText("error")).toBeInTheDocument();
     });
 
     it("keeps start and end times on one line", () => {
@@ -87,6 +90,27 @@ describe("IncidentList", () => {
         const {container} = renderList();
 
         expect(container.querySelector(".max-h-96.overflow-y-auto")).not.toBeNull();
+    });
+
+    it("renders the table in the shared frame inside the scrolling container", () => {
+        const {container} = renderList();
+
+        const scroller = container.querySelector(".max-h-96.overflow-y-auto");
+        expect(scroller?.querySelector('[data-slot="table-frame"]')).toBeInTheDocument();
+    });
+
+    it("right-aligns the Duration header and cells", () => {
+        renderList();
+
+        expect(screen.getByRole("columnheader", {name: "Duration"})).toHaveClass("text-right");
+        const closedRow = screen.getAllByRole("row")[2];
+        expect(within(closedRow).getByText("2m 5s").closest("td")).toHaveClass("text-right", "tabular-nums");
+    });
+
+    it("keeps the empty copy outside the scrolling container", () => {
+        const {container} = renderList({incidents: []});
+
+        expect(container.querySelector(".max-h-96")).toBeNull();
     });
 
     it("re-renders the ongoing duration after a 60-second tick", () => {

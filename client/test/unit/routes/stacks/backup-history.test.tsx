@@ -138,3 +138,42 @@ describe("BackupHistory (G-10-2)", () => {
         expect(screen.getByText("Scheduled")).toBeInTheDocument();
     });
 });
+
+describe("BackupHistory shared table look", () => {
+    it("renders rows with status and trigger pills inside the frame within the 384px scroll area", async () => {
+        mockGetBackups.mockResolvedValue([
+            makeBackup({id: "b1", status: "COMPLETED", trigger: "MANUAL"}),
+            makeBackup({id: "b2", status: "FAILED", trigger: "SCHEDULED"}),
+        ]);
+
+        const {container} = render(
+            <MemoryRouter>
+                <BackupHistory stackId="s1" />
+            </MemoryRouter>,
+        );
+
+        const links = await screen.findAllByRole("link", {name: "View details"});
+        expect(container.querySelector('.h-96 [data-slot="table-frame"] table')).not.toBeNull();
+        expect(links.map((link) => link.getAttribute("href"))).toEqual([
+            "/stacks/s1/backups/b1",
+            "/stacks/s1/backups/b2",
+        ]);
+        expect(screen.getByText("Manual")).toBeInTheDocument();
+        expect(screen.getByText("Scheduled")).toBeInTheDocument();
+        expect(screen.getAllByRole("columnheader")).toHaveLength(6);
+    });
+
+    it("explains an empty history without rendering a table", async () => {
+        mockGetBackups.mockResolvedValue([]);
+
+        render(
+            <MemoryRouter>
+                <BackupHistory stackId="s1" />
+            </MemoryRouter>,
+        );
+
+        expect(await screen.findByText("No backups yet")).toBeInTheDocument();
+        expect(screen.getByText("Trigger your first backup using the Backup Now button above.")).toBeInTheDocument();
+        expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    });
+});

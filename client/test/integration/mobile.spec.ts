@@ -1,11 +1,17 @@
+import {readFileSync} from "node:fs";
 import {expect, test} from "./fixtures";
-import type {Page} from "@playwright/test";
+import type {Locator, Page} from "@playwright/test";
 
 // D-17: phone-width (Pixel 7, 412x915 CSS px via the mobile-chromium
 // Playwright project) regression coverage for every core flow. Self-
 // sufficient (stubs every outbound **/api/** call this suite's pages
 // trigger) and independent of desktop-viewport assumptions — this file is
 // matched only by the "mobile-chromium" project (see playwright.config.ts).
+
+// client/package.json always carries a version field
+const {version: appVersion} = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as {
+    version: string;
+};
 
 const mockUser = {id: "1", name: "E2E Tester", email: "test@example.com"};
 const mockSession = {session: {id: "sess-1", userId: "1"}, user: mockUser};
@@ -268,7 +274,7 @@ test.describe("Mobile (D-17, 390-412px viewport)", () => {
         await expectNoHorizontalOverflow(page);
     });
 
-    test("sidebar: the trigger opens the mobile navigation and Stacks navigates", async ({page}) => {
+    test("sidebar: the trigger opens the labelled mobile navigation and following Stacks closes it", async ({page}) => {
         await mockStacksList(page);
         await mockBackupDefaults(page);
 
@@ -277,11 +283,52 @@ test.describe("Mobile (D-17, 390-412px viewport)", () => {
 
         await page.getByRole("button", {name: "Toggle Sidebar"}).click();
         const nav = page.getByRole("dialog");
+        await expect(nav.getByText("Platform", {exact: true})).toBeVisible();
+        await expect(nav.getByText("System", {exact: true})).toBeVisible();
+        await expect(nav.getByRole("link", {name: "Templates"})).toBeVisible();
         await expect(nav.getByRole("link", {name: "Stacks"})).toBeVisible();
         await expectNoHorizontalOverflow(page);
 
         await nav.getByRole("link", {name: "Stacks"}).click();
         await expect(page).toHaveURL("/stacks");
+        await expect(page.getByRole("dialog")).toBeHidden();
+        await expectNoHorizontalOverflow(page);
+    });
+
+    test("sidebar sheet: the version and both project links fit with 44px targets and no overflow at 412px and 360px", async ({
+        page,
+    }) => {
+        await mockStacksList(page);
+        await mockBackupDefaults(page);
+
+        await page.goto("/");
+        await page.getByRole("button", {name: "Toggle Sidebar"}).click();
+        const nav = page.getByRole("dialog");
+        const about = nav.getByRole("group", {name: "About Docktor"});
+        await expect(about).toContainText(`v${appVersion}`);
+
+        const github = nav.getByRole("link", {name: "Docktor on GitHub (opens in a new tab)"});
+        const docs = nav.getByRole("link", {name: "Docktor documentation (opens in a new tab)"});
+        await expect(github).toBeVisible();
+        await expect(docs).toBeVisible();
+        await expect(github).toHaveAttribute("href", "https://github.com/docktor-app/docktor");
+        await expect(docs).toHaveAttribute("href", "https://getdocktor.dev");
+        for (const link of [github, docs]) {
+            await expect(link).toHaveAttribute("target", "_blank");
+            await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+            const box = await link.boundingBox();
+            expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
+            expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+        }
+        await expectNoHorizontalOverflow(page);
+
+        // The collapsed Info menu button exists but is never displayed inside the sheet
+        const railTrigger = nav.locator('[data-sidebar="menu-button"][aria-label$=" links"]');
+        await expect(railTrigger).toHaveCount(1);
+        await expect(railTrigger).toBeHidden();
+
+        await page.setViewportSize({width: 360, height: 780});
+        await expect(about).toBeVisible();
         await expectNoHorizontalOverflow(page);
     });
 
@@ -326,7 +373,7 @@ test.describe("Mobile (D-17, 390-412px viewport)", () => {
         await expect(deployButton).toBeEnabled();
 
         // Status badge (header) visible.
-        await expect(page.getByText("Running", {exact: true}).first()).toBeVisible();
+        await expect(page.getByText("running", {exact: true}).first()).toBeVisible();
 
         // Timeline filter changes to "Deployments".
         await page.getByRole("combobox", {name: "Filter activity by type"}).click();
@@ -556,6 +603,110 @@ test.describe("Mobile (D-17, 390-412px viewport)", () => {
         await page.getByRole("textbox", {name: "Variable name 1"}).fill("PORT");
         await page.getByLabel("Value for PORT", {exact: true}).fill("8080");
 
+        await expectNoHorizontalOverflow(page);
+    });
+});
+
+test.describe("44px touch targets (A11Y-01)", () => {
+    test.beforeEach(async ({page}) => {
+        await mockAuthenticated(page);
+    });
+
+    async function expectTouchTarget(locator: Locator, label: string) {
+        const box = await locator.boundingBox();
+        expect(box?.width ?? 0, `${label} width`).toBeGreaterThanOrEqual(44);
+        expect(box?.height ?? 0, `${label} height`).toBeGreaterThanOrEqual(44);
+    }
+
+    test("stack detail: the actions menu and the theme toggle are at least 44x44", async ({page}) => {
+        await mockStackDetailSurface(page);
+
+        await page.goto("/stacks/my-app");
+
+        await expectTouchTarget(page.getByRole("button", {name: "Stack actions"}), "Stack actions");
+        await expectTouchTarget(page.getByRole("button", {name: "Toggle theme"}), "Toggle theme");
+    });
+
+    test("stacks list: pagination controls are 44px and still fit at 320px with no page overflow", async ({page}) => {
+        await mockStacksList(
+            page,
+            Array.from({length: 12}, (_, i) => ({
+                ...mockStack,
+                id: `stack-${i + 1}`,
+                displayName: `Stack ${i + 1}`,
+                hostPath: `/stacks/stack-${i + 1}`,
+                status: "STOPPED",
+                services: [],
+            })),
+        );
+
+        await page.goto("/stacks");
+
+        const paginationNames = ["First page", "Previous page", "Next page", "Last page"] as const;
+        for (const name of paginationNames) {
+            await expectTouchTarget(page.getByRole("button", {name}), name);
+        }
+        const rowsPerPage = page.getByText("Rows per page").locator("..").getByRole("combobox");
+        const selectBox = await rowsPerPage.boundingBox();
+        expect(selectBox?.height ?? 0, "rows-per-page select height").toBeGreaterThanOrEqual(44);
+
+        await page.setViewportSize({width: 320, height: 740});
+        await expectNoHorizontalOverflow(page);
+        for (const name of paginationNames) {
+            const button = page.getByRole("button", {name});
+            await button.scrollIntoViewIfNeeded();
+            await expect(button).toBeInViewport();
+            const narrowBox = await button.boundingBox();
+            expect(narrowBox?.width ?? 0, `${name} width at 320px`).toBeGreaterThanOrEqual(44);
+        }
+    });
+
+    test("settings certificates: the delete button is at least 44x44", async ({page}) => {
+        await page.route("**/api/settings/proxy", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({deployed: false, status: null, acmeEmail: "", showInDashboard: false}),
+            }),
+        );
+        await page.route("**/api/certificates", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify([
+                    {
+                        id: "cert-1",
+                        domainPattern: "*.example.com",
+                        expiresAt: "2027-01-01T00:00:00Z",
+                        createdAt: "2026-01-01T00:00:00Z",
+                        updatedAt: "2026-01-01T00:00:00Z",
+                    },
+                ]),
+            }),
+        );
+
+        await page.goto("/settings/proxy");
+
+        await expectTouchTarget(page.getByRole("button", {name: "Delete *.example.com"}), "Delete certificate");
+    });
+
+    test("stack overview: a 60-character image name causes no horizontal overflow at 412px and 375px", async ({page}) => {
+        await mockStackDetailSurface(page);
+        const longImage = "registry.example.com/organisation/team/application-svc-image";
+        expect(longImage).toHaveLength(60);
+        const stackWithLongImage = {
+            ...mockStack,
+            services: [{...mockStack.services[0], image: longImage}],
+        };
+        await page.route("**/api/stacks/my-app", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(stackWithLongImage)}),
+        );
+
+        await page.goto("/stacks/my-app");
+        await expect(page.getByText(longImage)).toBeVisible();
+        await expectNoHorizontalOverflow(page);
+
+        await page.setViewportSize({width: 375, height: 812});
         await expectNoHorizontalOverflow(page);
     });
 });

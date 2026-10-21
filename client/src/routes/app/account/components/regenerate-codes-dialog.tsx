@@ -8,6 +8,7 @@ import {twoFactor} from "@/lib/auth-client";
 import {classifyAuthError} from "@/lib/auth-errors";
 import {createRetryAfterProbe} from "@/lib/rate-limit";
 import {RecoveryCodesPanel} from "@/components/domain/auth/recovery-codes-panel";
+import {FormActions, FormStack} from "@/components/common/form-layout";
 import {Button} from "@/components/ui/button";
 import {
     Dialog,
@@ -77,17 +78,19 @@ function PasswordStep({onGenerated, onCancel}: Readonly<PasswordStepProps>): Rea
                 </DialogDescription>
             </DialogHeader>
             <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                    <ErrorBanner message={error}/>
-                    <PasswordField control={form.control}/>
-                    <DialogFooter>
-                        <Button type="button" variant="outline" className={FOOTER_BUTTON_CLASS} onClick={onCancel}>
-                            Cancel
-                        </Button>
-                        <Button type="submit" className={FOOTER_BUTTON_CLASS} disabled={pending}>
-                            {pending ? "Regenerating..." : "Regenerate codes"}
-                        </Button>
-                    </DialogFooter>
+                <form onSubmit={form.handleSubmit(onSubmit)}>
+                    <FormStack>
+                        <ErrorBanner message={error}/>
+                        <PasswordField control={form.control}/>
+                        <FormActions variant="dialog">
+                            <Button type="button" variant="outline" className={FOOTER_BUTTON_CLASS} onClick={onCancel}>
+                                Cancel
+                            </Button>
+                            <Button type="submit" className={FOOTER_BUTTON_CLASS} disabled={pending}>
+                                {pending ? "Regenerating..." : "Regenerate codes"}
+                            </Button>
+                        </FormActions>
+                    </FormStack>
                 </form>
             </Form>
         </>

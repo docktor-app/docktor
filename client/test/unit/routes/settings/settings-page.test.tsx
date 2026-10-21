@@ -202,7 +202,7 @@ describe("SettingsPage", () => {
         renderSettingsAt("/settings/general");
         await screen.findByDisplayValue("Docktor");
 
-        await user.click(screen.getByRole("button", {name: "Save"}));
+        await user.click(screen.getByRole("button", {name: "Save Settings"}));
 
         expect(await screen.findByText("Instance name is already taken")).toBeInTheDocument();
     });
@@ -212,6 +212,7 @@ describe("SettingsPage", () => {
 
         expect(await screen.findByText("Backup Repository")).toBeInTheDocument();
         expect(screen.getByText("Default Backup Settings")).toBeInTheDocument();
+        expect(screen.getByRole("button", {name: "Save Defaults"})).toBeInTheDocument();
     });
 
     it("renders the proxy settings and certificates cards on the Proxy tab", async () => {

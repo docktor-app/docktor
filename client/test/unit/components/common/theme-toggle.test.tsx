@@ -34,6 +34,16 @@ async function openMenu() {
 }
 
 describe("ThemeToggle", () => {
+    it("takes its touch target from the shared constant: 44px below md, 36px at md and up", () => {
+        renderToggle();
+
+        const toggle = screen.getByRole("button", {name: "Toggle theme"});
+
+        expect(toggle).toHaveClass("size-9", "max-md:size-11", "relative");
+        expect(toggle).not.toHaveClass("min-h-11");
+        expect(toggle).not.toHaveClass("md:min-h-9");
+    });
+
     it("renders a 'Toggle theme' button that opens Light/Dark/System options", async () => {
         renderToggle();
 

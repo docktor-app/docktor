@@ -7,6 +7,7 @@ import {
     ensureBackupLogBuffer,
     getBackupLogBuffer,
 } from "../../../src/application/backup-service.js";
+import {encrypt} from "../../../src/lib/crypto.js";
 import {BadRequestError, NotFoundError} from "../../../src/lib/errors.js";
 import {EventEmitter} from "node:events";
 import path from "node:path";
@@ -93,6 +94,50 @@ function createMockDockerExecutor() {
         restart: vi.fn().mockResolvedValue(undefined),
     };
 }
+
+/**
+ * Reads the env of the ResticRepositoryTarget passed to a resticExecutor.run / .snapshots call. All env
+ * assertions go through this helper so the call shape lives in one place.
+ */
+function resticEnvOf(arg: unknown): Record<string, string> {
+    if (typeof arg !== "object" || arg === null || !("env" in arg)) {
+        throw new Error("expected the restic repository argument to be a ResticRepositoryTarget");
+    }
+    // A ResticRepositoryTarget's env is a plain string record (domain/restic-repository.ts).
+    return (arg as {env: Record<string, string>}).env;
+}
+
+const REMOTE_STACK = {id: "stack-1", hostPath: "/opt/docktor/stacks/stack-1"};
+
+const S3_REPO_CONFIG = {
+    repoType: "s3" as const,
+    s3Endpoint: "https://s3.example.com",
+    s3Bucket: "docktor-backups",
+    s3AccessKey: "AKIAEXAMPLE",
+    s3SecretKey: "s3-secret-example",
+    password: "restic-pass",
+};
+
+const SFTP_REPO_CONFIG = {
+    repoType: "sftp" as const,
+    sftpHost: "nas.example.com",
+    sftpUser: "backup",
+    sftpKey: "-----BEGIN OPENSSH PRIVATE KEY-----\nTEST-KEY-BODY\n-----END OPENSSH PRIVATE KEY-----\n",
+    repoPath: "/srv/restic",
+    password: "restic-pass",
+};
+
+const SFTP_ENV = {
+    RESTIC_REPOSITORY: "sftp:backup@nas.example.com:/srv/restic/stack-1",
+    RESTIC_PASSWORD: "restic-pass",
+};
+
+const S3_ENV = {
+    RESTIC_REPOSITORY: "s3:https://s3.example.com/docktor-backups/stack-1",
+    RESTIC_PASSWORD: "restic-pass",
+    AWS_ACCESS_KEY_ID: "AKIAEXAMPLE",
+    AWS_SECRET_ACCESS_KEY: "s3-secret-example",
+};
 
 describe("BackupService", () => {
     let service: BackupService;
@@ -442,15 +487,14 @@ describe("BackupService", () => {
             expect(mockResticExecutor.run.mock.calls.length).toBeGreaterThanOrEqual(3);
         });
 
-        it("auto-initializes repo on the real restic 0.16.x error shape (exit 1, 'unable to open config file')", async () => {
-            // This is what restic actually returns for a missing local repo — exit code 10
-            // is documented but not what this restic version produces. Reproduced directly:
-            // `restic backup` against a non-existent repo exits 1 with this exact message.
+        it("auto-initializes repo on restic's real repo-not-found shape (exit 10, 'repository does not exist')", async () => {
+            // Reproduced directly against restic 0.18: `restic backup` on a non-existent repo
+            // exits 10 with this message.
             const realRepoNotFoundError = Object.assign(
                 new Error(
-                    "restic exited with code 1: Fatal: unable to open config file: stat /stacks/memos/backups/config: no such file or directory\nIs there a repository at the following location?\n/stacks/memos/backups",
+                    "restic exited with code 10: Fatal: repository does not exist: unable to open config file: stat /stacks/memos/backups/config: no such file or directory\nIs there a repository at the following location?\n/stacks/memos/backups",
                 ),
-                {exitCode: 1},
+                {exitCode: 10},
             );
             mockResticExecutor.run
                 .mockRejectedValueOnce(realRepoNotFoundError)
@@ -1238,28 +1282,239 @@ services:
         });
     });
 
-    describe("buildEnv path construction", () => {
-        it("handles Windows absolute paths correctly", () => {
-            const repoConfig = {repoType: "local" as const, password: "test"};
-            const windowsPath = "C:\\Users\\D070307\\workspace\\docktor\\server\\dev-data\\stacks\\memos";
+    describe("remote repository routing (BKP-01, #68)", () => {
+        const snapshotId = "abc123def456";
+        const backupRecord = {id: "backup-1", stackId: "stack-1", trigger: "MANUAL", logLines: []};
+        const backupStack = {
+            ...REMOTE_STACK,
+            status: "BACKING_UP",
+            previousStatus: "RUNNING",
+            backupRetention: null,
+            backupPreHook: null,
+            backupPostHook: null,
+        };
+        const restoreRecord = {...backupRecord, trigger: "RESTORE", resticSnapshotId: snapshotId};
+        const restoreStack = {...REMOTE_STACK, displayName: "My App", status: "RESTORING", previousStatus: "RUNNING"};
 
-            const env = (service as any).buildEnv(repoConfig, windowsPath);
-
-            // Should resolve to stack-local backups directory without doubling drive letter
-            const expected = path.resolve(windowsPath, "backups");
-            expect(env.RESTIC_REPOSITORY).toBe(expected);
-            expect(env.RESTIC_REPOSITORY).not.toContain("C:\\C\\");
+        const originalEncryptionKey = process.env.ENCRYPTION_KEY;
+        afterEach(() => {
+            if (originalEncryptionKey === undefined) delete process.env.ENCRYPTION_KEY;
+            else process.env.ENCRYPTION_KEY = originalEncryptionKey;
         });
 
-        it("handles Unix absolute paths correctly", () => {
-            const repoConfig = {repoType: "local" as const, password: "test"};
-            const unixPath = "/opt/docktor/stacks/myapp";
+        function useRepoConfig(config: unknown): void {
+            vi.spyOn(service, "getBackupRepoConfig").mockResolvedValue(config as any);
+        }
 
-            const env = (service as any).buildEnv(repoConfig, unixPath);
+        function expectNoLocalFallback(env: Record<string, string>): void {
+            expect(env.RESTIC_REPOSITORY).not.toBe(path.resolve(REMOTE_STACK.hostPath, "backups"));
+            expect(Object.values(env).join("\n")).not.toContain("TEST-KEY-BODY");
+        }
 
-            // path.resolve on Windows converts Unix paths to Windows format
-            const expected = path.resolve(unixPath, "backups");
-            expect(env.RESTIC_REPOSITORY).toBe(expected);
+        it("runBackup with an S3 repository runs restic against the per-stack bucket prefix", async () => {
+            await service.runBackup(backupRecord as any, backupStack as any, S3_REPO_CONFIG);
+
+            expect(mockResticExecutor.run).toHaveBeenCalled();
+            for (const call of mockResticExecutor.run.mock.calls) {
+                expect(resticEnvOf(call[1])).toEqual(S3_ENV);
+                expectNoLocalFallback(resticEnvOf(call[1]));
+            }
+            expect(mockBackupRepository.update).toHaveBeenCalledWith(
+                "backup-1",
+                expect.objectContaining({status: "COMPLETED"}),
+            );
+        });
+
+        it("runBackup with an SFTP repository runs restic against the per-stack remote path", async () => {
+            await service.runBackup(backupRecord as any, backupStack as any, SFTP_REPO_CONFIG);
+
+            expect(mockResticExecutor.run).toHaveBeenCalled();
+            for (const call of mockResticExecutor.run.mock.calls) {
+                expect(resticEnvOf(call[1])).toEqual(SFTP_ENV);
+                expectNoLocalFallback(resticEnvOf(call[1]));
+            }
+        });
+
+        it("runRestoreProcess restores from the per-stack S3 repository", async () => {
+            useRepoConfig(S3_REPO_CONFIG);
+
+            await service.runRestoreProcess(restoreRecord as any, restoreStack as any, snapshotId);
+
+            expect(mockResticExecutor.run).toHaveBeenCalledWith(
+                ["restore", snapshotId, "--target", "."],
+                expect.any(Object),
+                expect.any(Function),
+                REMOTE_STACK.hostPath,
+            );
+            expect(resticEnvOf(mockResticExecutor.run.mock.calls[0][1])).toEqual(S3_ENV);
+        });
+
+        it("runRestoreProcess restores from the per-stack SFTP repository", async () => {
+            useRepoConfig(SFTP_REPO_CONFIG);
+
+            await service.runRestoreProcess(restoreRecord as any, restoreStack as any, snapshotId);
+
+            expect(resticEnvOf(mockResticExecutor.run.mock.calls[0][1])).toEqual(SFTP_ENV);
+        });
+
+        it("getSnapshotsIfIdle lists snapshots of the per-stack S3 repository", async () => {
+            useRepoConfig(S3_REPO_CONFIG);
+            mockStackRepository.findByIdOrThrow.mockResolvedValue({...REMOTE_STACK, status: "RUNNING"});
+
+            await service.getSnapshotsIfIdle("stack-1");
+
+            expect(mockResticExecutor.snapshots).toHaveBeenCalledTimes(1);
+            expect(resticEnvOf(mockResticExecutor.snapshots.mock.calls[0][0])).toEqual(S3_ENV);
+            expect(mockResticExecutor.snapshots.mock.calls[0][1]).toBe("stack-1");
+        });
+
+        it("runBackup hands the resolved SFTP target, including the configured key, to every restic run", async () => {
+            await service.runBackup(backupRecord as any, backupStack as any, SFTP_REPO_CONFIG);
+
+            expect(mockResticExecutor.run).toHaveBeenCalled();
+            for (const call of mockResticExecutor.run.mock.calls) {
+                expect(call[1]).toMatchObject({
+                    kind: "sftp",
+                    repository: "sftp:backup@nas.example.com:/srv/restic/stack-1",
+                    sftp: {host: "nas.example.com", user: "backup", privateKey: SFTP_REPO_CONFIG.sftpKey},
+                });
+            }
+        });
+
+        it("getSnapshots hands the resolved SFTP target to the executor", async () => {
+            useRepoConfig(SFTP_REPO_CONFIG);
+            mockStackRepository.findByIdOrThrow.mockResolvedValue({...REMOTE_STACK, status: "RUNNING"});
+
+            await service.getSnapshots("stack-1");
+
+            expect(mockResticExecutor.snapshots).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    kind: "sftp",
+                    sftp: expect.objectContaining({privateKey: SFTP_REPO_CONFIG.sftpKey}),
+                }),
+                "stack-1",
+            );
+        });
+
+        it("getSnapshots lists snapshots of the per-stack SFTP repository", async () => {
+            useRepoConfig(SFTP_REPO_CONFIG);
+            mockStackRepository.findByIdOrThrow.mockResolvedValue({...REMOTE_STACK, status: "RUNNING"});
+
+            await service.getSnapshots("stack-1");
+
+            expect(resticEnvOf(mockResticExecutor.snapshots.mock.calls[0][0])).toEqual(SFTP_ENV);
+        });
+
+        it("scheduled S3 backups run forget against the same repository", async () => {
+            const scheduled = {...backupRecord, trigger: "SCHEDULED"};
+
+            await service.runBackup(scheduled as any, backupStack as any, S3_REPO_CONFIG);
+
+            expect(mockResticExecutor.buildForgetArgs).toHaveBeenCalled();
+            expect(mockResticExecutor.run).toHaveBeenCalledTimes(2);
+            expect(resticEnvOf(mockResticExecutor.run.mock.calls[1][1])).toEqual(S3_ENV);
+        });
+
+        it("auto-initialises a not-yet-created remote repository with the same S3 env", async () => {
+            mockResticExecutor.run
+                .mockRejectedValueOnce(
+                    Object.assign(new Error("Fatal: unable to open config file: Stat: The specified key does not exist."), {
+                        exitCode: 10,
+                    }),
+                )
+                .mockResolvedValue({exitCode: 0, stderr: ""});
+            (mockResticExecutor as any).buildInitArgs = vi.fn().mockReturnValue(["init"]);
+
+            await service.runBackup(backupRecord as any, backupStack as any, S3_REPO_CONFIG);
+
+            const calls = mockResticExecutor.run.mock.calls;
+            expect(calls).toHaveLength(3);
+            expect(calls[1][0]).toEqual(["init"]);
+            expect(calls[2][0]).toEqual(calls[0][0]);
+            for (const call of calls) expect(resticEnvOf(call[1])).toEqual(S3_ENV);
+            expect(mockBackupRepository.update).toHaveBeenCalledWith(
+                "backup-1",
+                expect.objectContaining({status: "COMPLETED"}),
+            );
+        });
+
+        it("runBackup fails an incomplete S3 configuration without running restic (D-05)", async () => {
+            await service.runBackup(
+                backupRecord as any,
+                backupStack as any,
+                {...S3_REPO_CONFIG, s3Bucket: undefined},
+            );
+
+            expect(mockResticExecutor.run).not.toHaveBeenCalled();
+            expect(mockBackupRepository.update).toHaveBeenCalledWith(
+                "backup-1",
+                expect.objectContaining({status: "FAILED", errorMessage: expect.stringContaining("missing S3 bucket")}),
+            );
+            expect(mockStackRepository.update).toHaveBeenCalledWith("stack-1", expect.objectContaining({status: "ERROR"}));
+            expect(mockBus.emit).toHaveBeenCalledWith(
+                "backup.failed",
+                expect.objectContaining({errorMessage: expect.stringContaining("missing S3 bucket")}),
+            );
+        });
+
+        it("runRestoreProcess fails an incomplete SFTP configuration before stopping the stack (D-05)", async () => {
+            useRepoConfig({...SFTP_REPO_CONFIG, sftpKey: undefined});
+
+            await service.runRestoreProcess(restoreRecord as any, restoreStack as any, snapshotId);
+
+            expect(mockResticExecutor.run).not.toHaveBeenCalled();
+            expect(mockDockerExecutor.stop).not.toHaveBeenCalled();
+            expect(mockBackupRepository.update).toHaveBeenCalledWith(
+                "backup-1",
+                expect.objectContaining({
+                    status: "FAILED",
+                    errorMessage: expect.stringContaining("missing SFTP private key"),
+                }),
+            );
+        });
+
+        it("getSnapshots rejects an incomplete S3 configuration instead of listing local snapshots (D-05)", async () => {
+            useRepoConfig({...S3_REPO_CONFIG, s3Bucket: ""});
+            mockStackRepository.findByIdOrThrow.mockResolvedValue({...REMOTE_STACK, status: "RUNNING"});
+
+            await expect(service.getSnapshots("stack-1")).rejects.toBeInstanceOf(BadRequestError);
+            expect(mockResticExecutor.snapshots).not.toHaveBeenCalled();
+        });
+
+        it("getSnapshots treats a secret that fails to decrypt as missing (D-05)", async () => {
+            process.env.ENCRYPTION_KEY = "ab".repeat(32);
+            mockSettingsService.getMany.mockResolvedValue({
+                "backup.repoType": "sftp",
+                "backup.sftpHost": "nas.example.com",
+                "backup.sftpUser": "backup",
+                "backup.password": encrypt("restic-pass"),
+                "backup.sftpKey": "not-valid-ciphertext",
+            });
+            mockStackRepository.findByIdOrThrow.mockResolvedValue({...REMOTE_STACK, status: "RUNNING"});
+
+            await expect(service.getSnapshots("stack-1")).rejects.toThrow(/SFTP private key/);
+            await expect(service.getSnapshots("stack-1")).rejects.toBeInstanceOf(BadRequestError);
+            expect(mockResticExecutor.snapshots).not.toHaveBeenCalled();
+        });
+
+        it("keeps local backup, restore and listing on <hostPath>/backups (BKP-02)", async () => {
+            const localConfig = {repoType: "local" as const, repoPath: "/ignored", password: "pw"};
+            const hostPath = "/opt/docktor/stacks/myapp";
+            const localStack = {id: "stack-1", hostPath, status: "BACKING_UP", previousStatus: "RUNNING", backupRetention: null};
+            const expectedRepo = path.resolve(hostPath, "backups");
+            useRepoConfig(localConfig);
+            mockStackRepository.findByIdOrThrow.mockResolvedValue({id: "stack-1", hostPath, status: "RUNNING"});
+
+            await service.runBackup(backupRecord as any, localStack as any, localConfig);
+            await service.runRestoreProcess(restoreRecord as any, {...localStack, status: "RESTORING"} as any, snapshotId);
+            await service.getSnapshots("stack-1");
+
+            const envs = [
+                ...mockResticExecutor.run.mock.calls.map((call) => resticEnvOf(call[1])),
+                resticEnvOf(mockResticExecutor.snapshots.mock.calls[0][0]),
+            ];
+            expect(envs.length).toBeGreaterThanOrEqual(3);
+            for (const env of envs) expect(env.RESTIC_REPOSITORY).toBe(expectedRepo);
         });
     });
 
@@ -1519,6 +1774,139 @@ services:
             const result = await service.checkResticStatus();
 
             expect(result).toEqual({available: true, version: "0.16.0"});
+        });
+    });
+
+    describe("testRepositoryConnection()", () => {
+        function useRepoConfig(config: unknown): void {
+            vi.spyOn(service, "getBackupRepoConfig").mockResolvedValue(config as any);
+        }
+
+        it("reports a missing configuration without running restic", async () => {
+            useRepoConfig(null);
+
+            const result = await service.testRepositoryConnection();
+
+            expect(result.ok).toBe(false);
+            expect(result.message).toMatch(/no backup repository is configured/i);
+            expect(mockResticExecutor.run).not.toHaveBeenCalled();
+        });
+
+        it("has nothing to connect to for a local repository", async () => {
+            useRepoConfig({repoType: "local", password: "restic-pass"});
+
+            const result = await service.testRepositoryConnection();
+
+            expect(result.ok).toBe(true);
+            expect(mockResticExecutor.run).not.toHaveBeenCalled();
+        });
+
+        it("probes an SFTP repository with a read-only restic command", async () => {
+            useRepoConfig(SFTP_REPO_CONFIG);
+
+            const result = await service.testRepositoryConnection();
+
+            expect(result.ok).toBe(true);
+            expect(mockResticExecutor.run).toHaveBeenCalledWith(
+                ["cat", "config"],
+                expect.objectContaining({kind: "sftp"}),
+                undefined,
+                undefined,
+                {timeoutMs: 30_000},
+            );
+            expect(resticEnvOf(mockResticExecutor.run.mock.calls[0][1]).RESTIC_REPOSITORY)
+                .toMatch(/^sftp:backup@nas\.example\.com:\/srv\/restic\//);
+        });
+
+        it("probes an S3 repository", async () => {
+            useRepoConfig(S3_REPO_CONFIG);
+
+            const result = await service.testRepositoryConnection();
+
+            expect(result.ok).toBe(true);
+            expect(mockResticExecutor.run).toHaveBeenCalledWith(
+                ["cat", "config"],
+                expect.objectContaining({kind: "s3"}),
+                undefined,
+                undefined,
+                {timeoutMs: 30_000},
+            );
+        });
+
+        it("treats a missing repository as a working connection", async () => {
+            useRepoConfig(S3_REPO_CONFIG);
+            mockResticExecutor.run.mockRejectedValue(
+                Object.assign(new Error("Fatal: repository does not exist: unable to open config file: Stat: key does not exist"), {exitCode: 10}),
+            );
+
+            const result = await service.testRepositoryConnection();
+
+            expect(result.ok).toBe(true);
+        });
+
+        it("redacts configured secrets from the error it returns (IN-06)", async () => {
+            useRepoConfig(S3_REPO_CONFIG);
+            mockResticExecutor.run.mockRejectedValue(
+                new Error("Fatal: Stat: request failed for key AKIAEXAMPLE signed with s3-secret-example using restic-pass"),
+            );
+
+            const result = await service.testRepositoryConnection();
+
+            expect(result.ok).toBe(false);
+            for (const secret of ["AKIAEXAMPLE", "s3-secret-example", "restic-pass"]) {
+                expect(result.message).not.toContain(secret);
+            }
+            expect(result.message).toContain("***");
+        });
+
+        it("probes a repository no real stack can be called (IN-05)", async () => {
+            useRepoConfig(SFTP_REPO_CONFIG);
+
+            await service.testRepositoryConnection();
+
+            expect(resticEnvOf(mockResticExecutor.run.mock.calls[0][1]).RESTIC_REPOSITORY).toMatch(/\/docktor-connection-probe$/);
+        });
+
+        it("reports a probe that had to be stopped as a failed connection", async () => {
+            useRepoConfig(S3_REPO_CONFIG);
+            mockResticExecutor.run.mockRejectedValue(new Error("restic did not finish within 30 seconds and was stopped"));
+
+            const result = await service.testRepositoryConnection();
+
+            expect(result.ok).toBe(false);
+            expect(result.message).toContain("did not finish within 30 seconds");
+        });
+
+        it("does not mistake an S3 Stat failure for a missing repository", async () => {
+            useRepoConfig(S3_REPO_CONFIG);
+            mockResticExecutor.run.mockRejectedValue(
+                Object.assign(new Error("Fatal: unable to open config file: Stat: The AWS Access Key Id you provided does not exist in our records."), {exitCode: 1}),
+            );
+
+            const result = await service.testRepositoryConnection();
+
+            expect(result.ok).toBe(false);
+            expect(result.message).toContain("Access Key Id");
+        });
+
+        it("reports the restic error when the connection fails", async () => {
+            useRepoConfig(SFTP_REPO_CONFIG);
+            mockResticExecutor.run.mockRejectedValue(new Error("ssh: connect to host nas.example.com port 22: Connection refused"));
+
+            const result = await service.testRepositoryConnection();
+
+            expect(result.ok).toBe(false);
+            expect(result.message).toContain("Connection refused");
+        });
+
+        it("reports an incomplete remote configuration instead of throwing", async () => {
+            useRepoConfig({...SFTP_REPO_CONFIG, sftpKey: undefined});
+
+            const result = await service.testRepositoryConnection();
+
+            expect(result.ok).toBe(false);
+            expect(result.message).toContain("SFTP private key");
+            expect(mockResticExecutor.run).not.toHaveBeenCalled();
         });
     });
 });

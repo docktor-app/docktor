@@ -105,6 +105,21 @@ export class BackupRepository {
     }
 
     /**
+     * Returns the ids of stacks with at least one completed manual or
+     * scheduled backup. A restore, a failure or an in-flight run is not a
+     * snapshot (D-04). One aggregate query regardless of stack count;
+     * resticSnapshotId is deliberately not filtered on because it may stay
+     * empty on completed rows.
+     */
+    async findStackIdsWithSnapshot(): Promise<Set<string>> {
+        const groups = await prisma.backup.groupBy({
+            by: ["stackId"],
+            where: {status: "COMPLETED", trigger: {in: ["MANUAL", "SCHEDULED"]}},
+        });
+        return new Set(groups.map((group) => group.stackId));
+    }
+
+    /**
      * Converts a Backup record to a plain DTO safe for JSON serialisation.
      * BigInt sizeBytes is converted to string (or null) to prevent
      * JSON.stringify throwing TypeError.

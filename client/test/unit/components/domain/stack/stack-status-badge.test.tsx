@@ -3,17 +3,17 @@ import {render, screen} from "@testing-library/react";
 import {StackStatusBadge, getStackStatusPresentation} from "@/components/domain/stack/stack-status-badge";
 
 const LABELS: Record<string, string> = {
-    DRAFT: "Draft",
-    DEPLOYING: "Deploying",
-    RUNNING: "Running",
-    HEALTHY: "Healthy",
-    UNHEALTHY: "Unhealthy",
-    STOPPED: "Stopped",
-    ERROR: "Error",
-    UPDATING: "Updating",
-    BACKING_UP: "Backing Up",
-    RESTORING: "Restoring",
-    MIGRATING: "Migrating",
+    DRAFT: "draft",
+    DEPLOYING: "deploying",
+    RUNNING: "running",
+    HEALTHY: "healthy",
+    UNHEALTHY: "unhealthy",
+    STOPPED: "stopped",
+    ERROR: "error",
+    UPDATING: "updating",
+    BACKING_UP: "backing up",
+    RESTORING: "restoring",
+    MIGRATING: "migrating",
 };
 
 describe("StackStatusBadge", () => {
@@ -24,13 +24,13 @@ describe("StackStatusBadge", () => {
 
     it("renders the Badge element itself for the default display", () => {
         render(<StackStatusBadge status="BACKING_UP" />);
-        const badge = screen.getByText("Backing Up");
+        const badge = screen.getByText("backing up");
         expect(badge).toHaveAttribute("data-slot", "badge");
     });
 
     it.each([
-        ["RUNNING", "Running"],
-        ["HEALTHY", "Healthy"],
+        ["RUNNING", "running"],
+        ["HEALTHY", "healthy"],
     ])("renders %s green with a pulsing status dot", (status, label) => {
         render(<StackStatusBadge status={status} />);
         const badge = screen.getByText(label);
@@ -42,9 +42,9 @@ describe("StackStatusBadge", () => {
     });
 
     it.each([
-        ["DEPLOYING", "Deploying"],
-        ["UPDATING", "Updating"],
-        ["BACKING_UP", "Backing Up"],
+        ["DEPLOYING", "deploying"],
+        ["UPDATING", "updating"],
+        ["BACKING_UP", "backing up"],
     ])("keeps %s blue with the pulsing badge treatment (G-08-7 regression lock)", (status, label) => {
         render(<StackStatusBadge status={status} />);
         const badge = screen.getByText(label);
@@ -55,8 +55,8 @@ describe("StackStatusBadge", () => {
     });
 
     it.each([
-        ["RESTORING", "Restoring"],
-        ["MIGRATING", "Migrating"],
+        ["RESTORING", "restoring"],
+        ["MIGRATING", "migrating"],
     ])("pulses %s without promoting it to the blue tone (G-08-7)", (status, label) => {
         render(<StackStatusBadge status={status} />);
         const badge = screen.getByText(label);
@@ -65,8 +65,8 @@ describe("StackStatusBadge", () => {
     });
 
     it.each([
-        ["ERROR", "Error"],
-        ["UNHEALTHY", "Unhealthy"],
+        ["ERROR", "error"],
+        ["UNHEALTHY", "unhealthy"],
     ])("renders %s red with no motion", (status, label) => {
         render(<StackStatusBadge status={status} />);
         const badge = screen.getByText(label);
@@ -75,8 +75,8 @@ describe("StackStatusBadge", () => {
     });
 
     it.each([
-        ["STOPPED", "Stopped"],
-        ["DRAFT", "Draft"],
+        ["STOPPED", "stopped"],
+        ["DRAFT", "draft"],
     ])("renders %s neutral with no motion", (status, label) => {
         render(<StackStatusBadge status={status} />);
         const badge = screen.getByText(label);
@@ -84,16 +84,16 @@ describe("StackStatusBadge", () => {
         expect(badge.className).not.toContain("animate-pulse");
     });
 
-    it("renders the raw status string for an unrecognized status, neutral and static", () => {
+    it("renders the lowercased status string for an unrecognized status, neutral and static", () => {
         render(<StackStatusBadge status="WEIRD" />);
-        const badge = screen.getByText("WEIRD");
+        const badge = screen.getByText("weird");
         expect(badge).toHaveAttribute("data-tone", "neutral");
         expect(badge.className).not.toContain("animate-pulse");
     });
 
     it("renders display=compact as a dot + label without the Badge element", () => {
         render(<StackStatusBadge status="RUNNING" display="compact" />);
-        const label = screen.getByText("Running");
+        const label = screen.getByText("running");
         expect(label.closest('[data-slot="badge"]')).toBeNull();
         const dot = document.querySelector('[data-slot="status-dot"]');
         expect(dot).toHaveAttribute("data-pulse", "true");
@@ -101,7 +101,7 @@ describe("StackStatusBadge", () => {
 
     it("getStackStatusPresentation returns the fallback shape for an unknown status", () => {
         expect(getStackStatusPresentation("WEIRD")).toEqual({
-            label: "WEIRD",
+            label: "weird",
             tone: "neutral",
             dotPulse: false,
             badgePulse: false,

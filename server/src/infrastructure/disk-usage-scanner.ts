@@ -24,6 +24,7 @@ import type {Dirent} from "node:fs";
 import {lstat, readdir} from "node:fs/promises";
 import {promisify} from "node:util";
 import type {DiskUsageScannerPort} from "../application/ports/disk-usage-scanner-port.js";
+import {hasErrorCode} from "../lib/errors.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -54,10 +55,6 @@ const defaultFsOps: DiskUsageFsOps = {
     readdir: (dir) => readdir(dir, {withFileTypes: true}),
     lstat: (path) => lstat(path),
 };
-
-function hasErrorCode(err: unknown, code: string): boolean {
-    return typeof err === "object" && err !== null && "code" in err && err.code === code;
-}
 
 function isMissingDirectory(err: unknown): boolean {
     return hasErrorCode(err, "ENOENT");

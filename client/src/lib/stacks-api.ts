@@ -17,6 +17,9 @@ export interface Stack {
     configError: string | null;
     lastKnownHash: string | null;
     backupSchedule: string | null;
+    // Present on GET /api/stacks list items only: true when the stack has at
+    // least one completed manual or scheduled backup (D-04).
+    hasBackup?: boolean;
     isProtected: boolean;
     // Issue #21/D-14: the JSON-encoded result of the last pre-deploy check
     // (see DeployWarnings below), persisted by StackService.runPreflight

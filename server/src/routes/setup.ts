@@ -1,8 +1,14 @@
 import type {FastifyPluginAsyncZod} from "fastify-type-provider-zod";
-import {z} from "zod";
 import {onboardingService} from "../application/onboarding-service.js";
 import {migrationService} from "../application/migration-service.js";
+import {migrationOperationService} from "../application/migration-operation-service.js";
+import {requireAuth} from "../lib/auth-middleware.js";
+import {BadRequestError} from "../lib/errors.js";
 import {
+    brownfieldAdoptSchema,
+    migrationExecuteSchema,
+    migrationOperationParamsSchema,
+    migrationPreviewSchema,
     wizardStep1Schema,
     wizardStep2Schema,
     wizardStep3Schema,
@@ -10,6 +16,25 @@ import {
     wizardStep5Schema,
     wizardStep6Schema,
 } from "@docktor/shared";
+
+/**
+ * WR-03: the brownfield routes can scan host files, stop compose projects and
+ * copy directories, so they are closed until the admin account exists (mirrors
+ * step6's hasAnyUser guard).
+ */
+async function requireAdminAccount(): Promise<void> {
+    if (!(await onboardingService.hasAnyUser())) {
+        throw new BadRequestError("Create the admin account before scanning, previewing or running a migration");
+    }
+}
+
+/**
+ * WR-02: once the admin exists the wizard is signed in as that admin, so every
+ * brownfield route also demands that session. Before the admin exists the
+ * account guard refuses first (400); an anonymous caller never reaches a scan,
+ * adopt or migration, however long the wizard stays unfinished.
+ */
+const requireWizardSession = [requireAdminAccount, requireAuth];
 
 const setupRoutes: FastifyPluginAsyncZod = async (app) => {
     // CR-01/T-05-09: every /api/setup/* route beyond step 1 must stop being
@@ -103,6 +128,7 @@ const setupRoutes: FastifyPluginAsyncZod = async (app) => {
     app.post(
         "/api/setup/scan",
         {
+            preHandler: requireWizardSession,
             schema: {
                 body: wizardStep5Schema,
             },
@@ -118,11 +144,9 @@ const setupRoutes: FastifyPluginAsyncZod = async (app) => {
     app.post(
         "/api/setup/adopt",
         {
+            preHandler: requireWizardSession,
             schema: {
-                body: z.object({
-                    composePath: z.string(),
-                    displayName: z.string().min(1),
-                }),
+                body: brownfieldAdoptSchema,
             },
         },
         async (request) => {
@@ -138,54 +162,54 @@ const setupRoutes: FastifyPluginAsyncZod = async (app) => {
     app.post(
         "/api/setup/migrate/preview",
         {
+            preHandler: requireWizardSession,
             schema: {
-                body: z.object({
-                    composePath: z.string(),
-                    volumeSelections: z.array(z.object({
-                        originalPath: z.string(),
-                        newPath: z.string(),
-                        convert: z.boolean(),
-                    })),
-                    namedVolumeSelections: z.record(z.string(), z.boolean()),
-                }),
+                body: migrationPreviewSchema,
             },
         },
         async (request) => {
-            const {composePath, volumeSelections, namedVolumeSelections} = request.body;
-            const namedVolMap = new Map(Object.entries(namedVolumeSelections) as [string, boolean][]);
-            const result = await migrationService.previewMigration(composePath, volumeSelections, namedVolMap);
-            return result;
+            const {namedVolumeSelections, ...rest} = request.body;
+            return migrationService.previewMigration({
+                ...rest,
+                namedVolumeSelections: new Map(Object.entries(namedVolumeSelections)),
+            });
         },
     );
 
-    // Execute migration
+    // Start a migration as a background operation (G-18-job)
     app.post(
         "/api/setup/migrate",
         {
+            preHandler: requireWizardSession,
             schema: {
-                body: z.object({
-                    composePath: z.string(),
-                    displayName: z.string().min(1),
-                    volumeSelections: z.array(z.object({
-                        originalPath: z.string(),
-                        newPath: z.string(),
-                        convert: z.boolean(),
-                    })),
-                    namedVolumeSelections: z.record(z.string(), z.boolean()),
-                }),
+                body: migrationExecuteSchema,
             },
         },
-        async (request) => {
-            const {composePath, displayName, volumeSelections, namedVolumeSelections} = request.body;
-            const namedVolMap = new Map(Object.entries(namedVolumeSelections) as [string, boolean][]);
-            const result = await migrationService.migrate({
-                composePath,
-                displayName,
-                volumeSelections,
-                namedVolumeSelections: namedVolMap,
+        async (request, reply) => {
+            const {namedVolumeSelections, ...rest} = request.body;
+            const operation = await migrationOperationService.start({
+                ...rest,
+                namedVolumeSelections: new Map(Object.entries(namedVolumeSelections)),
             });
-            return result;
+            return reply.status(202).send(operation);
         },
+    );
+
+    // List running and recent operations, e.g. to resync after a reload
+    app.get("/api/setup/migrations", {preHandler: requireWizardSession}, async () => ({
+        operations: migrationOperationService.list(),
+    }));
+
+    // Read one operation
+    app.get(
+        "/api/setup/migrations/:operationId",
+        {
+            preHandler: requireWizardSession,
+            schema: {
+                params: migrationOperationParamsSchema,
+            },
+        },
+        async (request) => migrationOperationService.get(request.params.operationId),
     );
 
     // Step 6: Deploy the managed proxy stack (optional, terminal step — D-09/D-10)

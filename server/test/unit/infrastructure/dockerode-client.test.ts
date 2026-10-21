@@ -23,7 +23,7 @@ describe("DockerodeClient", () => {
     });
 
     describe("getEventStream (OBS-01, OBS-06)", () => {
-        it("calls docker.getEvents with filters for container events [start, stop, die, kill, health_status]", async () => {
+        it("calls docker.getEvents with filters for container events [start, stop, die, health_status]", async () => {
             const mockStream = {on: vi.fn(), pipe: vi.fn()};
             mockDocker.getEvents.mockResolvedValue(mockStream);
 
@@ -31,10 +31,11 @@ describe("DockerodeClient", () => {
 
             expect(mockDocker.getEvents).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    filters: expect.objectContaining({
-                        type: expect.arrayContaining(["container"]),
-                        event: expect.arrayContaining(["start", "stop", "die", "kill", "health_status"]),
-                    }),
+                    filters: {
+                        type: ["container"],
+                        // kill fires while the container is still running (G-18-23-stop-ui)
+                        event: ["start", "stop", "die", "health_status"],
+                    },
                 }),
             );
             expect(stream).toBe(mockStream);

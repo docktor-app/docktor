@@ -700,6 +700,7 @@ __metadata:
     "@codemirror/lang-yaml": "npm:^6.1.3"
     "@codemirror/lint": "npm:^6.9.7"
     "@docktor/shared": "workspace:*"
+    "@fontsource-variable/geist-mono": "npm:^5.3.0"
     "@hookform/resolvers": "npm:^5.2.2"
     "@playwright/test": "npm:^1.58.2"
     "@tailwindcss/vite": "npm:^4.1.18"
@@ -1226,6 +1227,13 @@ __metadata:
   version: 0.2.10
   resolution: "@floating-ui/utils@npm:0.2.10"
   checksum: 10c0/e9bc2a1730ede1ee25843937e911ab6e846a733a4488623cd353f94721b05ec2c9ec6437613a2ac9379a94c2fd40c797a2ba6fa1df2716f5ce4aa6ddb1cf9ea4
+  languageName: node
+  linkType: hard
+
+"@fontsource-variable/geist-mono@npm:^5.3.0":
+  version: 5.3.0
+  resolution: "@fontsource-variable/geist-mono@npm:5.3.0"
+  checksum: 10c0/21a4097b3ccce08cbc181199f68a9193adc17d997ef8d883eab7565c6d79a82b2f8d7656f32f97b66f1f0b4ebba78a1a822c6318d55e0c5f572d74683ab036ee
   languageName: node
   linkType: hard
 

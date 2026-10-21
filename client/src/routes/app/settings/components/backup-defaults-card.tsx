@@ -120,7 +120,7 @@ export function BackupDefaultsCard() {
             </CardContent>
             <CardFooter>
                 <Button onClick={handleSave} disabled={saving || loading}>
-                    {saving ? "Saving..." : "Save defaults"}
+                    {saving ? "Saving..." : "Save Defaults"}
                 </Button>
             </CardFooter>
         </Card>

@@ -18,17 +18,17 @@ self-host applications like Nextcloud, Vaultwarden, etc. without deep Docker exp
 
 ## Status
 
-This document describes the design of Docktor **v0.1.0**. Sections that describe an idea that is not built are marked
+This document describes the design of Docktor **v0.1.1**. Sections that describe an idea that is not built are marked
 "Not implemented".
 
-v0.1.0 ships these feature areas:
+v0.1.1 ships these feature areas:
 
 - **Stacks and compose editing** — create, edit, deploy, stop, restart and delete stacks; a compose and `.env` editor
   with a diff-and-warnings review step before an edit is applied.
 - **Templates** — create a stack from templates read out of git repositories (see [Templates](#templates)).
 - **Live status and logs** — event-driven container state with a reconciliation poll, per-service SSE log streaming.
 - **Update checks** — registry polling for newer image versions with per-service upgrade.
-- **Backups and restore** — per-stack local restic repositories (SFTP and S3 settings exist but are not used as a destination in v0.1.0), per-stack schedules and retention, snapshot restore.
+- **Backups and restore** — per-stack restic repositories, either a local directory inside the stack or one repository per stack inside the configured SFTP or S3-compatible repository, with per-stack schedules and retention and snapshot restore.
 - **Proxy and TLS** — a Docktor-managed `nginx-proxy` + `acme-companion` stack, per-service domains, Let's Encrypt or
   uploaded certificates.
 - **Brownfield import** — scan the host for existing compose projects, adopt them in place or migrate them fully.
@@ -153,15 +153,45 @@ can abort without data loss.
 
 1. **Scan & Discover** — Search the host filesystem (through the read-only `/host` mount) for `docker-compose.yml`
    files. For each, show: directory path, service names, images, container state, and a compatibility assessment
-   flagging what needs to change (named volumes, inline env vars, non-standard paths).
+   flagging what needs to change (named volumes, inline env vars, non-standard paths). Docktor's own compose project is
+   never offered: it is detected from its own container's compose labels, and if it cannot be identified, every stack
+   is listed. Folders that produce nothing are listed with the reason (not found, permission denied, system
+   directory), stacks Docktor already manages are shown as managed with a link instead of being offered again, and
+   originals kept by an in-place migration are not offered.
 
 2. **Adopt in Place** (lightweight) — Register an existing directory as a stack in the DB without moving anything.
    Docktor monitors and manages it where it lives. Trade-off: no volume convention enforcement, incomplete backup
    coverage. Zero downtime, zero risk. Users can upgrade to full migration later.
 
-3. **Full Migration** (recommended) — A guided wizard that stops the stack, copies data into the stack's directory,
-   converts named volumes to bind mounts, extracts inline env vars to `.env`, rewrites compose paths, and restarts.
-   Includes rollback on failure and user-initiated cleanup of old volumes/directories.
+3. **Full Migration** (recommended) — A four-step dialog that copies the stack into Docktor's directory layout,
+   converts named volumes to bind mounts, extracts inline env vars to `.env` and rewrites compose paths. There are two
+   modes: *separate* (the new stack gets a new directory in the stacks folder) and *in place* (the compose file already
+   lives in the stacks-folder directory the new stack would use; the original is renamed aside to
+   `<name>-pre-migration`, the first free name with a numeric suffix if taken and editable by the user, and the new
+   stack is built in the original path from that copy):
+    1. **Select data** — choose which named volumes and bind mounts to copy, and the new stack's name. Relative bind
+       mounts move to `./volumes/<name>` by default or are kept per mount.
+    2. **Review changes** — a real line diff of the compose file changes plus the extracted `.env` content; secret
+       values are masked until the user reveals them.
+    3. **Backup** — for a separate migration, choose whether to keep a copy of the old stack directory (compose file,
+       `.env` and bind-mount data) at `pre-migration-backup/` inside the new stack directory (default off); the original
+       directory stays untouched either way. The copy is kept after a successful migration; named Docker volumes are
+       not included. Because it lives inside the new stack directory, it is part of the new stack's restic backups. An
+       in-place migration makes no extra copy because the renamed original is the backup.
+    4. **Old stack** — choose whether to stop the old stack first with `docker compose stop` (default on). Containers
+       are stopped, not removed, so the old stack can be started again. Stopping is required for in-place migrations
+       and whenever the old and new stack would share a compose project name (directory, `name:` or
+       `COMPOSE_PROJECT_NAME`); a migration that would leave the old stack running under the new stack's project name
+       is refused. If declined where allowed, the old stack keeps running and ports used by both stacks may conflict
+       when the new stack is deployed.
+
+   The migration runs as a background operation: the request answers 202 with an operation id, progress and the
+   outcome arrive as `migration_progress` events on the existing SSE channel and survive a reload, and a second
+   migration of the same stack name or compose file is refused with 409 while one runs. Rollback of a separate
+   migration removes only the new directory and stack record the run created and restarts the old stack with
+   `docker compose start`, only if Docktor stopped it. Rollback of an in-place migration renames the original back when
+   its path is free and otherwise leaves it in place and reports the manual steps. A separate migration whose target
+   directory already exists or overlaps the old directory is refused before anything is stopped or created.
 
 ---
 
@@ -705,6 +735,7 @@ when the server starts. `BETTER_AUTH_URL` and the `baseUrl` setting both feed th
 | `backup.repoType`                                       | string             | `local`, `sftp` or `s3`                                              |
 | `backup.repoPath`                                       | string             | Repository location                                                  |
 | `backup.sftpHost`, `backup.sftpUser`, `backup.sftpKey`  | string (key encrypted) | SFTP connection details                                          |
+| `backup.sftpPort`                                       | number             | Optional SFTP port (default 22)                                      |
 | `backup.s3Endpoint`, `backup.s3Bucket`, `backup.s3AccessKey`, `backup.s3SecretKey` | string (secret encrypted) | S3-compatible connection details |
 | `backup.password`                                       | string (encrypted) | Repository encryption password                                       |
 | `backup.defaultSchedule`                                | string             | Default cron expression (e.g., `0 2 * * *` for daily at 2 AM)        |
@@ -774,7 +805,8 @@ new built-in rule is a one-file change. There is no mechanism for loading rules 
    `config_error` if the file changes on disk.
 2. **Port conflicts:** Before every deploy Docktor checks whether a published host port is already in use. A conflict
    with another managed stack names that stack; a conflict with another process is identified with `ss` or `lsof` where
-   available and reported as "unknown process" otherwise.
+   available and reported as "unknown process" otherwise. Ports published only by the deploying stack's own running containers are not
+   reported, so redeploying a running stack does not warn about itself.
 
 ---
 
@@ -797,7 +829,11 @@ Each trigger type can be individually enabled or disabled in Settings (`notify.s
 **What gets backed up:** The entire stack directory (`docker-compose.yml`, `.env`, `volumes/`), excluding `logs/` and
 `backups/`. Absolute-path volumes outside the stack are not included (flagged at edit time by the compose checks).
 
-**Engine:** Restic — encrypted, deduplicated, versioned snapshots. Target in v0.1.0: a per-stack local directory (SFTP and S3-compatible settings exist but are not yet used as a destination)
+**Engine:** Restic — encrypted, deduplicated, versioned snapshots. A `local` repository is the stack's `backups/` directory; an `sftp` or `s3` repository holds one restic repository
+per stack, `sftp:<user>@<host>:<repoPath>/<stackId>` or `s3:<endpoint>/<bucket>/<stackId>`. An incomplete or
+undecryptable remote configuration fails the run with an error and never falls back to the local path. SFTP runs use the
+stored private key from a per-run 0600 file that is removed afterwards and pin the server's host key on first
+connection in `<stacksDir>/.docktor/ssh`.
 Snapshot metadata stored in the database. The restic binary is pinned and checksum-verified in the image.
 
 **Consistency:** Backups run against the live stack without stopping it. Each stack can define an optional shell pre-hook
@@ -818,7 +854,8 @@ can be added in Settings) and reads a fixed folder layout out of them. Each temp
 example with and without Redis), each a self-contained compose file with metadata. The repository format is described in
 [templates.md](templates.md).
 
-The Templates page is a searchable card grid with a category filter. A stack created from a template pins the commit it
+The Templates page (`/templates`, reachable from the sidebar and from the create-stack flow) is a searchable card grid
+with a category filter. A stack created from a template pins the commit it
 was created from, and a passive "template updated" badge appears when the repository has moved on; nothing is applied
 automatically. Compose checks apply to template content like any other compose file. Private repositories and
 credentials embedded in repository URLs are not supported.

@@ -6,7 +6,8 @@ import type {ComposeAnalyzerPort} from "../application/ports/compose-analyzer-po
 // is a pass-through from the host/.env, not a hardcoded inline literal.
 const VARIABLE_REFERENCE_PATTERN = /^\$(\{[A-Za-z_][A-Za-z0-9_]*(:?[-?+][^}]*)?\}|[A-Za-z_][A-Za-z0-9_]*)$/;
 
-function isVariableReference(value: string): boolean {
+/** Shared with ComposeRewriter so both agree on what counts as an inline literal. */
+export function isVariableReference(value: string): boolean {
     return VARIABLE_REFERENCE_PATTERN.test(value.trim());
 }
 

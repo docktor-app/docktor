@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 23
+open_count: 24
 waived_count: 0
 fixed_count: 8
-total_count: 31
-last_updated: 2026-10-11T10:26:54.199Z
+total_count: 32
+last_updated: 2026-10-15T07:20:15.987Z
 ---
 
 # Broken Windows Ledger
@@ -46,6 +46,7 @@ last_updated: 2026-10-11T10:26:54.199Z
 | 29 | 14 | unrun-verify | client/src/routes/app/settings/components/health-retention-card.tsx |  | 14-10 human-check not performed: Health History card and shorten-retention dialog in light/dark at desktop and Pixel 7 width, validation shown on blur | open |  | 2026-10-08T13:56:26.900Z |  |
 | 30 | 14 | unrun-verify | server/src/infrastructure/probe-transport.ts |  | 14-09 human-check not performed: live probe attach/detach, startup sweep and Delete Stack with active probes on a dedicated Docker host with a collision-proof project name | open |  | 2026-10-08T14:22:59.073Z |  |
 | 31 | 15 | unrun-verify | server/prisma/migrations/20261011102429_add_two_factor_and_rate_limit/migration.sql |  | Migration add_two_factor_and_rate_limit generated via migrate diff (Branch B) but not applied to a live database; syncDatabaseSchema() applies it at next boot, CI db push covers tests | open |  | 2026-10-11T10:26:54.199Z |  |
+| 32 | 18 | unrun-verify | server/test/integration/imports.test.ts |  | 18-03 Task 3 integration cases (preview shape, missing backup flag 400) and repo-wide tsc --build not run locally (VPS rule); CI must be green | open |  | 2026-10-15T07:20:15.987Z |  |
 
 ````json
 [
@@ -439,6 +440,19 @@ last_updated: 2026-10-11T10:26:54.199Z
     "recorded_at": "2026-10-11T10:26:54.199Z",
     "resolved_at": null,
     "milestone": "v0.1.0"
+  },
+  {
+    "id": 32,
+    "kind": "unrun-verify",
+    "phase": "18",
+    "file": "server/test/integration/imports.test.ts",
+    "line": null,
+    "description": "18-03 Task 3 integration cases (preview shape, missing backup flag 400) and repo-wide tsc --build not run locally (VPS rule); CI must be green",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-15T07:20:15.987Z",
+    "resolved_at": null,
+    "milestone": "v0.1.1"
   }
 ]
 ````

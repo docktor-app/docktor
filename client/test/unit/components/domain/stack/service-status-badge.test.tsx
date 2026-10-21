@@ -69,4 +69,9 @@ describe("ServiceStatusBadge", () => {
         expect(getServiceStatusPresentation("restarting", null)).toEqual({label: "restarting", tone: "yellow", dotPulse: false});
         expect(getServiceStatusPresentation("paused", null)).toEqual({label: "paused", tone: "neutral", dotPulse: false});
     });
+
+    it("lowercases an unrecognized containerState through the shared formatter", () => {
+        render(<ServiceStatusBadge containerState="Paused" healthStatus={null} />);
+        expect(screen.getByText("paused")).toHaveAttribute("data-tone", "neutral");
+    });
 });

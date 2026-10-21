@@ -5,6 +5,7 @@ import {standardSchemaResolver} from "@hookform/resolvers/standard-schema";
 import {LoginInput, loginSchema} from "@docktor/shared";
 import {refreshSession, signIn} from "@/lib/auth-client";
 import {BrandLogo} from "@/components/common/brand-logo";
+import {FormActions, FormStack} from "@/components/common/form-layout";
 import {classifyAuthError} from "@/lib/auth-errors";
 import {formatRetryAfter, readRetryAfterSeconds} from "@/lib/rate-limit";
 import {TwoFactorStep} from "@/routes/auth/components/two-factor-step";
@@ -110,42 +111,46 @@ export function LoginForm(): React.JSX.Element {
                 )}
 
                 <Form {...form}>
-                    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                        <FormField
-                            control={form.control}
-                            name="email"
-                            render={({field}) => (
-                                <FormItem>
-                                    <FormLabel>Email</FormLabel>
-                                    <FormControl>
-                                        <Input
-                                            type="email"
-                                            placeholder="you@example.com"
-                                            {...field}
-                                        />
-                                    </FormControl>
-                                    <FormMessage/>
-                                </FormItem>
-                            )}
-                        />
+                    <form onSubmit={form.handleSubmit(onSubmit)}>
+                        <FormStack>
+                            <FormField
+                                control={form.control}
+                                name="email"
+                                render={({field}) => (
+                                    <FormItem>
+                                        <FormLabel>Email</FormLabel>
+                                        <FormControl>
+                                            <Input
+                                                type="email"
+                                                placeholder="you@example.com"
+                                                {...field}
+                                            />
+                                        </FormControl>
+                                        <FormMessage/>
+                                    </FormItem>
+                                )}
+                            />
 
-                        <FormField
-                            control={form.control}
-                            name="password"
-                            render={({field}) => (
-                                <FormItem>
-                                    <FormLabel>Password</FormLabel>
-                                    <FormControl>
-                                        <Input type="password" {...field} />
-                                    </FormControl>
-                                    <FormMessage/>
-                                </FormItem>
-                            )}
-                        />
+                            <FormField
+                                control={form.control}
+                                name="password"
+                                render={({field}) => (
+                                    <FormItem>
+                                        <FormLabel>Password</FormLabel>
+                                        <FormControl>
+                                            <Input type="password" {...field} />
+                                        </FormControl>
+                                        <FormMessage/>
+                                    </FormItem>
+                                )}
+                            />
 
-                        <Button type="submit" className="w-full" disabled={loading}>
-                            {loading ? "Signing in..." : "Sign in"}
-                        </Button>
+                            <FormActions>
+                                <Button type="submit" className="w-full" disabled={loading}>
+                                    {loading ? "Signing in..." : "Sign in"}
+                                </Button>
+                            </FormActions>
+                        </FormStack>
                     </form>
                 </Form>
 

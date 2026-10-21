@@ -221,4 +221,19 @@ describe("BackupScheduleDialog", () => {
         const errorMessage = (promiseCall[1] as any).error(apiError);
         expect(errorMessage).toBe("Couldn't save schedule — Cron expression invalid. Try again.");
     });
+
+    it("puts Cancel and Save Schedule in a dialog-variant form actions row at the end of the form stack", () => {
+        renderDialog(makeConfig());
+
+        const save = screen.getByRole("button", {name: "Save Schedule"});
+        const cancel = screen.getByRole("button", {name: "Cancel"});
+        const actions = save.closest('[data-slot="form-actions"]');
+        const form = save.closest("form");
+
+        expect(actions).not.toBeNull();
+        expect(actions).toContainElement(cancel);
+        expect(actions).toHaveClass("flex-col-reverse");
+        expect(form?.querySelector('[data-slot="form-stack"]')?.lastElementChild).toBe(actions);
+        expect(form?.querySelector('[data-slot="dialog-footer"]')).toBeNull();
+    });
 });

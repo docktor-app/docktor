@@ -12,8 +12,8 @@ body:
     id: version
     attributes:
       label: Docktor version or image tag
-      description: Shown in the image tag you run, for example in your docker-compose.yml.
-      placeholder: "0.1.0, edge or sha-1a2b3c4"
+      description: Shown at the bottom of the sidebar above your account menu, or in the image tag you run, for example in your docker-compose.yml.
+      placeholder: "0.1.1, edge or sha-1a2b3c4"
     validations:
       required: true
   - type: dropdown

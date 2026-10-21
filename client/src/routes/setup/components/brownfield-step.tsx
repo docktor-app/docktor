@@ -1,6 +1,6 @@
 import {Button} from "@/components/ui/button";
 import {BrownfieldImport} from "@/components/domain/stack/brownfield-import";
-import {scanDirectories, adoptStack, previewMigration, executeMigration} from "@/lib/setup-api";
+import {scanDirectories, adoptStack, previewMigration, executeMigration, listMigrationOperations} from "@/lib/setup-api";
 
 interface BrownfieldStepProps {
   onBack: () => void;
@@ -18,9 +18,9 @@ interface BrownfieldStepProps {
 // other behaviour (scan/adopt/migrate) lives in BrownfieldImport.
 export function BrownfieldStep({onBack, onSkip, onFinish}: Readonly<BrownfieldStepProps>) {
   return (
-    <div className="w-full max-w-3xl mx-auto space-y-4">
+    <div className="w-full max-w-6xl mx-auto space-y-4">
       <BrownfieldImport
-        api={{scanDirectories, adoptStack, previewMigration, executeMigration}}
+        api={{scanDirectories, adoptStack, previewMigration, executeMigration, listMigrationOperations}}
       />
       <div className="flex justify-between">
         <Button type="button" variant="outline" onClick={onBack}>

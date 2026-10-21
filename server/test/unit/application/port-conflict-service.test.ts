@@ -78,6 +78,28 @@ describe("PortConflictService", () => {
         warnSpy.mockRestore();
     });
 
+    it("keeps warning about a docker-proxy listener when container listing fails, since the stack's own ports cannot be established (D-06)", async () => {
+        fs.readCompose.mockResolvedValue(COMPOSE_WITH_PORT);
+        stacks.findAll.mockResolvedValue([
+            {
+                id: "my-app",
+                displayName: "My App",
+                status: "RUNNING",
+                services: [{ports: JSON.stringify([{host: 8080, container: 80, protocol: "tcp"}])}],
+            },
+        ]);
+        docker.listContainers.mockRejectedValue(new Error("docker socket unreachable"));
+        sockets.listListeners.mockResolvedValue([{port: 8080, protocol: "tcp", processName: "docker-proxy", pid: 4321}]);
+        const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+        const result = await service.check("my-app");
+
+        expect(result).toEqual([
+            {port: 8080, protocol: "tcp", serviceName: "web", holder: {kind: "process", processName: "docker-proxy", pid: 4321}},
+        ]);
+        warnSpy.mockRestore();
+    });
+
     it("returns [] without calling listContainers or listListeners when the compose requests no host ports", async () => {
         fs.readCompose.mockResolvedValue(COMPOSE_WITHOUT_PORTS);
 

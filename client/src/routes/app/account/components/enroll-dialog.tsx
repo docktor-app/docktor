@@ -15,7 +15,9 @@ import {twoFactor} from "@/lib/auth-client";
 import {classifyAuthError} from "@/lib/auth-errors";
 import {copyToClipboard} from "@/lib/clipboard";
 import {createRetryAfterProbe} from "@/lib/rate-limit";
+import {TOUCH_TARGET} from "@/lib/touch-target";
 import {RecoveryCodesPanel} from "@/components/domain/auth/recovery-codes-panel";
+import {FormActions, FormStack} from "@/components/common/form-layout";
 import {Button} from "@/components/ui/button";
 import {
     Dialog,
@@ -113,17 +115,19 @@ function PasswordStep({onEnabled, onCancel}: Readonly<PasswordStepProps>): React
                 Enter your password to continue.
             </StepHeader>
             <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                    <ErrorBanner message={error}/>
-                    <PasswordField control={form.control}/>
-                    <DialogFooter>
-                        <Button type="button" variant="outline" className={FOOTER_BUTTON_CLASS} onClick={onCancel}>
-                            Cancel
-                        </Button>
-                        <Button type="submit" className={FOOTER_BUTTON_CLASS} disabled={pending}>
-                            {pending ? "Checking..." : "Continue"}
-                        </Button>
-                    </DialogFooter>
+                <form onSubmit={form.handleSubmit(onSubmit)}>
+                    <FormStack>
+                        <ErrorBanner message={error}/>
+                        <PasswordField control={form.control}/>
+                        <FormActions variant="dialog">
+                            <Button type="button" variant="outline" className={FOOTER_BUTTON_CLASS} onClick={onCancel}>
+                                Cancel
+                            </Button>
+                            <Button type="submit" className={FOOTER_BUTTON_CLASS} disabled={pending}>
+                                {pending ? "Checking..." : "Continue"}
+                            </Button>
+                        </FormActions>
+                    </FormStack>
                 </form>
             </Form>
         </>
@@ -167,6 +171,7 @@ function SetupKey({setupKey}: Readonly<{ setupKey: string }>): React.JSX.Element
                     type="button"
                     variant="outline"
                     size="icon"
+                    className={TOUCH_TARGET}
                     aria-label="Copy setup key"
                     onClick={() => void copyToClipboard(setupKey)}
                 >
@@ -240,39 +245,41 @@ function VerifyStep({totpURI, onVerified, onCancel}: Readonly<VerifyStepProps>):
                 {setupKey && <SetupKey setupKey={setupKey}/>}
             </div>
             <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                    <ErrorBanner message={error}/>
-                    <FormField
-                        control={form.control}
-                        name="code"
-                        render={({field}) => (
-                            <FormItem>
-                                <FormLabel>Authentication code</FormLabel>
-                                <FormControl>
-                                    <Input
-                                        {...field}
-                                        onChange={(event) => field.onChange(event.target.value.replace(/\D/g, ""))}
-                                        placeholder="000000"
-                                        inputMode="numeric"
-                                        autoComplete="one-time-code"
-                                        spellCheck={false}
-                                        maxLength={6}
-                                        autoFocus
-                                        className="text-center font-mono text-lg tracking-widest"
-                                    />
-                                </FormControl>
-                                <FormMessage/>
-                            </FormItem>
-                        )}
-                    />
-                    <DialogFooter>
-                        <Button type="button" variant="outline" className={FOOTER_BUTTON_CLASS} onClick={onCancel}>
-                            Cancel setup
-                        </Button>
-                        <Button type="submit" className={FOOTER_BUTTON_CLASS} disabled={pending}>
-                            {pending ? "Verifying..." : "Verify and enable"}
-                        </Button>
-                    </DialogFooter>
+                <form onSubmit={form.handleSubmit(onSubmit)}>
+                    <FormStack>
+                        <ErrorBanner message={error}/>
+                        <FormField
+                            control={form.control}
+                            name="code"
+                            render={({field}) => (
+                                <FormItem>
+                                    <FormLabel>Authentication code</FormLabel>
+                                    <FormControl>
+                                        <Input
+                                            {...field}
+                                            onChange={(event) => field.onChange(event.target.value.replace(/\D/g, ""))}
+                                            placeholder="000000"
+                                            inputMode="numeric"
+                                            autoComplete="one-time-code"
+                                            spellCheck={false}
+                                            maxLength={6}
+                                            autoFocus
+                                            className="text-center font-mono text-lg tracking-widest"
+                                        />
+                                    </FormControl>
+                                    <FormMessage/>
+                                </FormItem>
+                            )}
+                        />
+                        <FormActions variant="dialog">
+                            <Button type="button" variant="outline" className={FOOTER_BUTTON_CLASS} onClick={onCancel}>
+                                Cancel setup
+                            </Button>
+                            <Button type="submit" className={FOOTER_BUTTON_CLASS} disabled={pending}>
+                                {pending ? "Verifying..." : "Verify and enable"}
+                            </Button>
+                        </FormActions>
+                    </FormStack>
                 </form>
             </Form>
         </>

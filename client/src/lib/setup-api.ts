@@ -1,5 +1,7 @@
 import {apiFetch} from "./api";
 import type {
+  MigrationExecuteInput,
+  MigrationPreviewInput,
   WizardStep1Input,
   WizardStep2Input,
   WizardStep3Input,
@@ -7,10 +9,10 @@ import type {
   WizardStep6Input,
 } from "@docktor/shared";
 import type {
+  MigrationOperation,
+  MigrationOperationList,
   MigrationPreview,
-  MigrationResult,
   ScanResult,
-  VolumeSelection,
 } from "./brownfield-types";
 
 export interface SetupStatus {
@@ -84,25 +86,22 @@ export function adoptStack(composePath: string, displayName: string) {
   });
 }
 
-export function previewMigration(
-  composePath: string,
-  volumeSelections: VolumeSelection[],
-  namedVolumeSelections: Record<string, boolean>,
-) {
+export function previewMigration(input: MigrationPreviewInput) {
   return apiFetch<MigrationPreview>("/api/setup/migrate/preview", {
     method: "POST",
-    body: JSON.stringify({composePath, volumeSelections, namedVolumeSelections}),
+    body: JSON.stringify(input),
   });
 }
 
-export function executeMigration(
-  composePath: string,
-  displayName: string,
-  volumeSelections: VolumeSelection[],
-  namedVolumeSelections: Record<string, boolean>,
-) {
-  return apiFetch<MigrationResult>("/api/setup/migrate", {
+// G-18-job: answers 202 with the background operation; progress and outcome
+// arrive through useMigrationOperations.
+export function executeMigration(input: MigrationExecuteInput) {
+  return apiFetch<MigrationOperation>("/api/setup/migrate", {
     method: "POST",
-    body: JSON.stringify({composePath, displayName, volumeSelections, namedVolumeSelections}),
+    body: JSON.stringify(input),
   });
+}
+
+export function listMigrationOperations() {
+  return apiFetch<MigrationOperationList>("/api/setup/migrations");
 }

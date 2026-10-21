@@ -1,5 +1,6 @@
 import {describe, expect, it, vi} from "vitest";
 import {render, screen} from "@testing-library/react";
+import {MemoryRouter} from "react-router";
 import userEvent from "@testing-library/user-event";
 import {ServicesSection} from "../../../../src/routes/app/stacks/components/services-section";
 import {getServiceColor} from "@/lib/service-color";
@@ -60,21 +61,27 @@ function renderSection(overrides: Partial<React.ComponentProps<typeof ServicesSe
     const onViewLogs = vi.fn();
     const onUpgraded = vi.fn();
     const onRetryHealthEvents = vi.fn();
-    const utils = render(
-        <ServicesSection
-            services={[makeService()]}
-            stackId="my-app"
-            stackStatus="RUNNING"
-            onViewLogs={onViewLogs}
-            onUpgraded={onUpgraded}
-            healthEventsByService={new Map()}
-            healthEventsLoading={false}
-            healthEventsError={null}
-            onRetryHealthEvents={onRetryHealthEvents}
-            {...overrides}
-        />,
+    const buildSection = (props: Partial<React.ComponentProps<typeof ServicesSection>> = {}) => (
+        <MemoryRouter>
+            <ServicesSection
+                services={[makeService()]}
+                stackId="my-app"
+                stackStatus="RUNNING"
+                onViewLogs={onViewLogs}
+                onUpgraded={onUpgraded}
+                healthEventsByService={new Map()}
+                healthEventsLoading={false}
+                healthEventsError={null}
+                onRetryHealthEvents={onRetryHealthEvents}
+                {...overrides}
+                {...props}
+            />
+        </MemoryRouter>
     );
-    return {...utils, onViewLogs, onUpgraded, onRetryHealthEvents};
+    const utils = render(buildSection());
+    const rerenderSection = (props: Partial<React.ComponentProps<typeof ServicesSection>>) =>
+        utils.rerender(buildSection(props));
+    return {...utils, rerenderSection, onViewLogs, onUpgraded, onRetryHealthEvents};
 }
 
 describe("ServicesSection", () => {
@@ -103,7 +110,9 @@ describe("ServicesSection", () => {
 
     it("shows 'Update available -> {tag}' copy when a concrete tag is known", () => {
         renderSection({services: [makeService({updateAvailable: true, latestTag: "1.27"})]});
-        expect(screen.getByText("Update available → 1.27")).toBeInTheDocument();
+        const tag = screen.getByText("1.27");
+        expect(tag).toHaveClass("font-mono");
+        expect(tag.closest("[data-tone]")).toHaveTextContent("Update available → 1.27");
     });
 
     it("shows 'Content updated' copy when updateAvailable is true but no tag is known", () => {
@@ -126,27 +135,17 @@ describe("ServicesSection", () => {
     });
 
     it("renders 'No services defined' for an empty services list", () => {
-        renderSection({services: []});
+        const {container} = renderSection({services: []});
         expect(screen.getByText("No services defined")).toBeInTheDocument();
+        expect(screen.getByText("Add a service to the compose file and deploy to see it here.")).toBeInTheDocument();
+        expect(container.querySelector("table")).not.toBeInTheDocument();
     });
 
     it("shows the upgrade button only when updateAvailable is true", () => {
-        const {rerender} = renderSection({services: [makeService({updateAvailable: false})]});
+        const {rerenderSection} = renderSection({services: [makeService({updateAvailable: false})]});
         expect(screen.queryByRole("button", {name: /upgrade web/i})).not.toBeInTheDocument();
 
-        rerender(
-            <ServicesSection
-                services={[makeService({updateAvailable: true, latestTag: "1.27"})]}
-                stackId="my-app"
-                stackStatus="RUNNING"
-                onViewLogs={vi.fn()}
-                onUpgraded={vi.fn()}
-                healthEventsByService={new Map()}
-                healthEventsLoading={false}
-                healthEventsError={null}
-                onRetryHealthEvents={vi.fn()}
-            />,
-        );
+        rerenderSection({services: [makeService({updateAvailable: true, latestTag: "1.27"})]});
         expect(screen.getByRole("button", {name: "Upgrade web"})).toBeInTheDocument();
     });
 
@@ -163,9 +162,49 @@ describe("ServicesSection", () => {
             stackStatus: "DEPLOYING",
         });
         const button = screen.getByRole("button", {
-            name: "Cannot upgrade while the stack is DEPLOYING",
+            name: "Cannot upgrade while the stack is deploying",
         });
         expect(button).toBeDisabled();
+    });
+
+    it("formats a multi-word stack status in the blocked label", () => {
+        renderSection({
+            services: [makeService({updateAvailable: true, latestTag: "1.27"})],
+            stackStatus: "BACKING_UP",
+        });
+        expect(screen.getByRole("button", {name: "Cannot upgrade while the stack is backing up"})).toBeDisabled();
+    });
+
+    it("renders the table in the shared frame with the column headers and a hidden Actions header", () => {
+        const {container} = renderSection();
+        const frame = container.querySelector('[data-slot="table-frame"]');
+        expect(frame).toBeInTheDocument();
+        for (const name of ["Name", "Status", "Image", "Tag", "Ports", "Actions"]) {
+            expect(screen.getByRole("columnheader", {name})).toBeInTheDocument();
+        }
+        expect(screen.getByRole("columnheader", {name: "Actions"}).firstElementChild).toHaveClass("sr-only");
+    });
+
+    it("renders the name, image, tag and ports as mono technical values", () => {
+        renderSection({
+            services: [makeService({ports: JSON.stringify([{host: 8080, container: 80}])})],
+        });
+        for (const element of [
+            screen.getByText("web"),
+            screen.getByText("nginx"),
+            screen.getByText("1.25"),
+            screen.getByText("8080:80"),
+        ]) {
+            expect(element).toHaveClass("font-mono", "text-xs");
+        }
+        expect(screen.getByText("nginx")).toHaveClass("break-all");
+    });
+
+    it("gives the row actions a compact size with a 44px target below md", () => {
+        renderSection({services: [makeService({updateAvailable: true, latestTag: "1.27"})]});
+        for (const name of ["Upgrade web", "View logs for web", "Show health history for web"]) {
+            expect(screen.getByRole("button", {name})).toHaveClass("size-9", "max-md:size-11");
+        }
     });
 
     it("opens ServiceUpgradeDialog when the upgrade button is clicked", async () => {
@@ -225,40 +264,16 @@ describe("ServicesSection", () => {
 
         it("renders the loading, error and empty states inside an opened panel", async () => {
             const user = userEvent.setup();
-            const {rerender, onRetryHealthEvents} = renderSection({healthEventsLoading: true});
+            const {rerenderSection, onRetryHealthEvents} = renderSection({healthEventsLoading: true});
             await user.click(screen.getByRole("button", {name: "Show health history for web"}));
             expect(screen.getByRole("status", {name: "Loading health history"})).toBeInTheDocument();
 
-            rerender(
-                <ServicesSection
-                    services={[makeService()]}
-                    stackId="my-app"
-                    stackStatus="RUNNING"
-                    onViewLogs={vi.fn()}
-                    onUpgraded={vi.fn()}
-                    healthEventsByService={new Map()}
-                    healthEventsLoading={false}
-                    healthEventsError="boom"
-                    onRetryHealthEvents={onRetryHealthEvents}
-                />,
-            );
+            rerenderSection({healthEventsLoading: false, healthEventsError: "boom"});
             expect(screen.getByRole("alert")).toHaveTextContent("Couldn't load health history — boom. Try again.");
             await user.click(screen.getByRole("button", {name: "Retry"}));
             expect(onRetryHealthEvents).toHaveBeenCalledTimes(1);
 
-            rerender(
-                <ServicesSection
-                    services={[makeService()]}
-                    stackId="my-app"
-                    stackStatus="RUNNING"
-                    onViewLogs={vi.fn()}
-                    onUpgraded={vi.fn()}
-                    healthEventsByService={new Map()}
-                    healthEventsLoading={false}
-                    healthEventsError={null}
-                    onRetryHealthEvents={onRetryHealthEvents}
-                />,
-            );
+            rerenderSection({healthEventsLoading: false, healthEventsError: null});
             expect(screen.getByText("No health changes recorded for this service yet.")).toBeInTheDocument();
         });
     });

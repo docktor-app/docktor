@@ -8,6 +8,8 @@ import {
     DropdownMenuCheckboxItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {TOUCH_TARGET} from "@/lib/touch-target"
+import {cn} from "@/lib/utils"
 
 /**
  * Always-visible sun/moon dark-mode toggle (D-16). The visible icon is
@@ -31,7 +33,7 @@ export function ThemeToggle(): React.JSX.Element {
                     variant="ghost"
                     size="icon"
                     aria-label="Toggle theme"
-                    className="relative min-h-11 min-w-11 hover:text-primary md:min-h-9 md:min-w-9"
+                    className={cn("relative hover:text-primary", TOUCH_TARGET)}
                 >
                     <SunIcon className="scale-100 rotate-0 transition-transform dark:scale-0 dark:-rotate-90" />
                     <MoonIcon className="absolute scale-0 rotate-90 transition-transform dark:scale-100 dark:rotate-0" />

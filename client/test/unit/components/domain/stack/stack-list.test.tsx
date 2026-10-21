@@ -76,8 +76,8 @@ describe("StackList", () => {
         });
         renderList([stack]);
 
-        expect(screen.getByText("Running")).toBeInTheDocument();
-        expect(screen.getByText("Running").closest('[data-slot="badge"]')).toBeNull();
+        expect(screen.getByText("running")).toBeInTheDocument();
+        expect(screen.getByText("running").closest('[data-slot="badge"]')).toBeNull();
         expect(screen.getByText("config error")).toHaveAttribute("data-tone", "red");
         expect(screen.getByText("config changed")).toHaveAttribute("data-tone", "yellow");
         expect(screen.getByText("update available")).toHaveAttribute("data-tone", "blue");

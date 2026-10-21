@@ -7,6 +7,7 @@ import {useContainerEvents} from "../../../src/hooks/use-container-events.js";
 // Mock EventSource globally (jsdom does not provide it)
 function createMockEventSource() {
     return {
+        onopen: null as ((event: Event) => void) | null,
         onmessage: null as ((event: MessageEvent) => void) | null,
         onerror: null as ((event: Event) => void) | null,
         close: vi.fn(),
@@ -56,6 +57,17 @@ describe("useContainerEvents (OBS-08)", () => {
         expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({containerId: "abc"}));
     });
 
+    it("ignores a malformed SSE frame and keeps handling later ones", () => {
+        const onEvent = vi.fn();
+        renderHook(() => useContainerEvents(onEvent));
+
+        expect(() => mockEventSourceInstance.onmessage?.(new MessageEvent("message", {data: "{not json"}))).not.toThrow();
+        expect(onEvent).not.toHaveBeenCalled();
+
+        mockEventSourceInstance.onmessage?.(new MessageEvent("message", {data: JSON.stringify({containerId: "abc"})}));
+        expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({containerId: "abc"}));
+    });
+
     it("closes EventSource on unmount", () => {
         const onEvent = vi.fn();
         const {unmount} = renderHook(() => useContainerEvents(onEvent));
@@ -75,5 +87,34 @@ describe("useContainerEvents (OBS-08)", () => {
         expect(() => {
             mockEventSourceInstance.onerror?.(new Event("error"));
         }).not.toThrow();
+    });
+
+    it("calls onOpen each time the EventSource opens, including after a reconnect", () => {
+        const onOpen = vi.fn();
+        renderHook(() => useContainerEvents(vi.fn(), {onOpen}));
+
+        mockEventSourceInstance.onopen?.(new Event("open"));
+        mockEventSourceInstance.onopen?.(new Event("open"));
+
+        expect(onOpen).toHaveBeenCalledTimes(2);
+    });
+
+    it("uses the latest onOpen callback without reopening the EventSource", () => {
+        const first = vi.fn();
+        const second = vi.fn();
+        const {rerender} = renderHook(({onOpen}) => useContainerEvents(vi.fn(), {onOpen}), {initialProps: {onOpen: first}});
+
+        rerender({onOpen: second});
+        mockEventSourceInstance.onopen?.(new Event("open"));
+
+        expect(MockEventSource).toHaveBeenCalledTimes(1);
+        expect(first).not.toHaveBeenCalled();
+        expect(second).toHaveBeenCalledOnce();
+    });
+
+    it("does not require an onOpen callback", () => {
+        renderHook(() => useContainerEvents(vi.fn()));
+
+        expect(() => mockEventSourceInstance.onopen?.(new Event("open"))).not.toThrow();
     });
 });

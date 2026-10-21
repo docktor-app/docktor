@@ -91,6 +91,19 @@ async function getCodeEditorContent(page: Page, name: RegExp | string): Promise<
     return lines.join("\n");
 }
 
+/** Same expression as mobile.spec.ts expectNoHorizontalOverflow. */
+async function expectNoHorizontalOverflow(page: Page) {
+    await expect
+        .poll(() =>
+            page.evaluate(
+                () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            ),
+        )
+        .toBeLessThanOrEqual(0);
+}
+
+const CATALOG_DESCRIPTION = "Browse the catalog and start a stack from a ready-made template.";
+
 test.describe("Templates", () => {
     // Issue #19/D-06/D-07 tracer: browse -> single-variant card -> prefilled
     // create form -> checked create -> land on the new stack.
@@ -268,5 +281,73 @@ test.describe("Templates", () => {
         await page.getByRole("button", {name: "Retry"}).click();
 
         await expect.poll(() => syncCalled).toBe(true);
+    });
+
+    // UI-07: the sidebar Templates entry opens the standalone catalog, and
+    // Use Template there starts the same create flow as from Create Stack.
+    test("the sidebar Templates entry opens the catalog and Use Template prefills the create form", async ({page}) => {
+        await mockAuthenticated(page);
+        await page.route("**/api/templates", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(CATALOG_ONE_VARIANT)}),
+        );
+        await page.route("**/api/templates/variants/v1", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(WHOAMI_VARIANT)}),
+        );
+        await page.route("**/api/stacks/preview", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({confirmationRequired: false, findings: [], composeParseError: null}),
+            }),
+        );
+
+        const sidebar = page.locator('[data-sidebar="sidebar"]');
+        await page.goto("/stacks/create");
+        await sidebar.getByRole("link", {name: "Templates", exact: true}).click();
+
+        await expect(page).toHaveURL("/templates");
+        await expect(page.getByRole("heading", {name: "Templates", exact: true})).toBeVisible();
+        await expect(page.getByText(CATALOG_DESCRIPTION)).toBeVisible();
+        await expect(sidebar.getByRole("link", {name: "Templates", exact: true})).toHaveAttribute("aria-current", "page");
+
+        await page.getByRole("button", {name: "Use Template"}).click();
+
+        await expect(page).toHaveURL("/stacks/create?variant=v1");
+        await expect
+            .poll(() => getCodeEditorContent(page, /docker compose file/i))
+            .toBe(WHOAMI_VARIANT.composeContent);
+        await expect(page.getByLabel(/name/i)).toHaveValue("Whoami");
+        await expect(sidebar.getByRole("link", {name: "Stacks", exact: true})).toHaveAttribute("aria-current", "page");
+    });
+
+    test("an empty catalog at /templates shows No templates available with Settings and blank-compose links", async ({page}) => {
+        await mockAuthenticated(page);
+        await page.route("**/api/templates", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({repos: [], templates: []})}),
+        );
+
+        await page.goto("/templates");
+
+        const content = page.locator('[data-slot="page-content"]');
+        await expect(content.getByRole("heading", {name: "No templates available"})).toBeVisible();
+        await expect(content.getByRole("link", {name: "Settings"})).toHaveAttribute("href", "/settings/stacks");
+        await expect(content.getByRole("link", {name: "start from a blank compose file"})).toHaveAttribute(
+            "href",
+            "/stacks/create",
+        );
+        await expect(content.getByLabel("Search templates")).toHaveCount(0);
+    });
+
+    test("the catalog fits a 360px viewport without horizontal overflow", async ({page}) => {
+        await page.setViewportSize({width: 360, height: 780});
+        await mockAuthenticated(page);
+        await page.route("**/api/templates", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(CATALOG_ONE_VARIANT)}),
+        );
+
+        await page.goto("/templates");
+
+        await expect(page.getByRole("heading", {name: "Templates", exact: true})).toBeVisible();
+        await expectNoHorizontalOverflow(page);
     });
 });

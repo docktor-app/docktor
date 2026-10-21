@@ -3,6 +3,8 @@ import {
     ContainerStateCatchUp,
     type ContainerStateCatchUpRepo,
 } from "../../../src/application/container-state-catch-up.js";
+import {StackContainerMatcher} from "../../../src/application/stack-container-matcher.js";
+import {hostViewDirectories} from "../../helpers/host-directory-identity.js";
 
 const PROJECT_LABEL = "com.docker.compose.project";
 const SERVICE_LABEL = "com.docker.compose.service";
@@ -44,6 +46,8 @@ describe("ContainerStateCatchUp", () => {
             docker,
             repo as unknown as ContainerStateCatchUpRepo,
             bus,
+            undefined,
+            new StackContainerMatcher(hostViewDirectories()),
         );
     });
 
@@ -178,6 +182,55 @@ describe("ContainerStateCatchUp", () => {
             );
             const firstEmit = Math.min(...bus.emit.mock.invocationCallOrder);
             expect(firstEmit).toBeGreaterThan(lastWrite);
+        });
+    });
+
+    describe("containers of another directory (G-18-22-status)", () => {
+        const WORKING_DIR_LABEL = "com.docker.compose.project.working_dir";
+
+        it("observes only the stack's own container, not the same-project old copy", async () => {
+            repo.findByComposeProject.mockResolvedValue({
+                id: "my-app",
+                status: "STOPPED",
+                hostPath: "/opt/docktor/stacks/my-app",
+                services: [{serviceName: "web", healthStatus: null}],
+            });
+            docker.listContainers.mockResolvedValue([
+                {
+                    Id: "c-old",
+                    State: "running",
+                    Labels: {
+                        [PROJECT_LABEL]: "my-app",
+                        [SERVICE_LABEL]: "web",
+                        [WORKING_DIR_LABEL]: "/home/u/my-app",
+                    },
+                },
+                {
+                    Id: "c-new",
+                    State: "exited",
+                    Labels: {
+                        [PROJECT_LABEL]: "my-app",
+                        [SERVICE_LABEL]: "web",
+                        [WORKING_DIR_LABEL]: "/opt/docktor/stacks/my-app",
+                    },
+                },
+            ]);
+            docker.inspectContainer.mockImplementation(async (id: string) => ({
+                Id: id,
+                State: {Status: id === "c-old" ? "running" : "exited"},
+            }));
+
+            await catchUp.catchUp("my-app");
+
+            expect(docker.inspectContainer).toHaveBeenCalledTimes(1);
+            expect(docker.inspectContainer).toHaveBeenCalledWith("c-new");
+            expect(repo.updateServiceState).toHaveBeenCalledWith(
+                expect.objectContaining({serviceName: "web", containerId: "c-new", containerState: "exited"}),
+            );
+            expect(bus.emit).toHaveBeenCalledWith(
+                "stack.container_state_changed",
+                expect.objectContaining({serviceName: "web", containerState: "exited", stackStatus: "STOPPED"}),
+            );
         });
     });
 
