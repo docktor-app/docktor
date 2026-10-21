@@ -45,7 +45,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 17: Backup Repository and Port-Check Fixes** - Backups use the configured SFTP/S3 repository, and deploy-time port warnings stop flagging a stack's own ports (completed 2026-10-14)
 - [x] **Phase 18: Import and Migration Flow** - Docktor's own stack is not offered for import, and the migration dialog shows a real diff with explicit backup and stop-old-stack choices (completed 2026-10-18)
 - [x] **Phase 19: Sidebar, Templates and Version Block** - Labelled sidebar sections, a standalone Templates page, and the running version plus project links above the account menu (completed 2026-10-18)
-- [ ] **Phase 20: Visual Consistency, Dashboard Clarity and Touch Targets** - One status casing, monospace KPIs, scrollbar-free tabs, shared form spacing and table look, an honest "Backups Configured" card, and 44px mobile touch targets
+- [x] **Phase 20: Visual Consistency, Dashboard Clarity and Touch Targets** - One status casing, monospace KPIs, scrollbar-free tabs, shared form spacing and table look, an honest "Backups Configured" card, and 44px mobile touch targets (completed 2026-10-21)
 - [ ] **Phase 21: Release v0.1.1** - Versions bumped to 0.1.1, changelog updated, CI green on `release/v0.1.1`
 
 ## Phase Details
@@ -193,7 +193,7 @@ Notes: the three requirements share one component tree (`app-sidebar.tsx`, `nav-
   5. The stack tab bar shows no scrollbar at desktop and tablet widths and stays usable on narrow screens, and the stack actions trigger, theme toggle, certificate delete button and table pagination buttons have a 44px touch target below `md` and keep the compact size at `md` and up
   6. On a stack's non-overview tab the stack-name breadcrumb links to the stack overview and the tab name is the current page
 
-**Plans:** 11/11 plans executed
+**Plans:** 11/11 plans complete
 
 Plans:
 **Wave 1**
@@ -242,7 +242,7 @@ Phases execute in numeric order: 17 → 18 → 19 → 20 → 21
 | 17. Backup Repository and Port-Check Fixes | 3/3 | Complete    | 2026-10-14 |
 | 18. Import and Migration Flow | 26/26 | Complete    | 2026-10-18 |
 | 19. Sidebar, Templates and Version Block | 3/3 | Complete    | 2026-10-18 |
-| 20. Visual Consistency, Dashboard Clarity and Touch Targets | 11/11 | In Progress | - |
+| 20. Visual Consistency, Dashboard Clarity and Touch Targets | 11/11 | Complete    | 2026-10-21 |
 | 21. Release v0.1.1 | 0/TBD | Not started | - |
 
 Phases 1-16 (v0.1.0) are complete and archived; see `.planning/milestones/v0.1.0-ROADMAP.md`.
