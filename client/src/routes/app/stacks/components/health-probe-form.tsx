@@ -12,6 +12,7 @@ import {
 } from "@/lib/compose-health-probe";
 import {cn} from "@/lib/utils";
 import {getServiceColor} from "@/lib/service-color";
+import {FormStack} from "@/components/common/form-layout";
 import {Alert, AlertDescription} from "@/components/ui/alert";
 import {Input} from "@/components/ui/input";
 import {Switch} from "@/components/ui/switch";
@@ -281,13 +282,13 @@ export function HealthProbeForm({composeContent, onChange}: Readonly<HealthProbe
 
     return (
         <Form {...form}>
-            <div className="space-y-4">
+            <FormStack>
                 {rows}
                 <div className="space-y-1">
                     <p className="text-xs text-muted-foreground">{BEHAVIOR_NOTE}</p>
                     <p className="text-xs text-muted-foreground">{SAVE_HINT}</p>
                 </div>
-            </div>
+            </FormStack>
         </Form>
     );
 }

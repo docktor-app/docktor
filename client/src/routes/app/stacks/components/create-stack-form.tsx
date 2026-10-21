@@ -6,6 +6,7 @@ import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {Card, CardContent, CardHeader, CardTitle} from "@/components/ui/card";
 import {Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage} from "@/components/ui/form";
+import {FormActions, FormStack} from "@/components/common/form-layout";
 import {ComposeEditor} from "@/components/domain/stack/compose-editor";
 import {EnvEditor} from "@/components/domain/stack/env-editor";
 
@@ -45,81 +46,83 @@ export function CreateStackForm({
             </CardHeader>
             <CardContent>
                 <Form {...form}>
-                    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                        <FormField
-                            control={form.control}
-                            name="displayName"
-                            render={({field}) => (
-                                <FormItem>
-                                    <FormLabel>Name</FormLabel>
-                                    <FormControl>
-                                        <Input placeholder="My Nextcloud" {...field} />
-                                    </FormControl>
-                                    <FormDescription>A friendly name for your stack</FormDescription>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
+                    <form onSubmit={form.handleSubmit(onSubmit)}>
+                        <FormStack>
+                            <FormField
+                                control={form.control}
+                                name="displayName"
+                                render={({field}) => (
+                                    <FormItem>
+                                        <FormLabel>Name</FormLabel>
+                                        <FormControl>
+                                            <Input placeholder="My Nextcloud" {...field} />
+                                        </FormControl>
+                                        <FormDescription>A friendly name for your stack</FormDescription>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
 
-                        <FormField
-                            control={form.control}
-                            name="description"
-                            render={({field}) => (
-                                <FormItem>
-                                    <FormLabel>Description</FormLabel>
-                                    <FormControl>
-                                        <Input placeholder="Optional description" {...field} />
-                                    </FormControl>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
+                            <FormField
+                                control={form.control}
+                                name="description"
+                                render={({field}) => (
+                                    <FormItem>
+                                        <FormLabel>Description</FormLabel>
+                                        <FormControl>
+                                            <Input placeholder="Optional description" {...field} />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
 
-                        <FormField
-                            control={form.control}
-                            name="composeContent"
-                            render={({field}) => (
-                                <FormItem>
-                                    <FormLabel>Docker Compose File</FormLabel>
-                                    {/* Not wrapped in FormControl: its Slot would forward
-                                        ids to ComposeEditor's wrapper div instead of the
-                                        CodeMirror textbox — the accessible name comes from
-                                        ComposeEditor's own ariaLabel below. */}
-                                    <ComposeEditor value={field.value} onChange={field.onChange} height="300px" />
-                                    <FormDescription>Paste your docker-compose.yml content</FormDescription>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
+                            <FormField
+                                control={form.control}
+                                name="composeContent"
+                                render={({field}) => (
+                                    <FormItem>
+                                        <FormLabel>Docker Compose File</FormLabel>
+                                        {/* Not wrapped in FormControl: its Slot would forward
+                                            ids to ComposeEditor's wrapper div instead of the
+                                            CodeMirror textbox — the accessible name comes from
+                                            ComposeEditor's own ariaLabel below. */}
+                                        <ComposeEditor value={field.value} onChange={field.onChange} height="300px" />
+                                        <FormDescription>Paste your docker-compose.yml content</FormDescription>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
 
-                        <FormField
-                            control={form.control}
-                            name="envContent"
-                            render={({field}) => (
-                                <FormItem>
-                                    <FormLabel>Environment Variables</FormLabel>
-                                    {/* Not wrapped in FormControl: same reason as the
-                                        compose editor above — EnvEditor's accessible
-                                        name comes from its own ariaLabel default. */}
-                                    <EnvEditor
-                                        value={field.value ?? ""}
-                                        onChange={field.onChange}
-                                        onValidityChange={setEnvValid}
-                                    />
-                                    <FormDescription>Optional .env file content</FormDescription>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
+                            <FormField
+                                control={form.control}
+                                name="envContent"
+                                render={({field}) => (
+                                    <FormItem>
+                                        <FormLabel>Environment Variables</FormLabel>
+                                        {/* Not wrapped in FormControl: same reason as the
+                                            compose editor above — EnvEditor's accessible
+                                            name comes from its own ariaLabel default. */}
+                                        <EnvEditor
+                                            value={field.value ?? ""}
+                                            onChange={field.onChange}
+                                            onValidityChange={setEnvValid}
+                                        />
+                                        <FormDescription>Optional .env file content</FormDescription>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
 
-                        <div className="flex gap-2">
-                            <Button type="submit" disabled={submitting || !envValid}>
-                                {submitting ? "Creating..." : "Create Stack"}
-                            </Button>
-                            <Button type="button" variant="outline" onClick={onCancel}>
-                                Cancel
-                            </Button>
-                        </div>
+                            <FormActions>
+                                <Button type="submit" disabled={submitting || !envValid}>
+                                    {submitting ? "Creating..." : "Create Stack"}
+                                </Button>
+                                <Button type="button" variant="outline" onClick={onCancel}>
+                                    Cancel
+                                </Button>
+                            </FormActions>
+                        </FormStack>
                     </form>
                 </Form>
             </CardContent>

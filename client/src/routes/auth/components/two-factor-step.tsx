@@ -11,6 +11,7 @@ import {twoFactor} from "@/lib/auth-client";
 import {AuthErrorLike, classifyAuthError} from "@/lib/auth-errors";
 import {docsUrl} from "@/lib/docs-links";
 import {formatRetryAfter, readRetryAfterSeconds} from "@/lib/rate-limit";
+import {FormActions, FormStack} from "@/components/common/form-layout";
 import {Button} from "@/components/ui/button";
 import {Checkbox} from "@/components/ui/checkbox";
 import {Input} from "@/components/ui/input";
@@ -131,45 +132,49 @@ function ChallengeFields({form, mode, onSubmit}: Readonly<ChallengeFieldsProps>)
 
     return (
         <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <FormField
-                    control={form.control}
-                    name="code"
-                    render={({field}) => (
-                        <FormItem>
-                            <FormLabel>{MODE_COPY[mode].label}</FormLabel>
-                            <FormControl>
-                                <CodeInput mode={mode} {...field}/>
-                            </FormControl>
-                            <FormMessage/>
-                        </FormItem>
-                    )}
-                />
-
-                <FormField
-                    control={form.control}
-                    name="trustDevice"
-                    render={({field}) => (
-                        <FormItem>
-                            <div className="flex items-center gap-2">
+            <form onSubmit={form.handleSubmit(onSubmit)}>
+                <FormStack>
+                    <FormField
+                        control={form.control}
+                        name="code"
+                        render={({field}) => (
+                            <FormItem>
+                                <FormLabel>{MODE_COPY[mode].label}</FormLabel>
                                 <FormControl>
-                                    <Checkbox
-                                        checked={field.value}
-                                        onCheckedChange={(checked) => field.onChange(checked === true)}
-                                    />
+                                    <CodeInput mode={mode} {...field}/>
                                 </FormControl>
-                                <FormLabel>Trust this device for 30 days</FormLabel>
-                            </div>
-                            <FormDescription>
-                                You won't be asked for a code on this browser.
-                            </FormDescription>
-                        </FormItem>
-                    )}
-                />
+                                <FormMessage/>
+                            </FormItem>
+                        )}
+                    />
 
-                <Button type="submit" className="w-full" disabled={pending}>
-                    {pending ? "Verifying..." : "Verify"}
-                </Button>
+                    <FormField
+                        control={form.control}
+                        name="trustDevice"
+                        render={({field}) => (
+                            <FormItem>
+                                <div className="flex items-center gap-2">
+                                    <FormControl>
+                                        <Checkbox
+                                            checked={field.value}
+                                            onCheckedChange={(checked) => field.onChange(checked === true)}
+                                        />
+                                    </FormControl>
+                                    <FormLabel>Trust this device for 30 days</FormLabel>
+                                </div>
+                                <FormDescription>
+                                    You won't be asked for a code on this browser.
+                                </FormDescription>
+                            </FormItem>
+                        )}
+                    />
+
+                    <FormActions>
+                        <Button type="submit" className="w-full" disabled={pending}>
+                            {pending ? "Verifying..." : "Verify"}
+                        </Button>
+                    </FormActions>
+                </FormStack>
             </form>
         </Form>
     );
