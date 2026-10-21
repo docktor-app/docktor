@@ -5,16 +5,16 @@ milestone_name: Release Follow-ups
 current_phase: 20
 current_phase_name: Visual Consistency, Dashboard Clarity and Touch Targets
 status: executing
-stopped_at: Completed 20-04-PLAN.md
-last_updated: "2026-10-21T03:25:38.018Z"
+stopped_at: Completed 20-05-PLAN.md
+last_updated: "2026-10-21T03:29:04.300Z"
 last_activity: 2026-10-21
 last_activity_desc: Phase 20 execution started
-state_head: f3add431521ee349db6700da6a4e4e8a92394122
+state_head: 6a74f084978e4403b1a4c02b58638c2046c85e3b
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 43
-  completed_plans: 36
+  completed_plans: 37
   percent: 60
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-14)
 ## Current Position
 
 Phase: 20 (Visual Consistency, Dashboard Clarity and Touch Targets) — EXECUTING
-Plan: 5 of 11
+Plan: 6 of 11
 Status: Ready to execute
 Last activity: 2026-10-21 — Phase 20 execution started
 
@@ -99,6 +99,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 20 P02 | 10min | 3 tasks | 11 files |
 | Phase 20 P03 | 8min | 2 tasks | 9 files |
 | Phase 20 P04 | 6min | 3 tasks | 16 files |
+| Phase 20 P05 | 10min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -160,6 +161,7 @@ Roadmap decisions for v0.1.1:
 - [Phase 20]: 20-02: uncontrolled and controlled table sorting share one SortableHead; card layout in table-cards.tsx keeps Sort toolbar, expanded content and footer below md
 - [Phase 20]: 20-03: single TOUCH_TARGET (max-md:size-11) applied per site via cn(); pagination buttons moved to icon-sm so the constant overrides the same size property
 - [Phase 20]: 20-04: label-to-input gap stays 8px; FormStack is the single place to change the form rhythm; setup steps drop CardFooter for FormActions
+- [Phase 20]: 20-05: Geist Mono family name is 'Geist Mono Variable'; --font-mono token set in @theme inline, font self-hosted via @fontsource-variable/geist-mono 5.3.0
 
 ### Pending Todos
 
@@ -183,6 +185,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-21T03:25:37.391Z
-Stopped at: Completed 20-04-PLAN.md
+Last session: 2026-10-21T03:29:03.607Z
+Stopped at: Completed 20-05-PLAN.md
 Resume file: None
