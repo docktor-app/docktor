@@ -16,6 +16,7 @@ import {
     type Certificate,
 } from "@/lib/certificates-api";
 import {DataTable, type TableColumn} from "@/components/common/data/table";
+import {FormActions, FormStack} from "@/components/common/form-layout";
 import {ToneBadge} from "@/components/common/tone-badge";
 import {TOUCH_TARGET} from "@/lib/touch-target";
 import {Card, CardContent, CardHeader, CardTitle} from "@/components/ui/card";
@@ -251,81 +252,85 @@ export function CertificatesCard() {
                     )}
 
                     <Form {...form}>
-                        <form onSubmit={form.handleSubmit(handleUpload)} className="space-y-4 border-t pt-4">
-                            <FormField
-                                control={form.control}
-                                name="domainPattern"
-                                render={({field}) => (
-                                    <FormItem>
-                                        <FormLabel className="font-semibold">Domain Pattern</FormLabel>
-                                        <FormControl>
-                                            <Input {...field} placeholder="*.example.com" />
-                                        </FormControl>
-                                        <p className="text-xs text-muted-foreground">
-                                            A leading wildcard label is allowed — one wildcard certificate
-                                            covers every subdomain under it.
-                                        </p>
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
-                            />
-
-                            <div className="space-y-1">
-                                <Label htmlFor="certificate-file" className="font-semibold">
-                                    Certificate File
-                                </Label>
-                                <Input
-                                    id="certificate-file"
-                                    type="file"
-                                    ref={certFileInputRef}
-                                    onChange={(e) => setCertFile(e.target.files?.[0] ?? null)}
+                        <form onSubmit={form.handleSubmit(handleUpload)} className="border-t pt-4">
+                            <FormStack>
+                                <FormField
+                                    control={form.control}
+                                    name="domainPattern"
+                                    render={({field}) => (
+                                        <FormItem>
+                                            <FormLabel className="font-semibold">Domain Pattern</FormLabel>
+                                            <FormControl>
+                                                <Input {...field} placeholder="*.example.com" />
+                                            </FormControl>
+                                            <p className="text-xs text-muted-foreground">
+                                                A leading wildcard label is allowed — one wildcard certificate
+                                                covers every subdomain under it.
+                                            </p>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
                                 />
-                                {certFileError && (
-                                    <p className="text-sm text-destructive">{certFileError}</p>
+
+                                <FormItem>
+                                    <Label htmlFor="certificate-file" className="font-semibold">
+                                        Certificate File
+                                    </Label>
+                                    <Input
+                                        id="certificate-file"
+                                        type="file"
+                                        ref={certFileInputRef}
+                                        onChange={(e) => setCertFile(e.target.files?.[0] ?? null)}
+                                    />
+                                    {certFileError && (
+                                        <p className="text-sm text-destructive">{certFileError}</p>
+                                    )}
+                                </FormItem>
+
+                                <FormItem>
+                                    <Label htmlFor="private-key-file" className="font-semibold">
+                                        Private Key File
+                                    </Label>
+                                    <Input
+                                        id="private-key-file"
+                                        type="file"
+                                        ref={keyFileInputRef}
+                                        onChange={(e) => setKeyFile(e.target.files?.[0] ?? null)}
+                                    />
+                                    {keyFileError && (
+                                        <p className="text-sm text-destructive">{keyFileError}</p>
+                                    )}
+                                </FormItem>
+
+                                <FormItem>
+                                    <Label htmlFor="ca-bundle-file" className="font-semibold">
+                                        CA Bundle (optional)
+                                    </Label>
+                                    <Input
+                                        id="ca-bundle-file"
+                                        type="file"
+                                        ref={bundleFileInputRef}
+                                        onChange={(e) => setBundleFile(e.target.files?.[0] ?? null)}
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        Only needed when the issuer supplied a separate intermediate/CA chain
+                                        file — Docktor combines it with the certificate for you.
+                                    </p>
+                                </FormItem>
+
+                                {uploadError && (
+                                    <Alert variant="destructive">
+                                        <AlertTriangle className="h-4 w-4" />
+                                        <AlertDescription>{uploadError}</AlertDescription>
+                                    </Alert>
                                 )}
-                            </div>
 
-                            <div className="space-y-1">
-                                <Label htmlFor="private-key-file" className="font-semibold">
-                                    Private Key File
-                                </Label>
-                                <Input
-                                    id="private-key-file"
-                                    type="file"
-                                    ref={keyFileInputRef}
-                                    onChange={(e) => setKeyFile(e.target.files?.[0] ?? null)}
-                                />
-                                {keyFileError && (
-                                    <p className="text-sm text-destructive">{keyFileError}</p>
-                                )}
-                            </div>
-
-                            <div className="space-y-1">
-                                <Label htmlFor="ca-bundle-file" className="font-semibold">
-                                    CA Bundle (optional)
-                                </Label>
-                                <Input
-                                    id="ca-bundle-file"
-                                    type="file"
-                                    ref={bundleFileInputRef}
-                                    onChange={(e) => setBundleFile(e.target.files?.[0] ?? null)}
-                                />
-                                <p className="text-xs text-muted-foreground">
-                                    Only needed when the issuer supplied a separate intermediate/CA chain
-                                    file — Docktor combines it with the certificate for you.
-                                </p>
-                            </div>
-
-                            {uploadError && (
-                                <Alert variant="destructive">
-                                    <AlertTriangle className="h-4 w-4" />
-                                    <AlertDescription>{uploadError}</AlertDescription>
-                                </Alert>
-                            )}
-
-                            <Button type="submit" disabled={uploading}>
-                                {uploading ? "Uploading..." : "Upload Certificate"}
-                            </Button>
+                                <FormActions>
+                                    <Button type="submit" disabled={uploading}>
+                                        {uploading ? "Uploading..." : "Upload Certificate"}
+                                    </Button>
+                                </FormActions>
+                            </FormStack>
                         </form>
                     </Form>
                 </CardContent>

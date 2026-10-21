@@ -1,11 +1,27 @@
 import {useEffect, useState} from "react";
 import {Card, CardContent, CardHeader, CardTitle} from "@/components/ui/card";
-import {Skeleton} from "@/components/ui/skeleton";
-import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from "@/components/ui/table";
-import {Badge} from "@/components/ui/badge";
+import {DataTable, type TableColumn} from "@/components/common/data/table";
+import {ToneBadge} from "@/components/common/tone-badge";
 import {getNotifications, type NotificationEntry} from "@/lib/notifications-api";
 import {useContainerEvents} from "@/hooks/use-container-events";
 import {NotificationTypeBadge} from "@/components/domain/notification/notification-type-badge";
+
+const NOTIFICATION_COLUMNS: readonly TableColumn<NotificationEntry>[] = [
+    {name: "Type", isKey: true, render: (n) => <NotificationTypeBadge type={n.type} />},
+    {name: "Stack", render: (n) => n.stack?.displayName ?? "—"},
+    {name: "Message", className: "max-w-xs truncate", render: (n) => n.message},
+    {
+        name: "Email",
+        render: (n) => (
+            <ToneBadge tone={n.emailSent ? "green" : "neutral"}>{n.emailSent ? "Sent" : "UI only"}</ToneBadge>
+        ),
+    },
+    {
+        name: "Time",
+        className: "text-sm text-muted-foreground",
+        render: (n) => new Date(n.createdAt).toLocaleString(),
+    },
+];
 
 export function NotificationLogCard() {
     const [notifications, setNotifications] = useState<NotificationEntry[]>([]);
@@ -39,51 +55,15 @@ export function NotificationLogCard() {
                 <CardTitle>Notification Log</CardTitle>
             </CardHeader>
             <CardContent>
-                {logLoading ? (
-                    <>
-                        <Skeleton className="h-10 w-full mb-2" />
-                        <Skeleton className="h-10 w-full mb-2" />
-                        <Skeleton className="h-10 w-full" />
-                    </>
-                ) : notifications.length === 0 ? (
-                    <div className="text-center py-8">
-                        <p className="text-sm font-semibold">No notifications yet</p>
-                        <p className="text-sm text-muted-foreground mt-1">
-                            Alerts will appear here when notification triggers fire. Enable triggers above to start monitoring.
-                        </p>
-                    </div>
-                ) : (
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Type</TableHead>
-                                <TableHead>Stack</TableHead>
-                                <TableHead>Message</TableHead>
-                                <TableHead>Email</TableHead>
-                                <TableHead>Time</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {notifications.map((n) => (
-                                <TableRow key={n.id}>
-                                    <TableCell>
-                                        <NotificationTypeBadge type={n.type} />
-                                    </TableCell>
-                                    <TableCell>{n.stack?.displayName ?? "—"}</TableCell>
-                                    <TableCell className="max-w-xs truncate">{n.message}</TableCell>
-                                    <TableCell>
-                                        <Badge variant={n.emailSent ? "secondary" : "outline"}>
-                                            {n.emailSent ? "Sent" : "UI only"}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell className="text-sm text-muted-foreground">
-                                        {new Date(n.createdAt).toLocaleString()}
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                )}
+                <DataTable
+                    data={notifications}
+                    columns={NOTIFICATION_COLUMNS}
+                    getRowKey={(n) => n.id}
+                    pagination={false}
+                    loading={logLoading}
+                    emptyMessage="No notifications yet"
+                    emptyDescription="Alerts will appear here when notification triggers fire. Enable triggers above to start monitoring."
+                />
             </CardContent>
         </Card>
     );
