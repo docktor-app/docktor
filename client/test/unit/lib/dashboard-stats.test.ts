@@ -114,4 +114,42 @@ describe("computeDashboardStats", () => {
         expect(stats.backupCoverage).toBe(1);
         expect(stats.total).toBe(1);
     });
+
+    describe("backupCoverage", () => {
+        it("counts a schedule-only stack", () => {
+            const stacks = [buildStack({backupSchedule: "0 4 * * *"})];
+            expect(computeDashboardStats(stacks, null).backupCoverage).toBe(1);
+        });
+
+        it("counts a snapshot-only stack", () => {
+            const stacks = [buildStack({backupSchedule: null, hasBackup: true})];
+            expect(computeDashboardStats(stacks, null).backupCoverage).toBe(1);
+        });
+
+        it("counts a stack with both a schedule and a snapshot once", () => {
+            const stacks = [buildStack({backupSchedule: "0 4 * * *", hasBackup: true})];
+            expect(computeDashboardStats(stacks, null).backupCoverage).toBe(1);
+        });
+
+        it("does not count a stack with neither", () => {
+            const stacks = [buildStack({backupSchedule: null, hasBackup: false})];
+            expect(computeDashboardStats(stacks, null).backupCoverage).toBe(0);
+        });
+
+        it("counts a stack covered only by the global default schedule", () => {
+            const stacks = [buildStack({backupSchedule: null})];
+            expect(computeDashboardStats(stacks, "0 3 * * *").backupCoverage).toBe(1);
+        });
+
+        it("is 0 of 0 with no stacks", () => {
+            const stats = computeDashboardStats([], "0 3 * * *");
+            expect(stats.total).toBe(0);
+            expect(stats.backupCoverage).toBe(0);
+        });
+
+        it("does not count a stack whose hasBackup is undefined", () => {
+            const stacks = [buildStack({backupSchedule: null, hasBackup: undefined})];
+            expect(computeDashboardStats(stacks, null).backupCoverage).toBe(0);
+        });
+    });
 });
