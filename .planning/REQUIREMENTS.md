@@ -1,109 +1,90 @@
-# Requirements: Docktor — Milestone v0.1.1 (Release Follow-ups)
+# Requirements: Docktor — Milestone v0.2.0
 
-**Defined:** 2026-10-14
+**Defined:** 2026-10-21
 **Core Value:** Users can deploy, monitor, and manage Docker Compose stacks through a browser UI without needing SSH or Docker CLI access.
 
-Patch release on branch `release/v0.1.1`: bug fixes and interface polish only, no new product features. Product scope lives in GitHub Issues (`docktor-app/docktor`); each requirement below cites its source issue. The v0.1.0 requirements are archived with `.planning/milestones/v0.1.0-phases/`.
+## v0.2.0 Requirements
 
-## v0.1.1 Requirements
+Issue numbers refer to `docktor-app/docktor`. Research: `.planning/research/SUMMARY.md`.
 
-### Backup (BKP)
+### Migration Hardening
 
-- [x] **BKP-01**: Backup, restore and snapshot listing use the configured SFTP or S3 repository when the repository type is `sftp` or `s3`, and only use the stack-local path for `local` ([#68](https://github.com/docktor-app/docktor/issues/68))
-- [x] **BKP-02**: Existing local-repository backups behave exactly as before ([#68](https://github.com/docktor-app/docktor/issues/68))
-- [x] **BKP-03**: The SFTP/S3 branch of repository environment construction is covered by unit tests ([#68](https://github.com/docktor-app/docktor/issues/68))
+- [ ] **MIG-05**: Migration verifies the old stack is really stopped (compose project resolved correctly) before copying data (#102)
+- [ ] **MIG-06**: Migration copies the correct named volume and detects anonymous volumes instead of silently creating empty ones (#101)
+- [ ] **MIG-07**: Migration handles `~` bind sources correctly in analysis, rewrite and copy (#104)
+- [ ] **MIG-08**: Migration rollback reliably restores the original stack without deleting volumes, reports only verified outcomes, and recovers after a Docktor restart mid-migration (#100)
+- [ ] **MIG-09**: Migration backs up before stopping the old stack and checks free disk space on the right filesystem (#107)
+- [ ] **MIG-10**: Secrets are masked in the migration compose diff (#103)
+- [ ] **MIG-11**: Migration progress toast never gets stuck (#105)
+- [ ] **MIG-12**: Migration flow follows project conventions and hardens paths (#108)
+- [ ] **MIG-13**: Compose child processes receive an allowlisted environment, and ownership preservation is verified on Linux in CI (#109)
 
-### Migration (MIG)
+### Proxy
 
-- [x] **MIG-01**: User sees the migration diff in a larger dialog that is readable ([#72](https://github.com/docktor-app/docktor/issues/72))
-- [x] **MIG-02**: User sees a real line diff of the compose changes, rendered with the shared code editor ([#72](https://github.com/docktor-app/docktor/issues/72))
-- [x] **MIG-03**: User can opt out of the pre-migration backup, which is its own explicit step rather than an implicit copy made only on rename ([#72](https://github.com/docktor-app/docktor/issues/72))
-- [x] **MIG-04**: User can stop/undeploy the old stack as part of migration, so the new draft stack does not run alongside it ([#72](https://github.com/docktor-app/docktor/issues/72))
+- [ ] **PRX-01**: User can enable per-domain "WebSocket support" (long-lived connections), default off, persisted with the proxy mapping and shown on the Proxy tab (#86)
+- [ ] **PRX-02**: User can set the proxy mode (managed / external); switching is blocked while proxy domains exist (#44)
+- [ ] **PRX-03**: In external mode Docktor emits Traefik labels into the service compose file for configured domains (#44)
+- [ ] **PRX-04**: In external mode Docktor shows copyable config snippets for Caddy, Nginx Proxy Manager and plain nginx (#44)
+- [ ] **PRX-05**: In external mode Docktor deploys no proxy stack, skips certificate management and shows certificates as "managed externally" (#44)
 
-### Stacks and Compose (STK)
+### Access Control
 
-- [x] **STK-01**: Deploying or redeploying a stack shows no port warning when the only user of the port is the stack's own container ([#76](https://github.com/docktor-app/docktor/issues/76))
-- [x] **STK-02**: A port held by another stack or an external process still produces the warning ([#76](https://github.com/docktor-app/docktor/issues/76))
-- [x] **STK-03**: "Import existing stack" does not offer Docktor's own stack ([#13](https://github.com/docktor-app/docktor/issues/13))
+- [ ] **RBAC-01**: Four roles (owner, admin, operator, viewer) with a documented permission matrix shared by server and client (#87, #64)
+- [ ] **RBAC-02**: Every API route declares its required permission; the server refuses to boot otherwise
+- [ ] **RBAC-03**: Existing instances upgrade with no manual steps; the oldest user becomes owner
+- [ ] **RBAC-04**: SSE streams are authorized and filtered per role and closed on session revoke or role change
+- [ ] **RBAC-05**: The UI hides actions the user's role cannot perform
 
-### Dashboard (DASH)
+### User Administration
 
-- [x] **DASH-01**: The "Backups Configured" card states exactly what it counts, or counts what its label says ([#85](https://github.com/docktor-app/docktor/issues/85))
-- [x] **DASH-02**: A stack with a manual snapshot but no schedule is not silently invisible on the dashboard ([#85](https://github.com/docktor-app/docktor/issues/85))
+- [ ] **USR-01**: Owner/admin can create or invite, edit, and disable users and assign roles (#64)
+- [ ] **USR-02**: The last owner cannot be demoted, disabled or deleted
 
-### Interface (UI)
+### Audit Log
 
-- [x] **UI-01**: User sees the running version (injected at build time, not hard-coded) and GitHub and docs links above the sidebar account menu, working collapsed and on mobile ([#88](https://github.com/docktor-app/docktor/issues/88))
-- [x] **UI-02**: Every status label across dashboard, stack list, stack header, services table and activity timeline uses one casing, from one shared mapping ([#89](https://github.com/docktor-app/docktor/issues/89))
-- [x] **UI-03**: Dashboard KPI numbers and a defined set of labels use a self-hosted monospace font defined in the design tokens ([#90](https://github.com/docktor-app/docktor/issues/90))
-- [x] **UI-04**: The tab bar shows no scrollbar at desktop and tablet widths, and stays usable on narrow screens ([#91](https://github.com/docktor-app/docktor/issues/91))
-- [x] **UI-05**: Forms use one shared label-to-input and field-to-button spacing rule ([#92](https://github.com/docktor-app/docktor/issues/92))
-- [x] **UI-06**: Sidebar entries are grouped under labelled sections, with nested routes keeping the active highlight ([#93](https://github.com/docktor-app/docktor/issues/93))
-- [x] **UI-07**: A Templates sidebar entry opens a standalone catalog page whose "Use template" starts the create-stack flow ([#94](https://github.com/docktor-app/docktor/issues/94))
-- [x] **UI-08**: All data tables share one restyled look matching the shadcn blocks, keeping sorting, status pills and row actions ([#95](https://github.com/docktor-app/docktor/issues/95))
-- [x] **UI-09**: On a stack's non-overview pages the stack-name breadcrumb links back to the stack overview, and the tab name is the current page ([#96](https://github.com/docktor-app/docktor/issues/96))
+- [ ] **AUD-01**: An append-only audit log records mutations, auth events and access denials with actor, target and outcome, never secrets (#64, #87)
+- [ ] **AUD-02**: Owner/admin can view and filter the audit log
 
-### Accessibility (A11Y)
+### Password Reset
 
-- [x] **A11Y-01**: The stack actions trigger, theme toggle, certificate delete button and table pagination buttons have a 44px touch target below `md` and keep the compact size at `md` and up ([#71](https://github.com/docktor-app/docktor/issues/71))
+- [ ] **RST-01**: User can request a password reset by email; known and unknown addresses get the same neutral response (#79)
+- [ ] **RST-02**: Reset links are single-use and expire; resetting signs out all sessions and does not bypass 2FA (#79)
+- [ ] **RST-03**: The flow is unavailable with a clear message when SMTP is not configured (#79)
 
-### Release (REL)
+### OIDC
 
-- [x] **REL-01**: Package versions are bumped to 0.1.1, the changelog is updated, and CI is green on `release/v0.1.1`
+- [ ] **OIDC-01**: Owner can configure an OIDC provider in Settings (#61, #87)
+- [ ] **OIDC-02**: OIDC sign-in coexists with email+password
+- [ ] **OIDC-03**: No implicit account linking or sign-up; identities link only from an authenticated account or to an invited user with a verified email
+- [ ] **OIDC-04**: Users without a password credential who sign in via OIDC are exempt from the mandatory-2FA gate
+- [ ] **OIDC-05**: better-auth is upgraded to 1.7.x with the existing auth test suite green
 
 ## Future Requirements
 
-Deferred to a later release (tracked in GitHub Issues, not in this roadmap).
-
-- Remote backups as a new feature, e.g. [#81](https://github.com/docktor-app/docktor/issues/81)
-- Compose warning suppression [#83](https://github.com/docktor-app/docktor/issues/83), WebSocket proxy support [#86](https://github.com/docktor-app/docktor/issues/86), uptime reset [#84](https://github.com/docktor-app/docktor/issues/84), always-fresh template images [#82](https://github.com/docktor-app/docktor/issues/82), YAML check improvements [#77](https://github.com/docktor-app/docktor/issues/77)
-- Password reset by email [#79](https://github.com/docktor-app/docktor/issues/79), OIDC and authorization [#87](https://github.com/docktor-app/docktor/issues/87)
-- Structured server logging [#70](https://github.com/docktor-app/docktor/issues/70)
+- Per-stack access scoping (a `can(user, action, {stackId?})` seam is built now)
+- ProxyProvider abstraction (#43)
+- Just-in-time OIDC user creation
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| New product features | v0.1.1 is a patch release: fixes and polish only |
-| Auth changes (#79, #87) | Features, belong in v0.2.0 |
-| Editing `components/ui/` (shadcn-managed) | Project rule; the SidebarTrigger touch target stays out of #71 |
-| Settings cards migration to react-hook-form | Separate refactoring target, not part of #92 |
+| Per-stack scoping | Compose edit is host-root via Docker socket; global roles first |
+| ProxyProvider abstraction (#43) | Deferred by user |
+| Token-authenticated REST API (#60) | Separate milestone |
+| LDAP | OIDC covers external identity providers |
+| better-auth SSO plugin / SAML | Larger attack surface than needed |
 
 ## Traceability
 
-Which phases cover which requirements. Updated during roadmap creation.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BKP-01 | Phase 17 | Complete |
-| BKP-02 | Phase 17 | Complete |
-| BKP-03 | Phase 17 | Complete |
-| STK-01 | Phase 17 | Complete |
-| STK-02 | Phase 17 | Complete |
-| STK-03 | Phase 18 | Complete |
-| MIG-01 | Phase 18 | Complete |
-| MIG-02 | Phase 18 | Complete |
-| MIG-03 | Phase 18 | Complete |
-| MIG-04 | Phase 18 | Complete |
-| UI-01 | Phase 19 | Complete |
-| UI-06 | Phase 19 | Complete |
-| UI-07 | Phase 19 | Complete |
-| UI-02 | Phase 20 | Complete |
-| UI-03 | Phase 20 | Complete |
-| UI-04 | Phase 20 | Complete |
-| UI-05 | Phase 20 | Complete |
-| UI-08 | Phase 20 | Complete |
-| UI-09 | Phase 20 | Complete |
-| DASH-01 | Phase 20 | Complete |
-| DASH-02 | Phase 20 | Complete |
-| A11Y-01 | Phase 20 | Complete |
-| REL-01 | Phase 21 | Complete |
 
 **Coverage:**
-- v0.1.1 requirements: 23 total
-- Mapped to phases: 23
-- Unmapped: 0 ✓
+- v0.2.0 requirements: 31 total
+- Mapped to phases: 0
+- Unmapped: 31 ⚠️
 
 ---
-*Requirements defined: 2026-10-14*
-*Last updated: 2026-10-20 - UI-09 added during Phase 20 discussion*
+*Requirements defined: 2026-10-21*
+*Last updated: 2026-10-21 after initial definition*
