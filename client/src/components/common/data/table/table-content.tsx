@@ -5,7 +5,31 @@ import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow,} from "@/
 import {Card, CardContent} from "@/components/ui/card";
 import {cn} from "@/lib/utils";
 import type {TableColumn} from "./data-table";
+import {SortableHead} from "./sortable-head";
 import {TableFrame} from "./table-frame";
+
+function cellClass<T>(col: TableColumn<T>): string {
+    return cn(col.align === "right" && "text-right", col.className);
+}
+
+function ColumnHeader<T>({column}: Readonly<{column: TableColumn<T>}>): JSX.Element {
+    if (column.sort) {
+        return (
+            <SortableHead
+                label={column.name}
+                direction={column.sort.direction}
+                onToggle={column.sort.onToggle}
+                align={column.align}
+                className={column.headerClassName}
+            />
+        );
+    }
+    return (
+        <TableHead className={cn(column.align === "right" && "text-right", column.headerClassName)}>
+            {column.hideHeader ? <span className="sr-only">{column.name}</span> : column.name}
+        </TableHead>
+    );
+}
 
 interface TableContentProps<T> {
     data: readonly T[];
@@ -63,7 +87,7 @@ export function TableContent<T>({
                 <TableHeader className="bg-muted/50">
                     <TableRow className="hover:bg-transparent">
                         {columns.map((col) => (
-                            <TableHead key={col.name}>{col.name}</TableHead>
+                            <ColumnHeader key={col.name} column={col} />
                         ))}
                     </TableRow>
                 </TableHeader>
@@ -79,7 +103,7 @@ export function TableContent<T>({
                             }
                         >
                             {columns.map((col) => (
-                                <TableCell key={col.name}>
+                                <TableCell key={col.name} className={cellClass(col)}>
                                     {col.render(item)}
                                 </TableCell>
                             ))}

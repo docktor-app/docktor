@@ -1,13 +1,30 @@
 import {type JSX, type ReactNode, useMemo} from "react";
 import {useSearchParams} from "react-router";
 import {Skeleton} from "@/components/ui/skeleton";
+import type {SortDirection} from "./sortable-head";
 import {TableContent} from "./table-content";
 import {TablePagination} from "./table-pagination";
+import {useColumnSort} from "./use-column-sort";
+
+/** Controlled sort: the consumer owns the order and only learns about toggles. */
+export interface ColumnSort {
+    readonly direction: SortDirection;
+    readonly onToggle: () => void;
+}
 
 export interface TableColumn<T> {
     name: string;
     render: (item: T) => ReactNode;
     isKey?: boolean;
+    className?: string;
+    headerClassName?: string;
+    align?: "left" | "right";
+    /** Keeps the header as a column header but visible to screen readers only. */
+    hideHeader?: boolean;
+    /** Makes the column sortable by the table itself (ascending, descending, none). */
+    sortValue?: (item: T) => string | number;
+    /** Makes the column sortable by the consumer; wins over `sortValue`. */
+    sort?: ColumnSort;
 }
 
 export interface DataTableProps<T> {
@@ -38,19 +55,20 @@ export function DataTable<T>({
     defaultPageSize = 10,
 }: Readonly<DataTableProps<T>>): JSX.Element {
     const [searchParams] = useSearchParams();
+    const {columns: resolvedColumns, data: sortedData} = useColumnSort(data, columns);
 
     const page = pagination ? Math.max(1, Number(searchParams.get("page")) || 1) : 1;
     const pageSize = pagination
         ? Number(searchParams.get("pageSize")) || defaultPageSize
-        : data.length;
-    const totalPages = Math.max(1, Math.ceil(data.length / pageSize));
+        : sortedData.length;
+    const totalPages = Math.max(1, Math.ceil(sortedData.length / pageSize));
     const currentPage = Math.min(page, totalPages);
 
     const pageData = useMemo(() => {
-        if (!pagination) return data;
+        if (!pagination) return sortedData;
         const start = (currentPage - 1) * pageSize;
-        return data.slice(start, start + pageSize);
-    }, [data, currentPage, pageSize, pagination]);
+        return sortedData.slice(start, start + pageSize);
+    }, [sortedData, currentPage, pageSize, pagination]);
 
     if (loading) {
         return (
@@ -75,7 +93,7 @@ export function DataTable<T>({
         <div className="space-y-4">
             <TableContent
                 data={pageData}
-                columns={columns}
+                columns={resolvedColumns}
                 itemRoute={itemRoute}
                 getRowKey={getRowKey}
             />
