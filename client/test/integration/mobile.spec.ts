@@ -1,6 +1,6 @@
 import {readFileSync} from "node:fs";
 import {expect, test} from "./fixtures";
-import type {Page} from "@playwright/test";
+import type {Locator, Page} from "@playwright/test";
 
 // D-17: phone-width (Pixel 7, 412x915 CSS px via the mobile-chromium
 // Playwright project) regression coverage for every core flow. Self-
@@ -603,6 +603,110 @@ test.describe("Mobile (D-17, 390-412px viewport)", () => {
         await page.getByRole("textbox", {name: "Variable name 1"}).fill("PORT");
         await page.getByLabel("Value for PORT", {exact: true}).fill("8080");
 
+        await expectNoHorizontalOverflow(page);
+    });
+});
+
+test.describe("44px touch targets (A11Y-01)", () => {
+    test.beforeEach(async ({page}) => {
+        await mockAuthenticated(page);
+    });
+
+    async function expectTouchTarget(locator: Locator, label: string) {
+        const box = await locator.boundingBox();
+        expect(box?.width ?? 0, `${label} width`).toBeGreaterThanOrEqual(44);
+        expect(box?.height ?? 0, `${label} height`).toBeGreaterThanOrEqual(44);
+    }
+
+    test("stack detail: the actions menu and the theme toggle are at least 44x44", async ({page}) => {
+        await mockStackDetailSurface(page);
+
+        await page.goto("/stacks/my-app");
+
+        await expectTouchTarget(page.getByRole("button", {name: "Stack actions"}), "Stack actions");
+        await expectTouchTarget(page.getByRole("button", {name: "Toggle theme"}), "Toggle theme");
+    });
+
+    test("stacks list: pagination controls are 44px and still fit at 320px with no page overflow", async ({page}) => {
+        await mockStacksList(
+            page,
+            Array.from({length: 12}, (_, i) => ({
+                ...mockStack,
+                id: `stack-${i + 1}`,
+                displayName: `Stack ${i + 1}`,
+                hostPath: `/stacks/stack-${i + 1}`,
+                status: "STOPPED",
+                services: [],
+            })),
+        );
+
+        await page.goto("/stacks");
+
+        const paginationNames = ["First page", "Previous page", "Next page", "Last page"] as const;
+        for (const name of paginationNames) {
+            await expectTouchTarget(page.getByRole("button", {name}), name);
+        }
+        const rowsPerPage = page.getByText("Rows per page").locator("..").getByRole("combobox");
+        const selectBox = await rowsPerPage.boundingBox();
+        expect(selectBox?.height ?? 0, "rows-per-page select height").toBeGreaterThanOrEqual(44);
+
+        await page.setViewportSize({width: 320, height: 740});
+        await expectNoHorizontalOverflow(page);
+        for (const name of paginationNames) {
+            const button = page.getByRole("button", {name});
+            await button.scrollIntoViewIfNeeded();
+            await expect(button).toBeInViewport();
+            const narrowBox = await button.boundingBox();
+            expect(narrowBox?.width ?? 0, `${name} width at 320px`).toBeGreaterThanOrEqual(44);
+        }
+    });
+
+    test("settings certificates: the delete button is at least 44x44", async ({page}) => {
+        await page.route("**/api/settings/proxy", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({deployed: false, status: null, acmeEmail: "", showInDashboard: false}),
+            }),
+        );
+        await page.route("**/api/certificates", (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify([
+                    {
+                        id: "cert-1",
+                        domainPattern: "*.example.com",
+                        expiresAt: "2027-01-01T00:00:00Z",
+                        createdAt: "2026-01-01T00:00:00Z",
+                        updatedAt: "2026-01-01T00:00:00Z",
+                    },
+                ]),
+            }),
+        );
+
+        await page.goto("/settings/proxy");
+
+        await expectTouchTarget(page.getByRole("button", {name: "Delete *.example.com"}), "Delete certificate");
+    });
+
+    test("stack overview: a 60-character image name causes no horizontal overflow at 412px and 375px", async ({page}) => {
+        await mockStackDetailSurface(page);
+        const longImage = "registry.example.com/organisation/team/application-svc-image";
+        expect(longImage).toHaveLength(60);
+        const stackWithLongImage = {
+            ...mockStack,
+            services: [{...mockStack.services[0], image: longImage}],
+        };
+        await page.route("**/api/stacks/my-app", (route) =>
+            route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(stackWithLongImage)}),
+        );
+
+        await page.goto("/stacks/my-app");
+        await expect(page.getByText(longImage)).toBeVisible();
+        await expectNoHorizontalOverflow(page);
+
+        await page.setViewportSize({width: 375, height: 812});
         await expectNoHorizontalOverflow(page);
     });
 });

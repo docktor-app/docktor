@@ -154,6 +154,95 @@ async function mockStackDetailSurface(page: Page) {
     await page.route("**/api/certificates", (route) => route.fulfill(fulfillJson([])));
 }
 
+/** Minimal stack factory; only the fields the stack list renders are needed. */
+function makeStack(i: number) {
+    return {
+        ...mockStoppedStack,
+        id: `stack-${i}`,
+        displayName: `Stack ${i}`,
+        hostPath: `/stacks/stack-${i}`,
+    };
+}
+
+/** The Settings Proxy tab hosts ProxySettingsCard and CertificatesCard. */
+async function mockSettingsProxyTab(page: Page) {
+    await page.route("**/api/settings/proxy", (route) =>
+        route.fulfill(fulfillJson({deployed: false, status: null, acmeEmail: "", showInDashboard: false})),
+    );
+    await page.route("**/api/certificates", (route) =>
+        route.fulfill(
+            fulfillJson([
+                {
+                    id: "cert-1",
+                    domainPattern: "*.example.com",
+                    expiresAt: "2027-01-01T00:00:00Z",
+                    createdAt: "2026-01-01T00:00:00Z",
+                    updatedAt: "2026-01-01T00:00:00Z",
+                },
+            ]),
+        ),
+    );
+}
+
+const TAB_BAR_VIEWPORTS = [
+    {width: 1280, height: 900},
+    {width: 768, height: 1024},
+    {width: 375, height: 812},
+] as const;
+
+interface TabBarMetrics {
+    readonly scrollHeight: number;
+    readonly clientHeight: number;
+    readonly scrollWidth: number;
+    readonly clientWidth: number;
+    readonly scrollbarWidth: string;
+}
+
+/** Reads the overflow metrics of the element wrapping the stack tab list. */
+function readTabBarMetrics(page: Page): Promise<TabBarMetrics> {
+    return page
+        .getByRole("tablist")
+        .locator("..")
+        .evaluate((el) => ({
+            scrollHeight: el.scrollHeight,
+            clientHeight: el.clientHeight,
+            scrollWidth: el.scrollWidth,
+            clientWidth: el.clientWidth,
+            scrollbarWidth: getComputedStyle(el).getPropertyValue("scrollbar-width"),
+        }));
+}
+
+interface TableFrameStyle {
+    readonly borderWidth: string;
+    readonly borderRadius: string;
+    readonly borderColor: string;
+    readonly headerBackground: string;
+}
+
+/** Computed look of the first data table frame on the page. */
+async function readTableFrameStyle(page: Page): Promise<TableFrameStyle> {
+    const frame = page.locator('[data-slot="table-frame"]').first();
+    await expect(frame).toBeVisible();
+    return frame.evaluate((el) => {
+        const style = getComputedStyle(el);
+        const header = el.querySelector("thead");
+        return {
+            borderWidth: style.borderTopWidth,
+            borderRadius: style.borderTopLeftRadius,
+            borderColor: style.borderTopColor,
+            headerBackground: header ? getComputedStyle(header).backgroundColor : "missing",
+        };
+    });
+}
+
+function expectFramedTable(style: TableFrameStyle) {
+    expect(style.borderWidth).toBe("1px");
+    expect(style.borderRadius).not.toBe("0px");
+    expect(style.headerBackground).not.toBe("missing");
+    expect(style.headerBackground).not.toBe("rgba(0, 0, 0, 0)");
+    expect(style.headerBackground).not.toBe("transparent");
+}
+
 test.describe("Visual consistency (Phase 20)", () => {
     test.beforeEach(async ({page}) => {
         await mockAuthenticated(page);
@@ -217,5 +306,91 @@ test.describe("Visual consistency (Phase 20)", () => {
         const fontFamily = await kpiValue.evaluate((el) => getComputedStyle(el).fontFamily);
         expect(fontFamily).toMatch(/^"?Geist Mono Variable"?/);
         expect(await page.evaluate(() => document.fonts.check('16px "Geist Mono Variable"'))).toBe(true);
+    });
+
+    test("the stack tab bar shows no scrollbar at 1280, 768 and 375px (UI-04)", async ({page}) => {
+        await mockStackDetailSurface(page);
+
+        for (const viewport of TAB_BAR_VIEWPORTS) {
+            const {width} = viewport;
+            await page.setViewportSize(viewport);
+            await page.goto("/stacks/my-app");
+            await expect(page.getByRole("tablist")).toBeVisible();
+
+            const metrics = await readTabBarMetrics(page);
+            expect(metrics.scrollHeight, `vertical overflow at ${width}px`).toBeLessThanOrEqual(metrics.clientHeight);
+            expect(metrics.scrollbarWidth).toBe("none");
+            if (width >= 768) {
+                expect(metrics.scrollWidth, `horizontal overflow at ${width}px`).toBeLessThanOrEqual(metrics.clientWidth);
+            }
+
+            if (width === 375) {
+                await page.getByRole("tab", {name: "Proxy"}).click();
+                const proxyTab = page.getByRole("tab", {name: "Proxy"});
+                await expect(proxyTab).toHaveAttribute("aria-selected", "true");
+                const wrapperBox = await page.getByRole("tablist").locator("..").boundingBox();
+                await expect
+                    .poll(async () => {
+                        const tabBox = await proxyTab.boundingBox();
+                        if (!tabBox || !wrapperBox) return false;
+                        return tabBox.x >= wrapperBox.x - 1 && tabBox.x + tabBox.width <= wrapperBox.x + wrapperBox.width + 1;
+                    })
+                    .toBe(true);
+            }
+
+            await page.locator('[role="tab"][aria-selected="true"]').focus();
+            for (let press = 0; press < 4; press += 1) {
+                const scrollYBefore = await page.evaluate(() => window.scrollY);
+                await page.keyboard.press("ArrowRight");
+                const afterPress = await readTabBarMetrics(page);
+                expect(afterPress.scrollHeight, `vertical overflow after arrow ${press + 1} at ${width}px`).toBeLessThanOrEqual(
+                    afterPress.clientHeight,
+                );
+                expect(await page.evaluate(() => window.scrollY)).toBe(scrollYBefore);
+            }
+        }
+    });
+
+    test("data tables share the bordered frame in light and dark mode (UI-08)", async ({page}) => {
+        await mockStacksList(page);
+
+        await page.emulateMedia({colorScheme: "light"});
+        await page.goto("/stacks");
+        await expect(page.locator("html")).not.toHaveClass(/dark/);
+        const light = await readTableFrameStyle(page);
+        expectFramedTable(light);
+
+        await page.emulateMedia({colorScheme: "dark"});
+        await page.reload();
+        await expect(page.locator("html")).toHaveClass(/dark/);
+        const dark = await readTableFrameStyle(page);
+        expectFramedTable(dark);
+        expect(dark.borderColor).not.toBe(light.borderColor);
+    });
+
+    test("icon controls keep their compact size at md and up (A11Y-01)", async ({page}) => {
+        await page.setViewportSize({width: 1280, height: 900});
+        await mockStackDetailSurface(page);
+
+        await page.goto("/stacks/my-app");
+        for (const name of ["Stack actions", "Toggle theme"]) {
+            const box = await page.getByRole("button", {name}).boundingBox();
+            expect(box?.width ?? 0, `${name} width`).toBeLessThanOrEqual(36);
+            expect(box?.height ?? 0, `${name} height`).toBeLessThanOrEqual(36);
+        }
+
+        await mockStacksList(page, Array.from({length: 12}, (_, i) => makeStack(i + 1)));
+        await page.goto("/stacks");
+        for (const name of ["First page", "Previous page", "Next page", "Last page"]) {
+            const box = await page.getByRole("button", {name}).boundingBox();
+            expect(box?.width ?? 0, `${name} width`).toBeLessThanOrEqual(32);
+            expect(box?.height ?? 0, `${name} height`).toBeLessThanOrEqual(32);
+        }
+
+        await mockSettingsProxyTab(page);
+        await page.goto("/settings/proxy");
+        const deleteBox = await page.getByRole("button", {name: "Delete *.example.com"}).boundingBox();
+        expect(deleteBox?.width ?? 0).toBeLessThanOrEqual(36);
+        expect(deleteBox?.height ?? 0).toBeLessThanOrEqual(36);
     });
 });
