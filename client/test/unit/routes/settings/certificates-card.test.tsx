@@ -1,6 +1,7 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import {render, screen, waitFor} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import {MemoryRouter} from "react-router";
 import {CertificatesCard} from "@/routes/app/settings/components/certificates-card";
 import {
     deleteCertificate,
@@ -60,6 +61,14 @@ beforeEach(() => {
     mockDeleteCertificate.mockReset();
 });
 
+function renderCard(): ReturnType<typeof render> {
+    return render(
+        <MemoryRouter>
+            <CertificatesCard />
+        </MemoryRouter>,
+    );
+}
+
 async function fillValidUpload(user: ReturnType<typeof userEvent.setup>, pattern = "example.com") {
     await user.type(screen.getByLabelText(/domain pattern/i), pattern);
     await user.upload(screen.getByLabelText(/certificate file/i), makeFile("cert.crt"));
@@ -72,7 +81,7 @@ describe("CertificatesCard", () => {
         const certB = makeCertificate({id: "cert-2", domainPattern: "b.example.com", expiresAt: "2099-06-01T00:00:00.000Z"});
         mockGetCertificates.mockResolvedValue([certA, certB]);
 
-        render(<CertificatesCard />);
+        renderCard();
 
         await screen.findByText("a.example.com");
         expect(screen.getByText("b.example.com")).toBeInTheDocument();
@@ -84,7 +93,7 @@ describe("CertificatesCard", () => {
     it("renders an empty state rather than an empty table when there are no certificates", async () => {
         mockGetCertificates.mockResolvedValue([]);
 
-        render(<CertificatesCard />);
+        renderCard();
 
         expect(await screen.findByText(/no certificates uploaded yet/i)).toBeInTheDocument();
         expect(screen.queryByRole("table")).not.toBeInTheDocument();
@@ -93,7 +102,7 @@ describe("CertificatesCard", () => {
     it("renders a retry affordance rather than the empty state when the initial load fails", async () => {
         mockGetCertificates.mockRejectedValueOnce(new Error("Network error"));
 
-        render(<CertificatesCard />);
+        renderCard();
 
         expect(await screen.findByText(/failed to load certificates: network error/i)).toBeInTheDocument();
         expect(screen.queryByText(/no certificates uploaded yet/i)).not.toBeInTheDocument();
@@ -114,7 +123,7 @@ describe("CertificatesCard", () => {
             makeCertificate({id: "cert-2", domainPattern: "later.example.com", expiresAt: later}),
         ]);
 
-        render(<CertificatesCard />);
+        renderCard();
 
         await screen.findByText("soon.example.com");
         expect(screen.getAllByText(/expiring soon/i)).toHaveLength(1);
@@ -124,7 +133,7 @@ describe("CertificatesCard", () => {
         mockGetCertificates.mockResolvedValue([]);
         const user = userEvent.setup();
 
-        render(<CertificatesCard />);
+        renderCard();
         await screen.findByText(/no certificates uploaded yet/i);
 
         await user.type(screen.getByLabelText(/domain pattern/i), "not a domain");
@@ -138,7 +147,7 @@ describe("CertificatesCard", () => {
         mockGetCertificates.mockResolvedValue([]);
         const user = userEvent.setup();
 
-        render(<CertificatesCard />);
+        renderCard();
         await screen.findByText(/no certificates uploaded yet/i);
 
         await user.type(screen.getByLabelText(/domain pattern/i), "example.com");
@@ -153,7 +162,7 @@ describe("CertificatesCard", () => {
         mockUploadCertificate.mockResolvedValue(makeCertificate());
         const user = userEvent.setup();
 
-        render(<CertificatesCard />);
+        renderCard();
         await screen.findByText(/no certificates uploaded yet/i);
 
         await fillValidUpload(user);
@@ -172,7 +181,7 @@ describe("CertificatesCard", () => {
         mockUploadCertificate.mockResolvedValue(makeCertificate());
         const user = userEvent.setup();
 
-        render(<CertificatesCard />);
+        renderCard();
         await screen.findByText(/no certificates uploaded yet/i);
 
         await fillValidUpload(user);
@@ -190,7 +199,7 @@ describe("CertificatesCard", () => {
         mockUploadCertificate.mockRejectedValue(new Error("Private key does not match certificate"));
         const user = userEvent.setup();
 
-        render(<CertificatesCard />);
+        renderCard();
         await screen.findByText(/no certificates uploaded yet/i);
 
         await fillValidUpload(user);
@@ -206,7 +215,7 @@ describe("CertificatesCard", () => {
         mockUploadCertificate.mockResolvedValue(makeCertificate({id: "cert-new", domainPattern: "new.example.com"}));
         const user = userEvent.setup();
 
-        render(<CertificatesCard />);
+        renderCard();
         await screen.findByText(/no certificates uploaded yet/i);
 
         await fillValidUpload(user, "new.example.com");
@@ -221,7 +230,7 @@ describe("CertificatesCard", () => {
         mockDeleteCertificate.mockResolvedValue(undefined);
         const user = userEvent.setup();
 
-        render(<CertificatesCard />);
+        renderCard();
         await screen.findByText("example.com");
 
         await user.click(screen.getByRole("button", {name: /delete example\.com/i}));
@@ -241,7 +250,7 @@ describe("CertificatesCard", () => {
         );
         const user = userEvent.setup();
 
-        render(<CertificatesCard />);
+        renderCard();
         await screen.findByText("example.com");
 
         await user.click(screen.getByRole("button", {name: /delete example\.com/i}));
@@ -255,9 +264,58 @@ describe("CertificatesCard", () => {
     it("never renders certificate body, key, or chain content", async () => {
         mockGetCertificates.mockResolvedValue([makeCertificate()]);
 
-        render(<CertificatesCard />);
+        renderCard();
         await screen.findByText("example.com");
 
         expect(document.body.textContent).not.toMatch(/BEGIN (CERTIFICATE|PRIVATE KEY|RSA PRIVATE KEY)/);
+    });
+
+    it("renders the certificates in the shared table frame with a mono domain pattern", async () => {
+        mockGetCertificates.mockResolvedValue([
+            makeCertificate({id: "cert-1", domainPattern: "a.example.com"}),
+            makeCertificate({id: "cert-2", domainPattern: "b.example.com"}),
+        ]);
+
+        const {container} = renderCard();
+
+        const domainCell = (await screen.findByText("a.example.com")).closest("td");
+        expect(container.querySelector('[data-slot="table-frame"]')).toContainElement(domainCell);
+        expect(domainCell).toHaveClass("font-mono", "text-xs");
+    });
+
+    it("renders the expiry warning as a yellow ToneBadge without amber classes", async () => {
+        const soon = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString();
+        mockGetCertificates.mockResolvedValue([
+            makeCertificate({id: "cert-1", domainPattern: "soon.example.com", expiresAt: soon}),
+        ]);
+
+        const {container} = renderCard();
+
+        const pill = await screen.findByText(/expiring soon/i);
+        expect(pill).toHaveAttribute("data-tone", "yellow");
+        expect(container.innerHTML).not.toMatch(/amber-\d{3}/);
+    });
+
+    it("gives the delete button a 44px touch target below md and 36px from md up", async () => {
+        mockGetCertificates.mockResolvedValue([makeCertificate({domainPattern: "soon.example.com"})]);
+
+        renderCard();
+
+        const button = await screen.findByRole("button", {name: "Delete soon.example.com"});
+        expect(button).toHaveClass("size-9", "max-md:size-11");
+    });
+
+    it("splits the empty copy into a heading and a description", async () => {
+        mockGetCertificates.mockResolvedValue([]);
+
+        renderCard();
+
+        expect(await screen.findByText("No certificates uploaded yet")).toBeInTheDocument();
+        expect(
+            screen.getByText(
+                "Upload one to use it as a domain's certificate source when assigning a domain to a service.",
+            ),
+        ).toBeInTheDocument();
+        expect(screen.queryByRole("table")).not.toBeInTheDocument();
     });
 });
