@@ -131,6 +131,19 @@ describe("TwoFactorStep (authenticator code)", () => {
         expect(verifyTotp).not.toHaveBeenCalled();
     });
 
+    it("lays out the code input and Verify button in FormStack / FormActions (UI-05)", () => {
+        const {container} = render(<TwoFactorStep onSuccess={vi.fn()} onBack={vi.fn()} onExpired={vi.fn()}/>);
+
+        const stack = container.querySelector('[data-slot="form-stack"]');
+        expect(stack).toBeInTheDocument();
+        expect(stack).toContainElement(screen.getByLabelText("Authentication code"));
+
+        const actions = screen.getByRole("button", {name: "Verify"}).closest('[data-slot="form-actions"]');
+        expect(actions).toBeInTheDocument();
+        expect(stack?.lastElementChild).toBe(actions);
+        expect(container.querySelector("form")?.className.split(/\s+/)).not.toContain("space-y-4");
+    });
+
     it("calls onBack from the Back to sign in button", async () => {
         const user = userEvent.setup();
         const {onBack} = renderStep();
