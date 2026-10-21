@@ -97,6 +97,58 @@ describe("useStacks", () => {
         expect(mockListStacks).toHaveBeenCalledTimes(2);
     });
 
+    describe("stack_status events (D-04 freshness)", () => {
+        it("refetches in the background once when a stack leaves BACKING_UP, without flipping loading", async () => {
+            const stacks = [{id: "my-app", displayName: "My App", status: "BACKING_UP", services: []}];
+            const refetched = [{id: "my-app", displayName: "My App", status: "RUNNING", hasBackup: true, services: []}];
+            mockListStacks.mockResolvedValueOnce(stacks as any);
+            mockListStacks.mockResolvedValueOnce(refetched as any);
+
+            const {result} = renderHook(() => useStacks());
+            await waitFor(() => expect(result.current.loading).toBe(false));
+
+            const loadingStates: boolean[] = [];
+            act(() => {
+                capturedHandler!({type: "stack_status", stackId: "my-app", stackStatus: "RUNNING"});
+                loadingStates.push(result.current.loading);
+            });
+
+            expect(loadingStates).toEqual([false]);
+            await waitFor(() => expect(result.current.stacks).toEqual(refetched));
+            expect(mockListStacks).toHaveBeenCalledTimes(2);
+        });
+
+        it("only patches the status when a stack moves between other states", async () => {
+            const stacks = [{id: "my-app", displayName: "My App", status: "RUNNING", services: []}];
+            mockListStacks.mockResolvedValueOnce(stacks as any);
+
+            const {result} = renderHook(() => useStacks());
+            await waitFor(() => expect(result.current.loading).toBe(false));
+
+            act(() => {
+                capturedHandler!({type: "stack_status", stackId: "my-app", stackStatus: "STOPPED"});
+            });
+
+            await waitFor(() => expect(result.current.stacks[0]!.status).toBe("STOPPED"));
+            expect(mockListStacks).toHaveBeenCalledTimes(1);
+        });
+
+        it("does not refetch for an unknown stack id", async () => {
+            const stacks = [{id: "my-app", displayName: "My App", status: "BACKING_UP", services: []}];
+            mockListStacks.mockResolvedValueOnce(stacks as any);
+
+            const {result} = renderHook(() => useStacks());
+            await waitFor(() => expect(result.current.loading).toBe(false));
+
+            act(() => {
+                capturedHandler!({type: "stack_status", stackId: "ghost", stackStatus: "RUNNING"});
+            });
+
+            expect(mockListStacks).toHaveBeenCalledTimes(1);
+            expect(result.current.stacks[0]!.status).toBe("BACKING_UP");
+        });
+    });
+
     it("a failed initial fetch with a non-Error rejection sets a generic message", async () => {
         mockListStacks.mockRejectedValue("boom");
 
