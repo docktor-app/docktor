@@ -41,7 +41,7 @@ describe("SidebarVersionBlock expanded row (UI-01)", () => {
         const group = aboutGroup();
         const text = within(group).getByText("v1.2.3");
         expect(text).toHaveAttribute("title", "Docktor v1.2.3");
-        expect(text).toHaveClass("min-w-0", "truncate");
+        expect(text).toHaveClass("min-w-0", "truncate", "font-mono", "tabular-nums");
         expect(group).toHaveClass("group-data-[collapsible=icon]:hidden");
 
         const github = within(group).getByRole("link", {name: "Docktor on GitHub (opens in a new tab)"});
@@ -105,6 +105,7 @@ describe("SidebarVersionBlock collapsed rail menu (UI-SPEC D-08)", () => {
         expect(items[0]).toHaveTextContent("GitHub");
         expect(items[1]).toHaveTextContent("Documentation");
         expect(screen.getByRole("menu")).toHaveTextContent("Docktor v1.2.3");
+        expect(within(screen.getByRole("menu")).getByText("Docktor v1.2.3")).toHaveClass("font-mono");
     });
 
     it("opens by keyboard and closes with Escape", async () => {

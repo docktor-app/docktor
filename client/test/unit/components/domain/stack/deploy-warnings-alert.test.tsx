@@ -12,6 +12,15 @@ function renderAlert(warnings: DeployWarnings) {
     );
 }
 
+function warningLine(text: string): HTMLElement {
+    return screen.getByText((_, element) => element?.tagName === "DIV" && element.textContent === text);
+}
+
+function expectMono(element: HTMLElement): void {
+    expect(element.tagName).toBe("CODE");
+    expect(element).toHaveClass("font-mono");
+}
+
 describe("DeployWarningsAlert", () => {
     it('renders "Port 8080 is already in use by Blog." with a link to /stacks/blog for a stack holder', () => {
         renderAlert({
@@ -20,7 +29,8 @@ describe("DeployWarningsAlert", () => {
             portConflicts: [{port: 8080, protocol: "tcp", serviceName: "web", holder: {kind: "stack", stackId: "blog", stackDisplayName: "Blog"}}],
         });
 
-        expect(screen.getByText(/Port 8080 is already in use by/)).toBeInTheDocument();
+        expect(warningLine("Port 8080 is already in use by Blog.")).toBeInTheDocument();
+        expectMono(screen.getByText("8080"));
         const link = screen.getByRole("link", {name: "Blog"});
         expect(link).toHaveAttribute("href", "/stacks/blog");
     });
@@ -32,7 +42,8 @@ describe("DeployWarningsAlert", () => {
             portConflicts: [{port: 8080, protocol: "tcp", serviceName: "web", holder: {kind: "process", processName: "nginx", pid: 4242}}],
         });
 
-        expect(screen.getByText("Port 8080 is already in use by nginx (PID 4242).")).toBeInTheDocument();
+        expect(warningLine("Port 8080 is already in use by nginx (PID 4242).")).toBeInTheDocument();
+        expectMono(screen.getByText("8080"));
     });
 
     it("renders a process holder with a null pid without any PID text", () => {
@@ -42,7 +53,8 @@ describe("DeployWarningsAlert", () => {
             portConflicts: [{port: 8080, protocol: "tcp", serviceName: "web", holder: {kind: "process", processName: "nginx", pid: null}}],
         });
 
-        expect(screen.getByText("Port 8080 is already in use by nginx.")).toBeInTheDocument();
+        expect(warningLine("Port 8080 is already in use by nginx.")).toBeInTheDocument();
+        expectMono(screen.getByText("8080"));
     });
 
     it('renders "another process" for an unknown holder', () => {
@@ -52,7 +64,8 @@ describe("DeployWarningsAlert", () => {
             portConflicts: [{port: 8080, protocol: "tcp", serviceName: "web", holder: {kind: "unknown"}}],
         });
 
-        expect(screen.getByText("Port 8080 is already in use by another process.")).toBeInTheDocument();
+        expect(warningLine("Port 8080 is already in use by another process.")).toBeInTheDocument();
+        expectMono(screen.getByText("8080"));
     });
 
     it("renders a container holder by name", () => {
@@ -62,7 +75,9 @@ describe("DeployWarningsAlert", () => {
             portConflicts: [{port: 8080, protocol: "tcp", serviceName: "web", holder: {kind: "container", containerName: "legacy-nginx"}}],
         });
 
-        expect(screen.getByText("Port 8080 is already in use by container legacy-nginx.")).toBeInTheDocument();
+        expect(warningLine("Port 8080 is already in use by container legacy-nginx.")).toBeInTheDocument();
+        expectMono(screen.getByText("8080"));
+        expectMono(screen.getByText("legacy-nginx"));
     });
 
     it("renders a udp port as PORT/udp", () => {
@@ -72,7 +87,8 @@ describe("DeployWarningsAlert", () => {
             portConflicts: [{port: 5353, protocol: "udp", serviceName: "dns", holder: {kind: "unknown"}}],
         });
 
-        expect(screen.getByText("Port 5353/udp is already in use by another process.")).toBeInTheDocument();
+        expect(warningLine("Port 5353/udp is already in use by another process.")).toBeInTheDocument();
+        expectMono(screen.getByText("5353/udp"));
     });
 
     it("renders a compose finding as a ComposeWarningBadge plus its message", () => {
