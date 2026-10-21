@@ -194,6 +194,16 @@ describe("StackDetailPage — composition (D-01/D-02)", () => {
         expect(screen.getByText("Not found")).toBeInTheDocument();
     });
 
+    it("renders the tab bar wrapper without a vertical overflow class gap (UI-04)", async () => {
+        renderPage("/stacks/my-app/logs");
+        await waitFor(() =>
+            expect(screen.getByRole("tab", {name: "Logs", selected: true})).toBeInTheDocument(),
+        );
+        const wrapper = screen.getByRole("tablist").parentElement;
+        expect(wrapper).toHaveClass("overflow-y-hidden");
+        expect(wrapper).toHaveClass("[scrollbar-width:none]");
+    });
+
     it("shows the active tab's label in the breadcrumb", async () => {
         renderPage("/stacks/my-app/logs");
         await waitFor(() =>
