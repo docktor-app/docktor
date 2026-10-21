@@ -47,7 +47,7 @@ describe("computeDashboardStats", () => {
             stopped: 0,
             errors: 0,
             updatesAvailable: 0,
-            backupsConfigured: 0,
+            backupCoverage: 0,
         });
     });
 
@@ -87,13 +87,13 @@ describe("computeDashboardStats", () => {
         expect(computeDashboardStats([stack], null).updatesAvailable).toBe(0);
     });
 
-    it("counts every stack toward backupsConfigured when a non-empty global default schedule is set", () => {
+    it("counts every stack toward backupCoverage when a non-empty global default schedule is set", () => {
         const stacks = [
             buildStack({id: "a", backupSchedule: null}),
             buildStack({id: "b", backupSchedule: "0 4 * * *"}),
         ];
 
-        expect(computeDashboardStats(stacks, "0 3 * * *").backupsConfigured).toBe(2);
+        expect(computeDashboardStats(stacks, "0 3 * * *").backupCoverage).toBe(2);
     });
 
     it("with no global default, counts only stacks with a non-empty backupSchedule", () => {
@@ -103,6 +103,15 @@ describe("computeDashboardStats", () => {
             buildStack({id: "c", backupSchedule: "0 4 * * *"}),
         ];
 
-        expect(computeDashboardStats(stacks, null).backupsConfigured).toBe(1);
+        expect(computeDashboardStats(stacks, null).backupCoverage).toBe(1);
+    });
+
+    it("counts a stack with hasBackup true and no schedule", () => {
+        const stacks = [buildStack({backupSchedule: null, hasBackup: true})];
+
+        const stats = computeDashboardStats(stacks, null);
+
+        expect(stats.backupCoverage).toBe(1);
+        expect(stats.total).toBe(1);
     });
 });
