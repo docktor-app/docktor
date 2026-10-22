@@ -166,6 +166,9 @@ function mapMigrationResult(result: MigrationOperationResult): MigrationOperatio
     if (result.keptOriginalAt !== undefined) {
         mapped.keptOriginalAt = result.keptOriginalAt
     }
+    if (result.rollback !== undefined) {
+        mapped.rollback = result.rollback
+    }
     return mapped
 }
 

@@ -232,6 +232,26 @@ describe("subscribeStateBroadcast", () => {
         expect(broadcaster.publish).toHaveBeenCalledWith({type: "migration_progress", operation})
     })
 
+    it("passes the rollback report of a rolled back operation through to the live-state event", () => {
+        subscribeStateBroadcast(bus, broadcaster)
+        const operation = migrationOperation({
+            status: "rolled_back",
+            step: "finished",
+            stepDetail: null,
+            finishedAt: "2026-01-01T10:05:00.000Z",
+            result: {
+                success: false,
+                error: "Migration failed: boom.",
+                originalPath: "/opt/old",
+                rollback: {oldStack: "restored-running", original: "untouched", cleanupErrors: []},
+            },
+        })
+
+        bus.emit("migration.progressed", {operation})
+
+        expect(broadcaster.publish).toHaveBeenCalledWith({type: "migration_progress", operation})
+    })
+
     it("returns a disposer that detaches every subscription", () => {
         const dispose = subscribeStateBroadcast(bus, broadcaster)
 

@@ -19,7 +19,7 @@ vi.mock("@/components/common/code-editor", () => ({
 }));
 
 vi.mock("sonner", () => ({
-    toast: {error: vi.fn(), info: vi.fn(), success: vi.fn(), loading: vi.fn()},
+    toast: {error: vi.fn(), info: vi.fn(), success: vi.fn(), loading: vi.fn(), warning: vi.fn()},
 }));
 
 // The SSE connection is exercised by the hook's own tests; here the test
@@ -43,7 +43,7 @@ function openStream(): void {
     act(() => onOpen());
 }
 
-const FALLBACK = "Migration failed. Your original stack directory was not modified. Check the error and try again.";
+const FALLBACK = "Migration failed. Check the error and the old stack, then try again.";
 
 const stack: DiscoveredStack = {
     path: "/host/opt/db/docker-compose.yml",
@@ -343,14 +343,14 @@ describe("BrownfieldImport migration flow", () => {
             expect(call?.[1]).toHaveProperty("action");
         });
 
-        it("shows the server's rollback message verbatim on failure", async () => {
-            const error = "Migration failed: disk full. Your original stack directory was not modified. The old stack was restarted.";
+        it("shows the server's error text as the detail of the failure toast", async () => {
+            const error = "Migration failed: disk full.";
             await confirm(() => Promise.resolve(runningOperation));
             await waitFor(() => expect(toast.loading).toHaveBeenCalled());
 
             emit(progress(failed(error)));
 
-            expect(toast.error).toHaveBeenCalledWith(error, {id: "op-1"});
+            expect(toast.error).toHaveBeenCalledWith("Migration of db failed", {id: "op-1", description: error});
             expect(screen.queryByText("Imported")).toBeNull();
         });
 
@@ -360,7 +360,7 @@ describe("BrownfieldImport migration flow", () => {
 
             emit(progress(failed(undefined)));
 
-            expect(toast.error).toHaveBeenCalledWith(FALLBACK, {id: "op-1"});
+            expect(toast.error).toHaveBeenCalledWith("Migration of db failed", {id: "op-1", description: FALLBACK});
         });
 
         it("shows the refusal of a start (for example the in-flight guard) and tracks nothing", async () => {
