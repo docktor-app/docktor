@@ -11,6 +11,12 @@ import {useContainerEvents, type StateEvent} from "@/hooks/use-container-events"
 import type {DiscoveredStack, ScanResult} from "@/lib/brownfield-types";
 import type {CodeEditorProps} from "@/components/common/code-editor";
 
+// #107: a preview whose filesystem has room for the migration, with or without a backup.
+const ROOMY_DISK_SPACE = {
+    withoutBackup: {ok: true, filesystems: [{label: "/opt/docktor/stacks", requiredBytes: 1024, availableBytes: 1_048_576}]},
+    withBackup: {ok: true, filesystems: [{label: "/opt/docktor/stacks", requiredBytes: 2048, availableBytes: 1_048_576}]},
+};
+
 // CodeMirror itself is covered by its own tests.
 vi.mock("@/components/common/code-editor", () => ({
     CodeEditor: ({value, ariaLabel}: CodeEditorProps) => (
@@ -128,7 +134,7 @@ function createApi(
     return {
         scanDirectories: vi.fn().mockResolvedValue({stacks: [stack], skippedDirectories: 0, skipped: []}),
         adoptStack: vi.fn().mockResolvedValue({id: "db"}),
-        previewMigration: vi.fn().mockResolvedValue({diff: {hunks: [], added: 0, removed: 0}, extractedEnv: "", emptySources: [], anonymousVolumes: [], target}),
+        previewMigration: vi.fn().mockResolvedValue({diff: {hunks: [], added: 0, removed: 0}, extractedEnv: "", emptySources: [], anonymousVolumes: [], diskSpace: ROOMY_DISK_SPACE, target}),
         executeMigration,
         listMigrationOperations: vi.fn().mockResolvedValue({operations: []}),
     };
@@ -201,6 +207,7 @@ describe("BrownfieldImport migration flow", () => {
             extractedEnv: "",
             emptySources: [],
             anonymousVolumes: [{service: "db", containerPath: "/var/lib/postgresql/data"}],
+            diskSpace: ROOMY_DISK_SPACE,
             target: separateTarget,
         });
         renderImport(api);
