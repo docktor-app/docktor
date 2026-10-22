@@ -10,7 +10,7 @@ Issue numbers refer to `docktor-app/docktor`. Research: `.planning/research/SUMM
 ### Migration Hardening
 
 - [x] **MIG-05**: Migration verifies the old stack is really stopped (compose project resolved correctly) before copying data (#102)
-- [ ] **MIG-06**: Migration copies the correct named volume and detects anonymous volumes instead of silently creating empty ones (#101)
+- [x] **MIG-06**: Migration copies the correct named volume and detects anonymous volumes instead of silently creating empty ones (#101)
 - [x] **MIG-07**: Migration handles `~` bind sources correctly in analysis, rewrite and copy (#104)
 - [ ] **MIG-08**: Migration rollback reliably restores the original stack without deleting volumes, reports only verified outcomes, and recovers after a Docktor restart mid-migration (#100)
 - [ ] **MIG-09**: Migration backs up before stopping the old stack and checks free disk space on the right filesystem (#107)
@@ -80,7 +80,7 @@ Issue numbers refer to `docktor-app/docktor`. Research: `.planning/research/SUMM
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | MIG-05 | Phase 22 | Complete |
-| MIG-06 | Phase 22 | Pending |
+| MIG-06 | Phase 22 | Complete |
 | MIG-07 | Phase 22 | Complete |
 | MIG-08 | Phase 22 | Pending |
 | MIG-09 | Phase 22 | Pending |
