@@ -252,7 +252,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         );
         expect(mockMigrator.copyDirectory).toHaveBeenCalledWith(
             originalDir,
-            path.join(newStackPath, BACKUP_DIR_NAME),
+            path.join(newStackPath, BACKUP_DIR_NAME, "stack"),
         );
         expect(mockStackFs.removeDirectory).not.toHaveBeenCalled();
         expect(mockStackRepo.delete).not.toHaveBeenCalled();
@@ -269,7 +269,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         const result = await buildService().migrate(input());
 
         expect(result.success).toBe(true);
-        const backupDir = path.join(newStackPath, BACKUP_DIR_NAME);
+        const backupDir = path.join(newStackPath, BACKUP_DIR_NAME, "stack");
         expect(await fs.readFile(path.join(backupDir, "docker-compose.yml"), "utf-8")).toBe(COMPOSE);
         expect(await fs.readFile(path.join(backupDir, "data", "keep.txt"), "utf-8")).toBe("keep me");
     });
@@ -483,7 +483,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         expect(result.success).toBe(true);
         expect(mockMigrator.copyDirectory).toHaveBeenCalledWith(
             originalDir,
-            path.join(sameNameStackPath, BACKUP_DIR_NAME),
+            path.join(sameNameStackPath, BACKUP_DIR_NAME, "stack"),
         );
     });
 
@@ -795,6 +795,133 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             await buildService().preflight(copyingData({backup: false}));
 
             expect(mockDiskSpace.measureDirectoryBytes).not.toHaveBeenCalledWith(originalDir);
+        });
+    });
+
+    describe("the backup comes after the verified stop and before any data is copied (D-01, D-02, D-03)", () => {
+        const outside = (): string => path.join(tmpRoot, "media");
+
+        /** Every step the listener hears and every copy the migrator is asked for, in one timeline. */
+        function timeline(): string[] {
+            const events: string[] = [];
+            mockMigrator.copyDirectory.mockImplementation(async (src: string, dest: string) => {
+                events.push(`copy ${path.relative(tmpRoot, src)} -> ${path.relative(newStackPath, dest)}`);
+                await fs.mkdir(dest, {recursive: true});
+            });
+            mockMigrator.copyVolumeToBindMount.mockImplementation(async (name: string, dest: string) => {
+                events.push(`volume ${name} -> ${path.relative(newStackPath, dest)}`);
+            });
+            mockOldStack.stop.mockImplementation(async () => {
+                events.push("stop");
+            });
+            return events;
+        }
+
+        function copyingEverything(overrides: Partial<{backup: boolean}> = {}) {
+            return {
+                ...input(overrides),
+                volumeSelections: [
+                    {originalPath: "./data", newPath: "./volumes/data", convert: true},
+                    {originalPath: outside(), newPath: "./volumes/media", convert: true},
+                ],
+                namedVolumeSelections: new Map([["pgdata", true]]),
+            };
+        }
+
+        beforeEach(async () => {
+            await fs.mkdir(outside());
+            await fs.writeFile(composePath, `${composeDeclaring(["./data", outside()])}volumes:\n  pgdata:\n`, "utf-8");
+            mockDocker.up.mockResolvedValue(undefined);
+        });
+
+        it("stops and verifies first, then backs up the directory and the outside source, then copies the data", async () => {
+            const events = timeline();
+            const listener = vi.fn((progress: {step: string}) => events.push(progress.step));
+
+            const result = await buildService().migrate(copyingEverything(), listener);
+
+            expect(result.success).toBe(true);
+            expect(events).toEqual([
+                "stopping_old_stack",
+                "stop",
+                "verifying_stop",
+                "creating_directory",
+                "backing_up",
+                `copy original -> ${BACKUP_DIR_NAME}/stack`,
+                `copy media -> ${BACKUP_DIR_NAME}/bind-mounts/1-media`,
+                "copying_named_volume",
+                "volume original_pgdata -> volumes/pgdata",
+                "copying_bind_mount",
+                "copy original/data -> volumes/data",
+                "copying_bind_mount",
+                "copy media -> volumes/media",
+                "writing_compose",
+                "recording_stack",
+                "deploying",
+            ]);
+        });
+
+        it("writes a manifest naming the old directory and every bind mount in the backup", async () => {
+            await buildService().migrate(copyingEverything());
+
+            const manifest: unknown = JSON.parse(await fs.readFile(path.join(newStackPath, BACKUP_DIR_NAME, "manifest.json"), "utf-8"));
+            expect(manifest).toEqual({
+                createdAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
+                stackDirectory: {source: originalDir, backup: "stack"},
+                bindMounts: [{originalPath: outside(), source: outside(), backup: "bind-mounts/1-media"}],
+            });
+        });
+
+        it("does not copy named volumes into the backup", async () => {
+            await buildService().migrate(copyingEverything());
+
+            expect(mockMigrator.copyVolumeToBindMount).toHaveBeenCalledTimes(1);
+            expect(mockMigrator.copyVolumeToBindMount).toHaveBeenCalledWith("original_pgdata", path.join(newStackPath, "volumes", "pgdata"));
+        });
+
+        it("rolls back and restarts the old stack when the backup copy fails, before any data was copied", async () => {
+            mockMigrator.copyDirectory.mockRejectedValueOnce(new Error("no space left on device"));
+
+            const result = await buildService().migrate(copyingEverything());
+
+            expect(result.success).toBe(false);
+            expect(result.error).toContain("no space left on device");
+            expect(mockMigrator.copyDirectory).toHaveBeenCalledTimes(1);
+            expect(mockMigrator.copyVolumeToBindMount).not.toHaveBeenCalled();
+            expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
+            expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+        });
+
+        it("fails and rolls back when a bind source planned for the backup vanished", async () => {
+            mockMigrator.copyDirectory.mockImplementationOnce(async () => {
+                await fs.rm(outside(), {recursive: true});
+            });
+
+            const result = await buildService().migrate(copyingEverything());
+
+            expect(result.success).toBe(false);
+            expect(result.error).toContain("no longer exists");
+            expect(mockMigrator.copyVolumeToBindMount).not.toHaveBeenCalled();
+        });
+
+        it("writes nothing under pre-migration-backup without a backup", async () => {
+            const events = timeline();
+
+            await buildService().migrate(copyingEverything({backup: false}));
+
+            expect(events.some((event) => event.includes(BACKUP_DIR_NAME))).toBe(false);
+            expect(events).not.toContain("backing_up");
+            await expect(fs.access(path.join(newStackPath, BACKUP_DIR_NAME))).rejects.toThrow();
+        });
+
+        it("leaves a bind source inside the old directory to the stack copy", async () => {
+            const events = timeline();
+
+            await buildService().migrate({...copyingEverything(), volumeSelections: [{originalPath: "./data", newPath: "./volumes/data", convert: true}]});
+
+            expect(events.filter((event) => event.includes(`${BACKUP_DIR_NAME}/`))).toEqual([`copy original -> ${BACKUP_DIR_NAME}/stack`]);
+            const manifest = JSON.parse(await fs.readFile(path.join(newStackPath, BACKUP_DIR_NAME, "manifest.json"), "utf-8")) as {bindMounts: unknown[]};
+            expect(manifest.bindMounts).toEqual([]);
         });
     });
 
@@ -1763,6 +1890,7 @@ describe("previewMigration (MIG-02, D-04, G-18-7)", () => {
         },
         ownMounts: OwnMountsPort = createMockOwnMounts(),
         projects: ComposeProjectResolverPort = createMockProjects() as unknown as ComposeProjectResolverPort,
+        diskSpace: ReturnType<typeof createMockDiskSpace> = createMockDiskSpace(),
     ): MigrationService {
         return new MigrationService({
             docker: createMockDocker() as unknown as DockerExecutorPort,
@@ -1775,7 +1903,7 @@ describe("previewMigration (MIG-02, D-04, G-18-7)", () => {
             selfStack: mockSelfStack as unknown as SelfStackPort,
             ownMounts,
             directories: hostViewDirectories(),
-            diskSpace: createMockDiskSpace() as unknown as DiskSpaceProbePort,
+            diskSpace: diskSpace as unknown as DiskSpaceProbePort,
         });
     }
 
@@ -1817,6 +1945,64 @@ describe("previewMigration (MIG-02, D-04, G-18-7)", () => {
         await service.previewMigration(request());
 
         expect(rewriter.rewrite.mock.calls.map((call) => call[3])).toEqual([undefined, "OLD=1\n"]);
+    });
+
+    describe("the disk space check (#107, D-08)", () => {
+        const dataDir = (): string => path.join(composeDir, "data");
+        const selection = [{originalPath: "./data", newPath: "./volumes/data", convert: true}];
+
+        beforeEach(async () => {
+            await fs.mkdir(dataDir());
+        });
+
+        function probe(availableBytes: number) {
+            const diskSpace = createMockDiskSpace(availableBytes);
+            diskSpace.measureDirectoryBytes.mockImplementation(async (target: string) => (target === composeDir ? 600 : target === dataDir() ? 400 : 1));
+            return diskSpace;
+        }
+
+        it("reports the assessment without and with a backup for a separate migration, a shortfall as ok false", async () => {
+            const result = await buildPreviewService(undefined, undefined, undefined, probe(1_000)).previewMigration(
+                request({volumeSelections: selection}),
+            );
+
+            expect(result.diskSpace).toEqual({
+                withoutBackup: {ok: true, filesystems: [{label: STACKS_FILESYSTEM, requiredBytes: 440, availableBytes: 1_000}]},
+                withBackup: {ok: false, filesystems: [{label: STACKS_FILESYSTEM, requiredBytes: 1_100, availableBytes: 1_000}]},
+            });
+        });
+
+        it("measures every item once, however many assessments it feeds", async () => {
+            const diskSpace = probe(10_000);
+
+            await buildPreviewService(undefined, undefined, undefined, diskSpace).previewMigration(request({volumeSelections: selection}));
+
+            expect(diskSpace.measureDirectoryBytes.mock.calls.map((call) => call[0]).sort()).toEqual([composeDir, dataDir()].sort());
+        });
+
+        it("has no with-backup assessment for an in-place migration", async () => {
+            const inPlaceDir = path.join(stacksRoot, stackId);
+            await fs.mkdir(path.join(inPlaceDir, "data"), {recursive: true});
+            await fs.writeFile(path.join(inPlaceDir, "docker-compose.yml"), COMPOSE, "utf-8");
+            const diskSpace = probe(10_000);
+
+            const result = await buildPreviewService(undefined, undefined, undefined, diskSpace).previewMigration(
+                request({composePath: path.join(inPlaceDir, "docker-compose.yml"), volumeSelections: selection}),
+            );
+
+            expect(result.diskSpace.withBackup).toBeNull();
+            expect(result.diskSpace.withoutBackup.ok).toBe(true);
+            expect(diskSpace.measureDirectoryBytes.mock.calls.map((call) => call[0])).not.toContain(inPlaceDir);
+        });
+
+        it("refuses a size it cannot measure like the start does", async () => {
+            const diskSpace = probe(10_000);
+            diskSpace.measureDirectoryBytes.mockResolvedValue(null);
+
+            await expect(
+                buildPreviewService(undefined, undefined, undefined, diskSpace).previewMigration(request({volumeSelections: selection})),
+            ).rejects.toBeInstanceOf(BadRequestError);
+        });
     });
 
     describe("a ~ bind source (#104)", () => {

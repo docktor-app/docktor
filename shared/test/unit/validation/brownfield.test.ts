@@ -9,6 +9,7 @@ import {
     discoveredStackSchema,
     migrationDiskSpaceSchema,
     migrationExecuteSchema,
+    migrationPreviewDiskSpaceSchema,
     migrationPreviewSchema,
     migrationTargetSchema,
     scanResultSchema,
@@ -381,5 +382,26 @@ describe("migrationDiskSpaceSchema (D-08)", () => {
         ["a filesystem without a label", {ok: false, filesystems: [{requiredBytes: 1, availableBytes: 1}]}],
     ])("rejects %s", (_label, value) => {
         expect(migrationDiskSpaceSchema.safeParse(value).success).toBe(false);
+    });
+});
+
+describe("migrationPreviewDiskSpaceSchema (D-08)", () => {
+    const assessment = {ok: true, filesystems: [{label: "/opt/docktor/stacks", requiredBytes: 1, availableBytes: 2}]};
+
+    it("accepts an assessment without and with a backup", () => {
+        expect(migrationPreviewDiskSpaceSchema.safeParse({withoutBackup: assessment, withBackup: assessment}).success).toBe(true);
+    });
+
+    it("accepts a null with-backup assessment (an in-place migration keeps the renamed original as its backup)", () => {
+        expect(migrationPreviewDiskSpaceSchema.safeParse({withoutBackup: assessment, withBackup: null}).success).toBe(true);
+    });
+
+    it.each([
+        ["no without-backup assessment", {withBackup: null}],
+        ["no with-backup field", {withoutBackup: assessment}],
+        ["a null without-backup assessment", {withoutBackup: null, withBackup: null}],
+        ["an invalid assessment", {withoutBackup: {ok: true}, withBackup: null}],
+    ])("rejects %s", (_label, value) => {
+        expect(migrationPreviewDiskSpaceSchema.safeParse(value).success).toBe(false);
     });
 });
