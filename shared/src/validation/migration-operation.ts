@@ -59,6 +59,33 @@ export const migrationRollbackReportSchema = z.object({
     cleanupErrors: z.array(z.string()),
 });
 
+// The stack id the server's slugify produces: lowercase letters and digits,
+// single hyphens between them, at most 63 characters. A ledger entry names a
+// directory and a record a rollback removes, so anything else is refused.
+const ledgerStackIdSchema = z
+    .string()
+    .max(63)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {message: "Must be a slugified stack id"});
+
+// What a migration run did to the world, in the order it did it. Rollback undoes
+// the entries in reverse; each entry is recorded only after (or, for the stop,
+// right before) the side effect it names, so nothing foreign is ever undone.
+export const migrationLedgerEntrySchema = z.discriminatedUnion("kind", [
+    z.object({
+        kind: z.literal("stopped_old_stack"),
+        project: z.string(),
+        composePath: z.string().min(1),
+        // The services that ran before the stop; the only ones a rollback starts.
+        runningBefore: z.array(z.string()),
+        // The new stack runs under the old stack's compose project (in place, or the same name).
+        sharesProjectWithNewStack: z.boolean(),
+    }),
+    z.object({kind: z.literal("moved_aside"), originalDir: z.string().min(1), asideDir: z.string().min(1)}),
+    z.object({kind: z.literal("created_directory"), stackId: ledgerStackIdSchema}),
+    z.object({kind: z.literal("created_record"), stackId: ledgerStackIdSchema}),
+    z.object({kind: z.literal("deploy_started"), stackId: ledgerStackIdSchema}),
+]);
+
 export const migrationOperationStatusSchema = z.enum(MIGRATION_OPERATION_STATUSES);
 export const migrationOperationStepSchema = z.enum(MIGRATION_OPERATION_STEPS);
 
@@ -97,6 +124,7 @@ export const migrationOperationListSchema = z.object({
     operations: z.array(migrationOperationSchema),
 });
 
+export type MigrationLedgerEntry = z.infer<typeof migrationLedgerEntrySchema>;
 export type MigrationOperationStatus = z.infer<typeof migrationOperationStatusSchema>;
 export type MigrationOperationStep = z.infer<typeof migrationOperationStepSchema>;
 export type MigrationRollbackReport = z.infer<typeof migrationRollbackReportSchema>;

@@ -7,6 +7,7 @@ import {
     migrationOperationListSchema,
     migrationOperationParamsSchema,
     migrationOperationSchema,
+    migrationLedgerEntrySchema,
     migrationResultSchema,
     migrationRollbackReportSchema,
 } from "../../../src/validation/migration-operation.js";
@@ -139,5 +140,39 @@ describe("migrationRollbackReportSchema", () => {
             migrationResultSchema.safeParse({...base, rollback: {oldStack: "restored-running", original: "untouched", cleanupErrors: []}}).success,
         ).toBe(true);
         expect(migrationResultSchema.safeParse({...base, rollback: {oldStack: "nope", original: "untouched", cleanupErrors: []}}).success).toBe(false);
+    });
+});
+
+describe("migrationLedgerEntrySchema", () => {
+    const STOPPED = {
+        kind: "stopped_old_stack",
+        project: "memos",
+        composePath: "/opt/memos/docker-compose.yml",
+        runningBefore: ["db", "web"],
+        sharesProjectWithNewStack: false,
+    };
+
+    it.each([
+        ["stopped_old_stack", STOPPED],
+        ["moved_aside", {kind: "moved_aside", originalDir: "/opt/memos", asideDir: "/opt/memos-pre-migration"}],
+        ["created_directory", {kind: "created_directory", stackId: "my-app"}],
+        ["created_record", {kind: "created_record", stackId: "my-app"}],
+        ["deploy_started", {kind: "deploy_started", stackId: "my-app"}],
+    ])("parses a %s entry", (_kind, entry) => {
+        expect(migrationLedgerEntrySchema.safeParse(entry).success).toBe(true);
+    });
+
+    it.each([
+        ["an unknown kind", {kind: "deleted_volume", stackId: "my-app"}],
+        ["an uppercase stack id", {kind: "created_directory", stackId: "My-App"}],
+        ["a stack id with a path separator", {kind: "created_record", stackId: "../etc"}],
+        ["a stack id with a double hyphen", {kind: "deploy_started", stackId: "my--app"}],
+        ["a stack id of 64 characters", {kind: "created_directory", stackId: "a".repeat(64)}],
+        ["an empty aside path", {kind: "moved_aside", originalDir: "/opt/memos", asideDir: ""}],
+        ["an empty original path", {kind: "moved_aside", originalDir: "", asideDir: "/opt/aside"}],
+        ["an empty compose path", {...STOPPED, composePath: ""}],
+        ["a missing sharesProjectWithNewStack flag", {kind: "stopped_old_stack", project: "memos", composePath: "/c.yml", runningBefore: []}],
+    ])("rejects %s", (_label, entry) => {
+        expect(migrationLedgerEntrySchema.safeParse(entry).success).toBe(false);
     });
 });
