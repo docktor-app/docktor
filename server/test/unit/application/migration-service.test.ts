@@ -91,7 +91,11 @@ function createMockStackRepo() {
 }
 
 function createMockOldStack() {
-    return {stop: vi.fn().mockResolvedValue(undefined), start: vi.fn().mockResolvedValue(undefined)};
+    return {
+        stop: vi.fn().mockResolvedValue(undefined),
+        start: vi.fn().mockResolvedValue(undefined),
+        restoreServices: vi.fn().mockResolvedValue(undefined),
+    };
 }
 
 // Bound before any test spies on fs.readFile: the resolver double reads the files like production would.
@@ -122,8 +126,8 @@ function createMockProjects(oldStack: ReturnType<typeof createMockOldStack> = cr
     return {
         resolve: vi.fn((composePath: string) => resolver.resolve(composePath)),
         listContainers: vi.fn((project: string, _composePath: string): Promise<readonly ProjectContainer[]> =>
-            // Down once stopped, running again once the rollback started it.
-            Promise.resolve(oldStack.stop.mock.calls.length > 0 && oldStack.start.mock.calls.length === 0 ? [] : [runningContainer(project)]),
+            // Down once stopped, running again once the rollback started or restored it.
+            Promise.resolve(oldStack.stop.mock.calls.length > 0 && oldStack.start.mock.calls.length + oldStack.restoreServices.mock.calls.length === 0 ? [] : [runningContainer(project)]),
         ),
     };
 }
@@ -2003,10 +2007,37 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
                 await expect(fs.access(path.join(originalDir, "volumes"))).rejects.toThrow();
                 await expect(fs.access(asideDir)).rejects.toThrow();
                 expect(mockStackRepo.delete).toHaveBeenCalledWith(stackId);
-                expect(mockOldStack.start).toHaveBeenCalledTimes(1);
-                expect(mockOldStack.start).toHaveBeenCalledWith({composePath, project: stackId}, ["web"]);
+                // The new stack took the old project over, so the old containers are gone: restore, never start (#100 AC2).
+                expect(mockOldStack.start).not.toHaveBeenCalled();
+                expect(mockOldStack.restoreServices).toHaveBeenCalledTimes(1);
+                expect(mockOldStack.restoreServices).toHaveBeenCalledWith({composePath, project: stackId}, ["web"]);
                 const moveBack = mockMigrator.moveDirectory.mock.invocationCallOrder[1] ?? Number.NaN;
-                expect(moveBack).toBeLessThan(mockOldStack.start.mock.invocationCallOrder[0] ?? Number.NaN);
+                expect(moveBack).toBeLessThan(mockOldStack.restoreServices.mock.invocationCallOrder[0] ?? Number.NaN);
+            });
+
+            it("takes the failed deploy down, removes the new directory, moves the original back and restores its services, in that order (#100 AC2)", async () => {
+                mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
+
+                const result = await buildService().migrate(inPlaceInput());
+
+                const order = (mock: {mock: {invocationCallOrder: number[]}}, call = 0): number =>
+                    mock.mock.invocationCallOrder[call] ?? Number.NaN;
+                expect(order(mockDocker.downKeepVolumes)).toBeLessThan(order(mockStackFs.removeDirectory));
+                expect(order(mockStackFs.removeDirectory)).toBeLessThan(order(mockMigrator.moveDirectory, 1));
+                expect(order(mockMigrator.moveDirectory, 1)).toBeLessThan(order(mockOldStack.restoreServices));
+                expect(mockDocker.down).not.toHaveBeenCalled();
+                expect(result.rollback).toEqual({oldStack: "restored-running", original: "restored", cleanupErrors: []});
+            });
+
+            it("starts the stopped containers when the failure came before the deploy, since nothing recreated them", async () => {
+                mockMigrator.copyDirectory.mockRejectedValue(new Error("ENOSPC: no space left on device"));
+
+                const result = await buildService().migrate(inPlaceInput({backup: false}));
+
+                expect(mockDocker.downKeepVolumes).not.toHaveBeenCalled();
+                expect(mockOldStack.restoreServices).not.toHaveBeenCalled();
+                expect(mockOldStack.start).toHaveBeenCalledWith({composePath, project: stackId}, ["web"]);
+                expect(result.rollback).toEqual({oldStack: "restored-running", original: "restored", cleanupErrors: []});
             });
 
             it("leaves everything in place and explains how to restore it when the original path is still occupied", async () => {
@@ -2837,6 +2868,23 @@ describe("shared compose project name (G-18-22-status)", () => {
 
             expect(preview.target.sharedProjectName).toEqual({name: "memos", source: "directory"});
         });
+
+        it("marks the plan as sharing the project, so a rollback restores the old services from their files (#100)", async () => {
+            const plan = await buildService().preflight(request(composePath, "Memos", true));
+
+            expect(plan.sharesProjectWithNewStack).toBe(true);
+        });
+
+        it("restores the old services from their files when the deploy that took the project over fails", async () => {
+            mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
+
+            const result = await buildService().migrate(request(composePath, "Memos", true));
+
+            expect(mockDocker.downKeepVolumes).toHaveBeenCalledWith("memos");
+            expect(mockOldStack.start).not.toHaveBeenCalled();
+            expect(mockOldStack.restoreServices).toHaveBeenCalledWith({composePath, project: "memos"}, ["web"]);
+            expect(result.rollback).toMatchObject({oldStack: "restored-running", original: "untouched"});
+        });
     });
 
     describe("a name the old stack's files set", () => {
@@ -2945,6 +2993,7 @@ describe("shared compose project name (G-18-22-status)", () => {
 
         expect(preview.target.sharedProjectName).toBeNull();
         expect(result.success).toBe(true);
+        expect((await buildService().preflight(request(composePath, "Memos New", true))).sharesProjectWithNewStack).toBe(false);
     });
 
     it("never reports a shared name for an in-place migration", async () => {
@@ -2954,6 +3003,7 @@ describe("shared compose project name (G-18-22-status)", () => {
 
         expect(preview.target.inPlace).toBe(true);
         expect(preview.target.sharedProjectName).toBeNull();
+        expect((await buildService().preflight(request(composePath, "Memos", true))).sharesProjectWithNewStack).toBe(true);
     });
 });
 

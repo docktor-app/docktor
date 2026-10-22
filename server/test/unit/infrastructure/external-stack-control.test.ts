@@ -7,8 +7,11 @@ const TARGET = {composePath: COMPOSE_PATH, project: "other"};
 const STOP_OPTIONS = {timeoutMs: 120_000};
 
 /** Runs the method under test with arguments that fit its signature. */
-function call(control: ExternalStackControl, method: "stop" | "start"): Promise<void> {
-    return method === "stop" ? control.stop(TARGET, STOP_OPTIONS) : control.start(TARGET, ["db", "web"]);
+function call(control: ExternalStackControl, method: "stop" | "start" | "restoreServices"): Promise<void> {
+    if (method === "stop") {
+        return control.stop(TARGET, STOP_OPTIONS);
+    }
+    return method === "start" ? control.start(TARGET, ["db", "web"]) : control.restoreServices(TARGET, ["db", "web"]);
 }
 
 function createRunner() {
@@ -49,14 +52,70 @@ describe("ExternalStackControl", () => {
         expect(runner).not.toHaveBeenCalled();
     });
 
+    describe("restoreServices (same-project rollback)", () => {
+        it("recreates exactly the listed services from the compose file without building", async () => {
+            const runner = createRunner();
+
+            await new ExternalStackControl(runner).restoreServices(TARGET, ["db"]);
+
+            expect(runner).toHaveBeenCalledTimes(1);
+            const [file, args, options] = runner.mock.calls[0] ?? [];
+            expect(file).toBe("docker");
+            expect(args).toEqual(["compose", "-p", "other", "-f", COMPOSE_PATH, "up", "-d", "--no-build", "db"]);
+            expect(options?.timeout).toBe(120_000);
+            expect(options?.cwd.replaceAll("\\", "/")).toBe("/host/opt/app");
+        });
+
+        it("runs nothing for an empty list", async () => {
+            const runner = createRunner();
+
+            await new ExternalStackControl(runner).restoreServices(TARGET, []);
+
+            expect(runner).not.toHaveBeenCalled();
+        });
+
+        it("never passes a flag that removes orphans, volumes or images", async () => {
+            const runner = createRunner();
+
+            await new ExternalStackControl(runner).restoreServices(TARGET, ["db", "web"]);
+
+            const args = runner.mock.calls[0]?.[1] ?? [];
+            for (const forbidden of ["--remove-orphans", "-v", "--volumes", "--rmi", "--force-recreate", "--build"]) {
+                expect(args).not.toContain(forbidden);
+            }
+        });
+
+        it("gives a larger project more time", async () => {
+            const runner = createRunner();
+            const services = Array.from({length: 10}, (_, index) => `svc-${index}`);
+
+            await new ExternalStackControl(runner).restoreServices(TARGET, services);
+
+            expect(runner.mock.calls[0]?.[2].timeout).toBe(300_000);
+        });
+
+        it("wraps a failure in an AppError carrying stderr and the cause", async () => {
+            const failure = Object.assign(new Error("Command failed"), {stderr: "pull access denied\n"});
+            const runner = vi.fn<ComposeCommandRunner>().mockRejectedValue(failure);
+
+            const error = await new ExternalStackControl(runner).restoreServices(TARGET, ["web"]).catch((err: unknown) => err);
+
+            expect(error).toBeInstanceOf(AppError);
+            expect((error as AppError).message).toContain("up");
+            expect((error as AppError).message).toContain("pull access denied");
+            expect((error as AppError).cause).toBe(failure);
+        });
+    });
+
     it("addresses the resolved project in every command (invariant of the compose-project decision)", async () => {
         const runner = createRunner();
         const control = new ExternalStackControl(runner);
 
         await control.stop(TARGET, STOP_OPTIONS);
         await control.start(TARGET, ["web"]);
+        await control.restoreServices(TARGET, ["web"]);
 
-        expect(runner.mock.calls).toHaveLength(2);
+        expect(runner.mock.calls).toHaveLength(3);
         for (const [, args] of runner.mock.calls) {
             const flag = args.indexOf("-p");
             expect(flag).toBeGreaterThanOrEqual(0);
@@ -64,7 +123,7 @@ describe("ExternalStackControl", () => {
         }
     });
 
-    it.each(["stop", "start"] as const)("%s passes the injected environment to the compose child", async (method) => {
+    it.each(["stop", "start", "restoreServices"] as const)("%s passes the injected environment to the compose child", async (method) => {
         const runner = createRunner();
         const environment: NodeJS.ProcessEnv = {PATH: "/usr/bin", DOCKER_HOST: "unix:///var/run/docker.sock"};
 
@@ -93,15 +152,16 @@ describe("ExternalStackControl", () => {
         }
     });
 
-    it("never uses the recreate-capable up command", async () => {
+    it("stop and start never use the recreate-capable up command; restoreServices is the only up", async () => {
         const runner = createRunner();
         const control = new ExternalStackControl(runner);
 
         await control.stop(TARGET, STOP_OPTIONS);
         await control.start(TARGET, ["web"]);
+        await control.restoreServices(TARGET, ["web"]);
 
         const subcommands = runner.mock.calls.map((call) => call[1].find((arg) => arg === "stop" || arg === "start" || arg === "up"));
-        expect(subcommands).toEqual(["stop", "start"]);
+        expect(subcommands).toEqual(["stop", "start", "up"]);
     });
 
     it("wraps a runner failure in an AppError carrying stderr and the original cause", async () => {

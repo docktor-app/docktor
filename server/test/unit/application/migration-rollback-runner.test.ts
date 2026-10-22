@@ -35,6 +35,7 @@ describe("MigrationRollbackRunner", () => {
     };
     let listContainers: ReturnType<typeof vi.fn<(project: string, composePath: string) => Promise<readonly ProjectContainer[]>>>;
     let start: ReturnType<typeof vi.fn<(target: unknown, services: readonly string[]) => Promise<void>>>;
+    let restoreServices: ReturnType<typeof vi.fn<(target: unknown, services: readonly string[]) => Promise<void>>>;
     let pathTaken: ReturnType<typeof vi.fn<(target: string) => Promise<boolean>>>;
     let logger: Record<"info" | "warn" | "error", ReturnType<typeof vi.fn<(...data: unknown[]) => void>>>;
 
@@ -44,6 +45,9 @@ describe("MigrationRollbackRunner", () => {
         listContainers = vi.fn(async () => [container("db", true), container("web", true)]);
         start = vi.fn(async (_target, services) => {
             calls.push(`start:${services.join(",")}`);
+        });
+        restoreServices = vi.fn(async (_target, services) => {
+            calls.push(`restoreServices:${services.join(",")}`);
         });
         pathTaken = vi.fn(async () => false);
         logger = {info: vi.fn<(...data: unknown[]) => void>(), warn: vi.fn<(...data: unknown[]) => void>(), error: vi.fn<(...data: unknown[]) => void>()};
@@ -68,7 +72,7 @@ describe("MigrationRollbackRunner", () => {
                     calls.push(`downKeepVolumes:${id}`);
                 }),
             },
-            oldStack: {start},
+            oldStack: {start, restoreServices},
             projects: {listContainers},
             pathTaken,
             logger,
@@ -254,6 +258,69 @@ describe("MigrationRollbackRunner", () => {
 
         it("exposes no volume-deleting down to the runner", () => {
             expect(Object.keys(deps.docker)).toEqual(["downKeepVolumes"]);
+        });
+    });
+
+    describe("a project the new stack shared with the old one (#100 AC2)", () => {
+        it("brings the original services back from the restored files instead of starting removed containers", async () => {
+            const outcome = await runner().run([
+                stopped(["db", "web"], true),
+                movedAside,
+                createdDirectory,
+                createdRecord,
+                deployStarted,
+            ]);
+
+            expect(calls).toEqual([
+                "downKeepVolumes:memos-new",
+                "deleteRecord:memos-new",
+                "removeDirectory:memos-new",
+                `move:${ASIDE_DIR}->${ORIGINAL_DIR}`,
+                "restoreServices:db,web",
+            ]);
+            expect(restoreServices).toHaveBeenCalledWith({composePath: COMPOSE_PATH, project: "memos"}, ["db", "web"]);
+            expect(start).not.toHaveBeenCalled();
+            expect(outcome.report).toEqual({oldStack: "restored-running", original: "restored", cleanupErrors: []});
+        });
+
+        it("verifies the restore like a start", async () => {
+            listContainers.mockResolvedValue([container("db", true), container("web", false)]);
+
+            const outcome = await runner().run([stopped(["db", "web"], true), createdDirectory, deployStarted]);
+
+            expect(outcome.report.oldStack).toBe("restart-unverified");
+        });
+
+        it("reports restart-failed with the error when the restore command rejects", async () => {
+            restoreServices.mockRejectedValue(new Error("pull access denied"));
+
+            const outcome = await runner().run([stopped(["web"], true), deployStarted]);
+
+            expect(outcome.report.oldStack).toBe("restart-failed");
+            expect(outcome.restartError).toBe("pull access denied");
+        });
+
+        it("starts the untouched containers when the deploy never started", async () => {
+            await runner().run([stopped(["web"], true), createdDirectory]);
+
+            expect(start).toHaveBeenCalledWith(expect.anything(), ["web"]);
+            expect(restoreServices).not.toHaveBeenCalled();
+        });
+
+        it("starts the existing containers when the compose project is not shared, even after a deploy", async () => {
+            await runner().run([stopped(["web"], false), createdDirectory, createdRecord, deployStarted]);
+
+            expect(start).toHaveBeenCalledWith(expect.anything(), ["web"]);
+            expect(restoreServices).not.toHaveBeenCalled();
+        });
+
+        it("restores nothing and leaves the stack stopped when the original is left aside", async () => {
+            pathTaken.mockResolvedValue(true);
+
+            const outcome = await runner().run([stopped(["web"], true), movedAside, deployStarted]);
+
+            expect(restoreServices).not.toHaveBeenCalled();
+            expect(outcome.report.oldStack).toBe("left-stopped");
         });
     });
 });
