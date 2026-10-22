@@ -767,6 +767,79 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         );
     });
 
+    describe("~ bind sources resolved from the old containers (#104)", () => {
+        let homeData: string;
+
+        /** The old project as Docker runs it: `web` mounts `homeData` where the compose file says `~/data`. */
+        function mountsHomeData(source: string): void {
+            const container = {...runningContainer("original"), mounts: [{type: "bind", source, destination: "/mnt/0"}]};
+            mockProjects.resolve.mockResolvedValue({
+                kind: "resolved",
+                project: {name: "original", source: "containers", containers: [container]},
+            });
+        }
+
+        const selecting = (convert: boolean) => ({
+            ...input({backup: false}),
+            volumeSelections: [{originalPath: "~/data", newPath: convert ? "./volumes/data" : "~/data", convert}],
+        });
+
+        beforeEach(async () => {
+            homeData = path.join(tmpRoot, "home", "alice", "data");
+            await fs.mkdir(homeData, {recursive: true});
+            await fs.writeFile(path.join(homeData, "note.txt"), "from home", "utf-8");
+            await fs.writeFile(composePath, composeDeclaring(["~/data"]), "utf-8");
+        });
+
+        it("copies a converted ~ source from the host directory the old container mounts, and creates no other volumes directory", async () => {
+            mountsHomeData(homeData);
+            mockDocker.up.mockResolvedValue(undefined);
+
+            const result = await buildService().migrate(selecting(true));
+
+            expect(result.success).toBe(true);
+            expect(mockMigrator.copyDirectory).toHaveBeenCalledTimes(1);
+            expect(mockMigrator.copyDirectory).toHaveBeenCalledWith(homeData, path.join(newStackPath, "volumes", "data"));
+        });
+
+        it.each([true, false])("hands the resolved host path to the rewrite (convert: %s)", async (convert) => {
+            mountsHomeData(homeData);
+            mockDocker.up.mockResolvedValue(undefined);
+
+            await buildService().migrate(selecting(convert));
+
+            expect(mockRewriter.rewrite).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.any(Array),
+                expect.any(Map),
+                undefined,
+                {homeSources: new Map([["~/data", homeData]])},
+            );
+        });
+
+        it.each([true, false])("refuses an unresolved ~ source before anything happens (convert: %s)", async (convert) => {
+            mockProjects.resolve.mockResolvedValue({
+                kind: "resolved",
+                project: {name: "original", source: "files", containers: []},
+            });
+            const service = buildService();
+
+            await expect(service.migrate(selecting(convert))).rejects.toThrow(BadRequestError);
+            await expect(service.migrate(selecting(convert))).rejects.toThrow("~/data");
+            await expect(service.migrate(selecting(convert))).rejects.toThrow("start the old stack once");
+            await expect(service.migrate(selecting(convert))).rejects.toThrow("absolute path");
+
+            expectNoSideEffects();
+            expect(mockMigrator.moveDirectory).not.toHaveBeenCalled();
+        });
+
+        it("refuses a ~ source that is declared but not selected when it cannot be resolved", async () => {
+            await expect(buildService().migrate(input({backup: false}))).rejects.toThrow("~/data");
+
+            expectNoSideEffects();
+        });
+    });
+
     describe("sources Docktor cannot read fail closed (CR-03)", () => {
         beforeEach(async () => {
             await fs.writeFile(
@@ -805,6 +878,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         });
 
         it("does not refuse an unselected source Docktor cannot read", async () => {
+            await fs.writeFile(composePath, composeDeclaring(["./data", "/opt/app/data"]), "utf-8");
             mockOwnMounts.ownMounts.mockResolvedValue({kind: "unknown"});
             mockDocker.up.mockResolvedValue(undefined);
 
@@ -1350,6 +1424,7 @@ describe("previewMigration (MIG-02, D-04, G-18-7)", () => {
             rewrite: vi.fn().mockReturnValue({rewrittenCompose: COMPOSE, extractedEnv: "", envVars: {}}),
         },
         ownMounts: OwnMountsPort = createMockOwnMounts(),
+        projects: ComposeProjectResolverPort = createMockProjects() as unknown as ComposeProjectResolverPort,
     ): MigrationService {
         return new MigrationService({
             docker: createMockDocker() as unknown as DockerExecutorPort,
@@ -1358,7 +1433,7 @@ describe("previewMigration (MIG-02, D-04, G-18-7)", () => {
             stackFs: mockStackFs as unknown as StackFilesystemPort,
             stackRepo: mockStackRepo as unknown as StackRepository,
             oldStack: createMockOldStack() as unknown as ExternalStackControlPort,
-            projects: createMockProjects() as unknown as ComposeProjectResolverPort,
+            projects,
             selfStack: mockSelfStack as unknown as SelfStackPort,
             ownMounts,
             directories: hostViewDirectories(),
@@ -1403,6 +1478,48 @@ describe("previewMigration (MIG-02, D-04, G-18-7)", () => {
         await service.previewMigration(request());
 
         expect(rewriter.rewrite.mock.calls.map((call) => call[3])).toEqual([undefined, "OLD=1\n"]);
+    });
+
+    describe("a ~ bind source (#104)", () => {
+        const homeProject = (source: string): ComposeProjectResolverPort =>
+            ({
+                resolve: vi.fn().mockResolvedValue({
+                    kind: "resolved",
+                    project: {
+                        name: "original",
+                        source: "containers",
+                        containers: [{...runningContainer("original"), mounts: [{type: "bind", source, destination: "/mnt/0"}]}],
+                    },
+                }),
+                listContainers: vi.fn().mockResolvedValue([]),
+            }) as unknown as ComposeProjectResolverPort;
+
+        const selecting = (convert: boolean) => ({
+            ...request(),
+            volumeSelections: [{originalPath: "~/data", newPath: convert ? "./volumes/data" : "~/data", convert}],
+        });
+
+        beforeEach(async () => {
+            await fs.writeFile(composePath, composeDeclaring(["~/data"]), "utf-8");
+        });
+
+        it.each([
+            [true, "./volumes/data:/mnt/0"],
+            [false, "/home/alice/data:/mnt/0"],
+        ])("shows the rewritten line in the diff (convert: %s)", async (convert, rewritten) => {
+            const service = buildPreviewService(new ComposeRewriter(), createMockOwnMounts(), homeProject("/home/alice/data"));
+
+            const result = await service.previewMigration(selecting(convert));
+
+            const lines = result.diff.hunks.flatMap((hunk) => hunk.lines);
+            expect(lines).toContainEqual(expect.objectContaining({kind: "removed", text: "      - ~/data:/mnt/0"}));
+            expect(lines).toContainEqual(expect.objectContaining({kind: "added", text: `      - ${rewritten}`}));
+        });
+
+        it("refuses a ~ source that cannot be resolved", async () => {
+            await expect(buildPreviewService().previewMigration(selecting(true))).rejects.toThrow(BadRequestError);
+            await expect(buildPreviewService().previewMigration(selecting(true))).rejects.toThrow("~/data");
+        });
     });
 
     it("returns the empty diff when the rewrite leaves the content unchanged", async () => {

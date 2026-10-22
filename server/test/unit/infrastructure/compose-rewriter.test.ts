@@ -159,6 +159,76 @@ volumes:
         });
     });
 
+    describe("rewrite (#104: ~ bind sources)", () => {
+        const HOME_SOURCES = new Map([["~/data", "/home/alice/data"]]);
+        const SHORT = lines("services:", "  db:", "    image: postgres", "    volumes:", "      - ~/data:/var/lib/data", "");
+        const LONG = lines(
+            "services:",
+            "  db:",
+            "    image: postgres",
+            "    volumes:",
+            "      - type: bind",
+            "        source: ~/data",
+            "        target: /var/lib/data",
+            "",
+        );
+        const convertData = [{originalPath: "~/data", newPath: "./volumes/data", convert: true}];
+        const keepData = [{originalPath: "~/data", newPath: "~/data", convert: false}];
+
+        it("rewrites a converted short-form ~ source to the selected destination", () => {
+            const result = new ComposeRewriter().rewrite(SHORT, convertData, new Map(), undefined, {homeSources: HOME_SOURCES});
+
+            expect(result.rewrittenCompose).toBe(SHORT.replace("~/data:/var/lib/data", "./volumes/data:/var/lib/data"));
+        });
+
+        it("rewrites a kept short-form ~ source to the absolute host path", () => {
+            const result = new ComposeRewriter().rewrite(SHORT, keepData, new Map(), undefined, {homeSources: HOME_SOURCES});
+
+            expect(result.rewrittenCompose).toBe(SHORT.replace("~/data:/var/lib/data", "/home/alice/data:/var/lib/data"));
+        });
+
+        it("keeps the mode of a short-form ~ source", () => {
+            const compose = SHORT.replace("/var/lib/data", "/var/lib/data:ro");
+
+            const result = new ComposeRewriter().rewrite(compose, keepData, new Map(), undefined, {homeSources: HOME_SOURCES});
+
+            expect(result.rewrittenCompose).toContain("- /home/alice/data:/var/lib/data:ro");
+        });
+
+        it.each([
+            ["converted", convertData, "./volumes/data"],
+            ["kept", keepData, "/home/alice/data"],
+        ])("rewrites the source of a %s long-form bind ~ source", (_label, selections, expected) => {
+            const result = new ComposeRewriter().rewrite(LONG, selections, new Map(), undefined, {homeSources: HOME_SOURCES});
+
+            const [vol] = parseYaml(result.rewrittenCompose).services.db.volumes;
+            expect(vol).toEqual({type: "bind", source: expected, target: "/var/lib/data"});
+        });
+
+        it("never treats a ~ source as a named volume", () => {
+            const result = new ComposeRewriter().rewrite(SHORT, [], new Map([["~/data", true]]), undefined, {
+                homeSources: HOME_SOURCES,
+            });
+
+            expect(result.rewrittenCompose).toBe(SHORT.replace("~/data:/var/lib/data", "/home/alice/data:/var/lib/data"));
+        });
+
+        it("leaves a ~ source unchanged without homeSources", () => {
+            expect(new ComposeRewriter().rewrite(SHORT, keepData, new Map()).rewrittenCompose).toBe(SHORT);
+            expect(new ComposeRewriter().rewrite(SHORT, convertData, new Map()).rewrittenCompose).toBe(
+                SHORT.replace("~/data:/var/lib/data", "./volumes/data:/var/lib/data"),
+            );
+        });
+
+        it("produces byte-identical output with an empty options object for an existing fixture", () => {
+            const rewriter = new ComposeRewriter();
+
+            expect(rewriter.rewrite(MEMOS_COMMENTED, CONVERT_DATA, new Map(), undefined, {})).toEqual(
+                rewriter.rewrite(MEMOS_COMMENTED, CONVERT_DATA, new Map()),
+            );
+        });
+    });
+
     describe("rewrite (G-18-4 B: source-preserving edits)", () => {
         const rewriter = new ComposeRewriter();
 
