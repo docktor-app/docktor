@@ -21,6 +21,7 @@ const stopped = (runningBefore: string[], sharesProjectWithNewStack = false): Mi
 const movedAside: MigrationLedgerEntry = {kind: "moved_aside", originalDir: ORIGINAL_DIR, asideDir: ASIDE_DIR};
 const createdDirectory: MigrationLedgerEntry = {kind: "created_directory", stackId: "memos-new"};
 const createdRecord: MigrationLedgerEntry = {kind: "created_record", stackId: "memos-new"};
+const deployStarted: MigrationLedgerEntry = {kind: "deploy_started", stackId: "memos-new"};
 
 function container(service: string, running: boolean): ProjectContainer {
     return {id: `${service}-1`, name: `memos-${service}-1`, service, running, mounts: []};
@@ -60,6 +61,11 @@ describe("MigrationRollbackRunner", () => {
             migrator: {
                 moveDirectory: vi.fn(async (source: string, destination: string) => {
                     calls.push(`move:${source}->${destination}`);
+                }),
+            },
+            docker: {
+                downKeepVolumes: vi.fn(async (id: string) => {
+                    calls.push(`downKeepVolumes:${id}`);
                 }),
             },
             oldStack: {start},
@@ -215,5 +221,39 @@ describe("MigrationRollbackRunner", () => {
         await runner().run(entries);
 
         expect(entries).toEqual([stopped(["web"]), createdDirectory]);
+    });
+
+    describe("a deploy that started (#100, T-22-19)", () => {
+        it("takes the new project down keeping volumes before its directory is removed and the record deleted", async () => {
+            const outcome = await runner().run([stopped(["web"]), createdDirectory, createdRecord, deployStarted]);
+
+            expect(calls).toEqual([
+                "downKeepVolumes:memos-new",
+                "deleteRecord:memos-new",
+                "removeDirectory:memos-new",
+                "start:web",
+            ]);
+            expect(outcome.report.cleanupErrors).toEqual([]);
+        });
+
+        it("logs and lists a failing down and still removes the directory", async () => {
+            vi.mocked(deps.docker.downKeepVolumes).mockRejectedValue(new Error("daemon unreachable"));
+
+            const outcome = await runner().run([createdDirectory, createdRecord, deployStarted]);
+
+            expect(outcome.report.cleanupErrors).toEqual([expect.stringContaining("daemon unreachable")]);
+            expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("daemon unreachable"));
+            expect(calls).toEqual(["deleteRecord:memos-new", "removeDirectory:memos-new"]);
+        });
+
+        it("runs no down when the deploy never started", async () => {
+            await runner().run([stopped(["web"]), createdDirectory, createdRecord]);
+
+            expect(deps.docker.downKeepVolumes).not.toHaveBeenCalled();
+        });
+
+        it("exposes no volume-deleting down to the runner", () => {
+            expect(Object.keys(deps.docker)).toEqual(["downKeepVolumes"]);
+        });
     });
 });

@@ -38,7 +38,7 @@ const COMPOSE = `${composeDeclaring(["./data", "./missing", "./present"])}volume
 const BACKUP_DIR_NAME = "pre-migration-backup";
 
 function createMockDocker() {
-    return {up: vi.fn()};
+    return {up: vi.fn(), downKeepVolumes: vi.fn().mockResolvedValue(undefined), down: vi.fn()};
 }
 
 function createMockMigrator() {
@@ -1698,6 +1698,53 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             expect(result.rollback?.oldStack).toBe("restored-running");
             expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining("database locked"));
             expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining("EBUSY: directory busy"));
+        });
+
+        it("records the deploy before it starts and deploys without removing orphans (Pitfall 12)", async () => {
+            const log: string[] = [];
+            mockDocker.up.mockImplementation(async () => {
+                log.push("up");
+            });
+            const service = buildService();
+            const ledger = loggingLedger(log);
+
+            await service.execute(await service.preflight(input({backup: false})), {ledger});
+
+            expect(log.slice(-2)).toEqual(["record:deploy_started", "up"]);
+            expect(mockDocker.up).toHaveBeenCalledWith(stackId, {removeOrphans: false});
+        });
+
+        it("takes a failed deploy down keeping volumes before removing the directory, and never runs the volume-deleting down", async () => {
+            mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
+
+            const result = await buildService().migrate(input());
+
+            expect(result.rollback?.cleanupErrors).toEqual([]);
+            expect(mockDocker.downKeepVolumes).toHaveBeenCalledWith(stackId);
+            const order = (mock: {mock: {invocationCallOrder: number[]}}): number => mock.mock.invocationCallOrder[0] ?? Number.NaN;
+            expect(order(mockDocker.downKeepVolumes)).toBeLessThan(order(mockStackFs.removeDirectory));
+            expect(order(mockStackFs.removeDirectory)).toBeLessThan(order(mockOldStack.start));
+            expect(mockDocker.down).not.toHaveBeenCalled();
+        });
+
+        it("never takes anything down when the failure happens before the deploy", async () => {
+            mockMigrator.copyDirectory.mockRejectedValue(new Error("ENOSPC: no space left on device"));
+
+            await buildService().migrate(input());
+
+            expect(mockDocker.downKeepVolumes).not.toHaveBeenCalled();
+            expect(mockDocker.down).not.toHaveBeenCalled();
+        });
+
+        it("lists a failing keep-volumes down and still removes the directory", async () => {
+            mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
+            mockDocker.downKeepVolumes.mockRejectedValue(new Error("daemon unreachable"));
+
+            const result = await buildService().migrate(input());
+
+            expect(result.rollback?.cleanupErrors).toEqual([expect.stringContaining("daemon unreachable")]);
+            expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
+            expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining("daemon unreachable"));
         });
 
         it("never logs through the console when an injected logger is given", async () => {

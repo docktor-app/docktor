@@ -34,6 +34,59 @@ describe("DockerExecutor", () => {
             expect(options?.env).toBe(SAFE_ENV);
         });
 
+        it("up without orphan removal runs docker compose up -d only", async () => {
+            const runner = createRunner();
+
+            await createExecutor(runner).up("my-stack", {removeOrphans: false});
+
+            expect(runner.mock.calls[0]?.[1]).toEqual(["compose", "up", "-d"]);
+        });
+
+        it("up keeps removing orphans when the option is true or absent", async () => {
+            const runner = createRunner();
+
+            await createExecutor(runner).up("my-stack", {removeOrphans: true});
+            await createExecutor(runner).up("my-stack", {});
+
+            expect(runner.mock.calls.map((call) => call[1])).toEqual([
+                ["compose", "up", "-d", "--remove-orphans"],
+                ["compose", "up", "-d", "--remove-orphans"],
+            ]);
+        });
+
+        describe("downKeepVolumes (the only down a migration rollback may use)", () => {
+            it("runs exactly docker compose down in the stack directory with the injected env", async () => {
+                const runner = createRunner();
+
+                await createExecutor(runner).downKeepVolumes("my-stack");
+
+                expect(runner).toHaveBeenCalledTimes(1);
+                const [file, args, options] = runner.mock.calls[0] ?? [];
+                expect(file).toBe("docker");
+                expect(args).toEqual(["compose", "down"]);
+                expect(options?.cwd).toBe(getStackPath("my-stack"));
+                expect(options?.timeout).toBe(120_000);
+                expect(options?.env).toBe(SAFE_ENV);
+            });
+
+            it("never passes a flag that removes volumes or images", async () => {
+                const runner = createRunner();
+
+                await createExecutor(runner).downKeepVolumes("my-stack");
+
+                const args = runner.mock.calls[0]?.[1] ?? [];
+                for (const forbidden of ["-v", "--volumes", "--rmi"]) {
+                    expect(args).not.toContain(forbidden);
+                }
+            });
+
+            it("rejects when docker compose down fails", async () => {
+                const runner = vi.fn<DockerCommandRunner>().mockRejectedValue(new Error("daemon unreachable"));
+
+                await expect(createExecutor(runner).downKeepVolumes("my-stack")).rejects.toThrow("daemon unreachable");
+            });
+        });
+
         it("ps parses one JSON object per line", async () => {
             const runner = createRunner(
                 '{"Service":"web","State":"running","Status":"Up","Ports":"80/tcp"}\n{"Name":"db","State":"exited"}\n',
