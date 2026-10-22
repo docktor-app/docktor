@@ -132,6 +132,7 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
     namedVolumeSelections,
     backup,
     stopOldStack,
+    acknowledgeAnonymousVolumes,
     inPlaceAsideName,
   }: ConfirmMigrateParams) => {
     api
@@ -142,6 +143,7 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
         namedVolumeSelections,
         backup,
         stopOldStack,
+        acknowledgeAnonymousVolumes,
         ...(inPlaceAsideName !== null && {inPlaceAsideName}),
       })
       .then(track)

@@ -35,6 +35,8 @@ export interface ConfirmMigrateParams {
   namedVolumeSelections: Record<string, boolean>;
   backup: boolean;
   stopOldStack: boolean;
+  // D-05: the user acknowledged that anonymous volumes start empty (false when there are none).
+  acknowledgeAnonymousVolumes: boolean;
   // G-18-7: the name the original directory is renamed to; null unless the
   // migration is in place.
   inPlaceAsideName: string | null;
@@ -90,7 +92,9 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
   const [namedVolumeSelections, setNamedVolumeSelections] = useState<Record<string, boolean>>(() => {
     const selections: Record<string, boolean> = {};
     for (const vol of stack.namedVolumes) {
-      selections[vol] = true; // Default: convert all named volumes
+      // Default: convert every named volume except those the compose file already
+      // declares external (#101): they belong to something else and stay Docker volumes.
+      selections[vol] = !stack.externalVolumes.includes(vol);
     }
     return selections;
   });
@@ -98,6 +102,8 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
   const [bindMounts, setBindMounts] = useState<BindMountChoice[]>(() => buildBindMountChoices(stack));
 
   const [preview, setPreview] = useState<MigrationPreview | null>(null);
+  // D-05: reset whenever a new preview is stored, so an old acknowledgement never covers new volumes.
+  const [anonymousAck, setAnonymousAck] = useState(false);
   // null = not chosen yet; the effective default is "no backup" and a user
   // toggle is an explicit boolean that later previews never override.
   const [backupChoice, setBackupChoice] = useState<boolean | null>(null);
@@ -137,6 +143,7 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
     }
   }, [step]);
 
+  const hasAnonymousVolumes = (preview?.anonymousVolumes.length ?? 0) > 0;
   const volumesToCopy = countVolumesToCopy(namedVolumeSelections, bindMounts);
 
   const handleVolumeToggle = (volName: string, checked: boolean) => {
@@ -162,6 +169,7 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
       });
       if (requestId !== previewRequestId.current) return;
       setPreview(result);
+      setAnonymousAck(false);
       setStep(2);
     } catch (err: unknown) {
       if (requestId !== previewRequestId.current) return;
@@ -183,6 +191,7 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
       namedVolumeSelections,
       backup,
       stopOldStack,
+      acknowledgeAnonymousVolumes: hasAnonymousVolumes && anonymousAck,
       inPlaceAsideName: inPlace ? asideName : null,
     });
     handleClose();
@@ -231,6 +240,9 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
                 diff={preview.diff}
                 extractedEnv={preview.extractedEnv}
                 emptySources={preview.emptySources}
+                anonymousVolumes={preview.anonymousVolumes}
+                anonymousAcknowledged={anonymousAck}
+                onAnonymousAcknowledgedChange={setAnonymousAck}
               />
             </div>
           )}
@@ -274,7 +286,7 @@ export function MigrationWizard({stack, open, onClose, onConfirmMigrate, preview
                 <Button
                   className="w-full sm:w-auto"
                   onClick={() => setStep(NEXT_STEP[step])}
-                  disabled={step === 3 && asideNameError !== null}
+                  disabled={(step === 2 && hasAnonymousVolumes && !anonymousAck) || (step === 3 && asideNameError !== null)}
                 >
                   {NEXT_LABELS[step]}
                 </Button>

@@ -241,6 +241,7 @@ describe("BrownfieldImport migration flow", () => {
             namedVolumeSelections: {pgdata: true},
             backup: false,
             stopOldStack: true,
+            acknowledgeAnonymousVolumes: false,
             inPlaceAsideName: "db-pre-migration",
         });
     });
