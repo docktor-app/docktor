@@ -96,8 +96,19 @@ export const stackDirectoryNameSchema = z
 export const migrationExecuteSchema = migrationPreviewSchema.extend({
     backup: z.boolean(),
     stopOldStack: z.boolean(),
+    // D-05: anonymous volumes are never copied and start empty in the new stack.
+    // Mandatory with no default, like the choices above, so no client can skip
+    // the acknowledgement; the server refuses `false` while any exist.
+    acknowledgeAnonymousVolumes: z.boolean(),
     // G-18-7: only meaningful when the new stack takes the old stack's directory.
     inPlaceAsideName: stackDirectoryNameSchema.optional(),
+});
+
+// D-05: a volume Docker names with a random id for a container path that has no
+// named volume. Its data is not copied, so the new stack starts it empty.
+export const anonymousVolumeSchema = z.object({
+    service: z.string(),
+    containerPath: z.string(),
 });
 
 // G-18-22-status: where a Docker Compose project name comes from, in Compose's
@@ -139,6 +150,9 @@ export const discoveredStackSchema = z.object({
     compatibility: z.enum(["green", "yellow", "red"]),
     serviceCount: z.number().int().nonnegative(),
     namedVolumes: z.array(z.string()),
+    // #101: the named volumes the compose file already declares as external; the
+    // migration dialog keeps them as Docker volumes unless the user converts them.
+    externalVolumes: z.array(z.string()),
     absolutePaths: z.array(z.string()),
     // Distinct relative bind-mount sources (for example "./data"), so the
     // migration dialog can offer to copy them into the new stack directory.
@@ -169,6 +183,7 @@ export type MigrationPreviewInput = z.infer<typeof migrationPreviewSchema>;
 export type BrownfieldAdoptInput = z.infer<typeof brownfieldAdoptSchema>;
 export type MigrationExecuteInput = z.infer<typeof migrationExecuteSchema>;
 export type MigrationTarget = z.infer<typeof migrationTargetSchema>;
+export type AnonymousVolumeInput = z.infer<typeof anonymousVolumeSchema>;
 export type ComposeProjectNameSource = z.infer<typeof composeProjectNameSourceSchema>;
 export type SharedProjectName = z.infer<typeof sharedProjectNameSchema>;
 export type ManagedStackRef = z.infer<typeof managedStackRefSchema>;

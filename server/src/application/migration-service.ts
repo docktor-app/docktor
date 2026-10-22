@@ -25,7 +25,12 @@ import {
 	type MigrationTargetKind,
 } from "../domain/migration-target.js";
 import {composeProjectName} from "../domain/compose-project-name.js";
-import {resolveComposeVolumeNames, type ComposeVolumeName} from "../domain/compose-volumes.js";
+import {
+	findAnonymousVolumes,
+	resolveComposeVolumeNames,
+	type AnonymousVolume,
+	type ComposeVolumeName,
+} from "../domain/compose-volumes.js";
 import {
 	composeStopTimeoutMs,
 	runningServices,
@@ -137,6 +142,12 @@ function missingVolumeMessage(key: string, volumeName: string): string {
 	return `Migration refused: the volume "${key}" is selected for conversion, but the Docker volume ${volumeName} does not exist, so there is no data to copy. Docker would only create an empty one. Either untick it to keep it as a Docker volume, or start the old stack once so Docker creates the volume.`;
 }
 
+/** D-05: the refusal for anonymous volumes that start empty in the new stack when the user has not acknowledged it. */
+function anonymousVolumesMessage(anonymous: readonly AnonymousVolume[]): string {
+	const listed = anonymous.map(({service, containerPath}) => `${service}: ${containerPath}`).join(", ");
+	return `Migration refused: the old stack has anonymous volumes (${listed}). They are not copied and start empty in the new stack. Acknowledge this to continue.`;
+}
+
 /**
  * WR-01/T-18-52: a converted `originalPath` must be a bind source the compose
  * file declares, so a request cannot make Docktor copy an arbitrary host path
@@ -214,6 +225,8 @@ export interface MigrationPreview {
 	target: MigrationTarget;
 	/** CR-03: originalPaths of selected bind mounts whose source does not exist; each becomes an empty directory. */
 	emptySources: string[];
+	/** D-05: volumes that are never copied and start empty in the new stack; the migration needs the user's acknowledgement. */
+	anonymousVolumes: AnonymousVolume[];
 }
 
 interface TargetAssessment {
@@ -234,6 +247,8 @@ export interface MigrationInput {
 	backup: boolean;
 	/** D-10: run `docker compose stop` on the old stack before anything is copied. */
 	stopOldStack: boolean;
+	/** D-05: the user knows the old stack's anonymous volumes start empty in the new stack. Mandatory, never defaulted. */
+	acknowledgeAnonymousVolumes: boolean;
 	/**
 	 * G-18-7: only for an in-place migration (the new stack takes the old stack's
 	 * directory): the directory name, next to the original, the original is
@@ -366,7 +381,7 @@ export class MigrationService {
 			volumeSelections,
 			namedVolumeSelections,
 			existingEnv ?? undefined,
-			{homeSources},
+			{homeSources, volumes},
 		);
 		const diff = computeUnifiedDiff(originalCompose, result.rewrittenCompose);
 		const inPlace = assessment.kind === "in-place";
@@ -382,7 +397,8 @@ export class MigrationService {
 			sharedProjectName: await this.sharedProjectName(assessment, oldProject),
 		};
 		const emptySources = bindCopies.filter((copy) => copy.sourcePath === null).map((copy) => copy.originalPath);
-		return {diff, extractedEnv: result.extractedEnv, target, emptySources};
+		const anonymousVolumes = findAnonymousVolumes({composeContent: originalCompose, containers: oldProject.containers});
+		return {diff, extractedEnv: result.extractedEnv, target, emptySources, anonymousVolumes};
 	}
 
 	/**
@@ -417,11 +433,12 @@ export class MigrationService {
 	 * the authoritative backstops inside {@link execute}.
 	 */
 	async preflight(input: MigrationInput): Promise<MigrationPlan> {
-		const {composePath, displayName, volumeSelections, namedVolumeSelections, backup, stopOldStack} = input;
+		const {composePath, displayName, volumeSelections, namedVolumeSelections, backup, stopOldStack, acknowledgeAnonymousVolumes} = input;
 		const assessment = await this.assessTarget(composePath, displayName);
 		const {stackId, originalDir, targetDir, kind} = assessment;
 		const oldProject = await this.resolveOldProject(assessment.composePath);
 		const {bindCopies, homeSources, volumes} = await this.planCopies(assessment, oldProject, volumeSelections, namedVolumeSelections);
+		await this.assertAnonymousVolumesAcknowledged(assessment, oldProject, acknowledgeAnonymousVolumes);
 		const inPlace = kind === "in-place" ? {asideDir: await this.planInPlace(originalDir, stackId, input)} : null;
 		if (!stopOldStack) {
 			const shared = await this.sharedProjectName(assessment, oldProject);
@@ -446,6 +463,26 @@ export class MigrationService {
 			volumes,
 			inPlace,
 		};
+	}
+
+	/**
+	 * D-05: anonymous volumes are never copied, so the new stack starts them
+	 * empty. That is only accepted when the user said they know; the schema makes
+	 * the flag mandatory, this is where it is enforced.
+	 */
+	private async assertAnonymousVolumesAcknowledged(
+		assessment: TargetAssessment,
+		oldProject: ResolvedComposeProject,
+		acknowledged: boolean,
+	): Promise<void> {
+		if (acknowledged) {
+			return;
+		}
+		const composeContent = await fs.readFile(assessment.composePath, "utf-8");
+		const anonymous = findAnonymousVolumes({composeContent, containers: oldProject.containers});
+		if (anonymous.length > 0) {
+			throw new BadRequestError(anonymousVolumesMessage(anonymous));
+		}
 	}
 
 	/**
@@ -752,7 +789,7 @@ export class MigrationService {
 				volumeSelections,
 				namedVolumeSelections,
 				existingEnv ?? undefined,
-				{homeSources},
+				{homeSources, volumes},
 			);
 
 			// Write new compose file

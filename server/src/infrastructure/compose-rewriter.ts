@@ -25,6 +25,7 @@ interface Splice {
 	text: string;
 }
 
+/** The entry of a kept volume nothing is known about: compose is told it exists elsewhere. */
 const EXTERNAL_FLOW = "{external: true}";
 
 /** Plain scalars compose reads back with the same text: booleans and canonical decimal integers. */
@@ -117,6 +118,19 @@ export interface RewriteOptions {
 	 * a `~` source is left as it is.
 	 */
 	readonly homeSources?: ReadonlyMap<string, string>;
+	/**
+	 * Top-level volume keys mapped to the Docker volume they really refer to (#101). A kept volume
+	 * is then written with that name, as external when Docker already has it and as a named
+	 * volume Docker will create when it does not, so the new stack uses the old stack's data.
+	 * A key without an entry is declared `{external: true}` as before.
+	 */
+	readonly volumes?: ReadonlyMap<string, KeptVolume>;
+}
+
+/** The real Docker volume behind a top-level compose volume key, and whether Docker has it yet. */
+export interface KeptVolume {
+	readonly name: string;
+	readonly exists: boolean;
 }
 
 /** Lookup of which volume references the user chose to convert (the rewrite rules, no text handling). */
@@ -127,6 +141,7 @@ class VolumeRules {
 		volumeSelections: VolumeSelection[],
 		private readonly namedVolumeSelections: Map<string, boolean>,
 		private readonly homeSources: ReadonlyMap<string, string> = new Map(),
+		private readonly volumes: ReadonlyMap<string, KeptVolume> = new Map(),
 	) {
 		for (const selection of volumeSelections) {
 			if (selection.convert) {
@@ -143,6 +158,17 @@ class VolumeRules {
 	bindTarget(hostPath: string): string | undefined {
 		const newPath = this.bindRewrites.get(hostPath);
 		return newPath || this.homeSources.get(hostPath) || undefined;
+	}
+
+	/** The flow-map text a kept top-level volume is declared with: its real name when it is known. */
+	keptVolumeText(volumeKey: string): string {
+		const volume = this.volumes.get(volumeKey);
+		if (volume === undefined) {
+			return EXTERNAL_FLOW;
+		}
+		// A JSON string is a valid double-quoted YAML scalar.
+		const name = JSON.stringify(volume.name);
+		return volume.exists ? `{external: true, name: ${name}}` : `{name: ${name}}`;
 	}
 
 	namedTarget(volumeName: string): string {
@@ -402,7 +428,7 @@ class ComposeEditPlan {
 	private markExternal(pair: VolumeEntry): void {
 		if (isScalar(pair.key) && pair.key.range) {
 			const start = colonEnd(this.source, pair.key.range[1]);
-			this.edits.add({start, end: this.entryEnd(pair), text: ` ${EXTERNAL_FLOW}`});
+			this.edits.add({start, end: this.entryEnd(pair), text: ` ${this.rules.keptVolumeText(String(pair.key.value))}`});
 		}
 	}
 
@@ -423,7 +449,7 @@ class ComposeEditPlan {
 		}
 		const key = this.source.slice(pair.key.range[0], pair.key.range[1]);
 		return this.needsExternal(pair)
-			? `${key}: ${EXTERNAL_FLOW}`
+			? `${key}: ${this.rules.keptVolumeText(String(pair.key.value))}`
 			: this.source.slice(pair.key.range[0], this.entryEnd(pair));
 	}
 
@@ -485,7 +511,7 @@ export class ComposeRewriter implements ComposeRewriterPort {
 
 		const plan = new ComposeEditPlan(
 			originalCompose,
-			new VolumeRules(volumeSelections, namedVolumeSelections, options.homeSources),
+			new VolumeRules(volumeSelections, namedVolumeSelections, options.homeSources, options.volumes),
 			new EnvNameAllocator({
 				reserved: this.reservedNames(),
 				existingEnv: parseEnvAssignments(existingEnv ?? ""),

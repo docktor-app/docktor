@@ -90,6 +90,7 @@ describe("Imports API (post-setup brownfield scan/adopt/migrate)", () => {
                     namedVolumeSelections: {},
                     backup: true,
                     stopOldStack: true,
+                    acknowledgeAnonymousVolumes: false,
                 },
             });
             expect(res.statusCode).toBe(401);
@@ -222,6 +223,7 @@ describe("Imports API (post-setup brownfield scan/adopt/migrate)", () => {
                 namedVolumeSelections: {},
                 backup: false,
                 stopOldStack: false,
+                acknowledgeAnonymousVolumes: false,
             },
         });
         expect(migrateRes.statusCode).toBe(409);

@@ -37,6 +37,8 @@ export interface BindMountInfo {
 export interface AnalysisResult {
     compatibility: CompatibilityLevel;
     namedVolumes: string[];
+    /** The top-level volumes the compose file declares as external (`external: true` or the legacy map form). */
+    externalVolumes: string[];
     bindMounts: BindMountInfo[];
     inlineEnvVars: {serviceName: string; vars: Record<string, string>}[];
     unsupportedFeatures: string[];
@@ -48,6 +50,7 @@ export class ComposeAnalyzer implements ComposeAnalyzerPort {
         const doc = this.parse(content);
 
         const namedVolumes = this.extractNamedVolumes(doc);
+        const externalVolumes = this.extractExternalVolumes(doc);
         const bindMounts = this.extractBindMounts(doc);
         const inlineEnvVars = this.extractInlineEnvVars(doc);
         const unsupportedFeatures = this.detectUnsupportedFeatures(doc);
@@ -71,6 +74,7 @@ export class ComposeAnalyzer implements ComposeAnalyzerPort {
         return {
             compatibility,
             namedVolumes,
+            externalVolumes,
             bindMounts,
             inlineEnvVars,
             unsupportedFeatures,
@@ -91,6 +95,13 @@ export class ComposeAnalyzer implements ComposeAnalyzerPort {
     extractNamedVolumes(doc: unknown): string[] {
         if (!isRecord(doc) || !isRecord(doc.volumes)) return [];
         return Object.keys(doc.volumes);
+    }
+
+    extractExternalVolumes(doc: unknown): string[] {
+        if (!isRecord(doc) || !isRecord(doc.volumes)) return [];
+        return Object.entries(doc.volumes)
+            .filter(([, definition]) => isRecord(definition) && (definition.external === true || isRecord(definition.external)))
+            .map(([key]) => key);
     }
 
     extractBindMounts(doc: unknown): BindMountInfo[] {

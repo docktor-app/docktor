@@ -216,6 +216,7 @@ describe("brownfield routes", () => {
                 namedVolumeSelections: {},
                 backup: true,
                 stopOldStack: true,
+                acknowledgeAnonymousVolumes: false,
             };
         }
 
@@ -247,6 +248,7 @@ describe("brownfield routes", () => {
             namedVolumeSelections: {},
             backup: true,
             stopOldStack: true,
+            acknowledgeAnonymousVolumes: false,
         });
 
         it.each([
@@ -331,6 +333,7 @@ describe("brownfield routes", () => {
                 namedVolumeSelections: {},
                 backup: true,
                 stopOldStack: false,
+                acknowledgeAnonymousVolumes: false,
                 ...overrides,
             };
         }
@@ -346,6 +349,7 @@ describe("brownfield routes", () => {
                 namedVolumeSelections: new Map(),
                 backup: true,
                 stopOldStack: false,
+                volumes: new Map(),
                 inPlace: null,
             };
         }
@@ -455,6 +459,7 @@ describe("brownfield routes", () => {
                     displayName: "My App",
                     volumeSelections: [],
                     namedVolumeSelections: {},
+                    acknowledgeAnonymousVolumes: false,
                     ...flags,
                 },
             });
@@ -486,6 +491,7 @@ describe("brownfield routes", () => {
                 namedVolumeSelections: {},
                 backup: true,
                 stopOldStack: false,
+                acknowledgeAnonymousVolumes: false,
             };
         }
 

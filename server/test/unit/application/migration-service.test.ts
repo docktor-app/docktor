@@ -774,7 +774,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             const refusal = buildService().migrate(input());
 
             await expect(refusal).rejects.toThrow(BadRequestError);
-            await expect(refusal).rejects.toThrow(/web: \/cache.*db: \/var\/lib\/postgresql\/data.*start empty/s);
+            await expect(refusal).rejects.toThrow(/db: \/var\/lib\/postgresql\/data.*web: \/cache.*start empty/s);
             expectNoSideEffects();
         });
 
@@ -985,7 +985,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
                 expect.any(Array),
                 expect.any(Map),
                 undefined,
-                {homeSources: new Map([["~/data", homeData]])},
+                expect.objectContaining({homeSources: new Map([["~/data", homeData]])}),
             );
         });
 
