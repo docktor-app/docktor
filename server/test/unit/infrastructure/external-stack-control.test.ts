@@ -25,6 +25,35 @@ describe("ExternalStackControl", () => {
         expect(options?.cwd.replaceAll("\\", "/")).toBe("/host/opt/app");
     });
 
+    it.each(["stop", "start"] as const)("%s passes the injected environment to the compose child", async (method) => {
+        const runner = createRunner();
+        const environment: NodeJS.ProcessEnv = {PATH: "/usr/bin", DOCKER_HOST: "unix:///var/run/docker.sock"};
+
+        await new ExternalStackControl(runner, () => environment)[method](COMPOSE_PATH);
+
+        expect(runner.mock.calls[0]?.[2].env).toBe(environment);
+    });
+
+    it("by default hands the compose child only allowlisted variables, never Docktor secrets or COMPOSE_*", async () => {
+        vi.stubEnv("PATH", "/usr/bin");
+        vi.stubEnv("DATABASE_URL", "postgres://user:pw@db/app");
+        vi.stubEnv("BETTER_AUTH_SECRET", "secret");
+        vi.stubEnv("COMPOSE_PROJECT_NAME", "docktor");
+        try {
+            const runner = createRunner();
+
+            await new ExternalStackControl(runner).stop(COMPOSE_PATH);
+
+            const env = runner.mock.calls[0]?.[2].env ?? {};
+            expect(env.PATH).toBe("/usr/bin");
+            expect(Object.keys(env)).not.toContain("DATABASE_URL");
+            expect(Object.keys(env)).not.toContain("BETTER_AUTH_SECRET");
+            expect(Object.keys(env)).not.toContain("COMPOSE_PROJECT_NAME");
+        } finally {
+            vi.unstubAllEnvs();
+        }
+    });
+
     it("never uses the recreate-capable up command", async () => {
         const runner = createRunner();
         const control = new ExternalStackControl(runner);

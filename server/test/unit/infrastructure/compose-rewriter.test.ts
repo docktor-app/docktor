@@ -580,14 +580,28 @@ volumes:
                 expect(result.extractedEnv).toBe("WEB_PORT=80");
             });
 
-            it("reserves the variables of Docktor's own process environment by default", () => {
-                vi.stubEnv("DOCKTOR_TEST_SHADOW", "x");
+            it("reserves the variables that reach docker compose by default", () => {
+                vi.stubEnv("HTTP_PROXY", "http://proxy:3128");
                 try {
-                    const compose = lines("services:", ...service("web", "DOCKTOR_TEST_SHADOW: y"), "");
+                    const compose = lines("services:", ...service("web", "HTTP_PROXY: y"), "");
 
                     const result = new ComposeRewriter().rewrite(compose, [], new Map());
 
-                    expect(result.envVars).toEqual({WEB_DOCKTOR_TEST_SHADOW: "y"});
+                    expect(result.envVars).toEqual({WEB_HTTP_PROXY: "y"});
+                } finally {
+                    vi.unstubAllEnvs();
+                }
+            });
+
+            it("does not reserve a Docktor secret because compose never sees it", () => {
+                vi.stubEnv("DATABASE_URL", "postgres://docktor");
+                try {
+                    const compose = lines("services:", ...service("web", "DATABASE_URL: y"), "");
+
+                    const result = new ComposeRewriter().rewrite(compose, [], new Map());
+
+                    expect(result.envVars).toEqual({DATABASE_URL: "y"});
+                    expect(result.extractedEnv).toBe("DATABASE_URL=y");
                 } finally {
                     vi.unstubAllEnvs();
                 }

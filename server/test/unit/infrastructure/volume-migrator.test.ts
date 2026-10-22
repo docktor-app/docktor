@@ -124,9 +124,24 @@ describe.skipIf(process.platform === "win32")("VolumeMigrator.copyDirectory (CR-
         expect(await fs.readlink(path.join(destination, "dangling"))).toBe("/nonexistent/target");
     });
 
-    it.skipIf(process.getuid?.() !== 0)("keeps uid and gid when running as root", async () => {
+    // The linux-root-migration CI job sets DOCKTOR_REQUIRE_ROOT_TESTS so the ownership test below
+    // can never be skipped silently: if the job is not root, this assertion fails it (#109).
+    it.runIf(process.env.DOCKTOR_REQUIRE_ROOT_TESTS === "1")("runs as root when the ownership test is required", () => {
+        expect(process.getuid?.()).toBe(0);
+    });
+
+    it.skipIf(process.getuid?.() !== 0)("keeps uid, gid, mode, mtime and symlinks when running as root", async () => {
+        const past = new Date("2021-05-06T07:08:09Z");
+        await fs.mkdir(path.join(source, "sub", "nested"), {recursive: true});
+        await fs.writeFile(path.join(source, "sub", "nested", "deep.txt"), "deep", "utf-8");
+        await fs.chmod(path.join(source, "sub", "nested", "deep.txt"), 0o600);
+        await fs.chmod(path.join(source, "sub", "nested"), 0o710);
+        await fs.utimes(path.join(source, "sub", "nested", "deep.txt"), past, past);
         await fs.chown(path.join(source, "data.bin"), 4242, 4242);
         await fs.chown(path.join(source, "sub"), 4242, 4242);
+        await fs.chown(path.join(source, "sub", "nested"), 4343, 4344);
+        await fs.chown(path.join(source, "sub", "nested", "deep.txt"), 4343, 4344);
+        await fs.lchown(path.join(source, "link"), 4545, 4546);
 
         await new VolumeMigrator().copyDirectory(source, destination);
 
@@ -134,6 +149,16 @@ describe.skipIf(process.platform === "win32")("VolumeMigrator.copyDirectory (CR-
             const copied = await fs.stat(path.join(destination, entry));
             expect([copied.uid, copied.gid]).toEqual([4242, 4242]);
         }
+        const nestedDirectory = await fs.stat(path.join(destination, "sub", "nested"));
+        expect([nestedDirectory.uid, nestedDirectory.gid]).toEqual([4343, 4344]);
+        expect(nestedDirectory.mode & 0o777).toBe(0o710);
+        const nestedFile = await fs.stat(path.join(destination, "sub", "nested", "deep.txt"));
+        expect([nestedFile.uid, nestedFile.gid]).toEqual([4343, 4344]);
+        expect(nestedFile.mode & 0o777).toBe(0o600);
+        expect(Math.floor(nestedFile.mtimeMs / 1000)).toBe(Math.floor(past.getTime() / 1000));
+        const copiedLink = await fs.lstat(path.join(destination, "link"));
+        expect([copiedLink.uid, copiedLink.gid]).toEqual([4545, 4546]);
+        expect(await fs.readlink(path.join(destination, "link"))).toBe("data.bin");
     });
 
     it("merges into an existing destination directory without nesting the source", async () => {
