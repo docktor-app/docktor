@@ -10,6 +10,7 @@ const greenStack = {
     compatibility: "green" as const,
     serviceCount: 1,
     namedVolumes: [] as string[],
+    externalVolumes: [] as string[],
     absolutePaths: [] as string[],
     relativePaths: [] as string[],
     inlineEnvVars: false,
@@ -23,6 +24,7 @@ const yellowStack = {
     compatibility: "yellow" as const,
     serviceCount: 1,
     namedVolumes: ["pgdata"],
+    externalVolumes: [] as string[],
     absolutePaths: [] as string[],
     relativePaths: [] as string[],
     inlineEnvVars: false,
@@ -36,6 +38,7 @@ const redStack = {
     compatibility: "red" as const,
     serviceCount: 1,
     namedVolumes: [] as string[],
+    externalVolumes: [] as string[],
     absolutePaths: [] as string[],
     relativePaths: [] as string[],
     inlineEnvVars: false,
@@ -522,7 +525,7 @@ test.describe("Setup Wizard", () => {
             suggestedAsideName: "db-pre-migration",
             sharedProjectName: null,
         };
-        const emptyPreview = {diff: {hunks: [], added: 0, removed: 0}, extractedEnv: "", emptySources: [], target: separateTarget};
+        const emptyPreview = {diff: {hunks: [], added: 0, removed: 0}, extractedEnv: "", emptySources: [], anonymousVolumes: [], target: separateTarget};
         const diffPreview = {
             diff: {
                 added: 1,
@@ -543,6 +546,7 @@ test.describe("Setup Wizard", () => {
             },
             extractedEnv: "",
             emptySources: [],
+            anonymousVolumes: [],
             target: separateTarget,
         };
 

@@ -51,6 +51,7 @@ const stack: DiscoveredStack = {
     compatibility: "yellow",
     serviceCount: 1,
     namedVolumes: ["pgdata"],
+    externalVolumes: [],
     absolutePaths: [],
     relativePaths: [],
     inlineEnvVars: false,
@@ -127,7 +128,7 @@ function createApi(
     return {
         scanDirectories: vi.fn().mockResolvedValue({stacks: [stack], skippedDirectories: 0, skipped: []}),
         adoptStack: vi.fn().mockResolvedValue({id: "db"}),
-        previewMigration: vi.fn().mockResolvedValue({diff: {hunks: [], added: 0, removed: 0}, extractedEnv: "", emptySources: [], target}),
+        previewMigration: vi.fn().mockResolvedValue({diff: {hunks: [], added: 0, removed: 0}, extractedEnv: "", emptySources: [], anonymousVolumes: [], target}),
         executeMigration,
         listMigrationOperations: vi.fn().mockResolvedValue({operations: []}),
     };
@@ -186,9 +187,33 @@ describe("BrownfieldImport migration flow", () => {
             namedVolumeSelections: {pgdata: true},
             backup: false,
             stopOldStack: true,
+            acknowledgeAnonymousVolumes: false,
         });
         expect(body).not.toHaveProperty("inPlaceAsideName");
         expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("sends acknowledgeAnonymousVolumes true once the user acknowledged the anonymous volumes (D-05)", async () => {
+        const executeMigration = vi.fn().mockResolvedValue(runningOperation);
+        const api = createApi(executeMigration);
+        vi.mocked(api.previewMigration).mockResolvedValue({
+            diff: {hunks: [], added: 0, removed: 0},
+            extractedEnv: "",
+            emptySources: [],
+            anonymousVolumes: [{service: "db", containerPath: "/var/lib/postgresql/data"}],
+            target: separateTarget,
+        });
+        renderImport(api);
+        await userEvent.click(screen.getByRole("button", {name: "Scan"}));
+        await userEvent.click(await screen.findByRole("button", {name: "Migrate"}));
+        await userEvent.click(screen.getByRole("button", {name: "Preview Changes"}));
+        await userEvent.click(await screen.findByRole("checkbox", {name: "I understand these volumes start empty in the new stack"}));
+        await userEvent.click(screen.getByRole("button", {name: "Choose Backup"}));
+        await userEvent.click(screen.getByRole("button", {name: "Choose Old Stack Action"}));
+
+        await userEvent.click(screen.getByRole("button", {name: "Confirm & Migrate"}));
+
+        expect(executeMigration.mock.calls[0]?.[0]).toMatchObject({acknowledgeAnonymousVolumes: true});
     });
 
     it("sends backup true and stopOldStack false when the backup is turned on and the stop off", async () => {
