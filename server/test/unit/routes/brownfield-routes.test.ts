@@ -47,6 +47,11 @@ vi.mock("../../../src/infrastructure/compose-project-resolver.js", () => ({
     },
 }));
 
+// The preview checks the Docker volumes it would copy (#101); no Docker daemon is involved here.
+vi.mock("../../../src/infrastructure/volume-migrator.js", () => ({
+    volumeMigrator: {volumeExists: vi.fn(async () => true)},
+}));
+
 import Fastify from "fastify";
 import {serializerCompiler, validatorCompiler, type ZodTypeProvider} from "fastify-type-provider-zod";
 import importRoutes from "../../../src/routes/imports.js";

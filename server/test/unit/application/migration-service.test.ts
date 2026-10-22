@@ -2066,16 +2066,14 @@ describe("MigrationService environment extraction (CR-02)", () => {
             expect(Buffer.compare(await fs.readFile(path.join(newStackPath, ".env")), bytes)).toBe(0);
         });
 
-        it("fails the migration with rollback when the old .env cannot be read", async () => {
+        it("refuses the migration before anything is stopped when the old .env cannot be read (#101)", async () => {
             await fs.writeFile(path.join(originalDir, ".env"), "PORT=8080\n", "utf-8");
             failReadingOldEnv();
 
-            const result = await buildRealRewriterService().migrate({...request(), stopOldStack: true});
+            await expect(buildRealRewriterService().migrate({...request(), stopOldStack: true})).rejects.toThrow("EACCES");
 
-            expect(result.success).toBe(false);
-            expect(result.error).toContain("EACCES");
-            expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
-            expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+            expect(mockOldStack.stop).not.toHaveBeenCalled();
+            expect(mockStackFs.createDirectoryExclusive).not.toHaveBeenCalled();
         });
 
         it("rejects the preview when the old .env cannot be read", async () => {

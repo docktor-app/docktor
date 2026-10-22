@@ -25,6 +25,7 @@ import {
 	type MigrationTargetKind,
 } from "../domain/migration-target.js";
 import {composeProjectName} from "../domain/compose-project-name.js";
+import {resolveComposeVolumeNames, type ComposeVolumeName} from "../domain/compose-volumes.js";
 import {
 	composeStopTimeoutMs,
 	runningServices,
@@ -36,6 +37,7 @@ import {
 import {computeUnifiedDiff, type UnifiedDiff} from "../lib/unified-diff.js";
 import {
 	COMPOSE_FILE_NAMES,
+	COMPOSE_VOLUME_NAME_PATTERN,
 	stackDirectoryNameSchema,
 	type MigrationOperationStep,
 	type MigrationTarget,
@@ -128,6 +130,11 @@ function homeSourcesOf(declared: readonly DeclaredBindMount[], oldProject: Resol
 		resolved.set(declaredPath, resolution.hostPath);
 	}
 	return resolved;
+}
+
+/** #101: the refusal for a converted volume Docker does not have, with the two ways out. */
+function missingVolumeMessage(key: string, volumeName: string): string {
+	return `Migration refused: the volume "${key}" is selected for conversion, but the Docker volume ${volumeName} does not exist, so there is no data to copy. Docker would only create an empty one. Either untick it to keep it as a Docker volume, or start the old stack once so Docker creates the volume.`;
 }
 
 /**
@@ -258,8 +265,15 @@ export interface MigrationPlan {
 	readonly bindCopies: readonly PlannedBindCopy[];
 	/** #104: the host directory behind every `~` bind source, as the compose file spells it. */
 	readonly homeSources: ReadonlyMap<string, string>;
+	/** #101: every top-level compose volume by key, with the Docker volume it really refers to. */
+	readonly volumes: ReadonlyMap<string, PlannedVolume>;
 	/** G-18-7: set when the target directory is the original directory; the original moves to `asideDir`. */
 	readonly inPlace: {readonly asideDir: string} | null;
+}
+
+/** One top-level compose volume: its real Docker name, whether the file declares it external, and whether Docker has it. */
+export interface PlannedVolume extends ComposeVolumeName {
+	readonly exists: boolean;
 }
 
 /**
@@ -344,7 +358,7 @@ export class MigrationService {
 		const {composePath, displayName, volumeSelections, namedVolumeSelections} = request;
 		const assessment = await this.assessTarget(composePath, displayName);
 		const oldProject = await this.resolveOldProject(assessment.composePath);
-		const {bindCopies, homeSources} = await this.planCopies(assessment, oldProject, volumeSelections, namedVolumeSelections);
+		const {bindCopies, homeSources, volumes} = await this.planCopies(assessment, oldProject, volumeSelections, namedVolumeSelections);
 		const originalCompose = await fs.readFile(assessment.composePath, "utf-8");
 		const existingEnv = await this.readOldEnv(assessment.originalDir);
 		const result = this.rewriter.rewrite(
@@ -407,7 +421,7 @@ export class MigrationService {
 		const assessment = await this.assessTarget(composePath, displayName);
 		const {stackId, originalDir, targetDir, kind} = assessment;
 		const oldProject = await this.resolveOldProject(assessment.composePath);
-		const {bindCopies, homeSources} = await this.planCopies(assessment, oldProject, volumeSelections, namedVolumeSelections);
+		const {bindCopies, homeSources, volumes} = await this.planCopies(assessment, oldProject, volumeSelections, namedVolumeSelections);
 		const inPlace = kind === "in-place" ? {asideDir: await this.planInPlace(originalDir, stackId, input)} : null;
 		if (!stopOldStack) {
 			const shared = await this.sharedProjectName(assessment, oldProject);
@@ -429,6 +443,7 @@ export class MigrationService {
 			stopOldStack,
 			bindCopies,
 			homeSources,
+			volumes,
 			inPlace,
 		};
 	}
@@ -483,7 +498,7 @@ export class MigrationService {
 		oldProject: ResolvedComposeProject,
 		volumeSelections: readonly VolumeSelection[],
 		namedVolumeSelections: ReadonlyMap<string, boolean>,
-	): Promise<{bindCopies: PlannedBindCopy[]; homeSources: ReadonlyMap<string, string>}> {
+	): Promise<{bindCopies: PlannedBindCopy[]; homeSources: ReadonlyMap<string, string>; volumes: ReadonlyMap<string, PlannedVolume>}> {
 		const converted = volumeSelections.filter((selection) => selection.convert);
 		const declared = await this.declaredBindMounts(assessment.composePath);
 		assertDeclared(declared, converted);
@@ -496,8 +511,55 @@ export class MigrationService {
 		if (violations.length > 0) {
 			throw new BadRequestError(`Migration refused: ${violations.join("; ")}`);
 		}
+		const volumes = await this.planVolumes(assessment, oldProject, namedVolumeSelections);
 		const homeSources = homeSourcesOf(declared, oldProject);
-		return {bindCopies: await this.planBindCopies(volumeSelections, assessment.originalDir, homeSources), homeSources};
+		return {
+			bindCopies: await this.planBindCopies(volumeSelections, assessment.originalDir, homeSources),
+			homeSources,
+			volumes,
+		};
+	}
+
+	/**
+	 * #101: the Docker volume every top-level compose volume really refers to
+	 * (the `name:`, else `<resolved project>_<key>`, external ones by their literal
+	 * name), checked with Docker. A converted volume must be declared, must have a
+	 * valid name (T-22-15) and must exist: Docker would otherwise create an empty
+	 * volume in its place and the user's data would never be copied. A kept volume
+	 * Docker has not created yet is only recorded, so the rewrite can name it.
+	 */
+	private async planVolumes(
+		assessment: TargetAssessment,
+		oldProject: ResolvedComposeProject,
+		namedVolumeSelections: ReadonlyMap<string, boolean>,
+	): Promise<ReadonlyMap<string, PlannedVolume>> {
+		const composeContent = await fs.readFile(assessment.composePath, "utf-8");
+		const envContent = await this.readOldEnv(assessment.originalDir);
+		const resolved = resolveComposeVolumeNames({composeContent, envContent, projectName: oldProject.name});
+		const converted = new Set([...namedVolumeSelections].filter(([, convert]) => convert).map(([key]) => key));
+		for (const key of converted) {
+			if (!resolved.has(key)) {
+				throw new BadRequestError(`Migration refused: the volume "${key}" is not declared by the compose file`);
+			}
+		}
+
+		const planned = new Map<string, PlannedVolume>();
+		for (const [key, {name, external}] of resolved) {
+			const isConverted = converted.has(key);
+			if (!COMPOSE_VOLUME_NAME_PATTERN.test(name)) {
+				if (isConverted) {
+					throw new BadRequestError(`Migration refused: the Docker volume "${name}" of "${key}" is not a valid Docker volume name`);
+				}
+				continue; // a kept volume with a name the rewrite cannot state keeps its entry as it is
+			}
+			// A kept external volume is declared as it is and is not Docker's to create: nothing to ask.
+			const exists = isConverted || !external ? await this.migrator.volumeExists(name) : true;
+			if (isConverted && !exists) {
+				throw new BadRequestError(missingVolumeMessage(key, name));
+			}
+			planned.set(key, {name, external, exists});
+		}
+		return planned;
 	}
 
 	/** The bind mounts the compose file declares, as the analyzer reports them (the very strings the scanner offers). */
@@ -605,7 +667,7 @@ export class MigrationService {
 	 * bind-mount source that vanished since (CR-03).
 	 */
 	async execute(plan: MigrationPlan, onProgress?: MigrationProgressListener): Promise<MigrationResult> {
-		const {stackId, displayName, composePath, originalDir, oldProject, volumeSelections, namedVolumeSelections, backup, stopOldStack, bindCopies, homeSources, inPlace} = plan;
+		const {stackId, displayName, composePath, originalDir, oldProject, volumeSelections, namedVolumeSelections, backup, stopOldStack, bindCopies, homeSources, volumes, inPlace} = plan;
 		// Where the old stack's files are read from: the original directory, or
 		// (in place) the directory it was renamed to.
 		const sourceDir = inPlace?.asideDir ?? originalDir;
@@ -668,8 +730,13 @@ export class MigrationService {
 					// CR-02: the name was validated in preflight (WR-01); confining
 					// destPath to volumesDir stays as a backstop.
 					const destPath = assertWithin(volumesDir, volName);
+					// #101: copy from the Docker volume the compose file really refers to, never the bare key.
+					const volume = volumes.get(volName);
+					if (volume === undefined) {
+						throw new AppError(`The volume "${volName}" was not planned; nothing was copied from it`);
+					}
 					this.report(onProgress, "copying_named_volume", volName);
-					await this.migrator.copyVolumeToBindMount(volName, destPath);
+					await this.migrator.copyVolumeToBindMount(volume.name, destPath);
 				}
 			}
 
