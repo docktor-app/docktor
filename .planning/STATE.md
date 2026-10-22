@@ -5,16 +5,16 @@ milestone_name: Migration Hardening, Proxy & Access
 current_phase: 22
 current_phase_name: Migration Hardening
 status: executing
-stopped_at: Completed 22-02-PLAN.md
-last_updated: "2026-10-22T14:01:14.341Z"
+stopped_at: Completed 22-03-PLAN.md
+last_updated: "2026-10-22T14:19:21.108Z"
 last_activity: 2026-10-22
 last_activity_desc: Phase 22 execution started
-state_head: b8358b8a7dface4b0d97ad724a8083ec17f4e1bf
+state_head: 1444a3e271ffbea6f44a9670ffbe2f141d850c9f
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 8
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-21)
 ## Current Position
 
 Phase: 22 (Migration Hardening) — EXECUTING
-Plan: 3 of 8
+Plan: 4 of 8
 Status: Ready to execute
 Last activity: 2026-10-22 — Phase 22 execution started
 
@@ -59,6 +59,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 |------|----------|-------|-------|
 | Phase 22 P01 | 15 min | 3 tasks | 27 files |
 | Phase 22 P02 | 25min | 2 tasks | 15 files |
+| Phase 22 P03 | 55 min | 3 tasks | 24 files |
 
 ## Accumulated Context
 
@@ -76,6 +77,8 @@ Roadmap decisions for v0.2.0:
 - [Phase 22]: Docker/compose children receive only an allowlisted environment (no Docktor secrets, DOCKTOR_*, COMPOSE_*); ${VAR} resolves from the stack's .env — Compose gives the calling environment precedence over .env (#109)
 - [Phase 22]: MigrationService takes Partial<MigrationServiceDependencies>; AppError subclasses take ErrorOptions — Later plans add ports without touching every builder; cause hygiene before Phase 24 (#108)
 - [Phase 22]: Single shared maskSecrets in @docktor/shared (env, compose map/list, URL credentials) used by migration review, stack-edit dialog and server error text; masked values keep wrapping quotes
+- [Phase 22]: Followed running operation missing from the server list is reported once as lost and dropped from the client store (row actionable again)
+- [Phase 22]: failed/rolled_back toasts use a Docktor title; server error plus verified rollback outcome go in the description; rolled_back only from a verified rollback report
 
 ### Pending Todos
 
@@ -103,6 +106,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-22T14:01:14.120Z
-Stopped at: Completed 22-02-PLAN.md
+Last session: 2026-10-22T14:19:20.908Z
+Stopped at: Completed 22-03-PLAN.md
 Resume file: None
