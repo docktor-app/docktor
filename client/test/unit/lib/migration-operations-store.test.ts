@@ -101,6 +101,15 @@ describe("MigrationOperationsStore", () => {
             expect(store.getSnapshot()[0]?.step).toBe("deploying");
         });
 
+        it("orders the verifying_stop step after stopping_old_stack and the restart request after rolling_back", () => {
+            store.receive(makeOperation({step: "verifying_stop"}));
+            store.receive(makeOperation({step: "stopping_old_stack"}));
+            store.receive(makeOperation({step: "restarting_old_stack"}));
+            store.receive(makeOperation({step: "rolling_back"}));
+
+            expect(changes.map((change) => change.operation.step)).toEqual(["verifying_stop", "restarting_old_stack"]);
+        });
+
         it("ignores an identical repeat", () => {
             store.receive(makeOperation());
             store.receive(makeOperation());

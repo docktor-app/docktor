@@ -65,3 +65,8 @@ export type MigrationOperationResult = z.infer<typeof migrationResultSchema>;
 export type MigrationOperation = z.infer<typeof migrationOperationSchema>;
 export type MigrationOperationParams = z.infer<typeof migrationOperationParamsSchema>;
 export type MigrationOperationList = z.infer<typeof migrationOperationListSchema>;
+
+// RED stubs: replaced by the real contract in the GREEN commit.
+export const MIGRATION_ROLLBACK_OLD_STACK_OUTCOMES = [] as const;
+export const MIGRATION_ROLLBACK_ORIGINAL_OUTCOMES = [] as const;
+export const migrationRollbackReportSchema = z.object({});

@@ -62,3 +62,8 @@ export function showMigrationToast(operation: MigrationOperation, navigate: (to:
 
   toast.error(result?.error || MIGRATION_ERROR_FALLBACK, {id});
 }
+
+/** RED stub: replaced by the real wording in the GREEN commit. */
+export function migrationOutcomeMessage(_operation: MigrationOperation): {title: string; description?: string} {
+    return {title: ""};
+}

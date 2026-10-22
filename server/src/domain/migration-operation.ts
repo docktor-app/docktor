@@ -1,4 +1,9 @@
-import type {MigrationOperation, MigrationOperationResult, MigrationOperationStep} from "@docktor/shared";
+import type {
+    MigrationOperation,
+    MigrationOperationResult,
+    MigrationOperationStatus,
+    MigrationOperationStep,
+} from "@docktor/shared";
 
 /** What identifies a migration run; all of it is known once preflight passed. */
 export interface MigrationOperationStart {
@@ -80,4 +85,9 @@ export function pruneFinishedOperations(
         sorted.filter((operation) => operation.status !== "running" && recent(operation)).slice(0, maxFinished),
     );
     return sorted.filter((operation) => operation.status === "running" || finishedKept.has(operation));
+}
+
+/** RED stub: replaced by the real derivation in the GREEN commit. */
+export function migrationOperationStatusOf(_result: MigrationOperationResult): MigrationOperationStatus {
+    return "failed";
 }
