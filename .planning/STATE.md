@@ -5,16 +5,16 @@ milestone_name: Migration Hardening, Proxy & Access
 current_phase: 22
 current_phase_name: Migration Hardening
 status: executing
-stopped_at: Completed 22-03-PLAN.md
-last_updated: "2026-10-22T14:19:21.108Z"
+stopped_at: Completed 22-04-PLAN.md
+last_updated: "2026-10-22T17:40:22.507Z"
 last_activity: 2026-10-22
 last_activity_desc: Phase 22 execution started
-state_head: 1444a3e271ffbea6f44a9670ffbe2f141d850c9f
+state_head: 928a46079fec7ce23c3bfdd4281e7b511f822174
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 8
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-21)
 ## Current Position
 
 Phase: 22 (Migration Hardening) — EXECUTING
-Plan: 4 of 8
+Plan: 5 of 8
 Status: Ready to execute
 Last activity: 2026-10-22 — Phase 22 execution started
 
@@ -60,6 +60,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 22 P01 | 15 min | 3 tasks | 27 files |
 | Phase 22 P02 | 25min | 2 tasks | 15 files |
 | Phase 22 P03 | 55 min | 3 tasks | 24 files |
+| Phase 22 P04 | 2 sessions | 3 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -79,6 +80,8 @@ Roadmap decisions for v0.2.0:
 - [Phase 22]: Single shared maskSecrets in @docktor/shared (env, compose map/list, URL credentials) used by migration review, stack-edit dialog and server error text; masked values keep wrapping quotes
 - [Phase 22]: Followed running operation missing from the server list is reported once as lost and dropped from the client store (row actionable again)
 - [Phase 22]: failed/rolled_back toasts use a Docktor title; server error plus verified rollback outcome go in the description; rolled_back only from a verified rollback report
+- [Phase 22]: 22-04: the compose project Docker runs (resolved from container labels) is the old stack's identity; every stop/start uses -p <resolved> and a stop that leaves containers running refuses before any copy, with no override (D-04)
+- [Phase 22]: 22-04: ~ bind sources resolve only from the old containers' recorded bind mounts (suffix-checked, services must agree); every declared ~ source must resolve, kept ones are rewritten to the absolute host path
 
 ### Pending Todos
 
@@ -106,6 +109,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-22T14:19:20.908Z
-Stopped at: Completed 22-03-PLAN.md
+Last session: 2026-10-22T17:40:22.421Z
+Stopped at: Completed 22-04-PLAN.md
 Resume file: None

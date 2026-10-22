@@ -84,7 +84,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] 22-01-PLAN.md
 - [x] 22-02-PLAN.md
 - [x] 22-03-PLAN.md
-- [ ] 22-04-PLAN.md
+- [x] 22-04-PLAN.md
 - [ ] 22-05-PLAN.md
 - [ ] 22-06-PLAN.md
 - [ ] 22-07-PLAN.md
@@ -187,7 +187,7 @@ Phases execute in numeric order: 22 → 23 → 24 → 25 → 26 → 27
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 22. Migration Hardening | 3/8 | In Progress | - |
+| 22. Migration Hardening | 4/8 | In Progress | - |
 | 23. Proxy Modes and WebSocket Support | 0/TBD | Not started | - |
 | 24. better-auth Upgrade and Access Control Foundation | 0/TBD | Not started | - |
 | 25. Audit Log and Live-Stream Authorization | 0/TBD | Not started | - |
