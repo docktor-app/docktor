@@ -2,8 +2,6 @@ import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {renderHook} from "@testing-library/react";
 import {useContainerEvents} from "../../../src/hooks/use-container-events.js";
 
-// use-container-events.ts does not exist yet — import failure is the RED state.
-
 // Mock EventSource globally (jsdom does not provide it)
 function createMockEventSource() {
     return {
@@ -25,6 +23,12 @@ const MockEventSource = vi.fn(function () {
     mockEventSourceInstance = createMockEventSource();
     return mockEventSourceInstance;
 });
+
+const STACK_STATUS_FRAME = {type: "stack_status", stackId: "my-stack", stackStatus: "RUNNING"};
+
+function deliver(data: string): void {
+    mockEventSourceInstance.onmessage?.(new MessageEvent("message", {data}));
+}
 
 describe("useContainerEvents (OBS-08)", () => {
     beforeEach(() => {
@@ -50,22 +54,38 @@ describe("useContainerEvents (OBS-08)", () => {
         const onEvent = vi.fn();
         renderHook(() => useContainerEvents(onEvent));
 
-        const payload = {containerId: "abc", status: "running", stackId: "my-stack"};
-        const message = new MessageEvent("message", {data: JSON.stringify(payload)});
-        mockEventSourceInstance.onmessage?.(message);
+        deliver(JSON.stringify(STACK_STATUS_FRAME));
 
-        expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({containerId: "abc"}));
+        expect(onEvent).toHaveBeenCalledWith(STACK_STATUS_FRAME);
     });
 
-    it("ignores a malformed SSE frame and keeps handling later ones", () => {
+    it("ignores a frame that is not JSON and keeps handling later ones", () => {
         const onEvent = vi.fn();
         renderHook(() => useContainerEvents(onEvent));
 
-        expect(() => mockEventSourceInstance.onmessage?.(new MessageEvent("message", {data: "{not json"}))).not.toThrow();
+        expect(() => deliver("{not json")).not.toThrow();
         expect(onEvent).not.toHaveBeenCalled();
 
-        mockEventSourceInstance.onmessage?.(new MessageEvent("message", {data: JSON.stringify({containerId: "abc"})}));
-        expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({containerId: "abc"}));
+        deliver(JSON.stringify(STACK_STATUS_FRAME));
+        expect(onEvent).toHaveBeenCalledWith(STACK_STATUS_FRAME);
+    });
+
+    it.each([
+        ["an unknown type", {type: "stack_deleted", stackId: "s1"}],
+        ["a missing required field", {type: "stack_status", stackId: "s1"}],
+        ["a wrong field type", {type: "stack_status", stackId: 7, stackStatus: "RUNNING"}],
+        ["a config_changed frame without newHash", {type: "config_changed", stackId: "s1", source: "app"}],
+        ["a non-object payload", "stack_status"],
+        ["null", null],
+    ])("drops a frame with %s without calling the handler or throwing", (_label, payload) => {
+        const onEvent = vi.fn();
+        renderHook(() => useContainerEvents(onEvent));
+
+        expect(() => deliver(JSON.stringify(payload))).not.toThrow();
+        expect(onEvent).not.toHaveBeenCalled();
+
+        deliver(JSON.stringify(STACK_STATUS_FRAME));
+        expect(onEvent).toHaveBeenCalledTimes(1);
     });
 
     it("closes EventSource on unmount", () => {
