@@ -6,7 +6,7 @@
     {
       "number": "22",
       "name": "Migration Hardening",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "23",
@@ -39,5 +39,5 @@
     "label": "Advance to the next step",
     "reason": "Phase 22 of 6 · 0% · executing"
   },
-  "updated_at": "2026-10-22T13:51:54.522Z"
+  "updated_at": "2026-10-22T14:01:11.072Z"
 }
