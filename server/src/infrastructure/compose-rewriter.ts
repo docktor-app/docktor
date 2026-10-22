@@ -1,4 +1,5 @@
 import {CST, isMap, isScalar, isSeq, parseDocument, Scalar, type YAMLMap} from "yaml";
+import {dockerCliEnvironment} from "../lib/compose-env.js";
 import {AppError} from "../lib/errors.js";
 import {parseEnvAssignments} from "../domain/host-ports.js";
 import type {ComposeRewriterPort} from "../application/ports/compose-rewriter-port.js";
@@ -428,10 +429,13 @@ class ComposeEditPlan {
 export class ComposeRewriter implements ComposeRewriterPort {
 	/**
 	 * @param reservedNames names that can never carry an extracted value, read once per rewrite.
-	 *   Docker compose is run with Docktor's own environment and shell variables override `.env`,
-	 *   so every variable of this process is reserved by default.
+	 *   Shell variables override `.env` in compose, but compose children only receive the
+	 *   allowlisted variables (see lib/compose-env.ts), so only those can override a value in the
+	 *   stack's `.env` and only those are reserved by default.
 	 */
-	constructor(private readonly reservedNames: () => ReadonlySet<string> = () => new Set(Object.keys(process.env))) {}
+	constructor(
+		private readonly reservedNames: () => ReadonlySet<string> = () => new Set(Object.keys(dockerCliEnvironment(process.env))),
+	) {}
 
 	/**
 	 * Rewrite compose file:

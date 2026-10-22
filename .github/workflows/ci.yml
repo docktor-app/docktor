@@ -123,6 +123,38 @@ jobs:
       - name: Server unit tests
         run: yarn workspace @docktor/server test:unit
 
+  # Runs the copy tests as root on Linux (#109): the ownership-preservation test is skipped for a
+  # non-root user, so DOCKTOR_REQUIRE_ROOT_TESTS makes the suite assert root and fail the job
+  # instead of skipping silently. DOCKTOR_REAL_DOCKER_TESTS runs the real `docker compose config`
+  # interpolation test against the preinstalled Docker on the runner.
+  linux-root-migration:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Build shared
+        run: yarn workspace @docktor/shared build
+
+      - name: Migration copy and compose interpolation tests as root
+        env:
+          DOCKTOR_REQUIRE_ROOT_TESTS: "1"
+          DOCKTOR_REAL_DOCKER_TESTS: "1"
+          NODE_ENV: test
+          BETTER_AUTH_SECRET: ci-test-secret
+        run: sudo -E env "PATH=$PATH" yarn workspace @docktor/server exec vitest run --project unit --coverage.enabled=false test/unit/infrastructure/volume-migrator.test.ts test/unit/infrastructure/compose-env-interpolation.test.ts
+
   sonarqube:
     runs-on: ubuntu-latest
     needs: build-and-test
