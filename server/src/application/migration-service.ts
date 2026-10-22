@@ -19,6 +19,7 @@ import {
 import {composeProjectName} from "../domain/compose-project-name.js";
 import {computeUnifiedDiff, type UnifiedDiff} from "../lib/unified-diff.js";
 import {
+	COMPOSE_FILE_NAMES,
 	stackDirectoryNameSchema,
 	type MigrationOperationStep,
 	type MigrationTarget,
@@ -220,24 +221,51 @@ export interface MigrationResult {
 	keptOriginalAt?: string;
 }
 
+/**
+ * Every collaborator of {@link MigrationService}. All are optional in the constructor and fall
+ * back to the production singletons, so a test names only the ports a scenario touches.
+ */
+export interface MigrationServiceDependencies {
+	docker: DockerExecutorPort;
+	migrator: VolumeMigratorPort;
+	rewriter: ComposeRewriterPort;
+	stackFs: StackFilesystemPort;
+	stackRepo: StackRepository;
+	oldStack: ExternalStackControlPort;
+	/** WR-09/STK-03: lets preflight refuse Docktor's own compose file. */
+	selfStack: SelfStackPort;
+	/** CR-03: which host paths Docktor can read through its own bind mounts. */
+	ownMounts: OwnMountsPort;
+	/** WR-01: which bind sources the compose file declares. */
+	analyzer: Pick<ComposeAnalyzerPort, "analyzeCompatibility">;
+	/** G-18-22-inplace: which directory a path names, whatever its spelling. */
+	directories: DirectoryIdentityPort;
+}
+
 export class MigrationService {
-	constructor(
-		private readonly docker: DockerExecutorPort = dockerExecutor,
-		private readonly migrator: VolumeMigratorPort = volumeMigrator,
-		private readonly rewriter: ComposeRewriterPort = composeRewriter,
-		private readonly stackFs: StackFilesystemPort = new StackFilesystem(),
-		private readonly stackRepo: StackRepository = stackRepository,
-		private readonly oldStack: ExternalStackControlPort = externalStackControl,
-		// WR-09/STK-03: last position so every existing positional call keeps
-		// compiling. Lets preflight refuse Docktor's own compose file.
-		private readonly selfStack: SelfStackPort = dockerSelfStack,
-		// CR-03: which host paths Docktor can read through its own bind mounts.
-		private readonly ownMounts: OwnMountsPort = dockerSelfStack,
-		// WR-01: which bind sources the compose file declares.
-		private readonly analyzer: Pick<ComposeAnalyzerPort, "analyzeCompatibility"> = composeAnalyzer,
-		// G-18-22-inplace: which directory a path names, whatever its spelling.
-		private readonly directories: DirectoryIdentityPort = directoryIdentityResolver,
-	) {}
+	private readonly docker: DockerExecutorPort;
+	private readonly migrator: VolumeMigratorPort;
+	private readonly rewriter: ComposeRewriterPort;
+	private readonly stackFs: StackFilesystemPort;
+	private readonly stackRepo: StackRepository;
+	private readonly oldStack: ExternalStackControlPort;
+	private readonly selfStack: SelfStackPort;
+	private readonly ownMounts: OwnMountsPort;
+	private readonly analyzer: Pick<ComposeAnalyzerPort, "analyzeCompatibility">;
+	private readonly directories: DirectoryIdentityPort;
+
+	constructor(deps: Partial<MigrationServiceDependencies> = {}) {
+		this.docker = deps.docker ?? dockerExecutor;
+		this.migrator = deps.migrator ?? volumeMigrator;
+		this.rewriter = deps.rewriter ?? composeRewriter;
+		this.stackFs = deps.stackFs ?? new StackFilesystem();
+		this.stackRepo = deps.stackRepo ?? stackRepository;
+		this.oldStack = deps.oldStack ?? externalStackControl;
+		this.selfStack = deps.selfStack ?? dockerSelfStack;
+		this.ownMounts = deps.ownMounts ?? dockerSelfStack;
+		this.analyzer = deps.analyzer ?? composeAnalyzer;
+		this.directories = deps.directories ?? directoryIdentityResolver;
+	}
 
 	/**
 	 * Preview migration changes without executing. The diff is a real line diff
@@ -436,6 +464,7 @@ export class MigrationService {
 	 * goes and how that relates to the old directory.
 	 */
 	private async assessTarget(composePath: string, displayName: string): Promise<TargetAssessment> {
+		await this.assertRealComposeFile(composePath);
 		const originalDir = path.dirname(composePath);
 		const stackId = slugify(displayName);
 
@@ -643,6 +672,30 @@ export class MigrationService {
 	}
 
 	/**
+	 * T-22-03: the preview echoes the compose file's content, so a `compose.yml` that is a symlink
+	 * must not lead to an arbitrary readable file. The real file behind the requested path has to be
+	 * a regular file with a compose file name; every later step keeps using the requested path.
+	 */
+	private async assertRealComposeFile(composePath: string): Promise<void> {
+		let realPath: string;
+		try {
+			realPath = await fs.realpath(composePath);
+		} catch (error: unknown) {
+			if (hasErrorCode(error, "ENOENT")) {
+				throw new BadRequestError(`Compose file not found: ${composePath}`, {cause: error});
+			}
+			throw error;
+		}
+		const realName = path.basename(realPath);
+		const isComposeName = COMPOSE_FILE_NAMES.some((name) => name === realName);
+		if (!isComposeName || !(await fs.stat(realPath)).isFile()) {
+			throw new BadRequestError(
+				`Compose file ${composePath} resolves to ${realPath}, which is not a docker-compose or compose file`,
+			);
+		}
+	}
+
+	/**
 	 * The old stack's `.env` text, or null when it has none. Only ENOENT means "none": any other
 	 * error (EACCES, EISDIR, ...) propagates, so an unreadable `.env` fails the migration (and
 	 * rolls it back) instead of silently dropping its content.
@@ -651,7 +704,7 @@ export class MigrationService {
 		try {
 			return await fs.readFile(path.join(dir, ".env"), "utf-8");
 		} catch (error: unknown) {
-			if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+			if (hasErrorCode(error, "ENOENT")) {
 				return null;
 			}
 			throw error;

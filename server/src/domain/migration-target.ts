@@ -1,4 +1,5 @@
 import path from "node:path";
+import {COMPOSE_VOLUME_NAME_PATTERN} from "@docktor/shared";
 import {relateDirectories, type DirectoryIdentity} from "./directory-identity.js";
 
 /**
@@ -45,9 +46,8 @@ export const BACKUP_DIR_NAME = "pre-migration-backup";
 
 // CR-02: Docker volume names are also passed verbatim as the `-v` source to
 // `docker run`; a name containing `/` is interpreted by Docker as a host bind
-// path rather than a named volume, so names must be constrained to Docker's
-// own allowed volume-name character set before ever reaching the CLI.
-export const VOLUME_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
+// path rather than a named volume. The pattern is shared with the request schema.
+export const VOLUME_NAME_PATTERN = COMPOSE_VOLUME_NAME_PATTERN;
 
 // Docker Compose picks one of these up from the stack directory; a copied
 // file with such a name would take precedence over the rewritten compose file.

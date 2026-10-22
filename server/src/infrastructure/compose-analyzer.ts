@@ -1,5 +1,6 @@
 import {parse as parseYaml} from "yaml";
 import type {ComposeAnalyzerPort} from "../application/ports/compose-analyzer-port.js";
+import {BadRequestError} from "../lib/errors.js";
 
 // Matches a whole-value shell-style variable reference: "${VAR}" or "$VAR",
 // optionally with a default ("${VAR:-default}"). A value that IS one of these
@@ -9,6 +10,15 @@ const VARIABLE_REFERENCE_PATTERN = /^\$(\{[A-Za-z_][A-Za-z0-9_]*(:?[-?+][^}]*)?\
 /** Shared with ComposeRewriter so both agree on what counts as an inline literal. */
 export function isVariableReference(value: string): boolean {
     return VARIABLE_REFERENCE_PATTERN.test(value.trim());
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** The `services` mapping of a compose document; anything that is not a mapping counts as no services. */
+function servicesOf(doc: unknown): Record<string, unknown> {
+    return isRecord(doc) && isRecord(doc.services) ? doc.services : {};
 }
 
 export type CompatibilityLevel = "green" | "yellow" | "red";
@@ -35,13 +45,13 @@ export interface AnalysisResult {
 
 export class ComposeAnalyzer implements ComposeAnalyzerPort {
     analyzeCompatibility(content: string): AnalysisResult {
-        const doc = parseYaml(content);
+        const doc = this.parse(content);
 
         const namedVolumes = this.extractNamedVolumes(doc);
         const bindMounts = this.extractBindMounts(doc);
         const inlineEnvVars = this.extractInlineEnvVars(doc);
         const unsupportedFeatures = this.detectUnsupportedFeatures(doc);
-        const serviceCount = Object.keys(doc?.services || {}).length;
+        const serviceCount = Object.keys(servicesOf(doc)).length;
 
         let compatibility: CompatibilityLevel = "green";
 
@@ -68,20 +78,28 @@ export class ComposeAnalyzer implements ComposeAnalyzerPort {
         };
     }
 
-    extractNamedVolumes(doc: any): string[] {
-        if (!doc?.volumes || typeof doc.volumes !== "object") return [];
+    /** A document that does not parse is a client error, not a crash. */
+    private parse(content: string): unknown {
+        try {
+            return parseYaml(content);
+        } catch (error: unknown) {
+            const reason = error instanceof Error ? error.message : String(error);
+            throw new BadRequestError(`The compose file is not valid YAML: ${reason}`, {cause: error});
+        }
+    }
+
+    extractNamedVolumes(doc: unknown): string[] {
+        if (!isRecord(doc) || !isRecord(doc.volumes)) return [];
         return Object.keys(doc.volumes);
     }
 
-    extractBindMounts(doc: any): BindMountInfo[] {
+    extractBindMounts(doc: unknown): BindMountInfo[] {
         const results: BindMountInfo[] = [];
-        const services = doc?.services || {};
 
-        for (const [serviceName, service] of Object.entries(services)) {
-            const svc = service as any;
-            if (!Array.isArray(svc?.volumes)) continue;
+        for (const [serviceName, service] of Object.entries(servicesOf(doc))) {
+            if (!isRecord(service) || !Array.isArray(service.volumes)) continue;
 
-            svc.volumes.forEach((vol: unknown, index: number) => {
+            service.volumes.forEach((vol: unknown, index: number) => {
                 const mount = this.parseVolumeEntry(vol, serviceName, index);
                 if (mount) results.push(mount);
             });
@@ -115,14 +133,14 @@ export class ComposeAnalyzer implements ComposeAnalyzerPort {
             };
         }
 
-        if (vol && typeof vol === "object") {
-            const v = vol as any;
-            if (v.type !== "bind" || typeof v.source !== "string") return null;
+        if (isRecord(vol)) {
+            const source = vol.source;
+            if (vol.type !== "bind" || typeof source !== "string") return null;
             return {
-                path: v.source,
-                type: v.source.startsWith("/") || v.source.startsWith("~") ? "absolute" : "relative",
+                path: source,
+                type: source.startsWith("/") || source.startsWith("~") ? "absolute" : "relative",
                 serviceName,
-                containerPath: typeof v.target === "string" ? v.target : "",
+                containerPath: typeof vol.target === "string" ? vol.target : "",
                 index,
             };
         }
@@ -130,13 +148,11 @@ export class ComposeAnalyzer implements ComposeAnalyzerPort {
         return null;
     }
 
-    extractInlineEnvVars(doc: any): {serviceName: string; vars: Record<string, string>}[] {
+    extractInlineEnvVars(doc: unknown): {serviceName: string; vars: Record<string, string>}[] {
         const results: {serviceName: string; vars: Record<string, string>}[] = [];
-        const services = doc?.services || {};
 
-        for (const [serviceName, service] of Object.entries(services)) {
-            const svc = service as any;
-            const env = svc?.environment;
+        for (const [serviceName, service] of Object.entries(servicesOf(doc))) {
+            const env = isRecord(service) ? service.environment : undefined;
 
             // List form: "KEY=value" entries. A bare "KEY" (no "=") is a
             // pass-through of the host's own env var, not inline; "KEY=${VAR}"
@@ -165,7 +181,7 @@ export class ComposeAnalyzer implements ComposeAnalyzerPort {
             // Object form is inline, except when a value is itself a variable
             // reference (${VAR} or $VAR) rather than a literal — that's a
             // pass-through from the host/.env, not a hardcoded inline value.
-            if (env && typeof env === "object") {
+            if (isRecord(env)) {
                 const vars: Record<string, string> = {};
                 for (const [key, value] of Object.entries(env)) {
                     const strValue = String(value);
@@ -181,21 +197,19 @@ export class ComposeAnalyzer implements ComposeAnalyzerPort {
         return results;
     }
 
-    private detectUnsupportedFeatures(doc: any): string[] {
+    private detectUnsupportedFeatures(doc: unknown): string[] {
         const features: string[] = [];
 
-        if (doc?.configs) features.push("configs");
-        if (doc?.secrets) features.push("secrets");
+        if (isRecord(doc) && doc.configs) features.push("configs");
+        if (isRecord(doc) && doc.secrets) features.push("secrets");
 
-        const services = doc?.services || {};
-        for (const [serviceName, service] of Object.entries(services)) {
-            const svc = service as any;
-            const deps = svc?.depends_on;
+        for (const [serviceName, service] of Object.entries(servicesOf(doc))) {
+            const deps = isRecord(service) ? service.depends_on : undefined;
 
             // Object form with conditions is unsupported
-            if (deps && typeof deps === "object" && !Array.isArray(deps)) {
+            if (isRecord(deps)) {
                 for (const [depName, depConfig] of Object.entries(deps)) {
-                    if (typeof depConfig === "object" && (depConfig as any)?.condition) {
+                    if (isRecord(depConfig) && depConfig.condition) {
                         features.push(`depends_on condition (${serviceName} -> ${depName})`);
                     }
                 }

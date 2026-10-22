@@ -8,19 +8,63 @@ import {z} from "zod";
 // back to the caller, so it must point at a compose file, never at an
 // arbitrary readable path. The file names are the ones the brownfield scanner
 // recognises. No node:path here: shared code also runs in the browser.
+export const COMPOSE_FILE_NAMES = [
+    "docker-compose.yml",
+    "docker-compose.yaml",
+    "compose.yaml",
+    "compose.yml",
+] as const;
+
 const COMPOSE_FILE_PATH_PATTERN = /^(?:\/|[A-Za-z]:[\\/])(?:.*[\\/])?(?:docker-compose\.ya?ml|compose\.ya?ml)$/;
+
+// CR-02: Docker volume names are also passed verbatim as the `-v` source to
+// `docker run`; a name containing `/` is read by Docker as a host bind path, so
+// names are held to Docker's own volume-name character set.
+export const COMPOSE_VOLUME_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
+
+export const composeVolumeNameSchema = z.string().regex(COMPOSE_VOLUME_NAME_PATTERN, {
+    message: "Must be a Docker volume name: letters, digits, dots, underscores or hyphens, starting with a letter or digit",
+});
+
+function hasParentSegment(value: string): boolean {
+    return value.split(/[\\/]/).includes("..");
+}
+
+function isAbsoluteOrHomePath(value: string): boolean {
+    return /^(?:[\\/~]|[A-Za-z]:)/.test(value);
+}
+
+const noNulCharacter = (value: string): boolean => !value.includes("\0");
 
 export const composeFilePathSchema = z
     .string()
-    .refine((value) => !value.includes("\0") && COMPOSE_FILE_PATH_PATTERN.test(value), {
-        message: "Must be an absolute path to a docker-compose.yml, docker-compose.yaml, compose.yaml or compose.yml file",
+    .refine((value) => noNulCharacter(value) && COMPOSE_FILE_PATH_PATTERN.test(value) && !hasParentSegment(value), {
+        message:
+            "Must be an absolute path without .. segments to a docker-compose.yml, docker-compose.yaml, compose.yaml or compose.yml file",
     });
 
-export const volumeSelectionSchema = z.object({
-    originalPath: z.string(),
-    newPath: z.string(),
-    convert: z.boolean(),
-});
+// T-22-02: a converted bind mount is copied to `newPath` inside the new stack, so
+// the destination must stay relative to it. A kept mount (convert: false) is not
+// copied and may keep an absolute `newPath`, exactly as the client sends it.
+export const volumeSelectionSchema = z
+    .object({
+        originalPath: z.string().refine(noNulCharacter, {message: "Must not contain a NUL character"}),
+        newPath: z.string().refine(noNulCharacter, {message: "Must not contain a NUL character"}),
+        convert: z.boolean(),
+    })
+    .superRefine((selection, context) => {
+        if (!selection.convert) {
+            return;
+        }
+        const {newPath} = selection;
+        if (newPath === "") {
+            context.addIssue({code: "custom", path: ["newPath"], message: "The destination of a converted mount must not be empty"});
+        } else if (isAbsoluteOrHomePath(newPath)) {
+            context.addIssue({code: "custom", path: ["newPath"], message: "The destination of a converted mount must be relative to the new stack"});
+        } else if (hasParentSegment(newPath)) {
+            context.addIssue({code: "custom", path: ["newPath"], message: "The destination of a converted mount must not contain .. segments"});
+        }
+    });
 
 // G-18-7: the preview takes the stack name, because the name decides the target
 // directory and so whether the migration happens in place.
@@ -28,7 +72,7 @@ export const migrationPreviewSchema = z.object({
     composePath: composeFilePathSchema,
     displayName: z.string().min(1),
     volumeSelections: z.array(volumeSelectionSchema),
-    namedVolumeSelections: z.record(z.string(), z.boolean()),
+    namedVolumeSelections: z.record(composeVolumeNameSchema, z.boolean()),
 });
 
 export const brownfieldAdoptSchema = z.object({
