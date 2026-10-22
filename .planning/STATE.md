@@ -3,18 +3,18 @@ gsd_state_version: "1.0"
 milestone: v0.2.0
 milestone_name: Migration Hardening, Proxy & Access
 current_phase: 22
-current_phase_name: migration-hardening
+current_phase_name: Migration Hardening
 status: executing
-stopped_at: Phase 22 context gathered
-last_updated: "2026-10-22T12:37:35.642Z"
-last_activity: 2026-10-21
-last_activity_desc: Roadmap created for milestone v0.2.0 (31 requirements mapped to 6 phases)
-state_head: 28ea9b1d9f874ca60ed16cb6c7316a92a6370874
+stopped_at: Completed 22-01-PLAN.md
+last_updated: "2026-10-22T13:52:08.606Z"
+last_activity: 2026-10-22
+last_activity_desc: Phase 22 execution started
+state_head: e508ae9cc3599dec8041d9703f341c11dc46c1f7
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 8
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-10-21)
 
 ## Current Position
 
-Phase: 22 (migration-hardening) — READY TO EXECUTE
-Plan: Not started
+Phase: 22 (Migration Hardening) — EXECUTING
+Plan: 2 of 8
 Status: Ready to execute
-Last activity: 2026-10-21 — Roadmap created for milestone v0.2.0 (31 requirements mapped to 6 phases)
+Last activity: 2026-10-22 — Phase 22 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -53,6 +53,11 @@ Progress: [░░░░░░░░░░] 0%
 *Updated after each plan completion*
 
 v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milestones/v0.1.0-STATE.md`; v0.1.1 metrics and decisions (45 plans across Phases 17-21) in `.planning/milestones/v0.1.1-STATE.md`.
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 22 P01 | 15 min | 3 tasks | 27 files |
 
 ## Accumulated Context
 
@@ -67,6 +72,8 @@ Roadmap decisions for v0.2.0:
 - [Roadmap v0.2.0]: OIDC-05 (better-auth 1.7.x upgrade) is mapped to Phase 24, not the OIDC phase, because it is a prerequisite for the whole access stream
 - [Roadmap v0.2.0]: Access stream order is fixed: foundation dark-launched while all users are owner (24) → audit + stream authorization (25) → reset + user admin (26) → OIDC (27); RBAC-04 (SSE) sits with audit in 25 so it lands before any non-owner user exists
 - [Roadmap v0.2.0]: Password reset and user administration share Phase 26 because the invite flow reuses the reset mail/link mechanism
+- [Phase 22]: Docker/compose children receive only an allowlisted environment (no Docktor secrets, DOCKTOR_*, COMPOSE_*); ${VAR} resolves from the stack's .env — Compose gives the calling environment precedence over .env (#109)
+- [Phase 22]: MigrationService takes Partial<MigrationServiceDependencies>; AppError subclasses take ErrorOptions — Later plans add ports without touching every builder; cause hygiene before Phase 24 (#108)
 
 ### Pending Todos
 
@@ -94,6 +101,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-22T07:57:28.429Z
-Stopped at: Phase 22 context gathered
-Resume file: .planning/phases/22-migration-hardening/22-CONTEXT.md
+Last session: 2026-10-22T13:52:08.351Z
+Stopped at: Completed 22-01-PLAN.md
+Resume file: None

@@ -17,7 +17,7 @@ Issue numbers refer to `docktor-app/docktor`. Research: `.planning/research/SUMM
 - [ ] **MIG-10**: Secrets are masked in the migration compose diff (#103)
 - [ ] **MIG-11**: Migration progress toast never gets stuck (#105)
 - [ ] **MIG-12**: Migration flow follows project conventions and hardens paths (#108)
-- [ ] **MIG-13**: Compose child processes receive an allowlisted environment, and ownership preservation is verified on Linux in CI (#109)
+- [x] **MIG-13**: Compose child processes receive an allowlisted environment, and ownership preservation is verified on Linux in CI (#109)
 
 ### Proxy
 
@@ -87,7 +87,7 @@ Issue numbers refer to `docktor-app/docktor`. Research: `.planning/research/SUMM
 | MIG-10 | Phase 22 | Pending |
 | MIG-11 | Phase 22 | Pending |
 | MIG-12 | Phase 22 | Pending |
-| MIG-13 | Phase 22 | Pending |
+| MIG-13 | Phase 22 | Complete |
 | PRX-01 | Phase 23 | Pending |
 | PRX-02 | Phase 23 | Pending |
 | PRX-03 | Phase 23 | Pending |

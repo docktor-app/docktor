@@ -81,6 +81,14 @@ Decimal phases appear between their surrounding integers in numeric order.
   5. The migration progress toast always ends in a terminal state (done, failed or rolled back), including after a reload, reconnect or leaving the page; compose commands run by Docktor never see Docktor's own secrets or `COMPOSE_*` variables; migration request paths that escape the permitted directories are refused with a validation error; and a Linux CI job proves the data copy preserves ownership and modes
 
 **Plans**: TBD
+- [x] 22-01-PLAN.md
+- [ ] 22-02-PLAN.md
+- [ ] 22-03-PLAN.md
+- [ ] 22-04-PLAN.md
+- [ ] 22-05-PLAN.md
+- [ ] 22-06-PLAN.md
+- [ ] 22-07-PLAN.md
+- [ ] 22-08-PLAN.md
 
 Notes: source issues [#100](https://github.com/docktor-app/docktor/issues/100), [#101](https://github.com/docktor-app/docktor/issues/101), [#102](https://github.com/docktor-app/docktor/issues/102), [#103](https://github.com/docktor-app/docktor/issues/103), [#104](https://github.com/docktor-app/docktor/issues/104), [#105](https://github.com/docktor-app/docktor/issues/105), [#107](https://github.com/docktor-app/docktor/issues/107), [#108](https://github.com/docktor-app/docktor/issues/108), [#109](https://github.com/docktor-app/docktor/issues/109). Largest phase of the milestone (9 requirements); natural plan seam for plan-phase: correctness first (error `cause` hygiene, shared compose-project resolver, verified stop, named-volume and `~` handling), then rollback and UX (rollback ledger with journal and startup recovery, backup-before-stop with disk check, shared `maskSecrets`, operation store with shared event schemas, compose env allowlist and Linux root CI job). The shared event schemas and `maskSecrets` are reused by Phases 24-25, and the `AppError` cause change must land before the auth work adds error subclasses. Rollback must never run `down -v` (the only existing `down` deletes volumes). Decide in discuss-phase for #107: warm pre-stop copy versus honest "crash-consistent at best" wording. Real-Docker and ownership tests run in GitHub Actions, not on the VPS; any live `docker compose` test must use a collision-proof random project name.
 
@@ -179,7 +187,7 @@ Phases execute in numeric order: 22 → 23 → 24 → 25 → 26 → 27
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 22. Migration Hardening | 0/TBD | Not started | - |
+| 22. Migration Hardening | 1/8 | In Progress | - |
 | 23. Proxy Modes and WebSocket Support | 0/TBD | Not started | - |
 | 24. better-auth Upgrade and Access Control Foundation | 0/TBD | Not started | - |
 | 25. Audit Log and Live-Stream Authorization | 0/TBD | Not started | - |

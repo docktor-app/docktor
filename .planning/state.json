@@ -1,38 +1,43 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v0.1.1 — Release Follow-ups",
+  "milestone": "v0.2.0 — Migration Hardening, Proxy & Access",
   "phases": [
     {
-      "number": "17",
-      "name": "Backup Repository and Port-Check Fixes",
-      "status": "complete"
+      "number": "22",
+      "name": "Migration Hardening",
+      "status": "pending"
     },
     {
-      "number": "18",
-      "name": "Import and Migration Flow",
-      "status": "complete"
+      "number": "23",
+      "name": "Proxy Modes and WebSocket Support",
+      "status": "pending"
     },
     {
-      "number": "19",
-      "name": "Sidebar, Templates and Version Block",
-      "status": "complete"
+      "number": "24",
+      "name": "better-auth Upgrade and Access Control Foundation",
+      "status": "pending"
     },
     {
-      "number": "20",
-      "name": "Visual Consistency, Dashboard Clarity and Touch Targets",
-      "status": "complete"
+      "number": "25",
+      "name": "Audit Log and Live-Stream Authorization",
+      "status": "pending"
     },
     {
-      "number": "21",
-      "name": "Release v0.1.1",
-      "status": "in_progress"
+      "number": "26",
+      "name": "Password Reset and User Administration",
+      "status": "pending"
+    },
+    {
+      "number": "27",
+      "name": "OIDC Sign-in",
+      "status": "pending"
     }
   ],
   "next": {
     "command": "/gsd:progress --next",
     "label": "Advance to the next step",
-    "reason": "Phase 21 of 5 · 80% · executing"
+    "reason": "Phase 22 of 6 · 0% · executing"
   },
-  "updated_at": "2026-10-21T11:52:16.722Z"
+  "updated_at": "2026-10-22T13:51:54.522Z"
 }
