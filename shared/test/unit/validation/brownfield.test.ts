@@ -1,7 +1,10 @@
 import {describe, expect, it} from "vitest";
 import {
     brownfieldAdoptSchema,
+    COMPOSE_FILE_NAMES,
+    COMPOSE_VOLUME_NAME_PATTERN,
     composeFilePathSchema,
+    composeVolumeNameSchema,
     discoveredStackSchema,
     migrationExecuteSchema,
     migrationPreviewSchema,
@@ -9,6 +12,7 @@ import {
     scanResultSchema,
     skippedDirectorySchema,
     stackDirectoryNameSchema,
+    volumeSelectionSchema,
 } from "../../../src/validation/brownfield.js";
 
 describe("composeFilePathSchema (T-18-05)", () => {
@@ -33,8 +37,73 @@ describe("composeFilePathSchema (T-18-05)", () => {
         ["a trailing slash", "/opt/app/docker-compose.yml/"],
         ["an empty string", ""],
         ["an embedded NUL character", "/opt/app/\0docker-compose.yml"],
+        ["a leading .. segment", "/opt/../etc/compose.yml"],
+        ["an inner .. segment", "/opt/app/../x/docker-compose.yml"],
+        ["a .. segment on a Windows path", "C:\\stacks\\..\\x\\compose.yaml"],
     ])("rejects %s", (_label, value) => {
         expect(composeFilePathSchema.safeParse(value).success).toBe(false);
+    });
+
+    it("accepts a directory whose name merely contains two dots", () => {
+        expect(composeFilePathSchema.safeParse("/opt/app..old/compose.yml").success).toBe(true);
+    });
+});
+
+describe("COMPOSE_FILE_NAMES", () => {
+    it("lists exactly the four compose file names the scanner recognises", () => {
+        expect([...COMPOSE_FILE_NAMES].sort()).toEqual([
+            "compose.yaml",
+            "compose.yml",
+            "docker-compose.yaml",
+            "docker-compose.yml",
+        ]);
+    });
+});
+
+describe("composeVolumeNameSchema", () => {
+    it.each(["db_data", "a", "7zip", "my.vol-1"])("accepts %s", (value) => {
+        expect(composeVolumeNameSchema.safeParse(value).success).toBe(true);
+        expect(COMPOSE_VOLUME_NAME_PATTERN.test(value)).toBe(true);
+    });
+
+    it.each(["../x", "a/b", "", ".hidden", "-lead", "a b", "a\0b"])("rejects %j", (value) => {
+        expect(composeVolumeNameSchema.safeParse(value).success).toBe(false);
+    });
+});
+
+describe("volumeSelectionSchema (T-22-02)", () => {
+    const convertSelection = (newPath: string) => ({originalPath: "/srv/data", newPath, convert: true});
+
+    it.each(["./volumes/data", "volumes/data", "./a.b/c"])("accepts the converted destination %s", (newPath) => {
+        expect(volumeSelectionSchema.safeParse(convertSelection(newPath)).success).toBe(true);
+    });
+
+    it.each([
+        ["an empty destination", ""],
+        ["an absolute destination", "/etc"],
+        ["a Windows absolute destination", "C:\\x"],
+        ["a home destination", "~"],
+        ["a home sub-path destination", "~/data"],
+        ["a leading .. segment", "../x"],
+        ["a nested .. segment", "./a/../../b"],
+        ["a backslash .. segment", "a\\..\\b"],
+    ])("rejects a converted destination with %s and reports it on newPath", (_label, newPath) => {
+        const result = volumeSelectionSchema.safeParse(convertSelection(newPath));
+
+        expect(result.success).toBe(false);
+        expect(result.error?.issues.map((issue) => issue.path.join("."))).toContain("newPath");
+    });
+
+    it("accepts an absolute newPath for a mount that is kept (convert: false)", () => {
+        const result = volumeSelectionSchema.safeParse({originalPath: "/srv/data", newPath: "/srv/data", convert: false});
+
+        expect(result.success).toBe(true);
+    });
+
+    it.each(["originalPath", "newPath"] as const)("rejects a NUL character in %s", (field) => {
+        const selection = {originalPath: "/srv/data", newPath: "./volumes/data", convert: false, [field]: "a\0b"};
+
+        expect(volumeSelectionSchema.safeParse(selection).success).toBe(false);
     });
 });
 
@@ -57,6 +126,18 @@ describe("migrationPreviewSchema", () => {
 
     it("rejects an empty displayName (G-18-7)", () => {
         expect(migrationPreviewSchema.safeParse({...validPreview, displayName: ""}).success).toBe(false);
+    });
+
+    it("accepts a Docker volume name as a namedVolumeSelections key", () => {
+        expect(migrationPreviewSchema.safeParse({...validPreview, namedVolumeSelections: {db_data: true}}).success).toBe(true);
+    });
+
+    it.each(["../x", "a/b"])("rejects the namedVolumeSelections key %s", (key) => {
+        expect(migrationPreviewSchema.safeParse({...validPreview, namedVolumeSelections: {[key]: true}}).success).toBe(false);
+    });
+
+    it("rejects a composePath with a .. segment", () => {
+        expect(migrationPreviewSchema.safeParse({...validPreview, composePath: "/opt/../etc/compose.yml"}).success).toBe(false);
     });
 
     it("rejects a non-boolean convert", () => {

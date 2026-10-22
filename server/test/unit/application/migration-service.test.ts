@@ -152,18 +152,17 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         // Test double: these six collaborators are exactly the constructor
         // parameters migrate() invokes; the casts expose only the members it
         // calls, proving each seam accepts a plain-object port double.
-        return new MigrationService(
-            mockDocker as unknown as DockerExecutorPort,
-            mockMigrator as unknown as VolumeMigratorPort,
-            mockRewriter as unknown as ComposeRewriterPort,
-            mockStackFs as unknown as StackFilesystemPort,
-            mockStackRepo as unknown as StackRepository,
-            mockOldStack as unknown as ExternalStackControlPort,
-            mockSelfStack as unknown as SelfStackPort,
-            mockOwnMounts as unknown as OwnMountsPort,
-            undefined,
-            hostViewDirectories(),
-        );
+        return new MigrationService({
+            docker: mockDocker as unknown as DockerExecutorPort,
+            migrator: mockMigrator as unknown as VolumeMigratorPort,
+            rewriter: mockRewriter as unknown as ComposeRewriterPort,
+            stackFs: mockStackFs as unknown as StackFilesystemPort,
+            stackRepo: mockStackRepo as unknown as StackRepository,
+            oldStack: mockOldStack as unknown as ExternalStackControlPort,
+            selfStack: mockSelfStack as unknown as SelfStackPort,
+            ownMounts: mockOwnMounts as unknown as OwnMountsPort,
+            directories: hostViewDirectories(),
+        });
     }
 
     function input(overrides: Partial<{backup: boolean; stopOldStack: boolean}> = {}) {
@@ -1183,18 +1182,17 @@ describe("previewMigration (MIG-02, D-04, G-18-7)", () => {
         },
         ownMounts: OwnMountsPort = createMockOwnMounts(),
     ): MigrationService {
-        return new MigrationService(
-            createMockDocker() as unknown as DockerExecutorPort,
-            createMockMigrator() as unknown as VolumeMigratorPort,
-            rewriter as ComposeRewriterPort,
-            mockStackFs as unknown as StackFilesystemPort,
-            mockStackRepo as unknown as StackRepository,
-            createMockOldStack() as unknown as ExternalStackControlPort,
-            mockSelfStack as unknown as SelfStackPort,
+        return new MigrationService({
+            docker: createMockDocker() as unknown as DockerExecutorPort,
+            migrator: createMockMigrator() as unknown as VolumeMigratorPort,
+            rewriter: rewriter as ComposeRewriterPort,
+            stackFs: mockStackFs as unknown as StackFilesystemPort,
+            stackRepo: mockStackRepo as unknown as StackRepository,
+            oldStack: createMockOldStack() as unknown as ExternalStackControlPort,
+            selfStack: mockSelfStack as unknown as SelfStackPort,
             ownMounts,
-            undefined,
-            hostViewDirectories(),
-        );
+            directories: hostViewDirectories(),
+        });
     }
 
     function request(overrides: Partial<{composePath: string; displayName: string}> = {}) {
@@ -1442,18 +1440,17 @@ describe.skipIf(process.platform === "win32")("a stack in the stacks folder reac
 
     function buildService(): MigrationService {
         const rewriter = {rewrite: vi.fn().mockReturnValue({rewrittenCompose: REWRITTEN, extractedEnv: "", envVars: {}})};
-        return new MigrationService(
-            mockDocker as unknown as DockerExecutorPort,
-            mockMigrator as unknown as VolumeMigratorPort,
-            rewriter as unknown as ComposeRewriterPort,
-            mockStackFs as unknown as StackFilesystemPort,
-            mockStackRepo as unknown as StackRepository,
-            mockOldStack as unknown as ExternalStackControlPort,
-            createMockSelfStack() as unknown as SelfStackPort,
-            mockOwnMounts as unknown as OwnMountsPort,
-            undefined,
-            directoriesOver(mockOwnMounts as unknown as OwnMountsPort),
-        );
+        return new MigrationService({
+            docker: mockDocker as unknown as DockerExecutorPort,
+            migrator: mockMigrator as unknown as VolumeMigratorPort,
+            rewriter: rewriter as unknown as ComposeRewriterPort,
+            stackFs: mockStackFs as unknown as StackFilesystemPort,
+            stackRepo: mockStackRepo as unknown as StackRepository,
+            oldStack: mockOldStack as unknown as ExternalStackControlPort,
+            selfStack: createMockSelfStack() as unknown as SelfStackPort,
+            ownMounts: mockOwnMounts as unknown as OwnMountsPort,
+            directories: directoriesOver(mockOwnMounts as unknown as OwnMountsPort),
+        });
     }
 
     function request(composePath: string = aliasCompose) {
@@ -1595,18 +1592,17 @@ describe("MigrationService environment extraction (CR-02)", () => {
     function buildRealRewriterService(): MigrationService {
         const docker = createMockDocker();
         docker.up.mockResolvedValue(undefined);
-        return new MigrationService(
-            docker as unknown as DockerExecutorPort,
-            createMockMigrator() as unknown as VolumeMigratorPort,
-            new ComposeRewriter(() => new Set()),
-            mockStackFs as unknown as StackFilesystemPort,
-            createMockStackRepo() as unknown as StackRepository,
-            mockOldStack as unknown as ExternalStackControlPort,
-            createMockSelfStack() as unknown as SelfStackPort,
-            createMockOwnMounts() as unknown as OwnMountsPort,
-            undefined,
-            hostViewDirectories(),
-        );
+        return new MigrationService({
+            docker: docker as unknown as DockerExecutorPort,
+            migrator: createMockMigrator() as unknown as VolumeMigratorPort,
+            rewriter: new ComposeRewriter(() => new Set()),
+            stackFs: mockStackFs as unknown as StackFilesystemPort,
+            stackRepo: createMockStackRepo() as unknown as StackRepository,
+            oldStack: mockOldStack as unknown as ExternalStackControlPort,
+            selfStack: createMockSelfStack() as unknown as SelfStackPort,
+            ownMounts: createMockOwnMounts() as unknown as OwnMountsPort,
+            directories: hostViewDirectories(),
+        });
     }
 
     function request() {
@@ -1752,18 +1748,17 @@ describe("shared compose project name (G-18-22-status)", () => {
 
     function buildService(): MigrationService {
         const rewriter = {rewrite: vi.fn().mockReturnValue({rewrittenCompose: PLAIN_COMPOSE, extractedEnv: ""})};
-        return new MigrationService(
-            mockDocker as unknown as DockerExecutorPort,
-            mockMigrator as unknown as VolumeMigratorPort,
-            rewriter as unknown as ComposeRewriterPort,
-            mockStackFs as unknown as StackFilesystemPort,
-            mockStackRepo as unknown as StackRepository,
-            mockOldStack as unknown as ExternalStackControlPort,
-            createMockSelfStack() as unknown as SelfStackPort,
-            createMockOwnMounts() as unknown as OwnMountsPort,
-            undefined,
-            hostViewDirectories(),
-        );
+        return new MigrationService({
+            docker: mockDocker as unknown as DockerExecutorPort,
+            migrator: mockMigrator as unknown as VolumeMigratorPort,
+            rewriter: rewriter as unknown as ComposeRewriterPort,
+            stackFs: mockStackFs as unknown as StackFilesystemPort,
+            stackRepo: mockStackRepo as unknown as StackRepository,
+            oldStack: mockOldStack as unknown as ExternalStackControlPort,
+            selfStack: createMockSelfStack() as unknown as SelfStackPort,
+            ownMounts: createMockOwnMounts() as unknown as OwnMountsPort,
+            directories: hostViewDirectories(),
+        });
     }
 
     function request(composePath: string, displayName: string, stopOldStack: boolean) {
@@ -1885,5 +1880,113 @@ describe("shared compose project name (G-18-22-status)", () => {
 
         expect(preview.target.inPlace).toBe(true);
         expect(preview.target.sharedProjectName).toBeNull();
+    });
+});
+
+describe("MigrationService compose file check and dependencies (#108, T-22-03)", () => {
+    const displayName = "Hardening Fixture";
+
+    let tmpRoot: string;
+    let mockStackFs: ReturnType<typeof createMockStackFs>;
+    let mockStackRepo: ReturnType<typeof createMockStackRepo>;
+
+    beforeEach(async () => {
+        tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "docktor-compose-check-"));
+        mockStackFs = createMockStackFs(path.join(tmpRoot, "stacks"));
+        mockStackRepo = createMockStackRepo();
+    });
+
+    afterEach(async () => {
+        vi.restoreAllMocks();
+        await fs.rm(tmpRoot, {recursive: true, force: true});
+    });
+
+    /** Only the ports assessTarget touches; every other dependency falls back to its production singleton. */
+    function buildService(): MigrationService {
+        return new MigrationService({
+            rewriter: createMockRewriter() as unknown as ComposeRewriterPort,
+            stackFs: mockStackFs as unknown as StackFilesystemPort,
+            stackRepo: mockStackRepo as unknown as StackRepository,
+            selfStack: createMockSelfStack() as unknown as SelfStackPort,
+            ownMounts: createMockOwnMounts() as unknown as OwnMountsPort,
+            directories: hostViewDirectories(),
+        });
+    }
+
+    function request(composePath: string) {
+        return {
+            composePath,
+            displayName,
+            volumeSelections: [],
+            namedVolumeSelections: new Map<string, boolean>(),
+            backup: false,
+            stopOldStack: false,
+        };
+    }
+
+    it("uses the given fakes and falls back to the production singletons for omitted dependencies", async () => {
+        const dir = path.join(tmpRoot, "app");
+        await fs.mkdir(dir, {recursive: true});
+        const composePath = path.join(dir, "docker-compose.yml");
+        await fs.writeFile(composePath, COMPOSE, "utf-8");
+
+        const preview = await buildService().previewMigration(request(composePath));
+
+        expect(mockStackRepo.exists).toHaveBeenCalledWith(slugify(displayName));
+        expect(preview.target.stackId).toBe(slugify(displayName));
+    });
+
+    it("refuses a missing compose file with a BadRequestError that keeps the ENOENT error as cause", async () => {
+        const composePath = path.join(tmpRoot, "gone", "docker-compose.yml");
+
+        const error = await buildService().previewMigration(request(composePath)).catch((err: unknown) => err);
+
+        expect(error).toBeInstanceOf(BadRequestError);
+        expect(error).toHaveProperty("message", expect.stringContaining(composePath));
+        expect(error).toHaveProperty("cause.code", "ENOENT");
+    });
+
+    describe.skipIf(process.platform === "win32")("a compose.yml that is a symlink", () => {
+        let composePath: string;
+        let realTarget: string;
+
+        beforeEach(async () => {
+            const dir = path.join(tmpRoot, "linked");
+            await fs.mkdir(dir, {recursive: true});
+            realTarget = path.join(dir, "passwd");
+            await fs.writeFile(realTarget, "root:x:0:0:root:/root:/bin/sh\n", "utf-8");
+            composePath = path.join(dir, "compose.yml");
+            await fs.symlink(realTarget, composePath);
+        });
+
+        it("is refused by the preview before its content is read, naming the real path", async () => {
+            const readFile = vi.spyOn(fs, "readFile");
+
+            const error = await buildService().previewMigration(request(composePath)).catch((err: unknown) => err);
+
+            expect(error).toBeInstanceOf(BadRequestError);
+            expect(error).toHaveProperty("message", expect.stringContaining(await fs.realpath(realTarget)));
+            expect(readFile).not.toHaveBeenCalled();
+        });
+
+        it("is refused by preflight with the same error", async () => {
+            const error = await buildService()
+                .preflight(request(composePath))
+                .catch((err: unknown) => err);
+
+            expect(error).toBeInstanceOf(BadRequestError);
+            expect(error).toHaveProperty("message", expect.stringContaining(await fs.realpath(realTarget)));
+        });
+
+        it("is accepted when the link points at a compose file", async () => {
+            const realCompose = path.join(tmpRoot, "linked", "docker-compose.yaml");
+            await fs.writeFile(realCompose, COMPOSE, "utf-8");
+            await fs.rm(composePath);
+            await fs.symlink(realCompose, composePath);
+
+            const preview = await buildService().previewMigration(request(composePath));
+
+            expect(preview.target.stackId).toBe(slugify(displayName));
+        });
     });
 });
