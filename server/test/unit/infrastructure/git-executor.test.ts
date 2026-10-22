@@ -5,7 +5,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {pathToFileURL} from "node:url";
-import {GitExecutor} from "../../../src/infrastructure/git-executor.js";
+import {GitCommandError, GitExecutor} from "../../../src/infrastructure/git-executor.js";
 import {BadRequestError} from "../../../src/lib/errors.js";
 
 const execFileAsync = promisify(execFile);
@@ -223,5 +223,20 @@ describe("GitExecutor", () => {
         expect(b.headCommitSha).toBe(a.headCommitSha);
         await expect(fs.access(path.join(checkoutDir, "templates", "whoami", "template.yml"))).resolves.toBeUndefined();
         expect(await listTmpSiblings(checkoutDir)).toEqual([]);
+    });
+});
+
+describe("GitCommandError", () => {
+    it("exposes the cause it was given and a message naming the subcommand", () => {
+        const cause = new Error("exit 128");
+
+        const error = new GitCommandError("clone", "fatal: repository not found", cause);
+
+        expect(error.cause).toBe(cause);
+        expect(error.message).toBe("git clone failed: fatal: repository not found");
+    });
+
+    it("has no cause when none is given", () => {
+        expect(new GitCommandError("pull", "boom").cause).toBeUndefined();
     });
 });

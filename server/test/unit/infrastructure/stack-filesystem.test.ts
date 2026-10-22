@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {StackFilesystem} from "../../../src/infrastructure/stack-filesystem.js";
-import {ConflictError} from "../../../src/lib/errors.js";
+import {AppError, ConflictError} from "../../../src/lib/errors.js";
 
 describe("StackFilesystem directory creation", () => {
     let tmpRoot: string;
@@ -44,6 +44,22 @@ describe("StackFilesystem directory creation", () => {
             await expect(attempt).rejects.toThrow("already exists");
             await expect(attempt).rejects.toHaveProperty("cause.code", "EEXIST");
             expect(await fs.readFile(path.join(taken, "marker.txt"), "utf-8")).toBe("mine");
+        });
+    });
+
+    describe.skipIf(process.platform === "win32" || process.getuid?.() === 0)("createDirectoryExclusive failures", () => {
+        it("wraps any other mkdir failure in an AppError that keeps the original error as cause", async () => {
+            await fs.chmod(tmpRoot, 0o500);
+            try {
+                const attempt = new StackFilesystem().createDirectoryExclusive("blocked");
+
+                await expect(attempt).rejects.toBeInstanceOf(AppError);
+                await expect(attempt).rejects.not.toBeInstanceOf(ConflictError);
+                await expect(attempt).rejects.toThrow(path.join(tmpRoot, "blocked"));
+                await expect(attempt).rejects.toHaveProperty("cause.code", "EACCES");
+            } finally {
+                await fs.chmod(tmpRoot, 0o700);
+            }
         });
     });
 
