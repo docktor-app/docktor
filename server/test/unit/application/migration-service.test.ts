@@ -31,7 +31,7 @@ function composeDeclaring(sources: readonly string[]): string {
 }
 
 // The bind sources the tests below convert; a converted source must be declared (WR-01).
-const COMPOSE = composeDeclaring(["./data", "./missing", "./present"]);
+const COMPOSE = `${composeDeclaring(["./data", "./missing", "./present"])}volumes:\n  pgdata:\n`;
 const BACKUP_DIR_NAME = "pre-migration-backup";
 
 function createMockDocker() {
@@ -39,7 +39,13 @@ function createMockDocker() {
 }
 
 function createMockMigrator() {
-    return {copyVolumeToBindMount: vi.fn(), copyDirectory: vi.fn(), moveDirectory: vi.fn()};
+    return {
+        copyVolumeToBindMount: vi.fn(),
+        copyDirectory: vi.fn(),
+        moveDirectory: vi.fn(),
+        // #101: every Docker volume exists unless a test says otherwise.
+        volumeExists: vi.fn().mockResolvedValue(true),
+    };
 }
 
 function createMockRewriter() {
@@ -637,6 +643,93 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         expect(mockMigrator.copyVolumeToBindMount).not.toHaveBeenCalled();
         expect(mockOldStack.start).not.toHaveBeenCalled();
         await assertOriginalUntouched();
+    });
+
+    describe("named volumes by the real Docker volume name (#101)", () => {
+        const volumesCompose = (block: string): string => `services:\n  web:\n    image: nginx\n    volumes:\n      - data:/data\nvolumes:\n${block}`;
+
+        function convertingVolume(key = "data") {
+            return {...input({backup: false}), namedVolumeSelections: new Map([[key, true]])};
+        }
+
+        it("copies from <project>_<key> of the resolved project, not from the bare key", async () => {
+            await fs.writeFile(composePath, volumesCompose("  data:\n"), "utf-8");
+            await fs.writeFile(path.join(originalDir, ".env"), "COMPOSE_PROJECT_NAME=myproj\n", "utf-8");
+            mockDocker.up.mockResolvedValue(undefined);
+            const listener = vi.fn();
+
+            const result = await buildService().migrate(convertingVolume(), listener);
+
+            expect(result.success).toBe(true);
+            expect(mockMigrator.volumeExists).toHaveBeenCalledWith("myproj_data");
+            expect(mockMigrator.copyVolumeToBindMount).toHaveBeenCalledWith("myproj_data", path.join(newStackPath, "volumes", "data"));
+            expect(listener).toHaveBeenCalledWith({step: "copying_named_volume", detail: "data"});
+        });
+
+        it.each([
+            ["a name: override", "  data:\n    name: custom_db\n", "custom_db"],
+            ["an external volume by its literal name", "  data:\n    external: true\n", "data"],
+            ["an external volume with a name:", "  data:\n    external: true\n    name: shared\n", "shared"],
+        ])("copies from the volume of %s", async (_label, block, expectedName) => {
+            await fs.writeFile(composePath, volumesCompose(block), "utf-8");
+            mockDocker.up.mockResolvedValue(undefined);
+
+            const result = await buildService().migrate(convertingVolume());
+
+            expect(result.success).toBe(true);
+            expect(mockMigrator.copyVolumeToBindMount).toHaveBeenCalledWith(expectedName, path.join(newStackPath, "volumes", "data"));
+        });
+
+        it("refuses a converted volume that does not exist before the old stack is stopped", async () => {
+            await fs.writeFile(composePath, volumesCompose("  data:\n"), "utf-8");
+            mockMigrator.volumeExists.mockResolvedValue(false);
+
+            const refusal = buildService().migrate(convertingVolume());
+
+            await expect(refusal).rejects.toThrow(BadRequestError);
+            await expect(refusal).rejects.toThrow(/data.*original_data.*untick.*start the old stack once/s);
+            expectNoSideEffects();
+            expect(mockMigrator.copyVolumeToBindMount).not.toHaveBeenCalled();
+        });
+
+        it("refuses the same volume in the preview", async () => {
+            await fs.writeFile(composePath, volumesCompose("  data:\n"), "utf-8");
+            mockMigrator.volumeExists.mockResolvedValue(false);
+
+            await expect(
+                buildService().previewMigration({composePath, displayName, volumeSelections: [], namedVolumeSelections: new Map([["data", true]])}),
+            ).rejects.toThrow(/original_data.*untick/s);
+        });
+
+        it("refuses a converted key the compose file does not declare", async () => {
+            await fs.writeFile(composePath, volumesCompose("  data:\n"), "utf-8");
+
+            await expect(buildService().migrate(convertingVolume("other"))).rejects.toThrow(/other.*not declared/s);
+
+            expectNoSideEffects();
+            expect(mockMigrator.volumeExists).not.toHaveBeenCalled();
+        });
+
+        it("refuses a converted volume whose real name is not a valid Docker volume name", async () => {
+            await fs.writeFile(composePath, volumesCompose('  data:\n    name: "a,b"\n'), "utf-8");
+
+            await expect(buildService().migrate(convertingVolume())).rejects.toThrow(/a,b.*not a valid/s);
+
+            expectNoSideEffects();
+            expect(mockMigrator.volumeExists).not.toHaveBeenCalled();
+        });
+
+        it("plans every declared volume by real name, with whether Docker has created it", async () => {
+            await fs.writeFile(composePath, volumesCompose("  data:\n  cache:\n    external: true\n    name: shared\n"), "utf-8");
+            mockMigrator.volumeExists.mockImplementation(async (name: string) => name !== "original_data");
+
+            const plan = await buildService().preflight({...input({backup: false}), namedVolumeSelections: new Map([["data", false]])});
+
+            expect([...plan.volumes]).toEqual([
+                ["data", {name: "original_data", external: false, exists: false}],
+                ["cache", {name: "shared", external: true, exists: true}],
+            ]);
+        });
     });
 
     it("refuses a bind-mount newPath escaping the managed directory before anything is stopped (CR-02, WR-01)", async () => {

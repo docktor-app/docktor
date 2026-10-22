@@ -1,8 +1,9 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import {afterEach, beforeEach, describe, expect, it} from "vitest";
-import {VolumeMigrator} from "../../../src/infrastructure/volume-migrator.js";
+import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
+import {VolumeMigrator, type VolumeDockerRunner} from "../../../src/infrastructure/volume-migrator.js";
+import {AppError} from "../../../src/lib/errors.js";
 
 describe("VolumeMigrator.moveDirectory (G-18-7)", () => {
     let tmpRoot: string;
@@ -235,5 +236,113 @@ describe("VolumeMigrator.copyDirectory on every platform (CR-01)", () => {
         await new VolumeMigrator().copyDirectory(source, path.join(tmpRoot, "dest"));
 
         expect(await fs.readFile(path.join(tmpRoot, "dest", "a", "b", "deep.txt"), "utf-8")).toBe("deep");
+    });
+});
+
+describe("VolumeMigrator docker paths (#101)", () => {
+    let tmpRoot: string;
+
+    beforeEach(async () => {
+        tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "docktor-volume-"));
+    });
+
+    afterEach(async () => {
+        await fs.rm(tmpRoot, {recursive: true, force: true});
+    });
+
+    const NO_SUCH_VOLUME = new AppError("Volume inspect failed (exit 1): Error response from daemon: get gone: no such volume");
+
+    function runnerAnswering(answers: {inspect: "exists" | "missing" | Error}): ReturnType<typeof vi.fn<VolumeDockerRunner>> {
+        return vi.fn<VolumeDockerRunner>(async (args) => {
+            if (args[0] === "volume") {
+                if (answers.inspect === "exists") {
+                    return {stdout: "[]", stderr: ""};
+                }
+                throw answers.inspect === "missing" ? NO_SUCH_VOLUME : answers.inspect;
+            }
+            return {stdout: "", stderr: ""};
+        });
+    }
+
+    describe("volumeExists", () => {
+        it("is true when docker volume inspect succeeds", async () => {
+            const docker = runnerAnswering({inspect: "exists"});
+
+            await expect(new VolumeMigrator(docker).volumeExists("myproj_data")).resolves.toBe(true);
+
+            expect(docker).toHaveBeenCalledWith(["volume", "inspect", "myproj_data"], expect.any(String));
+        });
+
+        it("is false when docker says there is no such volume", async () => {
+            await expect(new VolumeMigrator(runnerAnswering({inspect: "missing"})).volumeExists("gone")).resolves.toBe(false);
+        });
+
+        it("rejects with the cause for any other docker failure", async () => {
+            const failure = new AppError("Volume inspect failed (exit 1): Cannot connect to the Docker daemon");
+
+            const rejection = await new VolumeMigrator(runnerAnswering({inspect: failure})).volumeExists("data").catch((error: unknown) => error);
+
+            expect(rejection).toBeInstanceOf(AppError);
+            expect(rejection).toMatchObject({cause: failure, message: expect.stringContaining("Cannot connect to the Docker daemon")});
+        });
+
+        it("rejects a name that is not a Docker volume name before any docker call", async () => {
+            const docker = runnerAnswering({inspect: "exists"});
+
+            await expect(new VolumeMigrator(docker).volumeExists("-rf,src=/etc")).rejects.toThrow("not a valid Docker volume name");
+
+            expect(docker).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("copyVolumeToBindMount", () => {
+        it("inspects the volume first, then runs a read-only --mount copy", async () => {
+            const docker = runnerAnswering({inspect: "exists"});
+            const dest = path.join(tmpRoot, "volumes", "data");
+
+            await new VolumeMigrator(docker).copyVolumeToBindMount("myproj_data", dest);
+
+            expect(docker.mock.calls.map((call) => call[0])).toEqual([
+                ["volume", "inspect", "myproj_data"],
+                [
+                    "run", "--rm",
+                    "--mount", "type=volume,src=myproj_data,dst=/source,readonly",
+                    "-v", `${dest}:/dest`,
+                    "alpine", "sh", "-c", "cp -a /source/. /dest/",
+                ],
+            ]);
+            await expect(fs.stat(dest)).resolves.toBeTruthy();
+        });
+
+        it("never runs docker run for a volume that does not exist, and creates nothing", async () => {
+            const docker = runnerAnswering({inspect: "missing"});
+            const dest = path.join(tmpRoot, "volumes", "gone");
+
+            await expect(new VolumeMigrator(docker).copyVolumeToBindMount("gone", dest)).rejects.toThrow("does not exist");
+
+            expect(docker.mock.calls.some((call) => call[0][0] === "run")).toBe(false);
+            await expect(fs.access(dest)).rejects.toThrow();
+        });
+
+        it.each(["a,b", "-v", "name with space", "../x", ""])("rejects the name %j before any docker call", async (name) => {
+            const docker = runnerAnswering({inspect: "exists"});
+
+            await expect(new VolumeMigrator(docker).copyVolumeToBindMount(name, path.join(tmpRoot, "d"))).rejects.toThrow(
+                "not a valid Docker volume name",
+            );
+
+            expect(docker).not.toHaveBeenCalled();
+        });
+
+        it("passes the failure of the copy on with its message", async () => {
+            const docker = vi.fn<VolumeDockerRunner>(async (args) => {
+                if (args[0] === "run") {
+                    throw new AppError("Volume copy failed (exit 1): disk full");
+                }
+                return {stdout: "[]", stderr: ""};
+            });
+
+            await expect(new VolumeMigrator(docker).copyVolumeToBindMount("data", path.join(tmpRoot, "d"))).rejects.toThrow("disk full");
+        });
     });
 });
