@@ -460,6 +460,91 @@ volumes:
             expect(rewriter.rewrite(compose, [], new Map()).rewrittenCompose).toBe(compose);
         });
 
+        describe("kept volumes keep their real Docker name (#101)", () => {
+            const KEPT = lines(
+                "services:",
+                "  app:",
+                "    volumes:",
+                "      - data:/data",
+                "      - cache:/cache",
+                "volumes:",
+                "  data:",
+                "  cache:",
+                "    name: custom_cache",
+                "",
+            );
+            const real = (name: string, exists: boolean) => ({name, exists});
+
+            it("declares an existing kept volume as external under its real name", () => {
+                const volumes = new Map([["data", real("myproj_data", true)], ["cache", real("custom_cache", true)]]);
+
+                const result = rewriter.rewrite(KEPT, [], new Map(), undefined, {volumes});
+
+                expect(result.rewrittenCompose).toBe(
+                    lines(
+                        "services:",
+                        "  app:",
+                        "    volumes:",
+                        "      - data:/data",
+                        "      - cache:/cache",
+                        "volumes:",
+                        '  data: {external: true, name: "myproj_data"}',
+                        '  cache: {external: true, name: "custom_cache"}',
+                        "",
+                    ),
+                );
+            });
+
+            it("names a kept volume Docker has not created yet without marking it external", () => {
+                const volumes = new Map([["data", real("myproj_data", false)], ["cache", real("custom_cache", false)]]);
+
+                const result = rewriter.rewrite(KEPT, [], new Map(), undefined, {volumes});
+
+                expect(result.rewrittenCompose).toContain('  data: {name: "myproj_data"}');
+                expect(result.rewrittenCompose).toContain('  cache: {name: "custom_cache"}');
+                expect(result.rewrittenCompose).not.toContain("external");
+            });
+
+            it("leaves an entry that already declares external untouched", () => {
+                const compose = lines("services:", "  app:", "    volumes:", "      - shared:/s", "volumes:", "  shared:", "    external: true", "");
+
+                const result = rewriter.rewrite(compose, [], new Map(), undefined, {volumes: new Map([["shared", real("shared", true)]])});
+
+                expect(result.rewrittenCompose).toBe(compose);
+            });
+
+            it("falls back to a plain external entry for a key the map does not know", () => {
+                const result = rewriter.rewrite(KEPT, [], new Map(), undefined, {volumes: new Map([["data", real("myproj_data", true)]])});
+
+                expect(result.rewrittenCompose).toContain('  data: {external: true, name: "myproj_data"}');
+                expect(result.rewrittenCompose).toContain("  cache: {external: true}");
+            });
+
+            it("gives the flow-style map the same texts", () => {
+                const compose = lines(
+                    "services:",
+                    "  app:",
+                    "    volumes:",
+                    "      - pgdata:/data",
+                    "      - cache:/cache",
+                    "volumes: {pgdata: {}, cache: {}}",
+                    "",
+                );
+                const volumes = new Map([["cache", real("myproj_cache", true)]]);
+
+                const result = rewriter.rewrite(compose, [], new Map([["pgdata", true]]), undefined, {volumes});
+
+                expect(result.rewrittenCompose).toContain('volumes: {cache: {external: true, name: "myproj_cache"}}');
+            });
+
+            it("produces exactly today's output when no volumes are given", () => {
+                expect(rewriter.rewrite(KEPT, [], new Map(), undefined, {}).rewrittenCompose).toBe(
+                    rewriter.rewrite(KEPT, [], new Map()).rewrittenCompose,
+                );
+                expect(rewriter.rewrite(KEPT, [], new Map()).rewrittenCompose).toContain("  data: {external: true}");
+            });
+        });
+
         it.each([
             ["an empty document", ""],
             ["a null services node", "services:\n"],

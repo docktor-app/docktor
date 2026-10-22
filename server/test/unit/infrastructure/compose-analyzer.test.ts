@@ -191,6 +191,18 @@ volumes:
         });
     });
 
+    describe("externalVolumes (#101)", () => {
+        it.each([
+            ["external: true", "volumes:\n  shared:\n    external: true\n  own:\n", ["shared"]],
+            ["the legacy external map", "volumes:\n  shared:\n    external:\n      name: old\n", ["shared"]],
+            ["external: false", "volumes:\n  shared:\n    external: false\n", []],
+            ["no external entry", "volumes:\n  own:\n  other: {}\n", []],
+            ["no volumes block", "services:\n  web:\n    image: x\n", []],
+        ])("lists the keys declared with %s", (_label, content, expected) => {
+            expect(new ComposeAnalyzer().analyzeCompatibility(content).externalVolumes).toEqual(expected);
+        });
+    });
+
     describe("extractBindMounts", () => {
         it("should categorize relative and absolute bind mounts across services", () => {
             const doc = {
@@ -390,6 +402,7 @@ describe("ComposeAnalyzer on unusual documents (#108)", () => {
         expect(result).toEqual({
             compatibility: "green",
             namedVolumes: [],
+            externalVolumes: [],
             bindMounts: [],
             inlineEnvVars: [],
             unsupportedFeatures: [],

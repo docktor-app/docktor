@@ -218,6 +218,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             namedVolumeSelections: new Map<string, boolean>(),
             backup: true,
             stopOldStack: true,
+            acknowledgeAnonymousVolumes: false,
             ...overrides,
         };
     }
@@ -730,6 +731,84 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
                 ["cache", {name: "shared", external: true, exists: true}],
             ]);
         });
+    });
+
+    describe("anonymous volumes start empty and need an acknowledgement (D-05)", () => {
+        const HEX_ID = "b".repeat(64);
+        const withAnonymous = `services:\n  web:\n    image: nginx\n    volumes:\n      - /cache\n`;
+
+        function containersWithAnonymousVolume(): void {
+            const container = {
+                ...runningContainer("original", "db"),
+                mounts: [{type: "volume", name: HEX_ID, source: "/var/lib/docker/volumes/x/_data", destination: "/var/lib/postgresql/data"}],
+            };
+            mockProjects.resolve.mockResolvedValue({kind: "resolved", project: {name: "original", source: "containers", containers: [container]}});
+        }
+
+        it("lists those the compose file declares in the preview", async () => {
+            await fs.writeFile(composePath, withAnonymous, "utf-8");
+
+            const preview = await buildService().previewMigration({composePath, displayName, volumeSelections: [], namedVolumeSelections: new Map()});
+
+            expect(preview.anonymousVolumes).toEqual([{service: "web", containerPath: "/cache"}]);
+        });
+
+        it("lists those the old containers have in the preview", async () => {
+            containersWithAnonymousVolume();
+
+            const preview = await buildService().previewMigration({composePath, displayName, volumeSelections: [], namedVolumeSelections: new Map()});
+
+            expect(preview.anonymousVolumes).toEqual([{service: "db", containerPath: "/var/lib/postgresql/data"}]);
+        });
+
+        it("lists none when the old stack has none", async () => {
+            const preview = await buildService().previewMigration({composePath, displayName, volumeSelections: [], namedVolumeSelections: new Map()});
+
+            expect(preview.anonymousVolumes).toEqual([]);
+        });
+
+        it("refuses a start without the acknowledgement, naming each service and path, before anything is stopped", async () => {
+            await fs.writeFile(composePath, withAnonymous, "utf-8");
+            containersWithAnonymousVolume();
+
+            const refusal = buildService().migrate(input());
+
+            await expect(refusal).rejects.toThrow(BadRequestError);
+            await expect(refusal).rejects.toThrow(/web: \/cache.*db: \/var\/lib\/postgresql\/data.*start empty/s);
+            expectNoSideEffects();
+        });
+
+        it("accepts the same request with the acknowledgement and never copies them", async () => {
+            await fs.writeFile(composePath, withAnonymous, "utf-8");
+            mockDocker.up.mockResolvedValue(undefined);
+
+            const result = await buildService().migrate({...input(), acknowledgeAnonymousVolumes: true});
+
+            expect(result.success).toBe(true);
+            expect(mockMigrator.copyVolumeToBindMount).not.toHaveBeenCalled();
+        });
+
+        it("needs no acknowledgement when there are none", async () => {
+            mockDocker.up.mockResolvedValue(undefined);
+
+            await expect(buildService().migrate(input())).resolves.toMatchObject({success: true});
+        });
+    });
+
+    it("hands the planned real volume names to every rewrite (#101)", async () => {
+        mockDocker.up.mockResolvedValue(undefined);
+
+        const plan = await buildService().preflight(input());
+        await buildService().execute(plan);
+
+        expect(plan.volumes.get("pgdata")).toEqual({name: "original_pgdata", external: false, exists: true});
+        expect(mockRewriter.rewrite).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.anything(),
+            expect.anything(),
+            undefined,
+            expect.objectContaining({volumes: plan.volumes}),
+        );
     });
 
     it("refuses a bind-mount newPath escaping the managed directory before anything is stopped (CR-02, WR-01)", async () => {
@@ -2000,6 +2079,7 @@ describe("MigrationService environment extraction (CR-02)", () => {
             namedVolumeSelections: new Map<string, boolean>(),
             backup: false,
             stopOldStack: false,
+            acknowledgeAnonymousVolumes: false,
         };
     }
 
@@ -2359,6 +2439,7 @@ describe("MigrationService compose file check and dependencies (#108, T-22-03)",
             namedVolumeSelections: new Map<string, boolean>(),
             backup: false,
             stopOldStack: false,
+            acknowledgeAnonymousVolumes: false,
         };
     }
 

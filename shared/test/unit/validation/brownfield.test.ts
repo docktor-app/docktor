@@ -1,5 +1,6 @@
 import {describe, expect, it} from "vitest";
 import {
+    anonymousVolumeSchema,
     brownfieldAdoptSchema,
     COMPOSE_FILE_NAMES,
     COMPOSE_VOLUME_NAME_PATTERN,
@@ -162,7 +163,13 @@ describe("brownfieldAdoptSchema", () => {
 });
 
 describe("migrationExecuteSchema", () => {
-    const validExecute = {...validPreview, displayName: "My App", backup: true, stopOldStack: true};
+    const validExecute = {
+        ...validPreview,
+        displayName: "My App",
+        backup: true,
+        stopOldStack: true,
+        acknowledgeAnonymousVolumes: false,
+    };
 
     it("accepts a full valid body", () => {
         expect(migrationExecuteSchema.safeParse(validExecute).success).toBe(true);
@@ -187,6 +194,19 @@ describe("migrationExecuteSchema", () => {
     it("rejects a body without stopOldStack (D-12)", () => {
         const {stopOldStack: _stopOldStack, ...body} = validExecute;
         expect(migrationExecuteSchema.safeParse(body).success).toBe(false);
+    });
+
+    it("rejects a body without acknowledgeAnonymousVolumes (D-05)", () => {
+        const {acknowledgeAnonymousVolumes: _acknowledged, ...body} = validExecute;
+        expect(migrationExecuteSchema.safeParse(body).success).toBe(false);
+    });
+
+    it("rejects a non-boolean acknowledgeAnonymousVolumes", () => {
+        expect(migrationExecuteSchema.safeParse({...validExecute, acknowledgeAnonymousVolumes: "yes"}).success).toBe(false);
+    });
+
+    it("accepts the acknowledgement being given", () => {
+        expect(migrationExecuteSchema.safeParse({...validExecute, acknowledgeAnonymousVolumes: true}).success).toBe(true);
     });
 
     it("rejects a non-boolean backup", () => {
@@ -276,6 +296,7 @@ describe("scan result schemas", () => {
         compatibility: "yellow",
         serviceCount: 1,
         namedVolumes: [],
+        externalVolumes: [],
         absolutePaths: [],
         relativePaths: ["./data"],
         inlineEnvVars: false,
@@ -300,6 +321,11 @@ describe("scan result schemas", () => {
         expect(skippedDirectorySchema.safeParse({directory: "/x", reason: "missing"}).success).toBe(false);
     });
 
+    it("rejects a discovered stack without externalVolumes (#101)", () => {
+        const {externalVolumes: _externalVolumes, ...withoutExternal} = validStack;
+        expect(discoveredStackSchema.safeParse(withoutExternal).success).toBe(false);
+    });
+
     it("rejects a discovered stack without relativePaths", () => {
         const {relativePaths: _relativePaths, ...withoutRelative} = validStack;
         expect(discoveredStackSchema.safeParse(withoutRelative).success).toBe(false);
@@ -321,5 +347,19 @@ describe("scan result schemas", () => {
 
     it("rejects an unknown compatibility level", () => {
         expect(discoveredStackSchema.safeParse({...validStack, compatibility: "blue"}).success).toBe(false);
+    });
+});
+
+describe("anonymousVolumeSchema (D-05)", () => {
+    it("accepts a service and a container path", () => {
+        expect(anonymousVolumeSchema.safeParse({service: "db", containerPath: "/var/lib/postgresql/data"}).success).toBe(true);
+    });
+
+    it.each([
+        ["without a service", {containerPath: "/data"}],
+        ["without a container path", {service: "db"}],
+        ["with a non-string path", {service: "db", containerPath: 3}],
+    ])("rejects an entry %s", (_label, value) => {
+        expect(anonymousVolumeSchema.safeParse(value).success).toBe(false);
     });
 });

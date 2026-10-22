@@ -35,6 +35,7 @@ function inputFor(displayName: string, composePath = `/opt/${displayName}/docker
         namedVolumeSelections: new Map(),
         backup: true,
         stopOldStack: false,
+        acknowledgeAnonymousVolumes: false,
     };
 }
 
@@ -49,6 +50,7 @@ function planFor(input: MigrationInput): MigrationPlan {
         namedVolumeSelections: new Map(),
         backup: input.backup,
         stopOldStack: input.stopOldStack,
+        volumes: new Map(),
         inPlace: null,
     };
 }
