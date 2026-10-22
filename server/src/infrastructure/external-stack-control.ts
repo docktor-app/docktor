@@ -2,6 +2,7 @@ import {execFile} from "node:child_process";
 import path from "node:path";
 import {promisify} from "node:util";
 import type {ExternalStackControlPort} from "../application/ports/external-stack-control-port.js";
+import type {ComposeProjectTarget} from "../domain/compose-project.js";
 import {dockerCliEnvironment} from "../lib/compose-env.js";
 import {AppError} from "../lib/errors.js";
 
@@ -25,8 +26,9 @@ const defaultRunner: ComposeCommandRunner = (file, args, options) =>
 
 /**
  * Stops and starts a compose project Docktor does not manage (migration source
- * stacks). The compose path travels as its own argv element and no shell is
- * involved, so it can never be interpreted as a command (T-18-08). The child receives only the
+ * stacks), always addressed as `-p <project>` (#102). The compose path and the
+ * project name travel as their own argv elements and no shell is involved, so
+ * they can never be interpreted as a command (T-18-08). The child receives only the
  * allowlisted environment (see lib/compose-env.ts), evaluated per call.
  */
 export class ExternalStackControl implements ExternalStackControlPort {
@@ -35,24 +37,28 @@ export class ExternalStackControl implements ExternalStackControlPort {
         private readonly environment: () => NodeJS.ProcessEnv = () => dockerCliEnvironment(process.env),
     ) {}
 
-    async stop(composePath: string): Promise<void> {
-        await this.compose(composePath, "stop");
+    async stop(target: ComposeProjectTarget, options: {readonly timeoutMs: number}): Promise<void> {
+        await this.compose(target, ["stop"], options.timeoutMs);
     }
 
-    async start(composePath: string): Promise<void> {
-        await this.compose(composePath, "start");
+    async start(target: ComposeProjectTarget, services: readonly string[]): Promise<void> {
+        if (services.length === 0) {
+            return;
+        }
+        await this.compose(target, ["start", ...services], COMPOSE_TIMEOUT_MS);
     }
 
-    private async compose(composePath: string, subcommand: "stop" | "start"): Promise<void> {
+    private async compose(target: ComposeProjectTarget, command: readonly string[], timeout: number): Promise<void> {
+        const {composePath, project} = target;
         try {
-            await this.run("docker", ["compose", "-f", composePath, subcommand], {
+            await this.run("docker", ["compose", "-p", project, "-f", composePath, ...command], {
                 cwd: path.dirname(composePath),
-                timeout: COMPOSE_TIMEOUT_MS,
+                timeout,
                 env: this.environment(),
             });
         } catch (err: unknown) {
             throw new AppError(
-                `docker compose ${subcommand} failed for ${composePath}: ${describeFailure(err)}`,
+                `docker compose ${command[0]} failed for project ${project} (${composePath}): ${describeFailure(err)}`,
                 500,
                 undefined,
                 {cause: err},

@@ -1260,7 +1260,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
                 await expect(fs.access(asideDir)).rejects.toThrow();
                 expect(mockStackRepo.delete).toHaveBeenCalledWith(stackId);
                 expect(mockOldStack.start).toHaveBeenCalledTimes(1);
-                expect(mockOldStack.start).toHaveBeenCalledWith({composePath, project: "original"}, ["web"]);
+                expect(mockOldStack.start).toHaveBeenCalledWith({composePath, project: stackId}, ["web"]);
                 const moveBack = mockMigrator.moveDirectory.mock.invocationCallOrder[1] ?? Number.NaN;
                 expect(moveBack).toBeLessThan(mockOldStack.start.mock.invocationCallOrder[0] ?? Number.NaN);
             });

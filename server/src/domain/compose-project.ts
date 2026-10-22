@@ -56,7 +56,15 @@ export function stopNotVerifiedMessage(project: string, remaining: readonly stri
     return `Migration refused: after stopping the old stack, these containers of the Docker Compose project "${project}" are still running: ${remaining.join(", ")}. Nothing was created or copied. Stop them by hand, then try again.`;
 }
 
-/** How long `docker compose stop` may take for this many containers. */
-export function composeStopTimeoutMs(_containerCount: number): number {
-    return 0;
+const MIN_STOP_TIMEOUT_MS = 120_000;
+const MAX_STOP_TIMEOUT_MS = 900_000;
+const STOP_TIMEOUT_PER_CONTAINER_MS = 30_000;
+
+/**
+ * How long `docker compose stop` may take for this many containers: compose
+ * waits up to its own grace period per container, so a flat limit fails big
+ * projects. 30 s per container, never below 2 minutes, never above 15.
+ */
+export function composeStopTimeoutMs(containerCount: number): number {
+    return Math.min(MAX_STOP_TIMEOUT_MS, Math.max(MIN_STOP_TIMEOUT_MS, STOP_TIMEOUT_PER_CONTAINER_MS * containerCount));
 }

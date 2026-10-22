@@ -18,10 +18,12 @@ import {
 } from "../domain/migration-target.js";
 import {composeProjectName} from "../domain/compose-project-name.js";
 import {
-    runningServices,
-    stillRunning,
-    stopNotVerifiedMessage,
-    type ResolvedComposeProject,
+	composeStopTimeoutMs,
+	runningServices,
+	stillRunning,
+	stopNotVerifiedMessage,
+	type ComposeProjectTarget,
+	type ResolvedComposeProject,
 } from "../domain/compose-project.js";
 import {computeUnifiedDiff, type UnifiedDiff} from "../lib/unified-diff.js";
 import {
@@ -138,7 +140,7 @@ function sharedProjectNameRefusal({name, source}: SharedProjectName): string {
 	const takeover = "so deploying the new stack would take over the old stack's containers. Stop the old stack during the migration";
 	switch (source) {
 		case "directory":
-			return `${refused} (both take it from their directory name), ${takeover}, or choose a different stack name.`;
+			return `${refused} (the new stack takes it from its directory name), ${takeover}, or choose a different stack name.`;
 		case "compose-file":
 			return `${refused} (set by name: in the compose file, which the new stack keeps), ${takeover}, or remove name: from the old compose file first.`;
 		case "env-file":
@@ -292,7 +294,7 @@ export class MigrationService {
 	async previewMigration(request: MigrationPreviewRequest): Promise<MigrationPreview> {
 		const {composePath, displayName, volumeSelections, namedVolumeSelections} = request;
 		const assessment = await this.assessTarget(composePath, displayName);
-		await this.resolveOldProject(assessment.composePath);
+		const oldProject = await this.resolveOldProject(assessment.composePath);
 		const bindCopies = await this.planCopies(assessment, volumeSelections, namedVolumeSelections);
 		const originalCompose = await fs.readFile(assessment.composePath, "utf-8");
 		const existingEnv = await this.readOldEnv(assessment.originalDir);
@@ -313,7 +315,7 @@ export class MigrationService {
 			originalDirectory: path.resolve(assessment.originalDir),
 			inPlace,
 			suggestedAsideName,
-			sharedProjectName: await this.sharedProjectName(assessment),
+			sharedProjectName: await this.sharedProjectName(assessment, oldProject),
 		};
 		const emptySources = bindCopies.filter((copy) => copy.sourcePath === null).map((copy) => copy.originalPath);
 		return {diff, extractedEnv: result.extractedEnv, target, emptySources};
@@ -358,7 +360,7 @@ export class MigrationService {
 		const bindCopies = await this.planCopies(assessment, volumeSelections, namedVolumeSelections);
 		const inPlace = kind === "in-place" ? {asideDir: await this.planInPlace(originalDir, stackId, input)} : null;
 		if (!stopOldStack) {
-			const shared = await this.sharedProjectName(assessment);
+			const shared = await this.sharedProjectName(assessment, oldProject);
 			if (shared) {
 				throw new BadRequestError(sharedProjectNameRefusal(shared));
 			}
@@ -398,19 +400,23 @@ export class MigrationService {
 	/**
 	 * G-18-22-status: the compose project name the old and the new stack would
 	 * both run under, or null when they differ or the target is in place (which
-	 * stops the old stack anyway). The new stack keeps the compose file's name:
-	 * and the old .env, and Docktor runs compose in `<stacks>/<stackId>`, so its
-	 * name is predicted over the same files with the stack id as the directory.
+	 * stops the old stack anyway). The old name is the project Docker runs (#102);
+	 * the new stack keeps the compose file's name: and the old .env, and Docktor
+	 * runs compose in `<stacks>/<stackId>`, so its name is predicted over the same
+	 * files with the stack id as the directory, and the match reports where the
+	 * new stack's name comes from.
 	 */
-	private async sharedProjectName(assessment: TargetAssessment): Promise<SharedProjectName | null> {
+	private async sharedProjectName(
+		assessment: TargetAssessment,
+		oldProject: ResolvedComposeProject,
+	): Promise<SharedProjectName | null> {
 		if (assessment.kind !== "separate") {
 			return null;
 		}
 		const composeContent = await fs.readFile(assessment.composePath, "utf-8");
 		const envContent = await this.readOldEnv(assessment.originalDir);
-		const old = composeProjectName({composeContent, envContent, directoryName: path.basename(assessment.originalDir)});
 		const next = composeProjectName({composeContent, envContent, directoryName: assessment.stackId});
-		return old.name !== "" && old.name === next.name ? old : null;
+		return oldProject.name !== "" && oldProject.name === next.name ? next : null;
 	}
 
 	/**
@@ -554,6 +560,8 @@ export class MigrationService {
 		// (in place) the directory it was renamed to.
 		const sourceDir = inPlace?.asideDir ?? originalDir;
 		const sourceComposePath = inPlace ? path.join(sourceDir, path.basename(composePath)) : composePath;
+		// #102: every stop and start addresses the project Docker runs, never a directory-derived name.
+		const oldTarget: ComposeProjectTarget = {composePath, project: oldProject.name};
 
 		let oldStackStopped = false;
 		// The services of the old project that ran before the stop: what a rollback starts again.
@@ -568,11 +576,15 @@ export class MigrationService {
 			// rejection or a container still running is fail-closed and aborts
 			// before anything is created.
 			if (stopOldStack) {
-				this.report(onProgress, "stopping_old_stack");
-				runningBefore = runningServices(await this.projects.listContainers(oldProject.name, composePath));
-				oldStackStopped = true;
-				await this.oldStack.stop(composePath);
-				await this.verifyStopped(plan, onProgress);
+				const containers = await this.projects.listContainers(oldProject.name, composePath);
+				const running = stillRunning(containers);
+				runningBefore = runningServices(containers);
+				this.report(onProgress, "stopping_old_stack", running.length === 0 ? "(nothing was running)" : null);
+				if (running.length > 0) {
+					oldStackStopped = true;
+					await this.oldStack.stop(oldTarget, {timeoutMs: composeStopTimeoutMs(running.length)});
+					await this.verifyStopped(plan, onProgress);
+				}
 			}
 
 			// Step 1b (G-18-7): in place, the original is renamed aside so the new
@@ -682,7 +694,9 @@ export class MigrationService {
 			const originalNote = restoration?.note ?? "Your original stack directory was not modified.";
 			const originalBackInPlace = restoration === null || restoration.restored;
 			const restartNote =
-				oldStackStopped && originalBackInPlace ? await this.restartOldStack(composePath, originalDir) : "";
+				oldStackStopped && originalBackInPlace
+					? await this.restartOldStack(oldTarget, runningBefore, originalDir)
+					: "";
 
 			return {
 				success: false,
@@ -880,14 +894,20 @@ export class MigrationService {
 	}
 
 	/**
-	 * Rollback step (D-11): start the containers Docktor stopped. Uses `start`,
-	 * never the recreate-capable `up` (RESEARCH Pitfall 2). Returns the note
-	 * appended to the user-facing error.
+	 * Rollback step (D-11): start the services that were running before the stop
+	 * (#100), never more. Uses `start`, never the recreate-capable `up`
+	 * (RESEARCH Pitfall 2). Whether they run again is not verified here, so the
+	 * note only says the restart was requested. Returns the note appended to the
+	 * user-facing error.
 	 */
-	private async restartOldStack(composePath: string, originalDir: string): Promise<string> {
+	private async restartOldStack(
+		target: ComposeProjectTarget,
+		services: readonly string[],
+		originalDir: string,
+	): Promise<string> {
 		try {
-			await this.oldStack.start(composePath);
-			return " The old stack was restarted.";
+			await this.oldStack.start(target, services);
+			return ` A restart of the old stack's services (${services.join(", ")}) was requested; check that they are running.`;
 		} catch (startErr: unknown) {
 			const message = startErr instanceof Error ? startErr.message : String(startErr);
 			console.error(`[MigrationService] Failed to restart the old stack: ${message}`);
