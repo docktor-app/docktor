@@ -5,6 +5,8 @@ import path from "node:path";
 import {ComposeRewriter} from "../../../src/infrastructure/compose-rewriter.js";
 import {parseEnvAssignments} from "../../../src/domain/host-ports.js";
 import {MigrationService} from "../../../src/application/migration-service.js";
+import {InMemoryMigrationLedger, type MigrationLedger} from "../../../src/domain/migration-rollback.js";
+import type {MigrationLedgerEntry} from "@docktor/shared";
 import {BadRequestError, ConflictError} from "../../../src/lib/errors.js";
 import {slugify} from "../../../src/lib/slugify.js";
 import type {DockerExecutorPort} from "../../../src/application/ports/docker-executor-port.js";
@@ -115,18 +117,23 @@ function runningContainer(project: string, service = "web", index = 1): ProjectC
  * The old project as Docker runs it: resolved from the files (no container is
  * reported at resolve time), `web` running until the old stack's stop was called.
  */
-function createMockProjects(oldStack: Pick<ReturnType<typeof createMockOldStack>, "stop"> = createMockOldStack()) {
+function createMockProjects(oldStack: ReturnType<typeof createMockOldStack> = createMockOldStack()) {
     const resolver = new ComposeProjectResolver({listContainers: () => Promise.resolve([])}, hostViewDirectories(), readTextDirect);
     return {
         resolve: vi.fn((composePath: string) => resolver.resolve(composePath)),
         listContainers: vi.fn((project: string, _composePath: string): Promise<readonly ProjectContainer[]> =>
-            Promise.resolve(oldStack.stop.mock.calls.length > 0 ? [] : [runningContainer(project)]),
+            // Down once stopped, running again once the rollback started it.
+            Promise.resolve(oldStack.stop.mock.calls.length > 0 && oldStack.start.mock.calls.length === 0 ? [] : [runningContainer(project)]),
         ),
     };
 }
 
 function createMockSelfStack() {
     return {composeFilePaths: vi.fn().mockResolvedValue([] as string[])};
+}
+
+function createMockLogger() {
+    return {info: vi.fn(), warn: vi.fn(), error: vi.fn()};
 }
 
 /** Docktor not containerized by default: a host path is a local path. */
@@ -160,8 +167,13 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
     let mockSelfStack: ReturnType<typeof createMockSelfStack>;
     let mockOwnMounts: ReturnType<typeof createMockOwnMounts>;
     let mockDiskSpace: ReturnType<typeof createMockDiskSpace>;
+    let mockLogger: ReturnType<typeof createMockLogger>;
+    // A fake clock: the rollback's wait for the restarted services advances it instead of sleeping.
+    let clock: number;
 
     beforeEach(async () => {
+        clock = 0;
+        mockLogger = createMockLogger();
         tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "docktor-migrate-"));
         originalDir = path.join(tmpRoot, "original");
         composePath = path.join(originalDir, "docker-compose.yml");
@@ -223,6 +235,11 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             ownMounts: mockOwnMounts as unknown as OwnMountsPort,
             directories: hostViewDirectories(),
             diskSpace: mockDiskSpace as unknown as DiskSpaceProbePort,
+            logger: mockLogger,
+            sleep: async (ms: number) => {
+                clock += ms;
+            },
+            now: () => clock,
         });
     }
 
@@ -280,9 +297,9 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         const result = await buildService().migrate(input());
 
         expect(result.success).toBe(false);
-        expect(result.error).toContain("docker compose up failed");
-        expect(result.error).toContain("Your original stack directory was not modified.");
-        expect(result.error).toContain("A restart of the old stack's services (web) was requested");
+        // #100: the error states the failure only; what the rollback achieved is in the verified report.
+        expect(result.error).toBe("Migration failed: docker compose up failed");
+        expect(result.rollback).toEqual({oldStack: "restored-running", original: "untouched", cleanupErrors: []});
         expect(result.originalPath).toBe(originalDir);
         expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
         expect(mockStackRepo.delete).toHaveBeenCalledWith(stackId);
@@ -318,8 +335,8 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         expect(result.success).toBe(false);
         expect(mockOldStack.stop).not.toHaveBeenCalled();
         expect(mockOldStack.start).not.toHaveBeenCalled();
-        expect(result.error).toContain("Your original stack directory was not modified.");
-        expect(result.error).not.toContain("old stack");
+        expect(result.error).toBe("Migration failed: port is already allocated");
+        expect(result.rollback).toEqual({oldStack: "not-stopped", original: "untouched", cleanupErrors: []});
     });
 
     describe("the old project as Docker runs it (#102, D-04)", () => {
@@ -382,7 +399,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             expect(mockOldStack.stop).not.toHaveBeenCalled();
             expect(mockOldStack.start).not.toHaveBeenCalled();
             expect(listener).toHaveBeenCalledWith({step: "stopping_old_stack", detail: "(nothing was running)"});
-            expect(result.error).not.toContain("restart of the old stack's services");
+            expect(result.rollback?.oldStack).toBe("not-stopped");
         });
 
         it("gives the stop a timeout that grows with the number of containers", async () => {
@@ -415,8 +432,9 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
 
                 expect(mockOldStack.start).toHaveBeenCalledTimes(1);
                 expect(mockOldStack.start).toHaveBeenCalledWith({composePath, project: "original"}, ["db", "web"]);
-                expect(result.error).toContain("A restart of the old stack's services (db, web) was requested; check that they are running.");
-                expect(result.error).not.toContain("was restarted");
+                // The fake project never shows the services running again, so the restore stays unverified (D-07).
+                expect(result.rollback).toEqual({oldStack: "restart-unverified", original: "untouched", cleanupErrors: []});
+                expect(result.error).not.toContain("restored");
             });
 
             it("after a stop that failed or timed out", async () => {
@@ -457,8 +475,9 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         const result = await buildService().migrate(input());
 
         expect(result.success).toBe(false);
-        expect(result.error).toContain("could not be restarted automatically");
-        expect(result.error).toContain(originalDir);
+        expect(result.error).toBe("Migration failed: docker compose up failed. Restarting the old stack failed: daemon unreachable.");
+        expect(result.rollback).toEqual({oldStack: "restart-failed", original: "untouched", cleanupErrors: []});
+        expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining("daemon unreachable"));
     });
 
     it("creates no backup when backup is false (MIG-03, D-07)", async () => {
@@ -590,8 +609,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
 
         expect(result.success).toBe(false);
         expect(result.error).toContain("ENOSPC");
-        expect(result.error).toContain("Your original stack directory was not modified.");
-        expect(result.error).toContain("A restart of the old stack's services (web) was requested");
+        expect(result.rollback).toEqual({oldStack: "restored-running", original: "untouched", cleanupErrors: []});
         expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
         expect(mockOldStack.start).toHaveBeenCalledTimes(1);
         expect(mockOldStack.start).toHaveBeenCalledWith({composePath, project: "original"}, ["web"]);
@@ -1526,7 +1544,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             ]);
         });
 
-        it("reports rolling_back last when a step fails, and still returns the rollback failure", async () => {
+        it("reports rolling_back and then restarting_old_stack when a step fails, and still returns the rollback failure", async () => {
             mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
             const listener = vi.fn();
 
@@ -1534,13 +1552,15 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
 
             expect(result.success).toBe(false);
             expect(result.error).toContain("docker compose up failed");
-            expect(listener.mock.calls.at(-1)?.[0]).toEqual({step: "rolling_back", detail: null});
-            expect(listener.mock.calls.map((call) => call[0].step)).toContain("deploying");
+            expect(listener.mock.calls.slice(-3).map((call) => call[0].step)).toEqual([
+                "deploying",
+                "rolling_back",
+                "restarting_old_stack",
+            ]);
         });
 
         it("is not affected by a listener that throws on every call", async () => {
             mockDocker.up.mockResolvedValue(undefined);
-            const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
             const listener = vi.fn(() => {
                 throw new Error("listener exploded");
             });
@@ -1549,12 +1569,11 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
 
             expect(result).toEqual({success: true, stackId, originalPath: originalDir});
             expect(mockDocker.up).toHaveBeenCalledTimes(1);
-            expect(consoleError).toHaveBeenCalled();
+            expect(mockLogger.error).toHaveBeenCalled();
         });
 
         it("still rolls back and restarts the old stack when the listener throws during a failing run", async () => {
             mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
-            vi.spyOn(console, "error").mockImplementation(() => undefined);
             const listener = vi.fn(() => {
                 throw new Error("listener exploded");
             });
@@ -1562,7 +1581,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             const result = await buildService().migrate(input(), listener);
 
             expect(result.success).toBe(false);
-            expect(result.error).toContain("A restart of the old stack's services (web) was requested");
+            expect(result.rollback?.oldStack).toBe("restored-running");
             expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
             expect(mockOldStack.start).toHaveBeenCalledTimes(1);
         });
@@ -1571,6 +1590,126 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             mockDocker.up.mockResolvedValue(undefined);
 
             await expect(buildService().migrate(copyingInput())).resolves.toMatchObject({success: true});
+        });
+    });
+
+    describe("the rollback ledger (#100)", () => {
+        /** A ledger that also writes to a shared call log, so record order can be compared with the side effects. */
+        function loggingLedger(log: string[]): MigrationLedger {
+            const inner = new InMemoryMigrationLedger();
+            return {
+                record: async (entry: MigrationLedgerEntry) => {
+                    log.push(`record:${entry.kind}`);
+                    await inner.record(entry);
+                },
+                entries: () => inner.entries(),
+            };
+        }
+
+        it("records the stop before it happens and the directory and the record after they exist", async () => {
+            mockDocker.up.mockResolvedValue(undefined);
+            const log: string[] = [];
+            mockOldStack.stop.mockImplementation(async () => {
+                log.push("stop");
+            });
+            mockStackFs.createDirectoryExclusive.mockImplementation(async (id: string) => {
+                log.push("createDirectory");
+                const target = path.join(tmpRoot, "stacks", id);
+                await fs.mkdir(target, {recursive: true});
+                return target;
+            });
+            mockStackRepo.create.mockImplementation(async () => {
+                log.push("createRecord");
+            });
+            const service = buildService();
+            const ledger = loggingLedger(log);
+
+            const result = await service.execute(await service.preflight(input({backup: false})), {ledger});
+
+            expect(result.success).toBe(true);
+            expect(log).toEqual([
+                "record:stopped_old_stack",
+                "stop",
+                "createDirectory",
+                "record:created_directory",
+                "createRecord",
+                "record:created_record",
+            ]);
+            expect(ledger.entries()[0]).toEqual({
+                kind: "stopped_old_stack",
+                project: "original",
+                composePath,
+                runningBefore: ["web"],
+                sharesProjectWithNewStack: false,
+            });
+        });
+
+        it("records nothing for a stop that was not needed", async () => {
+            mockDocker.up.mockResolvedValue(undefined);
+            mockProjects.listContainers.mockResolvedValue([]);
+            const service = buildService();
+            const ledger = new InMemoryMigrationLedger();
+
+            await service.execute(await service.preflight(input({backup: false})), {ledger});
+
+            expect(ledger.entries().map((entry) => entry.kind)).toEqual(["created_directory", "created_record"]);
+            expect(mockOldStack.stop).not.toHaveBeenCalled();
+        });
+
+        it("does not record a directory the exclusive create refused, so rollback never removes a foreign one", async () => {
+            mockStackFs.createDirectoryExclusive.mockRejectedValue(new Error("EEXIST"));
+            const service = buildService();
+            const ledger = new InMemoryMigrationLedger();
+
+            const result = await service.execute(await service.preflight(input()), {ledger});
+
+            expect(ledger.entries().map((entry) => entry.kind)).toEqual(["stopped_old_stack"]);
+            expect(mockStackFs.removeDirectory).not.toHaveBeenCalled();
+            expect(result.rollback?.oldStack).toBe("restored-running");
+        });
+
+        it("hands exactly the recorded entries to the rollback after a copy failure behind a verified stop", async () => {
+            mockMigrator.copyDirectory.mockRejectedValue(new Error("ENOSPC: no space left on device"));
+            const service = buildService();
+            const ledger = new InMemoryMigrationLedger();
+
+            const result = await service.execute(await service.preflight(input({backup: true})), {ledger});
+
+            expect(result).toEqual({
+                success: false,
+                error: "Migration failed: ENOSPC: no space left on device",
+                originalPath: originalDir,
+                rollback: {oldStack: "restored-running", original: "untouched", cleanupErrors: []},
+            });
+            expect(ledger.entries().map((entry) => entry.kind)).toEqual(["stopped_old_stack", "created_directory"]);
+        });
+
+        it("lists a failing cleanup in the result and logs it through the injected logger", async () => {
+            mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
+            mockStackFs.removeDirectory.mockRejectedValue(new Error("EBUSY: directory busy"));
+            mockStackRepo.delete.mockRejectedValue(new Error("database locked"));
+
+            const result = await buildService().migrate(input());
+
+            expect(result.rollback?.cleanupErrors).toEqual([
+                "remove the stack record: database locked",
+                "remove the new stack directory: EBUSY: directory busy",
+            ]);
+            expect(result.rollback?.oldStack).toBe("restored-running");
+            expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining("database locked"));
+            expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining("EBUSY: directory busy"));
+        });
+
+        it("never logs through the console when an injected logger is given", async () => {
+            mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
+            const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+            await buildService().migrate(input(), () => {
+                throw new Error("listener exploded");
+            });
+
+            expect(consoleError).not.toHaveBeenCalled();
+            expect(mockLogger.error).toHaveBeenCalled();
         });
     });
 
@@ -1781,6 +1920,23 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         });
 
         describe("rollback", () => {
+            it("records the rename aside after it happened and shares the project with the new stack", async () => {
+                mockDocker.up.mockResolvedValue(undefined);
+                const service = buildService();
+                const ledger = new InMemoryMigrationLedger();
+
+                await service.execute(await service.preflight(inPlaceInput()), {ledger});
+
+                expect(ledger.entries().map((entry) => entry.kind)).toEqual([
+                    "stopped_old_stack",
+                    "moved_aside",
+                    "created_directory",
+                    "created_record",
+                ]);
+                expect(ledger.entries()[0]).toMatchObject({sharesProjectWithNewStack: true});
+                expect(ledger.entries()[1]).toEqual({kind: "moved_aside", originalDir, asideDir});
+            });
+
             it("removes the new directory, moves the original back and restarts the old stack", async () => {
                 mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
 
@@ -1788,8 +1944,8 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
 
                 expect(result.success).toBe(false);
                 expect(result.error).toContain("docker compose up failed");
-                expect(result.error).toContain("moved back");
-                expect(result.error).toContain("A restart of the old stack's services (web) was requested");
+                expect(result.error).toBe("Migration failed: docker compose up failed");
+                expect(result.rollback).toEqual({oldStack: "restored-running", original: "restored", cleanupErrors: []});
                 expect(result.keptOriginalAt).toBeUndefined();
                 expect(mockMigrator.moveDirectory).toHaveBeenLastCalledWith(asideDir, originalDir);
                 expect(await fs.readFile(composePath, "utf-8")).toBe(ASIDE_COMPOSE);
@@ -1812,10 +1968,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
                 const result = await buildService().migrate(inPlaceInput());
 
                 expect(result.success).toBe(false);
-                expect(result.error).toContain(asideDir);
-                expect(result.error).toContain(originalDir);
-                expect(result.error).toContain("by hand");
-                expect(result.error).not.toContain("restart of the old stack's services");
+                expect(result.rollback).toEqual({oldStack: "left-stopped", original: "left-aside", keptOriginalAt: asideDir, cleanupErrors: []});
                 expect(mockMigrator.moveDirectory).toHaveBeenCalledTimes(1);
                 expect(mockOldStack.start).not.toHaveBeenCalled();
                 expect(await fs.readFile(path.join(asideDir, "docker-compose.yml"), "utf-8")).toBe(ASIDE_COMPOSE);
@@ -1832,8 +1985,8 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
                 const result = await buildService().migrate(inPlaceInput());
 
                 expect(result.success).toBe(false);
-                expect(result.error).toContain("by hand");
-                expect(result.error).toContain(asideDir);
+                expect(result.rollback).toMatchObject({oldStack: "left-stopped", original: "left-aside", keptOriginalAt: asideDir});
+                expect(result.rollback?.cleanupErrors).toEqual([expect.stringContaining("EBUSY")]);
                 expect(mockOldStack.start).not.toHaveBeenCalled();
                 expect(await fs.readFile(path.join(asideDir, "data", "keep.txt"), "utf-8")).toBe("keep me");
             });

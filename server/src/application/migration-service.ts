@@ -43,6 +43,7 @@ import {
 	type ComposeProjectTarget,
 	type ResolvedComposeProject,
 } from "../domain/compose-project.js";
+import {InMemoryMigrationLedger, type MigrationLedger} from "../domain/migration-rollback.js";
 import {computeUnifiedDiff, type UnifiedDiff} from "../lib/unified-diff.js";
 import {
 	COMPOSE_FILE_NAMES,
@@ -51,6 +52,7 @@ import {
 	type MigrationDiskSpace,
 	type MigrationOperationStep,
 	type MigrationPreviewDiskSpace,
+	type MigrationRollbackReport,
 	type MigrationTarget,
 	type SharedProjectName,
 } from "@docktor/shared";
@@ -60,6 +62,13 @@ import {composeProjectResolver} from "../infrastructure/compose-project-resolver
 import {dockerSelfStack} from "../infrastructure/docker-self-stack.js";
 import {assertNotOwnStack} from "./own-stack-guard.js";
 import {assertNotManaged} from "./managed-stack-guard.js";
+import {MigrationRollbackRunner} from "./migration-rollback-runner.js";
+import {
+	errorMessage,
+	reportMigrationProgress,
+	type MigrationLogger,
+	type MigrationProgressListener,
+} from "./migration-progress.js";
 import {directoryIdentityResolver} from "../infrastructure/directory-identity-resolver.js";
 import {diskSpaceProbe} from "../infrastructure/disk-space-probe.js";
 import type {DockerExecutorPort} from "./ports/docker-executor-port.js";
@@ -272,8 +281,14 @@ export interface MigrationInput {
 	inPlaceAsideName?: string;
 }
 
-/** Told which step of a migration starts; `detail` names the volume or path being copied. */
-export type MigrationProgressListener = (progress: {step: MigrationOperationStep; detail: string | null}) => void;
+export type {MigrationProgressListener};
+
+/** What a run is given besides the plan: a progress listener and, for a durable journal, its own ledger. */
+export interface MigrationExecuteOptions {
+	readonly onProgress?: MigrationProgressListener;
+	/** Where the run records what it did; defaults to an in-memory ledger that lives as long as the run. */
+	readonly ledger?: MigrationLedger;
+}
 
 /**
  * The outcome of a successful {@link MigrationService.preflight}: every
@@ -299,6 +314,13 @@ export interface MigrationPlan {
 	readonly volumes: ReadonlyMap<string, PlannedVolume>;
 	/** G-18-7: set when the target directory is the original directory; the original moves to `asideDir`. */
 	readonly inPlace: {readonly asideDir: string} | null;
+	/**
+	 * #100: the new stack runs under the old stack's compose project (in place, or
+	 * the same project name). A rollback that tore the new project down has then
+	 * removed the old containers too, so it brings the old stack back from its
+	 * restored files instead of starting containers that no longer exist.
+	 */
+	readonly sharesProjectWithNewStack: boolean;
 }
 
 /** D-08: bytes the migration writes into the new stack directory, and bytes more when a backup is taken. */
@@ -330,6 +352,8 @@ export interface MigrationResult {
 	originalPath: string;
 	/** G-18-7: where the renamed original directory of an in-place migration was kept. */
 	keptOriginalAt?: string;
+	/** Present on a failed migration: what the rollback did and verified. */
+	rollback?: MigrationRollbackReport;
 }
 
 /**
@@ -355,7 +379,18 @@ export interface MigrationServiceDependencies {
 	directories: DirectoryIdentityPort;
 	/** #107: free space per filesystem and the sizes of what a migration writes. */
 	diskSpace: DiskSpaceProbePort;
+	/**
+	 * #108: where the migration logs. No app-wide logger exists yet and structured
+	 * logging (#70) is deferred, so this injected seam is the convention.
+	 */
+	logger: MigrationLogger;
+	/** D-07: how the rollback waits between looks at the restarted services. */
+	sleep: (ms: number) => Promise<void>;
+	/** D-07: the clock the rollback's restart verification times itself with, in milliseconds. */
+	now: () => number;
 }
+
+const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 export class MigrationService {
 	private readonly docker: DockerExecutorPort;
@@ -370,6 +405,8 @@ export class MigrationService {
 	private readonly analyzer: Pick<ComposeAnalyzerPort, "analyzeCompatibility">;
 	private readonly directories: DirectoryIdentityPort;
 	private readonly diskSpace: DiskSpaceProbePort;
+	private readonly logger: MigrationLogger;
+	private readonly rollback: MigrationRollbackRunner;
 
 	constructor(deps: Partial<MigrationServiceDependencies> = {}) {
 		this.docker = deps.docker ?? dockerExecutor;
@@ -384,6 +421,18 @@ export class MigrationService {
 		this.analyzer = deps.analyzer ?? composeAnalyzer;
 		this.directories = deps.directories ?? directoryIdentityResolver;
 		this.diskSpace = deps.diskSpace ?? diskSpaceProbe;
+		this.logger = deps.logger ?? console;
+		this.rollback = new MigrationRollbackRunner({
+			stackFs: this.stackFs,
+			stackRepo: this.stackRepo,
+			migrator: this.migrator,
+			oldStack: this.oldStack,
+			projects: this.projects,
+			pathTaken: pathIsTaken,
+			logger: this.logger,
+			sleep: deps.sleep ?? defaultSleep,
+			now: deps.now ?? Date.now,
+		});
 	}
 
 	/**
@@ -441,7 +490,7 @@ export class MigrationService {
 	 * `success: false` after the rollback.
 	 */
 	async migrate(input: MigrationInput, onProgress?: MigrationProgressListener): Promise<MigrationResult> {
-		return this.execute(await this.preflight(input), onProgress);
+		return this.execute(await this.preflight(input), {onProgress});
 	}
 
 	/**
@@ -469,11 +518,9 @@ export class MigrationService {
 		const {bindCopies, homeSources, volumes} = await this.planCopies(assessment, oldProject, volumeSelections, namedVolumeSelections);
 		await this.assertAnonymousVolumesAcknowledged(assessment, oldProject, acknowledgeAnonymousVolumes);
 		const inPlace = kind === "in-place" ? {asideDir: await this.planInPlace(originalDir, stackId, input)} : null;
-		if (!stopOldStack) {
-			const shared = await this.sharedProjectName(assessment, oldProject);
-			if (shared) {
-				throw new BadRequestError(sharedProjectNameRefusal(shared));
-			}
+		const shared = await this.sharedProjectName(assessment, oldProject);
+		if (!stopOldStack && shared) {
+			throw new BadRequestError(sharedProjectNameRefusal(shared));
 		}
 		// In place, the renamed original is the backup: no second copy is made or counted.
 		const includeBackup = backup && inPlace === null;
@@ -498,6 +545,7 @@ export class MigrationService {
 			homeSources,
 			volumes,
 			inPlace,
+			sharesProjectWithNewStack: kind === "in-place" || shared !== null,
 		};
 	}
 
@@ -817,175 +865,186 @@ export class MigrationService {
 	/**
 	 * Runs the side-effecting steps of a preflighted plan, in this order: stop
 	 * and verify the stop, rename aside (in place), create the directory, take
-	 * the backup (when chosen), then copy the data. No data is copied or changed
-	 * before the backup exists. On any step failure it runs the rollback: it removes only the directory and the stack record
-	 * this run created (CR-02, D-09) and restarts the old stack iff Docktor
-	 * stopped it (D-11). The original directory is only ever read, with one
-	 * exception (G-18-7): in an in-place migration it is renamed aside, kept as
-	 * the backup on success, and renamed back on failure. Nothing in it is ever
-	 * deleted (D-09 spirit). Never rejects for a step failure (returns
-	 * `success: false`). Only call it with a plan from {@link preflight};
-	 * concurrent same-slug starts are refused by the background operation start
-	 * (plan 18-14). Every request-path refusal already happened in preflight
-	 * (WR-01); execute only fails for step failures, including a planned
-	 * bind-mount source that vanished since (CR-03).
+	 * the backup (when chosen), then copy the data, rewrite, record, deploy. No
+	 * data is copied or changed before the backup exists. Every side effect is
+	 * recorded in the ledger, and on any step failure the rollback undoes exactly
+	 * those entries in reverse (#100): it removes only the directory and the stack
+	 * record this run created (CR-02, D-09), brings the original directory back
+	 * (G-18-7) and restarts the old stack iff Docktor stopped it (D-11), then
+	 * reports only what it verified. Nothing in the original directory is ever
+	 * deleted (D-09 spirit) and no volume is ever removed. Never rejects for a
+	 * step failure (returns `success: false` with the rollback report). Only call
+	 * it with a plan from {@link preflight}; concurrent same-slug starts are
+	 * refused by the background operation start (plan 18-14). Every request-path
+	 * refusal already happened in preflight (WR-01); execute only fails for step
+	 * failures, including a planned bind-mount source that vanished since (CR-03).
 	 */
-	async execute(plan: MigrationPlan, onProgress?: MigrationProgressListener): Promise<MigrationResult> {
+	async execute(plan: MigrationPlan, options: MigrationExecuteOptions = {}): Promise<MigrationResult> {
+		const {onProgress, ledger = new InMemoryMigrationLedger()} = options;
+		try {
+			return await this.runSteps(plan, ledger, onProgress);
+		} catch (err: unknown) {
+			return await this.rollBack(plan, ledger, err, onProgress);
+		}
+	}
+
+	/** The failure path: undo the ledger and describe what happened without claiming more than was verified. */
+	private async rollBack(
+		plan: MigrationPlan,
+		ledger: MigrationLedger,
+		cause: unknown,
+		onProgress: MigrationProgressListener | undefined,
+	): Promise<MigrationResult> {
+		this.report(onProgress, "rolling_back");
+		const message = errorMessage(cause);
+		this.logger.error(`[MigrationService] Migration failed, rolling back: ${message}`);
+		const outcome = await this.rollback.run(ledger.entries(), {onProgress});
+		const failure = `Migration failed: ${message}`;
+		return {
+			success: false,
+			error:
+				outcome.restartError === undefined
+					? failure
+					: `${failure.replace(/\.$/, "")}. Restarting the old stack failed: ${outcome.restartError}.`,
+			originalPath: plan.originalDir,
+			rollback: outcome.report,
+		};
+	}
+
+	private async runSteps(
+		plan: MigrationPlan,
+		ledger: MigrationLedger,
+		onProgress: MigrationProgressListener | undefined,
+	): Promise<MigrationResult> {
 		const {stackId, displayName, composePath, originalDir, oldProject, volumeSelections, namedVolumeSelections, backup, stopOldStack, bindCopies, homeSources, volumes, inPlace} = plan;
 		// Where the old stack's files are read from: the original directory, or
 		// (in place) the directory it was renamed to.
 		const sourceDir = inPlace?.asideDir ?? originalDir;
 		const sourceComposePath = inPlace ? path.join(sourceDir, path.basename(composePath)) : composePath;
-		// #102: every stop and start addresses the project Docker runs, never a directory-derived name.
-		const oldTarget: ComposeProjectTarget = {composePath, project: oldProject.name};
 
-		let oldStackStopped = false;
-		// The services of the old project that ran before the stop: what a rollback starts again.
-		let runningBefore: string[] = [];
-		let movedAside = false;
-		let createdStackDir = false;
-		let recordCreated = false;
-
-		try {
-			// Step 1: Stop the old stack first (D-10) and prove it is down (D-04).
-			// The flag is set before the call so a partial stop is still undone; a
-			// rejection or a container still running is fail-closed and aborts
-			// before anything is created.
-			if (stopOldStack) {
-				const containers = await this.projects.listContainers(oldProject.name, composePath);
-				const running = stillRunning(containers);
-				runningBefore = runningServices(containers);
-				this.report(onProgress, "stopping_old_stack", running.length === 0 ? "(nothing was running)" : null);
-				if (running.length > 0) {
-					oldStackStopped = true;
-					await this.oldStack.stop(oldTarget, {timeoutMs: composeStopTimeoutMs(running.length)});
-					await this.verifyStopped(plan, onProgress);
-				}
-			}
-
-			// Step 1b (G-18-7): in place, the original is renamed aside so the new
-			// stack can take its directory; the renamed original is the backup.
-			if (inPlace) {
-				this.report(onProgress, "moving_original_aside");
-				await this.migrator.moveDirectory(originalDir, inPlace.asideDir);
-				movedAside = true;
-			}
-
-			// Step 2: Create the new stack directory exclusively. An EEXIST rejection
-			// leaves createdStackDir false, so rollback never removes a foreign directory.
-			this.report(onProgress, "creating_directory");
-			const newStackPath = await this.stackFs.createDirectoryExclusive(stackId);
-			createdStackDir = true;
-
-			// Step 3 (D-01, D-02, D-03): the backup, when opted in (D-07). The old stack
-			// is down and verified, and nothing has been copied or changed yet. In place,
-			// the renamed original already is the backup, so no second copy is made.
-			if (backup && !inPlace) {
-				this.report(onProgress, "backing_up");
-				await this.takeBackup(bindCopies, originalDir, newStackPath);
-			}
-
-			const volumesDir = path.join(newStackPath, "volumes");
-			await fs.mkdir(volumesDir, {recursive: true});
-
-			// Step 4: Copy named volumes to bind mounts
-			for (const [volName, shouldConvert] of namedVolumeSelections) {
-				if (shouldConvert) {
-					// CR-02: the name was validated in preflight (WR-01); confining
-					// destPath to volumesDir stays as a backstop.
-					const destPath = assertWithin(volumesDir, volName);
-					// #101: copy from the Docker volume the compose file really refers to, never the bare key.
-					const volume = volumes.get(volName);
-					if (volume === undefined) {
-						throw new AppError(`The volume "${volName}" was not planned; nothing was copied from it`);
-					}
-					this.report(onProgress, "copying_named_volume", volName);
-					await this.migrator.copyVolumeToBindMount(volume.name, destPath);
-				}
-			}
-
-			// Step 5: Copy bind mount data
-			await this.copyBindMounts(bindCopies, {originalDir, sourceDir}, newStackPath, onProgress);
-
-			// Step 6: Rewrite compose file
-			this.report(onProgress, "writing_compose");
-			const originalCompose = await fs.readFile(sourceComposePath, "utf-8");
-			const existingEnv = await this.readOldEnv(sourceDir);
-			const rewriteResult = this.rewriter.rewrite(
-				originalCompose,
-				volumeSelections,
-				namedVolumeSelections,
-				existingEnv ?? undefined,
-				{homeSources, volumes},
-			);
-
-			// Write new compose file
-			await fs.writeFile(
-				path.join(newStackPath, "docker-compose.yml"),
-				rewriteResult.rewrittenCompose,
-				"utf-8",
-			);
-
-			await this.writeNewEnv(sourceDir, newStackPath, existingEnv, rewriteResult.extractedEnv);
-
-			// Step 7: Create stack record
-			this.report(onProgress, "recording_stack");
-			const composeConfig = createComposeConfig(rewriteResult.rewrittenCompose);
-			await this.stackRepo.create({
-				id: stackId,
-				displayName,
-				description: inPlace
-					? `Migrated in place; original kept at ${inPlace.asideDir}`
-					: `Migrated from ${originalDir}`,
-				hostPath: newStackPath,
-				composeConfig,
-			});
-			recordCreated = true;
-
-			// Step 8: Deploy new stack
-			this.report(onProgress, "deploying");
-			await this.docker.up(stackId);
-
-			return inPlace
-				? {success: true, stackId, originalPath: originalDir, keptOriginalAt: inPlace.asideDir}
-				: {success: true, stackId, originalPath: originalDir};
-
-		} catch (err: unknown) {
-			// Rollback on failure
-			this.report(onProgress, "rolling_back");
-			const errMessage = err instanceof Error ? err.message : String(err);
-			console.error(`[MigrationService] Migration failed, rolling back: ${errMessage}`);
-
-			if (createdStackDir) {
-				try {
-					// Only a directory Docktor created in this run is ever removed (D-09).
-					await this.stackFs.removeDirectory(stackId);
-				} catch {
-					// Ignore cleanup errors
-				}
-			}
-
-			// Only a record this run created is ever deleted (CR-02, D-09).
-			if (recordCreated) {
-				await this.stackRepo.delete(stackId).catch(() => {});
-			}
-
-			// In place (G-18-7) the original was renamed; put it back before anything
-			// restarts it. If that is impossible, nothing is deleted or restarted.
-			const restoration = movedAside && inPlace ? await this.moveOriginalBack(originalDir, inPlace.asideDir) : null;
-			const originalNote = restoration?.note ?? "Your original stack directory was not modified.";
-			const originalBackInPlace = restoration === null || restoration.restored;
-			const restartNote =
-				oldStackStopped && originalBackInPlace
-					? await this.restartOldStack(oldTarget, runningBefore, originalDir)
-					: "";
-
-			return {
-				success: false,
-				error: `Migration failed: ${errMessage}. ${originalNote}${restartNote}`,
-				originalPath: originalDir,
-			};
+		// Step 1: Stop the old stack first (D-10) and prove it is down (D-04).
+		if (stopOldStack) {
+			await this.stopOldStack(plan, ledger, onProgress);
 		}
+
+		// Step 1b (G-18-7): in place, the original is renamed aside so the new
+		// stack can take its directory; the renamed original is the backup.
+		if (inPlace) {
+			this.report(onProgress, "moving_original_aside");
+			await this.migrator.moveDirectory(originalDir, inPlace.asideDir);
+			await ledger.record({kind: "moved_aside", originalDir, asideDir: inPlace.asideDir});
+		}
+
+		// Step 2: Create the new stack directory exclusively. An EEXIST rejection
+		// is not recorded, so rollback never removes a foreign directory.
+		this.report(onProgress, "creating_directory");
+		const newStackPath = await this.stackFs.createDirectoryExclusive(stackId);
+		await ledger.record({kind: "created_directory", stackId});
+
+		// Step 3 (D-01, D-02, D-03): the backup, when opted in (D-07). The old stack
+		// is down and verified, and nothing has been copied or changed yet. In place,
+		// the renamed original already is the backup, so no second copy is made.
+		if (backup && !inPlace) {
+			this.report(onProgress, "backing_up");
+			await this.takeBackup(bindCopies, originalDir, newStackPath);
+		}
+
+		const volumesDir = path.join(newStackPath, "volumes");
+		await fs.mkdir(volumesDir, {recursive: true});
+
+		// Step 4: Copy named volumes to bind mounts
+		for (const [volName, shouldConvert] of namedVolumeSelections) {
+			if (shouldConvert) {
+				// CR-02: the name was validated in preflight (WR-01); confining
+				// destPath to volumesDir stays as a backstop.
+				const destPath = assertWithin(volumesDir, volName);
+				// #101: copy from the Docker volume the compose file really refers to, never the bare key.
+				const volume = volumes.get(volName);
+				if (volume === undefined) {
+					throw new AppError(`The volume "${volName}" was not planned; nothing was copied from it`);
+				}
+				this.report(onProgress, "copying_named_volume", volName);
+				await this.migrator.copyVolumeToBindMount(volume.name, destPath);
+			}
+		}
+
+		// Step 5: Copy bind mount data
+		await this.copyBindMounts(bindCopies, {originalDir, sourceDir}, newStackPath, onProgress);
+
+		// Step 6: Rewrite compose file
+		this.report(onProgress, "writing_compose");
+		const originalCompose = await fs.readFile(sourceComposePath, "utf-8");
+		const existingEnv = await this.readOldEnv(sourceDir);
+		const rewriteResult = this.rewriter.rewrite(
+			originalCompose,
+			volumeSelections,
+			namedVolumeSelections,
+			existingEnv ?? undefined,
+			{homeSources, volumes},
+		);
+
+		// Write new compose file
+		await fs.writeFile(
+			path.join(newStackPath, "docker-compose.yml"),
+			rewriteResult.rewrittenCompose,
+			"utf-8",
+		);
+
+		await this.writeNewEnv(sourceDir, newStackPath, existingEnv, rewriteResult.extractedEnv);
+
+		// Step 7: Create stack record
+		this.report(onProgress, "recording_stack");
+		const composeConfig = createComposeConfig(rewriteResult.rewrittenCompose);
+		await this.stackRepo.create({
+			id: stackId,
+			displayName,
+			description: inPlace
+				? `Migrated in place; original kept at ${inPlace.asideDir}`
+				: `Migrated from ${originalDir}`,
+			hostPath: newStackPath,
+			composeConfig,
+		});
+		await ledger.record({kind: "created_record", stackId});
+
+		// Step 8: Deploy new stack
+		this.report(onProgress, "deploying");
+		await this.docker.up(stackId);
+
+		return inPlace
+			? {success: true, stackId, originalPath: originalDir, keptOriginalAt: inPlace.asideDir}
+			: {success: true, stackId, originalPath: originalDir};
+	}
+
+	/**
+	 * Step 1: stops the old project and proves it is down (D-04). The ledger entry
+	 * is recorded before the call, so a partial stop is still undone; a rejection
+	 * or a container still running is fail-closed and aborts before anything is
+	 * created. Nothing to stop (nothing ran) records nothing.
+	 */
+	private async stopOldStack(
+		plan: MigrationPlan,
+		ledger: MigrationLedger,
+		onProgress: MigrationProgressListener | undefined,
+	): Promise<void> {
+		const {composePath, oldProject, sharesProjectWithNewStack} = plan;
+		// #102: every stop and start addresses the project Docker runs, never a directory-derived name.
+		const target: ComposeProjectTarget = {composePath, project: oldProject.name};
+		const containers = await this.projects.listContainers(oldProject.name, composePath);
+		const running = stillRunning(containers);
+		this.report(onProgress, "stopping_old_stack", running.length === 0 ? "(nothing was running)" : null);
+		if (running.length === 0) {
+			return;
+		}
+		// The services of the old project that ran before the stop: what a rollback starts again (#100).
+		await ledger.record({
+			kind: "stopped_old_stack",
+			project: oldProject.name,
+			composePath,
+			runningBefore: runningServices(containers),
+			sharesProjectWithNewStack,
+		});
+		await this.oldStack.stop(target, {timeoutMs: composeStopTimeoutMs(running.length)});
+		await this.verifyStopped(plan, onProgress);
 	}
 
 	/**
@@ -1027,20 +1086,8 @@ export class MigrationService {
 		}
 	}
 
-	/**
-	 * Tells the listener which step starts. A listener is not part of the
-	 * migration: whatever it throws is logged and never changes the outcome or
-	 * the rollback (T-18-45).
-	 */
 	private report(onProgress: MigrationProgressListener | undefined, step: MigrationOperationStep, detail: string | null = null): void {
-		if (!onProgress) {
-			return;
-		}
-		try {
-			onProgress({step, detail});
-		} catch (listenerError: unknown) {
-			console.error(`[MigrationService] Progress listener failed at step "${step}":`, listenerError);
-		}
+		reportMigrationProgress(this.logger, onProgress, step, detail);
 	}
 
 	/**
@@ -1177,50 +1224,6 @@ export class MigrationService {
 			}
 		}
 		throw new ConflictError(`No free name for the original directory next to ${originalDir}. Choose one explicitly.`);
-	}
-
-	/**
-	 * Rollback step for an in-place migration (G-18-7): rename the original back,
-	 * but only into a free path, so nothing is ever replaced or deleted. When that
-	 * is impossible the renamed original is left untouched and the note tells the
-	 * user exactly where it is and how to restore it.
-	 */
-	private async moveOriginalBack(originalDir: string, asideDir: string): Promise<{restored: boolean; note: string}> {
-		try {
-			if (!(await pathIsTaken(originalDir))) {
-				await this.migrator.moveDirectory(asideDir, originalDir);
-				return {restored: true, note: `The original directory was moved back to ${originalDir}.`};
-			}
-		} catch (moveErr: unknown) {
-			const message = moveErr instanceof Error ? moveErr.message : String(moveErr);
-			console.error(`[MigrationService] Failed to move the original directory back: ${message}`);
-		}
-		return {
-			restored: false,
-			note: `The original stack is still at ${asideDir}; move it back to ${originalDir} by hand, then run docker compose start there.`,
-		};
-	}
-
-	/**
-	 * Rollback step (D-11): start the services that were running before the stop
-	 * (#100), never more. Uses `start`, never the recreate-capable `up`
-	 * (RESEARCH Pitfall 2). Whether they run again is not verified here, so the
-	 * note only says the restart was requested. Returns the note appended to the
-	 * user-facing error.
-	 */
-	private async restartOldStack(
-		target: ComposeProjectTarget,
-		services: readonly string[],
-		originalDir: string,
-	): Promise<string> {
-		try {
-			await this.oldStack.start(target, services);
-			return ` A restart of the old stack's services (${services.join(", ")}) was requested; check that they are running.`;
-		} catch (startErr: unknown) {
-			const message = startErr instanceof Error ? startErr.message : String(startErr);
-			console.error(`[MigrationService] Failed to restart the old stack: ${message}`);
-			return ` The old stack could not be restarted automatically; run docker compose start in ${originalDir}.`;
-		}
 	}
 }
 

@@ -35,7 +35,7 @@ describe("MigrationRollbackRunner", () => {
     let listContainers: ReturnType<typeof vi.fn<(project: string, composePath: string) => Promise<readonly ProjectContainer[]>>>;
     let start: ReturnType<typeof vi.fn<(target: unknown, services: readonly string[]) => Promise<void>>>;
     let pathTaken: ReturnType<typeof vi.fn<(target: string) => Promise<boolean>>>;
-    let logger: {info: ReturnType<typeof vi.fn>; warn: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn>};
+    let logger: Record<"info" | "warn" | "error", ReturnType<typeof vi.fn<(...data: unknown[]) => void>>>;
 
     beforeEach(() => {
         calls = [];
@@ -45,7 +45,7 @@ describe("MigrationRollbackRunner", () => {
             calls.push(`start:${services.join(",")}`);
         });
         pathTaken = vi.fn(async () => false);
-        logger = {info: vi.fn(), warn: vi.fn(), error: vi.fn()};
+        logger = {info: vi.fn<(...data: unknown[]) => void>(), warn: vi.fn<(...data: unknown[]) => void>(), error: vi.fn<(...data: unknown[]) => void>()};
         deps = {
             stackRepo: {
                 delete: vi.fn(async (id: string) => {

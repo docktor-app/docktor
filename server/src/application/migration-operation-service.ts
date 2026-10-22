@@ -1,6 +1,11 @@
 import {randomUUID} from "node:crypto";
 import path from "node:path";
-import {maskSecrets, type MigrationOperation, type MigrationOperationResult} from "@docktor/shared";
+import {
+    maskSecrets,
+    type MigrationOperation,
+    type MigrationOperationResult,
+    type MigrationRollbackReport,
+} from "@docktor/shared";
 import {
     finishMigrationOperation,
     pruneFinishedOperations,
@@ -30,6 +35,14 @@ function maskError(error: string | undefined): string | undefined {
     return error === undefined ? undefined : maskSecrets(error);
 }
 
+// Cleanup errors are filesystem and database messages that can echo paths and
+// credentials as well, so they are masked like the error text.
+function maskRollback(rollback: MigrationRollbackReport | undefined): MigrationRollbackReport | undefined {
+    return rollback === undefined
+        ? undefined
+        : {...rollback, cleanupErrors: rollback.cleanupErrors.map((entry) => maskSecrets(entry))};
+}
+
 // The error text is compose/docker stderr and may echo URL credentials or
 // KEY=value pairs; it is masked before it is stored, listed or broadcast.
 function toOperationResult(result: MigrationResult): MigrationOperationResult {
@@ -39,6 +52,7 @@ function toOperationResult(result: MigrationResult): MigrationOperationResult {
         error: maskError(result.error),
         originalPath: result.originalPath,
         keptOriginalAt: result.keptOriginalAt,
+        rollback: maskRollback(result.rollback),
     };
 }
 
@@ -46,6 +60,10 @@ function toOperationResult(result: MigrationResult): MigrationOperationResult {
  * Runs migrations as one-off background operations (G-18-job). `start` awaits
  * the side-effect-free preflight, so every refusal stays a synchronous 4xx and
  * creates no operation, then runs `execute` without awaiting it.
+ *
+ * A failed run ends `rolled_back` when its rollback report verified the original
+ * stack is back (not stopped, or seen running again; directory untouched or
+ * moved back) and `failed` otherwise, so the outcomes shown are verified ones.
  *
  * The registry is process-local (one Docktor instance): a restart ends running
  * migrations together with the process, so persisting them would only keep
@@ -173,7 +191,9 @@ export class MigrationOperationService {
     private async execute(plan: MigrationPlan, operationId: string): Promise<MigrationOperationResult> {
         try {
             return toOperationResult(
-                await this.migrations.execute(plan, (progress) => this.recordStep(operationId, progress)),
+                await this.migrations.execute(plan, {
+                    onProgress: (progress) => this.recordStep(operationId, progress),
+                }),
             );
         } catch (error) {
             // execute reports step failures as results; a rejection is a bug or

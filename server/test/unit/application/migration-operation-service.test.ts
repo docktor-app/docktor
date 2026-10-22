@@ -1,12 +1,12 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {MigrationOperationService} from "../../../src/application/migration-operation-service.js";
 import type {
+    MigrationExecuteOptions,
     MigrationInput,
     MigrationPlan,
-    MigrationProgressListener,
     MigrationResult,
 } from "../../../src/application/migration-service.js";
-import type {MigrationOperation} from "@docktor/shared";
+import type {MigrationOperation, MigrationRollbackReport} from "@docktor/shared";
 import {BadRequestError, ConflictError, NotFoundError} from "../../../src/lib/errors.js";
 
 const HOUR = 60 * 60_000;
@@ -46,12 +46,16 @@ function planFor(input: MigrationInput): MigrationPlan {
         composePath: input.composePath,
         originalDir: "/opt/old",
         targetDir: "/data/stacks/new",
+        oldProject: {name: "old", source: "files", containers: []},
         volumeSelections: [],
         namedVolumeSelections: new Map(),
         backup: input.backup,
         stopOldStack: input.stopOldStack,
+        bindCopies: [],
+        homeSources: new Map(),
         volumes: new Map(),
         inPlace: null,
+        sharesProjectWithNewStack: false,
     };
 }
 
@@ -60,7 +64,7 @@ const SUCCESS: MigrationResult = {success: true, stackId: "my-app", originalPath
 describe("MigrationOperationService", () => {
     let preflight: ReturnType<typeof vi.fn<(input: MigrationInput) => Promise<MigrationPlan>>>;
     let execute: ReturnType<
-        typeof vi.fn<(plan: MigrationPlan, onProgress?: MigrationProgressListener) => Promise<MigrationResult>>
+        typeof vi.fn<(plan: MigrationPlan, options?: MigrationExecuteOptions) => Promise<MigrationResult>>
     >;
     let clock: Date;
     let counter: number;
@@ -163,6 +167,70 @@ describe("MigrationOperationService", () => {
             expect(JSON.stringify(emit.mock.calls)).not.toMatch(/s3cret|hunter2/);
         });
 
+        describe("the rollback report decides the final status (#100, D-07)", () => {
+            const FAILED: MigrationResult = {success: false, error: "Migration failed: boom", originalPath: "/opt/old"};
+
+            it("ends rolled_back when the original stack was seen running again", async () => {
+                const rollback: MigrationRollbackReport = {oldStack: "restored-running", original: "untouched", cleanupErrors: []};
+                execute.mockResolvedValue({...FAILED, rollback});
+
+                await service.start(inputFor("My App"));
+                await settle("op-1");
+
+                expect(service.get("op-1")).toMatchObject({status: "rolled_back", step: "finished", result: {rollback}});
+            });
+
+            it("ends rolled_back when the old stack was never stopped and the directory untouched", async () => {
+                execute.mockResolvedValue({...FAILED, rollback: {oldStack: "not-stopped", original: "untouched", cleanupErrors: []}});
+
+                await service.start(inputFor("My App"));
+                await settle("op-1");
+
+                expect(service.get("op-1").status).toBe("rolled_back");
+            });
+
+            it.each([
+                ["restart-unverified", "untouched"],
+                ["restart-failed", "untouched"],
+                ["left-stopped", "left-aside"],
+            ] as const)("ends failed when the old stack is %s and the original %s", async (oldStack, original) => {
+                execute.mockResolvedValue({...FAILED, rollback: {oldStack, original, cleanupErrors: []}});
+
+                await service.start(inputFor("My App"));
+                await settle("op-1");
+
+                expect(service.get("op-1").status).toBe("failed");
+            });
+
+            it("ends failed when the result carries no rollback report", async () => {
+                execute.mockResolvedValue(FAILED);
+
+                await service.start(inputFor("My App"));
+                await settle("op-1");
+
+                expect(service.get("op-1").status).toBe("failed");
+            });
+
+            it("masks secrets in the cleanup errors it stores and publishes", async () => {
+                execute.mockResolvedValue({
+                    ...FAILED,
+                    rollback: {
+                        oldStack: "restored-running",
+                        original: "untouched",
+                        cleanupErrors: ["remove the stack record: postgres://app:s3cret@db unreachable"],
+                    },
+                });
+
+                await service.start(inputFor("My App"));
+                await settle("op-1");
+
+                expect(service.get("op-1").result?.rollback?.cleanupErrors).toEqual([
+                    "remove the stack record: postgres://app:\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@db unreachable",
+                ]);
+                expect(JSON.stringify(emit.mock.calls)).not.toContain("s3cret");
+            });
+        });
+
         it("masks the message of an unexpected rejection the same way", async () => {
             vi.spyOn(console, "error").mockImplementation(() => undefined);
             execute.mockRejectedValueOnce(new Error("clone https://u:tok3n@git.example/x failed"));
@@ -210,7 +278,8 @@ describe("MigrationOperationService", () => {
         it("records and publishes each reported step, and get shows the latest step mid-run", async () => {
             const pending = deferred();
             const seenMidRun: Array<{step: string; stepDetail: string | null}> = [];
-            execute.mockImplementation(async (_plan, onProgress) => {
+            execute.mockImplementation(async (_plan, options) => {
+                const onProgress = options?.onProgress;
                 onProgress?.({step: "copying_named_volume", detail: "pgdata"});
                 const mid = service.get("op-1");
                 seenMidRun.push({step: mid.step, stepDetail: mid.stepDetail});

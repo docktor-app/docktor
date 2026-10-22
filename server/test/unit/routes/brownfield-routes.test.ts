@@ -354,12 +354,16 @@ describe("brownfield routes", () => {
                 composePath,
                 originalDir: "/opt/app",
                 targetDir: "/data/stacks/my-app",
+                oldProject: {name: "app", source: "files", containers: []},
                 volumeSelections: [],
                 namedVolumeSelections: new Map(),
                 backup: true,
                 stopOldStack: false,
+                bindCopies: [],
+                homeSources: new Map(),
                 volumes: new Map(),
                 inPlace: null,
+                sharesProjectWithNewStack: false,
             };
         }
 
