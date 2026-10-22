@@ -39,16 +39,19 @@ export interface ComposeProjectTarget {
 }
 
 /** The sorted, unique services of the running containers. */
-export function runningServices(_containers: readonly ProjectContainer[]): string[] {
-    return [];
+export function runningServices(containers: readonly ProjectContainer[]): string[] {
+    const services = containers
+        .filter((container) => container.running)
+        .flatMap((container) => (container.service === null ? [] : [container.service]));
+    return [...new Set(services)].sort((a, b) => a.localeCompare(b));
 }
 
 /** The names of the running containers. */
-export function stillRunning(_containers: readonly ProjectContainer[]): string[] {
-    return [];
+export function stillRunning(containers: readonly ProjectContainer[]): string[] {
+    return containers.filter((container) => container.running).map((container) => container.name);
 }
 
 /** The refusal for a stop that left containers of the old project running (D-04). */
-export function stopNotVerifiedMessage(_project: string, _remaining: readonly string[]): string {
-    return "";
+export function stopNotVerifiedMessage(project: string, remaining: readonly string[]): string {
+    return `Migration refused: after stopping the old stack, these containers of the Docker Compose project "${project}" are still running: ${remaining.join(", ")}. Nothing was created or copied. Stop them by hand, then try again.`;
 }

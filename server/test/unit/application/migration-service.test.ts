@@ -73,6 +73,20 @@ function createMockOldStack() {
     return {stop: vi.fn().mockResolvedValue(undefined), start: vi.fn().mockResolvedValue(undefined)};
 }
 
+// Bound before any test spies on fs.readFile: the resolver double reads the files like production would.
+const readFileDirect = fs.readFile.bind(fs);
+
+async function readTextDirect(file: string): Promise<string | null> {
+    try {
+        return await readFileDirect(file, "utf-8");
+    } catch (error: unknown) {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+            return null;
+        }
+        throw error;
+    }
+}
+
 /** One running container of the old project, as the resolver lists it. */
 function runningContainer(project: string, service = "web", index = 1): ProjectContainer {
     return {id: `${project}-${service}-${index}`, name: `${project}-${service}-${index}`, service, running: true, mounts: []};
@@ -83,7 +97,7 @@ function runningContainer(project: string, service = "web", index = 1): ProjectC
  * reported at resolve time), `web` running until the old stack's stop was called.
  */
 function createMockProjects(oldStack: Pick<ReturnType<typeof createMockOldStack>, "stop"> = createMockOldStack()) {
-    const resolver = new ComposeProjectResolver({listContainers: () => Promise.resolve([])}, hostViewDirectories());
+    const resolver = new ComposeProjectResolver({listContainers: () => Promise.resolve([])}, hostViewDirectories(), readTextDirect);
     return {
         resolve: vi.fn((composePath: string) => resolver.resolve(composePath)),
         listContainers: vi.fn((project: string, _composePath: string): Promise<readonly ProjectContainer[]> =>
@@ -901,6 +915,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             expect(result.success).toBe(true);
             expect(listener.mock.calls.map((call) => call[0])).toEqual([
                 {step: "stopping_old_stack", detail: null},
+                {step: "verifying_stop", detail: null},
                 {step: "creating_directory", detail: null},
                 {step: "backing_up", detail: null},
                 {step: "copying_named_volume", detail: "pgdata"},
@@ -1036,6 +1051,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
 
             expect(listener.mock.calls.map((call) => call[0].step)).toEqual([
                 "stopping_old_stack",
+                "verifying_stop",
                 "moving_original_aside",
                 "creating_directory",
                 "copying_bind_mount",

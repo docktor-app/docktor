@@ -17,6 +17,12 @@ import {
 	type MigrationTargetKind,
 } from "../domain/migration-target.js";
 import {composeProjectName} from "../domain/compose-project-name.js";
+import {
+    runningServices,
+    stillRunning,
+    stopNotVerifiedMessage,
+    type ResolvedComposeProject,
+} from "../domain/compose-project.js";
 import {computeUnifiedDiff, type UnifiedDiff} from "../lib/unified-diff.js";
 import {
 	COMPOSE_FILE_NAMES,
@@ -27,6 +33,7 @@ import {
 } from "@docktor/shared";
 import {AppError, BadRequestError, ConflictError, hasErrorCode} from "../lib/errors.js";
 import {composeAnalyzer} from "../infrastructure/compose-analyzer.js";
+import {composeProjectResolver} from "../infrastructure/compose-project-resolver.js";
 import {dockerSelfStack} from "../infrastructure/docker-self-stack.js";
 import {assertNotOwnStack} from "./own-stack-guard.js";
 import {assertNotManaged} from "./managed-stack-guard.js";
@@ -39,6 +46,7 @@ import type {ExternalStackControlPort} from "./ports/external-stack-control-port
 import type {SelfStackPort} from "./ports/self-stack-port.js";
 import type {OwnMountsPort} from "./ports/own-mounts-port.js";
 import type {ComposeAnalyzerPort} from "./ports/compose-analyzer-port.js";
+import type {ComposeProjectResolverPort} from "./ports/compose-project-resolver-port.js";
 import type {DirectoryIdentityPort} from "./ports/directory-identity-port.js";
 
 /**
@@ -191,6 +199,8 @@ export interface MigrationPlan {
 	readonly composePath: string;
 	readonly originalDir: string;
 	readonly targetDir: string;
+	/** #102: the compose project Docker runs for the old stack; every stop and check addresses it. */
+	readonly oldProject: ResolvedComposeProject;
 	readonly volumeSelections: VolumeSelection[];
 	readonly namedVolumeSelections: Map<string, boolean>;
 	readonly backup: boolean;
@@ -234,6 +244,8 @@ export interface MigrationServiceDependencies {
 	oldStack: ExternalStackControlPort;
 	/** WR-09/STK-03: lets preflight refuse Docktor's own compose file. */
 	selfStack: SelfStackPort;
+	/** #102: which compose project Docker runs for the old stack and which containers belong to it. */
+	projects: ComposeProjectResolverPort;
 	/** CR-03: which host paths Docktor can read through its own bind mounts. */
 	ownMounts: OwnMountsPort;
 	/** WR-01: which bind sources the compose file declares. */
@@ -249,6 +261,7 @@ export class MigrationService {
 	private readonly stackFs: StackFilesystemPort;
 	private readonly stackRepo: StackRepository;
 	private readonly oldStack: ExternalStackControlPort;
+	private readonly projects: ComposeProjectResolverPort;
 	private readonly selfStack: SelfStackPort;
 	private readonly ownMounts: OwnMountsPort;
 	private readonly analyzer: Pick<ComposeAnalyzerPort, "analyzeCompatibility">;
@@ -261,6 +274,7 @@ export class MigrationService {
 		this.stackFs = deps.stackFs ?? new StackFilesystem();
 		this.stackRepo = deps.stackRepo ?? stackRepository;
 		this.oldStack = deps.oldStack ?? externalStackControl;
+		this.projects = deps.projects ?? composeProjectResolver;
 		this.selfStack = deps.selfStack ?? dockerSelfStack;
 		this.ownMounts = deps.ownMounts ?? dockerSelfStack;
 		this.analyzer = deps.analyzer ?? composeAnalyzer;
@@ -278,6 +292,7 @@ export class MigrationService {
 	async previewMigration(request: MigrationPreviewRequest): Promise<MigrationPreview> {
 		const {composePath, displayName, volumeSelections, namedVolumeSelections} = request;
 		const assessment = await this.assessTarget(composePath, displayName);
+		await this.resolveOldProject(assessment.composePath);
 		const bindCopies = await this.planCopies(assessment, volumeSelections, namedVolumeSelections);
 		const originalCompose = await fs.readFile(assessment.composePath, "utf-8");
 		const existingEnv = await this.readOldEnv(assessment.originalDir);
@@ -339,6 +354,7 @@ export class MigrationService {
 		const {composePath, displayName, volumeSelections, namedVolumeSelections, backup, stopOldStack} = input;
 		const assessment = await this.assessTarget(composePath, displayName);
 		const {stackId, originalDir, targetDir, kind} = assessment;
+		const oldProject = await this.resolveOldProject(assessment.composePath);
 		const bindCopies = await this.planCopies(assessment, volumeSelections, namedVolumeSelections);
 		const inPlace = kind === "in-place" ? {asideDir: await this.planInPlace(originalDir, stackId, input)} : null;
 		if (!stopOldStack) {
@@ -354,6 +370,7 @@ export class MigrationService {
 			composePath: assessment.composePath,
 			originalDir,
 			targetDir,
+			oldProject,
 			volumeSelections,
 			namedVolumeSelections,
 			backup,
@@ -361,6 +378,21 @@ export class MigrationService {
 			bindCopies,
 			inPlace,
 		};
+	}
+
+	/**
+	 * #102: the compose project Docker runs for the old stack. Every stop,
+	 * start and check addresses this project, never a name guessed from the
+	 * directory. When it cannot be told, nothing is safe to stop: refuse.
+	 */
+	private async resolveOldProject(composePath: string): Promise<ResolvedComposeProject> {
+		const resolution = await this.projects.resolve(composePath);
+		if (resolution.kind === "unresolved") {
+			throw new BadRequestError(
+				`Migration refused: Docktor cannot tell which compose project runs ${composePath}: ${resolution.reason}.`,
+			);
+		}
+		return resolution.project;
 	}
 
 	/**
@@ -517,25 +549,30 @@ export class MigrationService {
 	 * bind-mount source that vanished since (CR-03).
 	 */
 	async execute(plan: MigrationPlan, onProgress?: MigrationProgressListener): Promise<MigrationResult> {
-		const {stackId, displayName, composePath, originalDir, volumeSelections, namedVolumeSelections, backup, stopOldStack, bindCopies, inPlace} = plan;
+		const {stackId, displayName, composePath, originalDir, oldProject, volumeSelections, namedVolumeSelections, backup, stopOldStack, bindCopies, inPlace} = plan;
 		// Where the old stack's files are read from: the original directory, or
 		// (in place) the directory it was renamed to.
 		const sourceDir = inPlace?.asideDir ?? originalDir;
 		const sourceComposePath = inPlace ? path.join(sourceDir, path.basename(composePath)) : composePath;
 
 		let oldStackStopped = false;
+		// The services of the old project that ran before the stop: what a rollback starts again.
+		let runningBefore: string[] = [];
 		let movedAside = false;
 		let createdStackDir = false;
 		let recordCreated = false;
 
 		try {
-			// Step 1: Stop the old stack first (D-10). The flag is set before the
-			// call so a partial stop is still undone; a rejection is fail-closed
-			// and aborts before anything is created.
+			// Step 1: Stop the old stack first (D-10) and prove it is down (D-04).
+			// The flag is set before the call so a partial stop is still undone; a
+			// rejection or a container still running is fail-closed and aborts
+			// before anything is created.
 			if (stopOldStack) {
 				this.report(onProgress, "stopping_old_stack");
+				runningBefore = runningServices(await this.projects.listContainers(oldProject.name, composePath));
 				oldStackStopped = true;
 				await this.oldStack.stop(composePath);
+				await this.verifyStopped(plan, onProgress);
 			}
 
 			// Step 1b (G-18-7): in place, the original is renamed aside so the new
@@ -652,6 +689,19 @@ export class MigrationService {
 				error: `Migration failed: ${errMessage}. ${originalNote}${restartNote}`,
 				originalPath: originalDir,
 			};
+		}
+	}
+
+	/**
+	 * D-04: after the stop, no container of the old project may still run. There
+	 * is no override: copying live data under a running stack corrupts it.
+	 */
+	private async verifyStopped(plan: MigrationPlan, onProgress: MigrationProgressListener | undefined): Promise<void> {
+		this.report(onProgress, "verifying_stop");
+		const {name} = plan.oldProject;
+		const remaining = stillRunning(await this.projects.listContainers(name, plan.composePath));
+		if (remaining.length > 0) {
+			throw new ConflictError(stopNotVerifiedMessage(name, remaining));
 		}
 	}
 
