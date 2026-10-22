@@ -1,4 +1,4 @@
-import {beforeEach, describe, expect, it, vi} from "vitest";
+import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {act, renderHook, waitFor} from "@testing-library/react";
 import type {MigrationOperation} from "@docktor/shared";
 import {useMigrationOperationFeed, useMigrationOperations} from "@/hooks/use-migration-operations";
@@ -54,13 +54,16 @@ function openStream(): void {
 
 describe("useMigrationOperationFeed", () => {
     let changes: FollowedChange[];
+    let unsubscribe: () => void;
 
     beforeEach(() => {
         vi.clearAllMocks();
         migrationOperationsStore.reset();
         changes = [];
-        migrationOperationsStore.onFollowedChange((change) => changes.push(change));
+        unsubscribe = migrationOperationsStore.onFollowedChange((change) => changes.push(change));
     });
+
+    afterEach(() => unsubscribe());
 
     it("does not list operations on mount, only when the stream opens", async () => {
         const listOperations = vi.fn().mockResolvedValue({operations: []});
