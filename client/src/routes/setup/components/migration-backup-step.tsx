@@ -1,7 +1,9 @@
 import {Info} from "lucide-react";
+import type {MigrationDiskSpace as MigrationDiskSpaceAssessment} from "@docktor/shared";
 import {Input} from "@/components/ui/input";
 import {Label} from "@/components/ui/label";
 import {Switch} from "@/components/ui/switch";
+import {MigrationDiskSpace} from "./migration-disk-space";
 
 export interface MigrationBackupStepProps {
   readonly mode: "in-place" | "separate";
@@ -11,12 +13,16 @@ export interface MigrationBackupStepProps {
   readonly asideName: string;
   readonly onAsideNameChange: (name: string) => void;
   readonly asideNameError: string | null;
+  // D-08: the space assessment for the current choice; null until the preview is known.
+  readonly diskSpace: MigrationDiskSpaceAssessment | null;
 }
 
 // Step 3 of the migration dialog (MIG-03, G-18-7). In place, the original
 // directory is renamed aside and is the backup, so the user only names it.
 // Otherwise the original is untouched and a backup copy is an explicit,
-// default-off choice (G-18-7 supersedes D-07's default-on).
+// default-off choice (G-18-7 supersedes D-07's default-on). A backup is taken
+// after the old stack is stopped and before any data is copied (D-02). The
+// space the migration needs is shown for the current choice (#107, D-08).
 export function MigrationBackupStep({
   mode,
   originalDirectory,
@@ -25,6 +31,7 @@ export function MigrationBackupStep({
   asideName,
   onAsideNameChange,
   asideNameError,
+  diskSpace,
 }: Readonly<MigrationBackupStepProps>): React.JSX.Element {
   if (mode === "in-place") {
     return (
@@ -47,6 +54,7 @@ export function MigrationBackupStep({
             <p id="aside-name-error" className="text-xs text-red-600 dark:text-red-400">{asideNameError}</p>
           )}
         </div>
+        {diskSpace && <MigrationDiskSpace diskSpace={diskSpace} backupCanBeDropped={false} />}
       </div>
     );
   }
@@ -64,7 +72,7 @@ export function MigrationBackupStep({
         <div className="flex min-w-0 flex-col gap-1">
           <Label htmlFor="backup" className="font-semibold">Back up the old stack first</Label>
           <p id="backup-help" className="text-xs text-muted-foreground">
-            Copies the old stack's directory (compose file, .env and bind-mount data) to pre-migration-backup/ inside the new stack's directory. It is kept after a successful migration. Named Docker volumes are not included.
+            The backup is taken after the old stack is stopped and before any data is copied. It holds the old stack's directory (compose file, .env and everything in it) and the bind-mount sources you selected for copying, in pre-migration-backup/ inside the new stack's directory, and is kept after a successful migration. Named Docker volumes are not included; they stay untouched.
           </p>
         </div>
       </div>
@@ -77,6 +85,8 @@ export function MigrationBackupStep({
           </span>
         </p>
       )}
+
+      {diskSpace && <MigrationDiskSpace diskSpace={diskSpace} backupCanBeDropped />}
     </div>
   );
 }

@@ -13,7 +13,7 @@ Issue numbers refer to `docktor-app/docktor`. Research: `.planning/research/SUMM
 - [x] **MIG-06**: Migration copies the correct named volume and detects anonymous volumes instead of silently creating empty ones (#101)
 - [x] **MIG-07**: Migration handles `~` bind sources correctly in analysis, rewrite and copy (#104)
 - [ ] **MIG-08**: Migration rollback reliably restores the original stack without deleting volumes, reports only verified outcomes, and recovers after a Docktor restart mid-migration (#100)
-- [ ] **MIG-09**: Migration backs up before stopping the old stack and checks free disk space on the right filesystem (#107)
+- [ ] **MIG-09**: Migration backs up after the verified stop of the old stack and before any data copy or destructive step (no data is changed before a backup exists), and checks free disk space on the right filesystem (#107)
 - [x] **MIG-10**: Secrets are masked in the migration compose diff (#103)
 - [ ] **MIG-11**: Migration progress toast never gets stuck (#105)
 - [ ] **MIG-12**: Migration flow follows project conventions and hardens paths (#108)

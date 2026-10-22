@@ -6,7 +6,7 @@
 // shapes come from the shared workspace contract; the preview/volume shapes
 // below are client-only.
 
-import type {AnonymousVolumeInput, MigrationTarget} from "@docktor/shared";
+import type {AnonymousVolumeInput, MigrationPreviewDiskSpace, MigrationTarget} from "@docktor/shared";
 import type {UnifiedDiff} from "./stacks-api";
 
 export type {
@@ -34,5 +34,7 @@ export interface MigrationPreview {
   emptySources: string[];
   // D-05: volumes that are never copied and start empty in the new stack; the user must acknowledge them.
   anonymousVolumes: readonly AnonymousVolumeInput[];
+  // D-08: needed versus available space per filesystem, for each backup choice (withBackup is null in place).
+  diskSpace: MigrationPreviewDiskSpace;
   target: MigrationTarget;
 }
