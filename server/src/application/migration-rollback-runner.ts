@@ -31,7 +31,7 @@ export interface MigrationRollbackRunnerDependencies {
     migrator: Pick<VolumeMigratorPort, "moveDirectory">;
     /** Only the keep-volumes down: the volume-deleting `down` is deliberately not reachable from a rollback (T-22-19). */
     docker: Pick<DockerExecutorPort, "downKeepVolumes">;
-    oldStack: Pick<ExternalStackControlPort, "start">;
+    oldStack: Pick<ExternalStackControlPort, "start" | "restoreServices">;
     projects: Pick<ComposeProjectResolverPort, "listContainers">;
     /** True when anything, even a dangling symlink, occupies the path; the rename back only goes into a free one. */
     pathTaken: (target: string) => Promise<boolean>;
@@ -48,6 +48,8 @@ interface RollbackState {
     keptOriginalAt?: string;
     restartError?: string;
     readonly cleanupErrors: string[];
+    /** The deploy of the new stack started, so it may have recreated containers of a shared project. */
+    readonly deployStarted: boolean;
     readonly onProgress: MigrationProgressListener | undefined;
 }
 
@@ -64,7 +66,13 @@ export class MigrationRollbackRunner {
         entries: readonly MigrationLedgerEntry[],
         options: {readonly onProgress?: MigrationProgressListener} = {},
     ): Promise<MigrationRollbackOutcome> {
-        const state: RollbackState = {oldStack: "not-stopped", original: "untouched", cleanupErrors: [], onProgress: options.onProgress};
+        const state: RollbackState = {
+            oldStack: "not-stopped",
+            original: "untouched",
+            cleanupErrors: [],
+            deployStarted: entries.some((entry) => entry.kind === "deploy_started"),
+            onProgress: options.onProgress,
+        };
         for (const entry of compensationOrder(entries)) {
             await this.compensate(entry, state);
         }
@@ -142,7 +150,7 @@ export class MigrationRollbackRunner {
         const target: ComposeProjectTarget = {composePath: entry.composePath, project: entry.project};
         reportMigrationProgress(this.deps.logger, state.onProgress, "restarting_old_stack");
         try {
-            await this.deps.oldStack.start(target, entry.runningBefore);
+            await this.bringBack(entry, target, state);
         } catch (error: unknown) {
             this.deps.logger.error(`[MigrationService] Failed to restart the old stack: ${errorMessage(error)}`);
             state.oldStack = "restart-failed";
@@ -150,6 +158,22 @@ export class MigrationRollbackRunner {
             return;
         }
         state.oldStack = (await this.waitUntilRunning(target, entry.runningBefore)) ? "restored-running" : "restart-unverified";
+    }
+
+    /**
+     * When the new stack shared the old stack's compose project and its deploy
+     * started, the keep-volumes down removed the old containers as well, so the
+     * services are recreated from the restored original files. Otherwise the
+     * original containers still exist and are only started, never recreated.
+     */
+    private bringBack(
+        entry: Extract<MigrationLedgerEntry, {kind: "stopped_old_stack"}>,
+        target: ComposeProjectTarget,
+        state: RollbackState,
+    ): Promise<void> {
+        return entry.sharesProjectWithNewStack && state.deployStarted
+            ? this.deps.oldStack.restoreServices(target, entry.runningBefore)
+            : this.deps.oldStack.start(target, entry.runningBefore);
     }
 
     /** D-07: polls the project until every service runs or the timeout passes. */

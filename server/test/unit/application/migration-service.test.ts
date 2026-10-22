@@ -2989,11 +2989,12 @@ describe("shared compose project name (G-18-22-status)", () => {
         const composePath = await oldStack("memos");
 
         const preview = await buildService().previewMigration(request(composePath, "Memos New", false));
+        const plan = await buildService().preflight(request(composePath, "Memos New", true));
         const result = await buildService().migrate(request(composePath, "Memos New", false));
 
         expect(preview.target.sharedProjectName).toBeNull();
+        expect(plan.sharesProjectWithNewStack).toBe(false);
         expect(result.success).toBe(true);
-        expect((await buildService().preflight(request(composePath, "Memos New", true))).sharesProjectWithNewStack).toBe(false);
     });
 
     it("never reports a shared name for an in-place migration", async () => {
