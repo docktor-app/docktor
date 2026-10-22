@@ -1,42 +1,47 @@
+/**
+ * Base of the typed error hierarchy. Wrap infrastructure errors (Docker, filesystem) in a typed
+ * error and pass the original through `options.cause`; never assign `cause` after construction.
+ */
 export class AppError extends Error {
     constructor(
         message: string,
         public statusCode: number = 500,
         // Optional machine-readable discriminator, sent next to `error` by the global error handler.
         public code?: string,
+        options?: ErrorOptions,
     ) {
-        super(message);
+        super(message, options);
         this.name = this.constructor.name;
     }
 }
 
 export class NotFoundError extends AppError {
-    constructor(message = "Not found") {
-        super(message, 404);
+    constructor(message = "Not found", options?: ErrorOptions) {
+        super(message, 404, undefined, options);
     }
 }
 
 export class ConflictError extends AppError {
-    constructor(message = "Conflict") {
-        super(message, 409);
+    constructor(message = "Conflict", options?: ErrorOptions) {
+        super(message, 409, undefined, options);
     }
 }
 
 export class BadRequestError extends AppError {
-    constructor(message = "Bad request") {
-        super(message, 400);
+    constructor(message = "Bad request", options?: ErrorOptions) {
+        super(message, 400, undefined, options);
     }
 }
 
 export class ForbiddenError extends AppError {
-    constructor(message = "Forbidden", code?: string) {
-        super(message, 403, code);
+    constructor(message = "Forbidden", code?: string, options?: ErrorOptions) {
+        super(message, 403, code, options);
     }
 }
 
 export class UnauthorizedError extends AppError {
-    constructor(message = "Unauthorized") {
-        super(message, 401);
+    constructor(message = "Unauthorized", options?: ErrorOptions) {
+        super(message, 401, undefined, options);
     }
 }
 
@@ -49,8 +54,8 @@ export class UnauthorizedError extends AppError {
 // but the server requires the client to carry out a precondition (reviewing
 // the diff) that the request did not demonstrate.
 export class ConfirmationRequiredError extends AppError {
-    constructor(message = "Changes must be reviewed and confirmed before they are applied") {
-        super(message, 428);
+    constructor(message = "Changes must be reviewed and confirmed before they are applied", options?: ErrorOptions) {
+        super(message, 428, undefined, options);
     }
 }
 

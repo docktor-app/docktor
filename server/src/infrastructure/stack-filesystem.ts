@@ -23,10 +23,10 @@ export class StackFilesystem implements StackFilesystemPort {
             await fs.mkdir(hostPath);
         } catch (err: unknown) {
             if (hasErrorCode(err, "EEXIST")) {
-                throw Object.assign(new ConflictError(`Stack directory ${hostPath} already exists`), {cause: err});
+                throw new ConflictError(`Stack directory ${hostPath} already exists`, {cause: err});
             }
             const message = err instanceof Error ? err.message : String(err);
-            throw Object.assign(new AppError(`Failed to create stack directory ${hostPath}: ${message}`), {cause: err});
+            throw new AppError(`Failed to create stack directory ${hostPath}: ${message}`, 500, undefined, {cause: err});
         }
         return hostPath;
     }

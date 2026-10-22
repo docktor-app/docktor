@@ -51,11 +51,12 @@ export class ExternalStackControl implements ExternalStackControlPort {
                 env: this.environment(),
             });
         } catch (err: unknown) {
-            const wrapped = new AppError(
+            throw new AppError(
                 `docker compose ${subcommand} failed for ${composePath}: ${describeFailure(err)}`,
+                500,
+                undefined,
+                {cause: err},
             );
-            wrapped.cause = err;
-            throw wrapped;
         }
     }
 }
