@@ -55,3 +55,8 @@ export function stillRunning(containers: readonly ProjectContainer[]): string[] 
 export function stopNotVerifiedMessage(project: string, remaining: readonly string[]): string {
     return `Migration refused: after stopping the old stack, these containers of the Docker Compose project "${project}" are still running: ${remaining.join(", ")}. Nothing was created or copied. Stop them by hand, then try again.`;
 }
+
+/** How long `docker compose stop` may take for this many containers. */
+export function composeStopTimeoutMs(_containerCount: number): number {
+    return 0;
+}

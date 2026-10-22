@@ -1,5 +1,6 @@
 import {describe, expect, it} from "vitest";
 import {
+    composeStopTimeoutMs,
     runningServices,
     stillRunning,
     stopNotVerifiedMessage,
@@ -55,5 +56,19 @@ describe("stopNotVerifiedMessage (D-04)", () => {
         expect(message).toContain("other-db-1");
         expect(message).toContain("other-web-1");
         expect(message).toContain("Nothing was created or copied");
+    });
+});
+
+describe("composeStopTimeoutMs", () => {
+    it.each([
+        [0, 120_000],
+        [1, 120_000],
+        [4, 120_000],
+        [5, 150_000],
+        [10, 300_000],
+        [30, 900_000],
+        [100, 900_000],
+    ])("allows %i container(s) %i ms", (count, expected) => {
+        expect(composeStopTimeoutMs(count)).toBe(expected);
     });
 });

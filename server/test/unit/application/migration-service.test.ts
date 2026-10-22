@@ -223,7 +223,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
 
         expect(result).toEqual({success: true, stackId, originalPath: originalDir});
         expect(mockOldStack.stop).toHaveBeenCalledTimes(1);
-        expect(mockOldStack.stop).toHaveBeenCalledWith(composePath);
+        expect(mockOldStack.stop).toHaveBeenCalledWith({composePath, project: "original"}, {timeoutMs: 120_000});
         expect(mockOldStack.stop.mock.invocationCallOrder[0]).toBeLessThan(
             mockStackFs.createDirectoryExclusive.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
         );
@@ -259,12 +259,12 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         expect(result.success).toBe(false);
         expect(result.error).toContain("docker compose up failed");
         expect(result.error).toContain("Your original stack directory was not modified.");
-        expect(result.error).toContain("The old stack was restarted.");
+        expect(result.error).toContain("A restart of the old stack's services (web) was requested");
         expect(result.originalPath).toBe(originalDir);
         expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
         expect(mockStackRepo.delete).toHaveBeenCalledWith(stackId);
         expect(mockOldStack.start).toHaveBeenCalledTimes(1);
-        expect(mockOldStack.start).toHaveBeenCalledWith(composePath);
+        expect(mockOldStack.start).toHaveBeenCalledWith({composePath, project: "original"}, ["web"]);
         await assertOriginalUntouched();
         await assertNoOsTempBackup();
     });
@@ -340,11 +340,70 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
                 ["other", composePath],
                 ["other", composePath],
             ]);
+            expect(mockOldStack.stop).toHaveBeenCalledWith({composePath, project: "other"}, {timeoutMs: 120_000});
             const [listBefore, listAfter] = mockProjects.listContainers.mock.invocationCallOrder;
             const [stopped] = mockOldStack.stop.mock.invocationCallOrder;
             expect(listBefore).toBeLessThan(stopped ?? Number.NaN);
             expect(stopped).toBeLessThan(listAfter ?? Number.NaN);
             expect(steps.slice(0, 3)).toEqual(["stopping_old_stack", "verifying_stop", "creating_directory"]);
+        });
+
+        it("runs no stop and no restart when nothing of the old project was running", async () => {
+            mockProjects.listContainers.mockResolvedValue([{...runningContainer("original"), running: false}]);
+            mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
+            const listener = vi.fn();
+
+            const result = await buildService().migrate(input(), listener);
+
+            expect(result.success).toBe(false);
+            expect(mockOldStack.stop).not.toHaveBeenCalled();
+            expect(mockOldStack.start).not.toHaveBeenCalled();
+            expect(listener).toHaveBeenCalledWith({step: "stopping_old_stack", detail: "(nothing was running)"});
+            expect(result.error).not.toContain("restart of the old stack's services");
+        });
+
+        it("gives the stop a timeout that grows with the number of containers", async () => {
+            const many = Array.from({length: 10}, (_, index) => runningContainer("original", "web", index + 1));
+            mockProjects.listContainers.mockResolvedValueOnce(many).mockResolvedValue([]);
+            mockDocker.up.mockResolvedValue(undefined);
+
+            await buildService().migrate(input());
+
+            expect(mockOldStack.stop).toHaveBeenCalledWith(expect.anything(), {timeoutMs: 300_000});
+        });
+
+        describe("restarts only what was running before (#100)", () => {
+            const mixed = [
+                runningContainer("original", "web"),
+                runningContainer("original", "db"),
+                {...runningContainer("original", "job"), running: false},
+            ];
+
+            beforeEach(() => {
+                mockProjects.listContainers
+                    .mockResolvedValueOnce(mixed)
+                    .mockResolvedValue(mixed.map((container) => ({...container, running: false})));
+            });
+
+            it("after a failure later in the migration", async () => {
+                mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
+
+                const result = await buildService().migrate(input());
+
+                expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+                expect(mockOldStack.start).toHaveBeenCalledWith({composePath, project: "original"}, ["db", "web"]);
+                expect(result.error).toContain("A restart of the old stack's services (db, web) was requested; check that they are running.");
+                expect(result.error).not.toContain("was restarted");
+            });
+
+            it("after a stop that failed or timed out", async () => {
+                mockOldStack.stop.mockRejectedValue(new Error("timed out"));
+
+                const result = await buildService().migrate(input());
+
+                expect(result.success).toBe(false);
+                expect(mockOldStack.start).toHaveBeenCalledWith({composePath, project: "original"}, ["db", "web"]);
+            });
         });
 
         it("refuses with no override when a container of the old project is still running after the stop, before anything is created or copied (D-04)", async () => {
@@ -509,10 +568,10 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         expect(result.success).toBe(false);
         expect(result.error).toContain("ENOSPC");
         expect(result.error).toContain("Your original stack directory was not modified.");
-        expect(result.error).toContain("The old stack was restarted.");
+        expect(result.error).toContain("A restart of the old stack's services (web) was requested");
         expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
         expect(mockOldStack.start).toHaveBeenCalledTimes(1);
-        expect(mockOldStack.start).toHaveBeenCalledWith(composePath);
+        expect(mockOldStack.start).toHaveBeenCalledWith({composePath, project: "original"}, ["web"]);
         expect(mockStackRepo.create).not.toHaveBeenCalled();
         expect(mockStackRepo.delete).not.toHaveBeenCalled();
         expect(mockDocker.up).not.toHaveBeenCalled();
@@ -976,7 +1035,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             const result = await buildService().migrate(input(), listener);
 
             expect(result.success).toBe(false);
-            expect(result.error).toContain("The old stack was restarted.");
+            expect(result.error).toContain("A restart of the old stack's services (web) was requested");
             expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
             expect(mockOldStack.start).toHaveBeenCalledTimes(1);
         });
@@ -1191,7 +1250,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
                 expect(result.success).toBe(false);
                 expect(result.error).toContain("docker compose up failed");
                 expect(result.error).toContain("moved back");
-                expect(result.error).toContain("The old stack was restarted.");
+                expect(result.error).toContain("A restart of the old stack's services (web) was requested");
                 expect(result.keptOriginalAt).toBeUndefined();
                 expect(mockMigrator.moveDirectory).toHaveBeenLastCalledWith(asideDir, originalDir);
                 expect(await fs.readFile(composePath, "utf-8")).toBe(ASIDE_COMPOSE);
@@ -1201,7 +1260,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
                 await expect(fs.access(asideDir)).rejects.toThrow();
                 expect(mockStackRepo.delete).toHaveBeenCalledWith(stackId);
                 expect(mockOldStack.start).toHaveBeenCalledTimes(1);
-                expect(mockOldStack.start).toHaveBeenCalledWith(composePath);
+                expect(mockOldStack.start).toHaveBeenCalledWith({composePath, project: "original"}, ["web"]);
                 const moveBack = mockMigrator.moveDirectory.mock.invocationCallOrder[1] ?? Number.NaN;
                 expect(moveBack).toBeLessThan(mockOldStack.start.mock.invocationCallOrder[0] ?? Number.NaN);
             });
@@ -1217,7 +1276,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
                 expect(result.error).toContain(asideDir);
                 expect(result.error).toContain(originalDir);
                 expect(result.error).toContain("by hand");
-                expect(result.error).not.toContain("The old stack was restarted.");
+                expect(result.error).not.toContain("restart of the old stack's services");
                 expect(mockMigrator.moveDirectory).toHaveBeenCalledTimes(1);
                 expect(mockOldStack.start).not.toHaveBeenCalled();
                 expect(await fs.readFile(path.join(asideDir, "docker-compose.yml"), "utf-8")).toBe(ASIDE_COMPOSE);
@@ -1599,7 +1658,10 @@ describe.skipIf(process.platform === "win32")("a stack in the stacks folder reac
         for (const argument of mockMigrator.moveDirectory.mock.calls.flat()) {
             expect(String(argument).startsWith(hostRoot)).toBe(false);
         }
-        expect(mockOldStack.stop).toHaveBeenCalledWith(path.join(realDir, "docker-compose.yml"));
+        expect(mockOldStack.stop).toHaveBeenCalledWith(
+            {composePath: path.join(realDir, "docker-compose.yml"), project: stackId},
+            {timeoutMs: 120_000},
+        );
         expect(mockStackRepo.create).toHaveBeenCalledWith(expect.objectContaining({hostPath: realDir}));
         expect(await fs.readFile(path.join(asideDir, "data", "keep.txt"), "utf-8")).toBe("keep me");
         expect(await fs.readFile(path.join(realDir, "volumes", "data", "keep.txt"), "utf-8")).toBe("keep me");
@@ -1972,6 +2034,57 @@ describe("shared compose project name (G-18-22-status)", () => {
             const composePath = await oldStack("old", compose, env);
 
             const result = await buildService().migrate(request(composePath, "Foo", true));
+
+            expect(result.success).toBe(true);
+        });
+    });
+
+    describe("an old stack started under another name than its files suggest (-p)", () => {
+        function startedAs(project: string): ReturnType<typeof createMockProjects> {
+            const projects = createMockProjects(mockOldStack);
+            projects.resolve.mockResolvedValue({kind: "resolved", project: {name: project, source: "containers", containers: []}});
+            return projects;
+        }
+
+        function serviceWith(projects: ReturnType<typeof createMockProjects>): MigrationService {
+            const rewriter = {rewrite: vi.fn().mockReturnValue({rewrittenCompose: PLAIN_COMPOSE, extractedEnv: ""})};
+            return new MigrationService({
+                docker: mockDocker as unknown as DockerExecutorPort,
+                migrator: mockMigrator as unknown as VolumeMigratorPort,
+                rewriter: rewriter as unknown as ComposeRewriterPort,
+                stackFs: mockStackFs as unknown as StackFilesystemPort,
+                stackRepo: mockStackRepo as unknown as StackRepository,
+                oldStack: mockOldStack as unknown as ExternalStackControlPort,
+                projects: projects as unknown as ComposeProjectResolverPort,
+                selfStack: createMockSelfStack() as unknown as SelfStackPort,
+                ownMounts: createMockOwnMounts() as unknown as OwnMountsPort,
+                directories: hostViewDirectories(),
+            });
+        }
+
+        it("refuses leaving it running when the new stack id equals the real project name, saying the new stack takes it from its directory", async () => {
+            const composePath = await oldStack("old");
+
+            const refusal = serviceWith(startedAs("foo")).migrate(request(composePath, "Foo", false));
+
+            await expect(refusal).rejects.toBeInstanceOf(BadRequestError);
+            await expect(refusal).rejects.toThrow('"foo"');
+            await expect(refusal).rejects.toThrow("the new stack takes it from its directory name");
+            expectNoSideEffects();
+        });
+
+        it("reports the shared name in the preview with the new stack's name source", async () => {
+            const composePath = await oldStack("old");
+
+            const preview = await serviceWith(startedAs("foo")).previewMigration(request(composePath, "Foo", false));
+
+            expect(preview.target.sharedProjectName).toEqual({name: "foo", source: "directory"});
+        });
+
+        it("does not refuse when only the files' name equals the new stack id but the real project differs", async () => {
+            const composePath = await oldStack("memos");
+
+            const result = await serviceWith(startedAs("other")).migrate(request(composePath, "Memos", false));
 
             expect(result.success).toBe(true);
         });
