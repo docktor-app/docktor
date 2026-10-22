@@ -1,6 +1,6 @@
 import {randomUUID} from "node:crypto";
 import path from "node:path";
-import type {MigrationOperation, MigrationOperationResult} from "@docktor/shared";
+import {maskSecrets, type MigrationOperation, type MigrationOperationResult} from "@docktor/shared";
 import {
     finishMigrationOperation,
     pruneFinishedOperations,
@@ -26,11 +26,17 @@ const MAX_FINISHED_OPERATIONS = 50;
 
 type MigrationRunner = Pick<MigrationService, "preflight" | "execute">;
 
+function maskError(error: string | undefined): string | undefined {
+    return error === undefined ? undefined : maskSecrets(error);
+}
+
+// The error text is compose/docker stderr and may echo URL credentials or
+// KEY=value pairs; it is masked before it is stored, listed or broadcast.
 function toOperationResult(result: MigrationResult): MigrationOperationResult {
     return {
         success: result.success,
         stackId: result.stackId,
-        error: result.error,
+        error: maskError(result.error),
         originalPath: result.originalPath,
         keptOriginalAt: result.keptOriginalAt,
     };
@@ -174,7 +180,7 @@ export class MigrationOperationService {
             // an infrastructure fault, and must still end the operation.
             console.error("Migration run rejected unexpectedly:", error);
             const message = error instanceof Error ? error.message : String(error);
-            return {success: false, error: `Migration failed: ${message}`, originalPath: plan.originalDir};
+            return {success: false, error: maskSecrets(`Migration failed: ${message}`), originalPath: plan.originalDir};
         }
     }
 }

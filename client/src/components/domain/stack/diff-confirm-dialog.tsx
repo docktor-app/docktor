@@ -13,9 +13,9 @@ import {
 import {Alert, AlertDescription} from "@/components/ui/alert";
 import {Button} from "@/components/ui/button";
 import {ScrollArea} from "@/components/ui/scroll-area";
-import {UnifiedDiffView, type UnifiedDiffHunk, type UnifiedDiffLine} from "@/components/common/unified-diff-view";
+import {UnifiedDiffView, type UnifiedDiffHunk} from "@/components/common/unified-diff-view";
 import {ComposeFindingRow} from "@/components/domain/stack/compose-finding-row";
-import {envLineHasSecret, maskEnvLine} from "@/lib/env-mask";
+import {hunksHaveSecret, maskDiffHunks} from "@/lib/secret-mask";
 import type {ReviewFinding, UnifiedDiff} from "@/lib/stacks-api";
 
 // Issue #18/D-01/D-03 + Issue #20/D-02: the review gate between an edit (or
@@ -35,25 +35,6 @@ export interface DiffConfirmDialogProps {
     readonly composeParseError?: string | null;
     readonly onConfirm: () => void;
     readonly onCancel: () => void;
-}
-
-function maskSecretLine(line: UnifiedDiffLine, revealSecrets: boolean): UnifiedDiffLine {
-    const text = maskEnvLine(line.text, revealSecrets);
-    return text === line.text ? line : {...line, text};
-}
-
-function maskSecretHunks(
-    hunks: ReadonlyArray<UnifiedDiffHunk>,
-    revealSecrets: boolean,
-): ReadonlyArray<UnifiedDiffHunk> {
-    return hunks.map((hunk) => ({
-        ...hunk,
-        lines: hunk.lines.map((line) => maskSecretLine(line, revealSecrets)),
-    }));
-}
-
-function hunksHaveSecret(hunks: ReadonlyArray<UnifiedDiffHunk>): boolean {
-    return hunks.some((hunk) => hunk.lines.some((line) => envLineHasSecret(line.text)));
 }
 
 // Issue #20/D-03: the set of new-file line numbers actually rendered by the
@@ -123,10 +104,10 @@ export function DiffConfirmDialog({
     const hunks = subject?.kind === "edit" ? subject.diff.hunks : [];
     const added = subject?.kind === "edit" ? subject.diff.added : 0;
     const removed = subject?.kind === "edit" ? subject.diff.removed : 0;
-    // T-12-02/D-22: compose diffs are never masked — only env diffs can
-    // contain KEY=value lines whose key matches the secret heuristic.
-    const hasSecret = isEnv && hunksHaveSecret(hunks);
-    const displayedHunks = isEnv ? maskSecretHunks(hunks, revealSecrets) : hunks;
+    // T-12-02/D-09: env and compose diffs share one masker (map and list env
+    // forms, KEY=value and URL credentials) behind the same reveal toggle.
+    const hasSecret = hunksHaveSecret(hunks);
+    const displayedHunks = maskDiffHunks(hunks, revealSecrets);
 
     // Issue #20/D-03: a finding anchors next to its diff line only for a
     // compose edit whose line is actually visible in the diff; every other
