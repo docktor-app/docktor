@@ -15,6 +15,9 @@ import type {ExternalStackControlPort} from "../../../src/application/ports/exte
 import type {SelfStackPort} from "../../../src/application/ports/self-stack-port.js";
 import type {OwnMountsPort} from "../../../src/application/ports/own-mounts-port.js";
 import type {DirectoryIdentityPort} from "../../../src/application/ports/directory-identity-port.js";
+import type {ComposeProjectResolverPort} from "../../../src/application/ports/compose-project-resolver-port.js";
+import {ComposeProjectResolver} from "../../../src/infrastructure/compose-project-resolver.js";
+import type {ProjectContainer} from "../../../src/domain/compose-project.js";
 import {DirectoryIdentityResolver} from "../../../src/infrastructure/directory-identity-resolver.js";
 import {hostViewDirectories} from "../../helpers/host-directory-identity.js";
 import type {OwnMountsView} from "../../../src/domain/bind-mount-sources.js";
@@ -70,6 +73,25 @@ function createMockOldStack() {
     return {stop: vi.fn().mockResolvedValue(undefined), start: vi.fn().mockResolvedValue(undefined)};
 }
 
+/** One running container of the old project, as the resolver lists it. */
+function runningContainer(project: string, service = "web", index = 1): ProjectContainer {
+    return {id: `${project}-${service}-${index}`, name: `${project}-${service}-${index}`, service, running: true, mounts: []};
+}
+
+/**
+ * The old project as Docker runs it: resolved from the files (no container is
+ * reported at resolve time), `web` running until the old stack's stop was called.
+ */
+function createMockProjects(oldStack: Pick<ReturnType<typeof createMockOldStack>, "stop"> = createMockOldStack()) {
+    const resolver = new ComposeProjectResolver({listContainers: () => Promise.resolve([])}, hostViewDirectories());
+    return {
+        resolve: vi.fn((composePath: string) => resolver.resolve(composePath)),
+        listContainers: vi.fn((project: string, _composePath: string): Promise<readonly ProjectContainer[]> =>
+            Promise.resolve(oldStack.stop.mock.calls.length > 0 ? [] : [runningContainer(project)]),
+        ),
+    };
+}
+
 function createMockSelfStack() {
     return {composeFilePaths: vi.fn().mockResolvedValue([] as string[])};
 }
@@ -101,6 +123,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
     let mockStackFs: ReturnType<typeof createMockStackFs>;
     let mockStackRepo: ReturnType<typeof createMockStackRepo>;
     let mockOldStack: ReturnType<typeof createMockOldStack>;
+    let mockProjects: ReturnType<typeof createMockProjects>;
     let mockSelfStack: ReturnType<typeof createMockSelfStack>;
     let mockOwnMounts: ReturnType<typeof createMockOwnMounts>;
 
@@ -120,6 +143,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         mockStackFs = createMockStackFs(path.join(tmpRoot, "stacks"));
         mockStackRepo = createMockStackRepo();
         mockOldStack = createMockOldStack();
+        mockProjects = createMockProjects(mockOldStack);
         mockSelfStack = createMockSelfStack();
         mockOwnMounts = createMockOwnMounts();
     });
@@ -159,6 +183,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             stackFs: mockStackFs as unknown as StackFilesystemPort,
             stackRepo: mockStackRepo as unknown as StackRepository,
             oldStack: mockOldStack as unknown as ExternalStackControlPort,
+            projects: mockProjects as unknown as ComposeProjectResolverPort,
             selfStack: mockSelfStack as unknown as SelfStackPort,
             ownMounts: mockOwnMounts as unknown as OwnMountsPort,
             directories: hostViewDirectories(),
@@ -258,6 +283,75 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         expect(mockOldStack.start).not.toHaveBeenCalled();
         expect(result.error).toContain("Your original stack directory was not modified.");
         expect(result.error).not.toContain("old stack");
+    });
+
+    describe("the old project as Docker runs it (#102, D-04)", () => {
+        function startedAs(project: string): void {
+            mockProjects.resolve.mockResolvedValue({
+                kind: "resolved",
+                project: {name: project, source: "containers", containers: [runningContainer(project)]},
+            });
+        }
+
+        it("refuses preflight and preview with a BadRequestError before anything is stopped when the project cannot be resolved", async () => {
+            mockProjects.resolve.mockResolvedValue({kind: "unresolved", reason: "Docker could not be queried: socket closed"});
+
+            const preflight = buildService().preflight(input());
+            const preview = buildService().previewMigration(input());
+
+            await expect(preflight).rejects.toBeInstanceOf(BadRequestError);
+            await expect(preflight).rejects.toThrow(composePath);
+            await expect(preflight).rejects.toThrow("socket closed");
+            await expect(preview).rejects.toBeInstanceOf(BadRequestError);
+            expectNoSideEffects();
+        });
+
+        it("carries the resolved project in the plan", async () => {
+            startedAs("other");
+
+            const plan = await buildService().preflight(input());
+
+            expect(plan.oldProject.name).toBe("other");
+        });
+
+        it("stops and verifies the project Docker runs, not the one the directory name suggests (-p other from a directory named original)", async () => {
+            startedAs("other");
+            mockDocker.up.mockResolvedValue(undefined);
+            const steps: string[] = [];
+
+            const result = await buildService().migrate(input(), ({step}) => steps.push(step));
+
+            expect(result.success).toBe(true);
+            expect(mockProjects.listContainers.mock.calls).toEqual([
+                ["other", composePath],
+                ["other", composePath],
+            ]);
+            const [listBefore, listAfter] = mockProjects.listContainers.mock.invocationCallOrder;
+            const [stopped] = mockOldStack.stop.mock.invocationCallOrder;
+            expect(listBefore).toBeLessThan(stopped ?? Number.NaN);
+            expect(stopped).toBeLessThan(listAfter ?? Number.NaN);
+            expect(steps.slice(0, 3)).toEqual(["stopping_old_stack", "verifying_stop", "creating_directory"]);
+        });
+
+        it("refuses with no override when a container of the old project is still running after the stop, before anything is created or copied (D-04)", async () => {
+            startedAs("other");
+            mockProjects.listContainers.mockImplementation(() => Promise.resolve([runningContainer("other", "db")]));
+
+            const result = await buildService().migrate(input());
+
+            expect(result.success).toBe(false);
+            expect(result.error).toContain('"other"');
+            expect(result.error).toContain("other-db-1");
+            expect(mockOldStack.stop).toHaveBeenCalledTimes(1);
+            expect(mockStackFs.createDirectoryExclusive).not.toHaveBeenCalled();
+            expect(mockMigrator.copyDirectory).not.toHaveBeenCalled();
+            expect(mockMigrator.moveDirectory).not.toHaveBeenCalled();
+            expect(mockMigrator.copyVolumeToBindMount).not.toHaveBeenCalled();
+            expect(mockStackRepo.create).not.toHaveBeenCalled();
+            expect(mockDocker.up).not.toHaveBeenCalled();
+            expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+            await assertOriginalUntouched();
+        });
     });
 
     it("tells the user how to restart manually when the automatic restart fails", async () => {
@@ -1189,6 +1283,7 @@ describe("previewMigration (MIG-02, D-04, G-18-7)", () => {
             stackFs: mockStackFs as unknown as StackFilesystemPort,
             stackRepo: mockStackRepo as unknown as StackRepository,
             oldStack: createMockOldStack() as unknown as ExternalStackControlPort,
+            projects: createMockProjects() as unknown as ComposeProjectResolverPort,
             selfStack: mockSelfStack as unknown as SelfStackPort,
             ownMounts,
             directories: hostViewDirectories(),
@@ -1447,6 +1542,7 @@ describe.skipIf(process.platform === "win32")("a stack in the stacks folder reac
             stackFs: mockStackFs as unknown as StackFilesystemPort,
             stackRepo: mockStackRepo as unknown as StackRepository,
             oldStack: mockOldStack as unknown as ExternalStackControlPort,
+            projects: createMockProjects(mockOldStack) as unknown as ComposeProjectResolverPort,
             selfStack: createMockSelfStack() as unknown as SelfStackPort,
             ownMounts: mockOwnMounts as unknown as OwnMountsPort,
             directories: directoriesOver(mockOwnMounts as unknown as OwnMountsPort),
@@ -1599,6 +1695,7 @@ describe("MigrationService environment extraction (CR-02)", () => {
             stackFs: mockStackFs as unknown as StackFilesystemPort,
             stackRepo: createMockStackRepo() as unknown as StackRepository,
             oldStack: mockOldStack as unknown as ExternalStackControlPort,
+            projects: createMockProjects(mockOldStack) as unknown as ComposeProjectResolverPort,
             selfStack: createMockSelfStack() as unknown as SelfStackPort,
             ownMounts: createMockOwnMounts() as unknown as OwnMountsPort,
             directories: hostViewDirectories(),
@@ -1755,6 +1852,7 @@ describe("shared compose project name (G-18-22-status)", () => {
             stackFs: mockStackFs as unknown as StackFilesystemPort,
             stackRepo: mockStackRepo as unknown as StackRepository,
             oldStack: mockOldStack as unknown as ExternalStackControlPort,
+            projects: createMockProjects(mockOldStack) as unknown as ComposeProjectResolverPort,
             selfStack: createMockSelfStack() as unknown as SelfStackPort,
             ownMounts: createMockOwnMounts() as unknown as OwnMountsPort,
             directories: hostViewDirectories(),
@@ -1907,6 +2005,7 @@ describe("MigrationService compose file check and dependencies (#108, T-22-03)",
             rewriter: createMockRewriter() as unknown as ComposeRewriterPort,
             stackFs: mockStackFs as unknown as StackFilesystemPort,
             stackRepo: mockStackRepo as unknown as StackRepository,
+            projects: createMockProjects() as unknown as ComposeProjectResolverPort,
             selfStack: createMockSelfStack() as unknown as SelfStackPort,
             ownMounts: createMockOwnMounts() as unknown as OwnMountsPort,
             directories: hostViewDirectories(),
