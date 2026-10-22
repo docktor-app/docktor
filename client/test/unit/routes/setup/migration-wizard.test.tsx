@@ -216,15 +216,15 @@ describe("MigrationWizard", () => {
             expect(screen.getByRole("heading", {name: "New .env file"})).toBeInTheDocument();
             expect(screen.getByRole("textbox", {name: "Extracted .env preview"})).toHaveValue(MASKED_ENV);
 
-            await userEvent.click(screen.getByRole("button", {name: "Show secret values"}));
+            await userEvent.click(screen.getByRole("button", {name: "Show secrets"}));
 
             expect(screen.getByRole("textbox", {name: "Extracted .env preview"})).toHaveValue(SECRET_ENV);
-            expect(screen.getByRole("button", {name: "Hide secret values"})).toBeInTheDocument();
+            expect(screen.getByRole("button", {name: "Hide secrets"})).toBeInTheDocument();
         });
 
         it("restores the mask after going Back to step 1 and previewing again", async () => {
             await previewWithEnv(SECRET_ENV);
-            await userEvent.click(screen.getByRole("button", {name: "Show secret values"}));
+            await userEvent.click(screen.getByRole("button", {name: "Show secrets"}));
 
             await userEvent.click(screen.getByRole("button", {name: "Back"}));
             await userEvent.click(screen.getByRole("button", {name: "Preview Changes"}));
@@ -238,7 +238,7 @@ describe("MigrationWizard", () => {
             const props = {stack, onClose, onConfirmMigrate: vi.fn(), previewMigration};
             const {rerender} = render(<MigrationWizard {...props} open />);
             await userEvent.click(screen.getByRole("button", {name: "Preview Changes"}));
-            await userEvent.click(await screen.findByRole("button", {name: "Show secret values"}));
+            await userEvent.click(await screen.findByRole("button", {name: "Show secrets"}));
 
             await userEvent.click(screen.getByRole("button", {name: "Close"}));
             expect(onClose).toHaveBeenCalled();
@@ -255,7 +255,7 @@ describe("MigrationWizard", () => {
             await previewWithEnv("PORT=8080");
 
             expect(screen.getByRole("textbox", {name: "Extracted .env preview"})).toHaveValue("PORT=8080");
-            expect(screen.queryByRole("button", {name: "Show secret values"})).toBeNull();
+            expect(screen.queryByRole("button", {name: "Show secrets"})).toBeNull();
         });
 
         it("omits the .env block entirely when nothing was extracted", async () => {

@@ -1,12 +1,13 @@
 import {useState} from "react";
 import {AlertTriangle} from "lucide-react";
+import {textHasSecret} from "@docktor/shared";
 import {Alert, AlertDescription} from "@/components/ui/alert";
 import {Button} from "@/components/ui/button";
 import {ScrollArea} from "@/components/ui/scroll-area";
 import {ToneBadge} from "@/components/common/tone-badge";
 import {CodeEditor} from "@/components/common/code-editor";
 import {UnifiedDiffView} from "@/components/common/unified-diff-view";
-import {envTextHasSecret, maskEnvText} from "@/lib/env-mask";
+import {displaySecretText, hunksHaveSecret, maskDiffHunks} from "@/lib/secret-mask";
 import type {UnifiedDiff} from "@/lib/stacks-api";
 
 export interface MigrationReviewStepProps {
@@ -23,9 +24,23 @@ export function MigrationReviewStep({diff, extractedEnv, emptySources}: Readonly
   // Local state on purpose: this step unmounts on Back to step 1 and the whole
   // dialog unmounts on close, which resets the mask as the UI-SPEC requires (D-05).
   const [revealSecrets, setRevealSecrets] = useState(false);
+  // D-09 / #103: one toggle covers the compose diff and the .env preview.
+  const hasSecret = hunksHaveSecret(diff.hunks) || textHasSecret(extractedEnv);
 
   return (
     <div className="flex flex-col gap-8">
+      {hasSecret && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="w-fit"
+          aria-pressed={revealSecrets}
+          onClick={() => setRevealSecrets((prev) => !prev)}
+        >
+          {revealSecrets ? "Hide secrets" : "Show secrets"}
+        </Button>
+      )}
       <section className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="text-sm font-semibold">Compose file changes</h3>
@@ -41,7 +56,7 @@ export function MigrationReviewStep({diff, extractedEnv, emptySources}: Readonly
           </div>
         ) : (
           <ScrollArea className="max-h-[50vh] rounded-md border">
-            <UnifiedDiffView hunks={diff.hunks} ariaLabel="Migration compose diff" />
+            <UnifiedDiffView hunks={maskDiffHunks(diff.hunks, revealSecrets)} ariaLabel="Migration compose diff" />
           </ScrollArea>
         )}
       </section>
@@ -65,20 +80,9 @@ export function MigrationReviewStep({diff, extractedEnv, emptySources}: Readonly
       {extractedEnv && (
         <section className="flex flex-col gap-3">
           <h3 className="text-sm font-semibold">New .env file</h3>
-          {envTextHasSecret(extractedEnv) && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="w-fit"
-              onClick={() => setRevealSecrets((prev) => !prev)}
-            >
-              {revealSecrets ? "Hide secret values" : "Show secret values"}
-            </Button>
-          )}
           <CodeEditor
             readOnly
-            value={maskEnvText(extractedEnv, revealSecrets)}
+            value={displaySecretText(extractedEnv, revealSecrets)}
             onChange={noop}
             height="200px"
             ariaLabel="Extracted .env preview"
