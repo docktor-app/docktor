@@ -145,6 +145,34 @@ describe("MigrationOperationService", () => {
             await settle("op-2");
         });
 
+        it("stores and publishes a failure with URL credentials and secret pairs masked", async () => {
+            execute.mockResolvedValue({
+                success: false,
+                error: "Migration failed: up failed: postgres://app:s3cret@db\n      DB_PASSWORD: hunter2",
+                originalPath: "/opt/old",
+            });
+
+            await service.start(inputFor("My App"));
+            await settle("op-1");
+
+            const expected = "Migration failed: up failed: postgres://app:\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@db\n      DB_PASSWORD: \u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
+            expect(service.get("op-1").result?.error).toBe(expected);
+            expect(emit.mock.calls.at(-1)?.[1].operation.result?.error).toBe(expected);
+            expect(JSON.stringify(emit.mock.calls)).not.toMatch(/s3cret|hunter2/);
+        });
+
+        it("masks the message of an unexpected rejection the same way", async () => {
+            vi.spyOn(console, "error").mockImplementation(() => undefined);
+            execute.mockRejectedValueOnce(new Error("clone https://u:tok3n@git.example/x failed"));
+
+            await service.start(inputFor("My App"));
+            await settle("op-1");
+
+            expect(service.get("op-1").result?.error).toBe(
+                "Migration failed: clone https://u:\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@git.example/x failed",
+            );
+        });
+
         it("propagates a preflight refusal, stores nothing and releases the slot", async () => {
             preflight.mockRejectedValueOnce(new BadRequestError("nested target"));
 
