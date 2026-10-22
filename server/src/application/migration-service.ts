@@ -20,6 +20,8 @@ import {
 import {
 	asideNameCandidates,
 	BACKUP_DIR_NAME,
+	BACKUP_MANIFEST_NAME,
+	BACKUP_STACK_DIR,
 	classifyMigrationTarget,
 	copyDestinationViolations,
 	planBackupCopies,
@@ -48,6 +50,7 @@ import {
 	stackDirectoryNameSchema,
 	type MigrationDiskSpace,
 	type MigrationOperationStep,
+	type MigrationPreviewDiskSpace,
 	type MigrationTarget,
 	type SharedProjectName,
 } from "@docktor/shared";
@@ -237,6 +240,8 @@ export interface MigrationPreview {
 	emptySources: string[];
 	/** D-05: volumes that are never copied and start empty in the new stack; the migration needs the user's acknowledgement. */
 	anonymousVolumes: AnonymousVolume[];
+	/** D-08: needed versus available space per filesystem, for each backup choice (`withBackup` is null in place). */
+	diskSpace: MigrationPreviewDiskSpace;
 }
 
 interface TargetAssessment {
@@ -253,7 +258,7 @@ export interface MigrationInput {
 	displayName: string;
 	volumeSelections: VolumeSelection[];
 	namedVolumeSelections: Map<string, boolean>;
-	/** D-07: keep a copy of the old stack directory at pre-migration-backup/ in the new stack. */
+	/** D-07, D-03: keep a backup of the old stack directory and the selected bind sources at pre-migration-backup/ in the new stack, taken after the verified stop and before any data is copied. */
 	backup: boolean;
 	/** D-10: run `docker compose stop` on the old stack before anything is copied. */
 	stopOldStack: boolean;
@@ -418,12 +423,16 @@ export class MigrationService {
 		};
 		const emptySources = bindCopies.filter((copy) => copy.sourcePath === null).map((copy) => copy.originalPath);
 		const anonymousVolumes = findAnonymousVolumes({composeContent: originalCompose, containers: oldProject.containers});
-		return {diff, extractedEnv: result.extractedEnv, target, emptySources, anonymousVolumes};
+		const diskSpace = await this.previewDiskSpace(assessment, {bindCopies, namedVolumeSelections, volumes});
+		return {diff, extractedEnv: result.extractedEnv, target, emptySources, anonymousVolumes, diskSpace};
 	}
 
 	/**
-	 * Execute full migration: preflight, then stop (optional) -> create ->
-	 * backup (optional) -> copy -> rewrite -> record -> deploy.
+	 * Execute full migration: preflight, then stop and verify the stop (optional)
+	 * -> create the directory -> backup (optional) -> copy -> rewrite -> record ->
+	 * deploy. The backup comes after the verified stop, so it holds a consistent
+	 * old stack, and before any data is copied or changed, so nothing is touched
+	 * without a backup (D-01, D-02).
 	 * BF-04: Full migration wizard
 	 * BF-05: Rollback on failure
 	 *
@@ -581,6 +590,29 @@ export class MigrationService {
 			bindCopies: await this.planBindCopies(volumeSelections, assessment.originalDir, homeSources),
 			homeSources,
 			volumes,
+		};
+	}
+
+	/**
+	 * D-08: the assessment for both backup choices from one set of measurements,
+	 * so the dialog can switch the backup on and off without asking again. A
+	 * shortfall is reported, not thrown: the dialog shows it and blocks the
+	 * step; the start refuses it in {@link preflight}.
+	 */
+	private async previewDiskSpace(
+		assessment: TargetAssessment,
+		planned: {
+			bindCopies: readonly PlannedBindCopy[];
+			namedVolumeSelections: ReadonlyMap<string, boolean>;
+			volumes: ReadonlyMap<string, PlannedVolume>;
+		},
+	): Promise<MigrationPreviewDiskSpace> {
+		const inPlace = assessment.kind === "in-place";
+		const sizes = await this.measureMigration({assessment, ...planned}, !inPlace);
+		const space = await this.diskSpace.filesystemOf(assessment.targetDir);
+		return {
+			withoutBackup: this.assessDisk(space, sizes, false),
+			withBackup: inPlace ? null : this.assessDisk(space, sizes, true),
 		};
 	}
 
@@ -783,8 +815,10 @@ export class MigrationService {
 	}
 
 	/**
-	 * Runs the side-effecting steps of a preflighted plan and, on any step
-	 * failure, the rollback: it removes only the directory and the stack record
+	 * Runs the side-effecting steps of a preflighted plan, in this order: stop
+	 * and verify the stop, rename aside (in place), create the directory, take
+	 * the backup (when chosen), then copy the data. No data is copied or changed
+	 * before the backup exists. On any step failure it runs the rollback: it removes only the directory and the stack record
 	 * this run created (CR-02, D-09) and restarts the old stack iff Docktor
 	 * stopped it (D-11). The original directory is only ever read, with one
 	 * exception (G-18-7): in an in-place migration it is renamed aside, kept as
@@ -843,12 +877,12 @@ export class MigrationService {
 			const newStackPath = await this.stackFs.createDirectoryExclusive(stackId);
 			createdStackDir = true;
 
-			// Step 3: Keep a copy of the old stack directory when opted in (D-07),
-			// independent of renames or compose changes. In place, the renamed
-			// original already is that backup, so no second copy is made.
+			// Step 3 (D-01, D-02, D-03): the backup, when opted in (D-07). The old stack
+			// is down and verified, and nothing has been copied or changed yet. In place,
+			// the renamed original already is the backup, so no second copy is made.
 			if (backup && !inPlace) {
 				this.report(onProgress, "backing_up");
-				await this.migrator.copyDirectory(originalDir, path.join(newStackPath, BACKUP_DIR_NAME));
+				await this.takeBackup(bindCopies, originalDir, newStackPath);
 			}
 
 			const volumesDir = path.join(newStackPath, "volumes");
@@ -952,6 +986,32 @@ export class MigrationService {
 				originalPath: originalDir,
 			};
 		}
+	}
+
+	/**
+	 * D-03: the backup holds the old stack directory (`stack/`), every selected
+	 * bind source outside it (`bind-mounts/<n>-<name>/`) and a manifest saying
+	 * where each came from. Named Docker volumes are not duplicated: they are only
+	 * ever read, and they stay where they are. A source that existed at preflight
+	 * and vanished since fails the step, like in {@link copyBindMounts}.
+	 */
+	private async takeBackup(bindCopies: readonly PlannedBindCopy[], originalDir: string, newStackPath: string): Promise<void> {
+		const backupDir = path.join(newStackPath, BACKUP_DIR_NAME);
+		await fs.mkdir(backupDir, {recursive: true});
+		await this.migrator.copyDirectory(originalDir, path.join(backupDir, BACKUP_STACK_DIR));
+		const copies = planBackupCopies(bindCopies, originalDir);
+		for (const {originalPath, sourcePath, backupPath} of copies) {
+			if (!(await sourceExists(sourcePath))) {
+				throw new AppError(`Bind mount source ${originalPath} (${sourcePath}) no longer exists; nothing was copied from it`);
+			}
+			await this.migrator.copyDirectory(sourcePath, path.join(backupDir, ...backupPath.split("/")));
+		}
+		const manifest = {
+			createdAt: new Date().toISOString(),
+			stackDirectory: {source: originalDir, backup: BACKUP_STACK_DIR},
+			bindMounts: copies.map(({originalPath, sourcePath, backupPath}) => ({originalPath, source: sourcePath, backup: backupPath})),
+		};
+		await fs.writeFile(path.join(backupDir, BACKUP_MANIFEST_NAME), `${JSON.stringify(manifest, null, 2)}\n`, "utf-8");
 	}
 
 	/**

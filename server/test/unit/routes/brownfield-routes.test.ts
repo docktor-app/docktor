@@ -52,6 +52,15 @@ vi.mock("../../../src/infrastructure/volume-migrator.js", () => ({
     volumeMigrator: {volumeExists: vi.fn(async () => true)},
 }));
 
+// The preview assesses the free disk space (#107); the figures come from a fake, never from the host.
+vi.mock("../../../src/infrastructure/disk-space-probe.js", () => ({
+    diskSpaceProbe: {
+        filesystemOf: vi.fn(async () => ({filesystemId: "fs-fake", label: "/stacks", availableBytes: 1024 ** 4})),
+        measureDirectoryBytes: vi.fn(async () => 1_024),
+        measureVolumeBytes: vi.fn(async () => 1_024),
+    },
+}));
+
 import Fastify from "fastify";
 import {serializerCompiler, validatorCompiler, type ZodTypeProvider} from "fastify-type-provider-zod";
 import importRoutes from "../../../src/routes/imports.js";

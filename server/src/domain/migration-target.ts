@@ -41,7 +41,7 @@ export function asideNameCandidates(stackId: string, limit: number): string[] {
     return Array.from({length: Math.max(0, limit)}, (_, index) => (index === 0 ? base : `${base}-${index + 1}`));
 }
 
-/** D-07/D-08: an opted-in backup is a plain copy of the old stack directory at this name inside the new stack. */
+/** D-07/D-03: an opted-in backup lives at this name inside the new stack (layout below: stack/, bind-mounts/, manifest.json). */
 export const BACKUP_DIR_NAME = "pre-migration-backup";
 
 /** D-03: the old stack directory is copied to `<backup>/stack`. */

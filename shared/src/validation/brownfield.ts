@@ -124,6 +124,14 @@ export const migrationDiskSpaceSchema = z.object({
     ),
 });
 
+// D-08: the assessment the dialog shows for each backup choice. `withBackup` is
+// null for an in-place migration, which keeps the renamed original as its backup
+// instead of copying it.
+export const migrationPreviewDiskSpaceSchema = z.object({
+    withoutBackup: migrationDiskSpaceSchema,
+    withBackup: migrationDiskSpaceSchema.nullable(),
+});
+
 // G-18-22-status: where a Docker Compose project name comes from, in Compose's
 // order of precedence for what the migrated files show.
 export const composeProjectNameSourceSchema = z.enum(["directory", "compose-file", "env-file"]);
@@ -197,6 +205,7 @@ export type BrownfieldAdoptInput = z.infer<typeof brownfieldAdoptSchema>;
 export type MigrationExecuteInput = z.infer<typeof migrationExecuteSchema>;
 export type MigrationTarget = z.infer<typeof migrationTargetSchema>;
 export type MigrationDiskSpace = z.infer<typeof migrationDiskSpaceSchema>;
+export type MigrationPreviewDiskSpace = z.infer<typeof migrationPreviewDiskSpaceSchema>;
 export type AnonymousVolumeInput = z.infer<typeof anonymousVolumeSchema>;
 export type ComposeProjectNameSource = z.infer<typeof composeProjectNameSourceSchema>;
 export type SharedProjectName = z.infer<typeof sharedProjectNameSchema>;
