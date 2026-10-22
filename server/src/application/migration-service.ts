@@ -8,7 +8,15 @@ import {StackFilesystem} from "../infrastructure/stack-filesystem.js";
 import {StackRepository, stackRepository} from "../repositories/stack-repository.js";
 import {slugify} from "../lib/slugify.js";
 import {createComposeConfig} from "../domain/compose-config.js";
-import {locateBindSource, needsOwnMounts, type BindSourceRefusal, type OwnMountsView} from "../domain/bind-mount-sources.js";
+import {
+	locateBindSource,
+	needsOwnMounts,
+	resolveHomeRelativeSources,
+	type BindSourceRefusal,
+	type DeclaredBindMount,
+	type HomeSourceResolution,
+	type OwnMountsView,
+} from "../domain/bind-mount-sources.js";
 import {
 	asideNameCandidates,
 	BACKUP_DIR_NAME,
@@ -92,8 +100,47 @@ function refusalMessage(originalPath: string, reason: BindSourceRefusal): string
 			return `Bind mount source ${originalPath} is not visible inside the Docktor container. Mount that host path into Docktor (the default deployment mounts the host root at /host) or keep the mount outside Docktor.`;
 		case "mounts-unknown":
 			return `Bind mount source ${originalPath} cannot be migrated: Docktor could not determine which host paths it can see. Check that Docktor can reach the Docker daemon, or keep the mount outside Docktor.`;
-		case "home-relative":
-			return `Bind mount source ${originalPath} starts with ~ and cannot be migrated. Use an absolute path in the compose file, or keep the mount outside Docktor.`;
+		case "home-unresolved":
+			return homeUnresolvedMessage(originalPath, "no-container");
+	}
+}
+
+/** #104: why a `~` bind source cannot be migrated, and how to make it possible. */
+function homeUnresolvedMessage(originalPath: string, reason: Extract<HomeSourceResolution, {kind: "unresolved"}>["reason"]): string {
+	const refused = `Migration refused: bind mount source ${originalPath} starts with ~`;
+	switch (reason) {
+		case "no-container":
+			return `${refused} and no container of the old stack mounts it, so Docktor cannot tell which host directory it is. Start the old stack once so Docktor can read the directory its containers mount, or use an absolute path in the compose file.`;
+		case "inconsistent":
+			return `${refused}, but the old containers mount different or unexpected host directories for it, so Docktor cannot tell which one is meant. Use an absolute path in the compose file.`;
+		case "unsupported":
+			return `${refused} in a form Docktor cannot resolve (only ~ and ~/path are supported). Use an absolute path in the compose file.`;
+	}
+}
+
+/** The host directory of every `~` bind source, or a refusal naming the first one that cannot be resolved. */
+function homeSourcesOf(declared: readonly DeclaredBindMount[], oldProject: ResolvedComposeProject): ReadonlyMap<string, string> {
+	const resolved = new Map<string, string>();
+	for (const [declaredPath, resolution] of resolveHomeRelativeSources(declared, oldProject.containers)) {
+		if (resolution.kind === "unresolved") {
+			throw new BadRequestError(homeUnresolvedMessage(declaredPath, resolution.reason));
+		}
+		resolved.set(declaredPath, resolution.hostPath);
+	}
+	return resolved;
+}
+
+/**
+ * WR-01/T-18-52: a converted `originalPath` must be a bind source the compose
+ * file declares, so a request cannot make Docktor copy an arbitrary host path
+ * into a stack directory.
+ */
+function assertDeclared(declared: readonly DeclaredBindMount[], converted: readonly VolumeSelection[]): void {
+	const paths = new Set(declared.map((mount) => mount.path));
+	for (const {originalPath} of converted) {
+		if (!paths.has(originalPath)) {
+			throw new BadRequestError(`Bind mount source ${originalPath} is not declared by the compose file`);
+		}
 	}
 }
 
@@ -209,6 +256,8 @@ export interface MigrationPlan {
 	readonly stopOldStack: boolean;
 	/** CR-03: where every converted bind-mount source is read from, decided before anything happens. */
 	readonly bindCopies: readonly PlannedBindCopy[];
+	/** #104: the host directory behind every `~` bind source, as the compose file spells it. */
+	readonly homeSources: ReadonlyMap<string, string>;
 	/** G-18-7: set when the target directory is the original directory; the original moves to `asideDir`. */
 	readonly inPlace: {readonly asideDir: string} | null;
 }
@@ -295,7 +344,7 @@ export class MigrationService {
 		const {composePath, displayName, volumeSelections, namedVolumeSelections} = request;
 		const assessment = await this.assessTarget(composePath, displayName);
 		const oldProject = await this.resolveOldProject(assessment.composePath);
-		const bindCopies = await this.planCopies(assessment, volumeSelections, namedVolumeSelections);
+		const {bindCopies, homeSources} = await this.planCopies(assessment, oldProject, volumeSelections, namedVolumeSelections);
 		const originalCompose = await fs.readFile(assessment.composePath, "utf-8");
 		const existingEnv = await this.readOldEnv(assessment.originalDir);
 		const result = this.rewriter.rewrite(
@@ -303,6 +352,7 @@ export class MigrationService {
 			volumeSelections,
 			namedVolumeSelections,
 			existingEnv ?? undefined,
+			{homeSources},
 		);
 		const diff = computeUnifiedDiff(originalCompose, result.rewrittenCompose);
 		const inPlace = assessment.kind === "in-place";
@@ -357,7 +407,7 @@ export class MigrationService {
 		const assessment = await this.assessTarget(composePath, displayName);
 		const {stackId, originalDir, targetDir, kind} = assessment;
 		const oldProject = await this.resolveOldProject(assessment.composePath);
-		const bindCopies = await this.planCopies(assessment, volumeSelections, namedVolumeSelections);
+		const {bindCopies, homeSources} = await this.planCopies(assessment, oldProject, volumeSelections, namedVolumeSelections);
 		const inPlace = kind === "in-place" ? {asideDir: await this.planInPlace(originalDir, stackId, input)} : null;
 		if (!stopOldStack) {
 			const shared = await this.sharedProjectName(assessment, oldProject);
@@ -378,6 +428,7 @@ export class MigrationService {
 			backup,
 			stopOldStack,
 			bindCopies,
+			homeSources,
 			inPlace,
 		};
 	}
@@ -420,20 +471,22 @@ export class MigrationService {
 	}
 
 	/**
-	 * The request-path refusals preview and preflight share (WR-01, CR-03), all
-	 * before any side effect: a converted source must be declared by the compose
-	 * file, every destination must be valid, and every converted source must be
-	 * readable by Docktor. Returns where each converted bind mount is read from.
+	 * The request-path refusals preview and preflight share (WR-01, CR-03, #104),
+	 * all before any side effect: a converted source must be declared by the
+	 * compose file, every destination must be valid, every `~` source must be
+	 * resolved to the host directory the old containers mount, and every
+	 * converted source must be readable by Docktor. Returns where each converted
+	 * bind mount is read from and what each `~` source stands for.
 	 */
 	private async planCopies(
 		assessment: TargetAssessment,
+		oldProject: ResolvedComposeProject,
 		volumeSelections: readonly VolumeSelection[],
 		namedVolumeSelections: ReadonlyMap<string, boolean>,
-	): Promise<PlannedBindCopy[]> {
+	): Promise<{bindCopies: PlannedBindCopy[]; homeSources: ReadonlyMap<string, string>}> {
 		const converted = volumeSelections.filter((selection) => selection.convert);
-		if (converted.length > 0) {
-			await this.assertDeclaredSources(assessment.composePath, converted);
-		}
+		const declared = await this.declaredBindMounts(assessment.composePath);
+		assertDeclared(declared, converted);
 		const violations = copyDestinationViolations({
 			targetDir: assessment.targetDir,
 			composeDir: assessment.originalDir,
@@ -443,27 +496,18 @@ export class MigrationService {
 		if (violations.length > 0) {
 			throw new BadRequestError(`Migration refused: ${violations.join("; ")}`);
 		}
-		return this.planBindCopies(volumeSelections, assessment.originalDir);
+		const homeSources = homeSourcesOf(declared, oldProject);
+		return {bindCopies: await this.planBindCopies(volumeSelections, assessment.originalDir, homeSources), homeSources};
 	}
 
-	/**
-	 * WR-01/T-18-52: a converted `originalPath` must be a bind source the
-	 * compose file declares (the very strings the scanner offers), so a request
-	 * cannot make Docktor copy an arbitrary host path into a stack directory.
-	 */
-	private async assertDeclaredSources(composePath: string, converted: readonly VolumeSelection[]): Promise<void> {
+	/** The bind mounts the compose file declares, as the analyzer reports them (the very strings the scanner offers). */
+	private async declaredBindMounts(composePath: string): Promise<DeclaredBindMount[]> {
 		const content = await fs.readFile(composePath, "utf-8");
-		let declared: Set<string>;
 		try {
-			declared = new Set(this.analyzer.analyzeCompatibility(content).bindMounts.map((mount) => mount.path));
+			return this.analyzer.analyzeCompatibility(content).bindMounts;
 		} catch (err: unknown) {
 			const message = err instanceof Error ? err.message : String(err);
 			throw new BadRequestError(`The compose file could not be read to check the bind mounts: ${message}`);
-		}
-		for (const {originalPath} of converted) {
-			if (!declared.has(originalPath)) {
-				throw new BadRequestError(`Bind mount source ${originalPath} is not declared by the compose file`);
-			}
 		}
 	}
 
@@ -473,19 +517,25 @@ export class MigrationService {
 	 * (nothing has happened yet). Of the readable candidates the first that
 	 * exists wins; none existing means the source is genuinely absent and an
 	 * empty directory will be created. Only a missing path (ENOENT) counts as
-	 * absent: any other access failure rejects the preflight.
+	 * absent: any other access failure rejects the preflight. A `~` source is
+	 * read from the host directory it was resolved to (#104).
 	 */
-	private async planBindCopies(selections: readonly VolumeSelection[], originalDir: string): Promise<PlannedBindCopy[]> {
+	private async planBindCopies(
+		selections: readonly VolumeSelection[],
+		originalDir: string,
+		homeSources: ReadonlyMap<string, string>,
+	): Promise<PlannedBindCopy[]> {
 		let view: OwnMountsView | undefined;
 		const copies: PlannedBindCopy[] = [];
 		for (const {originalPath, newPath, convert} of selections) {
 			if (!convert) {
 				continue;
 			}
-			if (view === undefined && needsOwnMounts(originalPath, originalDir)) {
+			const declaredPath = homeSources.get(originalPath) ?? originalPath;
+			if (view === undefined && needsOwnMounts(declaredPath, originalDir)) {
 				view = await this.ownMounts.ownMounts();
 			}
-			const located = locateBindSource(originalPath, originalDir, view ?? {kind: "host"});
+			const located = locateBindSource(declaredPath, originalDir, view ?? {kind: "host"});
 			if (located.kind === "refused") {
 				throw new BadRequestError(refusalMessage(originalPath, located.reason));
 			}
@@ -555,7 +605,7 @@ export class MigrationService {
 	 * bind-mount source that vanished since (CR-03).
 	 */
 	async execute(plan: MigrationPlan, onProgress?: MigrationProgressListener): Promise<MigrationResult> {
-		const {stackId, displayName, composePath, originalDir, oldProject, volumeSelections, namedVolumeSelections, backup, stopOldStack, bindCopies, inPlace} = plan;
+		const {stackId, displayName, composePath, originalDir, oldProject, volumeSelections, namedVolumeSelections, backup, stopOldStack, bindCopies, homeSources, inPlace} = plan;
 		// Where the old stack's files are read from: the original directory, or
 		// (in place) the directory it was renamed to.
 		const sourceDir = inPlace?.asideDir ?? originalDir;
@@ -635,6 +685,7 @@ export class MigrationService {
 				volumeSelections,
 				namedVolumeSelections,
 				existingEnv ?? undefined,
+				{homeSources},
 			);
 
 			// Write new compose file

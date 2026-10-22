@@ -109,6 +109,16 @@ class SourceEdits {
 	}
 }
 
+/** Optional knowledge about the old stack that the rewrite cannot read from the files (#104). */
+export interface RewriteOptions {
+	/**
+	 * `~` bind sources as the compose file spells them, mapped to the host directory the old
+	 * containers mount. A `~` source that is kept becomes that absolute path; without an entry
+	 * a `~` source is left as it is.
+	 */
+	readonly homeSources?: ReadonlyMap<string, string>;
+}
+
 /** Lookup of which volume references the user chose to convert (the rewrite rules, no text handling). */
 class VolumeRules {
 	private readonly bindRewrites = new Map<string, string>();
@@ -116,6 +126,7 @@ class VolumeRules {
 	constructor(
 		volumeSelections: VolumeSelection[],
 		private readonly namedVolumeSelections: Map<string, boolean>,
+		private readonly homeSources: ReadonlyMap<string, string> = new Map(),
 	) {
 		for (const selection of volumeSelections) {
 			if (selection.convert) {
@@ -128,9 +139,10 @@ class VolumeRules {
 		return this.namedVolumeSelections.get(volumeName) === true;
 	}
 
+	/** The converted destination, else the host directory a `~` source stands for, else nothing. */
 	bindTarget(hostPath: string): string | undefined {
 		const newPath = this.bindRewrites.get(hostPath);
-		return newPath || undefined;
+		return newPath || this.homeSources.get(hostPath) || undefined;
 	}
 
 	namedTarget(volumeName: string): string {
@@ -140,7 +152,8 @@ class VolumeRules {
 	/** New text of a short-form entry (`host:container[:mode]`), or undefined when it stays as it is. */
 	shortForm(entry: string): string | undefined {
 		const [hostPath, ...rest] = entry.split(":");
-		const isNamedReference = !hostPath.startsWith(".") && !hostPath.startsWith("/");
+		// A `~` source is a host path the shell expands, never a named volume.
+		const isNamedReference = !/^[./~]/.test(hostPath);
 		const target = isNamedReference
 			? (this.isConverted(hostPath) ? this.namedTarget(hostPath) : undefined)
 			: this.bindTarget(hostPath);
@@ -443,6 +456,8 @@ export class ComposeRewriter implements ComposeRewriterPort {
 	 * 2. Mark unconverted named volumes as external
 	 * 3. Move inline literal `environment` values to `.env`
 	 *
+	 * `options.homeSources` resolves `~` bind sources (#104).
+	 *
 	 * Behaviour change (G-18-4 B): the previous implementation replaced a map-form `environment`
 	 * by a list of bare `${KEY}` entries, which Compose reads as interpolated values without keys.
 	 * The map form now stays and each value becomes `KEY: ${KEY}`, which Compose interpolates from
@@ -455,6 +470,7 @@ export class ComposeRewriter implements ComposeRewriterPort {
 		volumeSelections: VolumeSelection[],
 		namedVolumeSelections: Map<string, boolean>, // volumeName -> convert (true = bind mount, false = keep as named)
 		existingEnv?: string,
+		options: RewriteOptions = {},
 	): RewriteResult {
 		const unchanged: RewriteResult = {rewrittenCompose: originalCompose, extractedEnv: "", envVars: {}};
 		const doc = parseDocument(originalCompose, {keepSourceTokens: true});
@@ -469,7 +485,7 @@ export class ComposeRewriter implements ComposeRewriterPort {
 
 		const plan = new ComposeEditPlan(
 			originalCompose,
-			new VolumeRules(volumeSelections, namedVolumeSelections),
+			new VolumeRules(volumeSelections, namedVolumeSelections, options.homeSources),
 			new EnvNameAllocator({
 				reserved: this.reservedNames(),
 				existingEnv: parseEnvAssignments(existingEnv ?? ""),

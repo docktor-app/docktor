@@ -35,6 +35,18 @@ vi.mock("../../../src/infrastructure/docker-self-stack.js", () => ({
     dockerSelfStack: {composeFilePaths: vi.fn(async () => [])},
 }));
 
+// The preview resolves the old compose project (#102); no Docker daemon is involved here, so the
+// project is the one predicted from the files and no container runs.
+vi.mock("../../../src/infrastructure/compose-project-resolver.js", () => ({
+    composeProjectResolver: {
+        resolve: vi.fn(async () => ({
+            kind: "resolved",
+            project: {name: "docktor-brownfield-routes", source: "files", containers: []},
+        })),
+        listContainers: vi.fn(async () => []),
+    },
+}));
+
 import Fastify from "fastify";
 import {serializerCompiler, validatorCompiler, type ZodTypeProvider} from "fastify-type-provider-zod";
 import importRoutes from "../../../src/routes/imports.js";

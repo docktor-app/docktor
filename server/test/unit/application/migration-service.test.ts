@@ -826,7 +826,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
 
             await expect(service.migrate(selecting(convert))).rejects.toThrow(BadRequestError);
             await expect(service.migrate(selecting(convert))).rejects.toThrow("~/data");
-            await expect(service.migrate(selecting(convert))).rejects.toThrow("start the old stack once");
+            await expect(service.migrate(selecting(convert))).rejects.toThrow("Start the old stack once");
             await expect(service.migrate(selecting(convert))).rejects.toThrow("absolute path");
 
             expectNoSideEffects();
@@ -844,7 +844,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         beforeEach(async () => {
             await fs.writeFile(
                 composePath,
-                composeDeclaring(["./data", "./missing", "/opt/app/data", "~/data"]),
+                composeDeclaring(["./data", "./missing", "/opt/app/data"]),
                 "utf-8",
             );
         });
@@ -870,7 +870,9 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             expect(await fs.readFile(path.join(originalDir, "data", "keep.txt"), "utf-8")).toBe("keep me");
         });
 
-        it("refuses a selected ~ source, before anything happens", async () => {
+        it("refuses a selected ~ source that no old container mounts, before anything happens", async () => {
+            await fs.writeFile(composePath, composeDeclaring(["./data", "~/data"]), "utf-8");
+
             await expect(buildService().migrate(invisible("~/data"))).rejects.toThrow(BadRequestError);
             await expect(buildService().migrate(invisible("~/data"))).rejects.toThrow("~/data");
 
