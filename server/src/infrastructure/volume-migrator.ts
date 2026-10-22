@@ -38,7 +38,7 @@ function runCommand(command: string, args: readonly string[], purpose: string): 
 export type VolumeDockerRunner = (args: readonly string[], purpose: string) => Promise<{stdout: string; stderr: string}>;
 
 /** The production {@link VolumeDockerRunner}: an argument array, never a shell, and only the allowlisted environment (#109). */
-const defaultVolumeDockerRunner: VolumeDockerRunner = (args, purpose) =>
+export const defaultVolumeDockerRunner: VolumeDockerRunner = (args, purpose) =>
 	new Promise((resolve, reject) => {
 		const proc = spawn("docker", [...args], {env: dockerCliEnvironment(process.env)});
 

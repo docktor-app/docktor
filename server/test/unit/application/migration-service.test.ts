@@ -720,7 +720,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
 
             const refusal = buildService().preflight(copyingData({backup: true}));
 
-            await expect(refusal).rejects.toThrow(`${STACKS_FILESYSTEM} needs 1.1 KiB (including a 10% margin), 1099 B available.`);
+            await expect(refusal).rejects.toThrow(`${STACKS_FILESYSTEM} needs 1.1 KiB (including a 10% margin), 1.1 KiB available.`);
             expect(mockDiskSpace.measureDirectoryBytes).toHaveBeenCalledWith(originalDir);
 
             mockDiskSpace.filesystemOf.mockResolvedValue({filesystemId: "fs-stacks", label: STACKS_FILESYSTEM, availableBytes: 1_100});
@@ -751,7 +751,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
 
             const refusal = buildService().preflight({...input({backup: false}), namedVolumeSelections: new Map([["data", true]])});
 
-            await expect(refusal).rejects.toThrow(`needs 1.1 KiB (including a 10% margin), 1099 B available`);
+            await expect(refusal).rejects.toThrow(`needs 1.1 KiB (including a 10% margin), 1.1 KiB available`);
             expect(mockDiskSpace.measureVolumeBytes).toHaveBeenCalledWith("original_data");
         });
 
@@ -769,7 +769,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             const refusal = buildService().preflight(copyingData({backup: false}));
 
             await expect(refusal).rejects.toBeInstanceOf(BadRequestError);
-            await expect(refusal).rejects.toThrow(/could not be measured.*\.\/data/s);
+            await expect(refusal).rejects.toThrow(/size of .*\.\/data.* could not be measured/s);
             expectNoSideEffects();
         });
 
@@ -779,14 +779,14 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
 
             const refusal = buildService().preflight({...input({backup: false}), namedVolumeSelections: new Map([["data", true]])});
 
-            await expect(refusal).rejects.toThrow(/could not be measured.*original_data/s);
+            await expect(refusal).rejects.toThrow(/size of .*original_data.* could not be measured/s);
             expectNoSideEffects();
         });
 
         it("blocks an old stack directory it cannot measure when a backup is chosen", async () => {
             mockDiskSpace.measureDirectoryBytes.mockImplementation(async (target: string) => (target === originalDir ? null : 1));
 
-            await expect(buildService().preflight(input({backup: true}))).rejects.toThrow(/could not be measured.*original/s);
+            await expect(buildService().preflight(input({backup: true}))).rejects.toThrow(/size of .*old stack directory.* could not be measured/s);
 
             expectNoSideEffects();
         });

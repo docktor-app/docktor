@@ -22,8 +22,10 @@ import {
 	BACKUP_DIR_NAME,
 	classifyMigrationTarget,
 	copyDestinationViolations,
+	planBackupCopies,
 	type MigrationTargetKind,
 } from "../domain/migration-target.js";
+import {assessDiskSpace, diskShortfallMessage, type FilesystemSpace} from "../domain/disk-space.js";
 import {composeProjectName} from "../domain/compose-project-name.js";
 import {
 	findAnonymousVolumes,
@@ -44,6 +46,7 @@ import {
 	COMPOSE_FILE_NAMES,
 	COMPOSE_VOLUME_NAME_PATTERN,
 	stackDirectoryNameSchema,
+	type MigrationDiskSpace,
 	type MigrationOperationStep,
 	type MigrationTarget,
 	type SharedProjectName,
@@ -55,6 +58,7 @@ import {dockerSelfStack} from "../infrastructure/docker-self-stack.js";
 import {assertNotOwnStack} from "./own-stack-guard.js";
 import {assertNotManaged} from "./managed-stack-guard.js";
 import {directoryIdentityResolver} from "../infrastructure/directory-identity-resolver.js";
+import {diskSpaceProbe} from "../infrastructure/disk-space-probe.js";
 import type {DockerExecutorPort} from "./ports/docker-executor-port.js";
 import type {VolumeMigratorPort} from "./ports/volume-migrator-port.js";
 import type {ComposeRewriterPort} from "./ports/compose-rewriter-port.js";
@@ -65,6 +69,7 @@ import type {OwnMountsPort} from "./ports/own-mounts-port.js";
 import type {ComposeAnalyzerPort} from "./ports/compose-analyzer-port.js";
 import type {ComposeProjectResolverPort} from "./ports/compose-project-resolver-port.js";
 import type {DirectoryIdentityPort} from "./ports/directory-identity-port.js";
+import type {DiskSpaceProbePort} from "./ports/disk-space-probe-port.js";
 
 /**
  * CR-02: Resolve `target` against `base` and reject the result unless it is
@@ -146,6 +151,11 @@ function missingVolumeMessage(key: string, volumeName: string): string {
 function anonymousVolumesMessage(anonymous: readonly AnonymousVolume[]): string {
 	const listed = anonymous.map(({service, containerPath}) => `${service}: ${containerPath}`).join(", ");
 	return `Migration refused: the old stack has anonymous volumes (${listed}). They are not copied and start empty in the new stack. Acknowledge this to continue.`;
+}
+
+/** D-08: a size Docktor cannot measure blocks the migration, because skipping the check could fill the disk while the old stack is down. */
+function unmeasurableSizeMessage(what: string): string {
+    return `Migration refused: the size of ${what} could not be measured, so Docktor cannot tell whether there is enough free disk space.`;
 }
 
 /**
@@ -286,6 +296,12 @@ export interface MigrationPlan {
 	readonly inPlace: {readonly asideDir: string} | null;
 }
 
+/** D-08: bytes the migration writes into the new stack directory, and bytes more when a backup is taken. */
+interface MigrationSizes {
+	readonly copyBytes: number;
+	readonly backupBytes: number;
+}
+
 /** One top-level compose volume: its real Docker name, whether the file declares it external, and whether Docker has it. */
 export interface PlannedVolume extends ComposeVolumeName {
 	readonly exists: boolean;
@@ -332,6 +348,8 @@ export interface MigrationServiceDependencies {
 	analyzer: Pick<ComposeAnalyzerPort, "analyzeCompatibility">;
 	/** G-18-22-inplace: which directory a path names, whatever its spelling. */
 	directories: DirectoryIdentityPort;
+	/** #107: free space per filesystem and the sizes of what a migration writes. */
+	diskSpace: DiskSpaceProbePort;
 }
 
 export class MigrationService {
@@ -346,6 +364,7 @@ export class MigrationService {
 	private readonly ownMounts: OwnMountsPort;
 	private readonly analyzer: Pick<ComposeAnalyzerPort, "analyzeCompatibility">;
 	private readonly directories: DirectoryIdentityPort;
+	private readonly diskSpace: DiskSpaceProbePort;
 
 	constructor(deps: Partial<MigrationServiceDependencies> = {}) {
 		this.docker = deps.docker ?? dockerExecutor;
@@ -359,6 +378,7 @@ export class MigrationService {
 		this.ownMounts = deps.ownMounts ?? dockerSelfStack;
 		this.analyzer = deps.analyzer ?? composeAnalyzer;
 		this.directories = deps.directories ?? directoryIdentityResolver;
+		this.diskSpace = deps.diskSpace ?? diskSpaceProbe;
 	}
 
 	/**
@@ -445,6 +465,13 @@ export class MigrationService {
 			if (shared) {
 				throw new BadRequestError(sharedProjectNameRefusal(shared));
 			}
+		}
+		// In place, the renamed original is the backup: no second copy is made or counted.
+		const includeBackup = backup && inPlace === null;
+		const sizes = await this.measureMigration({assessment, bindCopies, namedVolumeSelections, volumes}, includeBackup);
+		const disk = this.assessDisk(await this.diskSpace.filesystemOf(targetDir), sizes, includeBackup);
+		if (!disk.ok) {
+			throw new BadRequestError(diskShortfallMessage(disk));
 		}
 
 		return {
@@ -555,6 +582,72 @@ export class MigrationService {
 			homeSources,
 			volumes,
 		};
+	}
+
+	/**
+	 * D-08: sizes what the migration writes, each item measured once. The copy
+	 * set is every converted bind source that exists and every converted named
+	 * volume; the backup set (only when asked for) is the old stack directory and
+	 * the selected bind sources outside it. A size that cannot be measured
+	 * refuses the request, naming the item.
+	 */
+	private async measureMigration(
+		scope: {
+			assessment: TargetAssessment;
+			bindCopies: readonly PlannedBindCopy[];
+			namedVolumeSelections: ReadonlyMap<string, boolean>;
+			volumes: ReadonlyMap<string, PlannedVolume>;
+		},
+		includeBackup: boolean,
+	): Promise<MigrationSizes> {
+		const {assessment, bindCopies, namedVolumeSelections, volumes} = scope;
+		let copyBytes = 0;
+		for (const {originalPath, sourcePath} of bindCopies) {
+			if (sourcePath !== null) {
+				copyBytes += await this.directorySize(sourcePath, `the bind mount source ${originalPath} (${sourcePath})`);
+			}
+		}
+		for (const [key, convert] of namedVolumeSelections) {
+			const volume = convert ? volumes.get(key) : undefined;
+			if (volume !== undefined) {
+				copyBytes += await this.volumeSize(volume.name);
+			}
+		}
+		if (!includeBackup) {
+			return {copyBytes, backupBytes: 0};
+		}
+		let backupBytes = await this.directorySize(assessment.originalDir, `the old stack directory ${assessment.originalDir}`);
+		for (const {originalPath, sourcePath} of planBackupCopies(bindCopies, assessment.originalDir)) {
+			backupBytes += await this.directorySize(sourcePath, `the bind mount source ${originalPath} (${sourcePath})`);
+		}
+		return {copyBytes, backupBytes};
+	}
+
+	private async directorySize(target: string, what: string): Promise<number> {
+		const bytes = await this.diskSpace.measureDirectoryBytes(target);
+		if (bytes === null) {
+			throw new BadRequestError(unmeasurableSizeMessage(what));
+		}
+		return bytes;
+	}
+
+	private async volumeSize(volumeName: string): Promise<number> {
+		const bytes = await this.diskSpace.measureVolumeBytes(volumeName);
+		if (bytes === null) {
+			throw new BadRequestError(unmeasurableSizeMessage(`the Docker volume ${volumeName}`));
+		}
+		return bytes;
+	}
+
+	/**
+	 * D-08: every write of this migration lands under the new stack directory, so
+	 * one requirement on the filesystem that holds it covers the copies and, with
+	 * a backup, the backup. Grouping by filesystem id stays correct should a
+	 * destination ever live elsewhere.
+	 */
+	private assessDisk(space: FilesystemSpace, sizes: MigrationSizes, includeBackup: boolean): MigrationDiskSpace {
+		const bytes = sizes.copyBytes + (includeBackup ? sizes.backupBytes : 0);
+		return assessDiskSpace([{filesystemId: space.filesystemId, label: space.label, bytes}], new Map([[space.filesystemId, space]]));
 	}
 
 	/**

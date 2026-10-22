@@ -111,6 +111,19 @@ export const anonymousVolumeSchema = z.object({
     containerPath: z.string(),
 });
 
+// D-08: what the migration needs to write per filesystem (the data times 1.1)
+// against what the filesystem has free. `ok` is false when any filesystem is short.
+export const migrationDiskSpaceSchema = z.object({
+    ok: z.boolean(),
+    filesystems: z.array(
+        z.object({
+            label: z.string(),
+            requiredBytes: z.number().int().nonnegative(),
+            availableBytes: z.number().int().nonnegative(),
+        }),
+    ),
+});
+
 // G-18-22-status: where a Docker Compose project name comes from, in Compose's
 // order of precedence for what the migrated files show.
 export const composeProjectNameSourceSchema = z.enum(["directory", "compose-file", "env-file"]);
@@ -183,6 +196,7 @@ export type MigrationPreviewInput = z.infer<typeof migrationPreviewSchema>;
 export type BrownfieldAdoptInput = z.infer<typeof brownfieldAdoptSchema>;
 export type MigrationExecuteInput = z.infer<typeof migrationExecuteSchema>;
 export type MigrationTarget = z.infer<typeof migrationTargetSchema>;
+export type MigrationDiskSpace = z.infer<typeof migrationDiskSpaceSchema>;
 export type AnonymousVolumeInput = z.infer<typeof anonymousVolumeSchema>;
 export type ComposeProjectNameSource = z.infer<typeof composeProjectNameSourceSchema>;
 export type SharedProjectName = z.infer<typeof sharedProjectNameSchema>;

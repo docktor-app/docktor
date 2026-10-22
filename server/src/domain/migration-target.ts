@@ -44,6 +44,59 @@ export function asideNameCandidates(stackId: string, limit: number): string[] {
 /** D-07/D-08: an opted-in backup is a plain copy of the old stack directory at this name inside the new stack. */
 export const BACKUP_DIR_NAME = "pre-migration-backup";
 
+/** D-03: the old stack directory is copied to `<backup>/stack`. */
+export const BACKUP_STACK_DIR = "stack";
+
+/** D-03: each selected bind source outside the old stack directory is copied to `<backup>/bind-mounts/<n>-<name>`. */
+export const BACKUP_BIND_MOUNTS_DIR = "bind-mounts";
+
+/** D-03: what the backup holds and where it came from, written into the backup directory. */
+export const BACKUP_MANIFEST_NAME = "manifest.json";
+
+/** A selected bind source the backup copies next to the old stack directory. */
+export interface PlannedBackupCopy {
+    readonly originalPath: string;
+    readonly sourcePath: string;
+    /** Where it goes inside the backup directory, always with `/` separators: `bind-mounts/<n>-<name>`. */
+    readonly backupPath: string;
+}
+
+/** The directory name reduced to letters, digits, dot, underscore and hyphen, so it is safe at any depth of a backup. */
+function backupDirectoryName(sourcePath: string): string {
+    const reduced = path.basename(sourcePath).replace(/[^A-Za-z0-9._-]+/g, "_");
+    return reduced === "" ? "source" : reduced;
+}
+
+/** True when `target` is `parent` itself or lies below it (a name like `..cache` is a child, not a parent segment). */
+function isWithin(target: string, parent: string): boolean {
+    const relative = path.relative(parent, target);
+    return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
+/**
+ * D-03: the bind sources a backup has to copy besides the old stack directory.
+ * A source inside the old directory is already in the stack copy and a source
+ * that does not exist has nothing to copy, so only the readable sources
+ * outside the old directory remain, numbered from 1 in request order.
+ */
+export function planBackupCopies(
+    bindCopies: readonly {readonly originalPath: string; readonly sourcePath: string | null}[],
+    originalDir: string,
+): PlannedBackupCopy[] {
+    const planned: PlannedBackupCopy[] = [];
+    for (const {originalPath, sourcePath} of bindCopies) {
+        if (sourcePath === null || isWithin(sourcePath, originalDir)) {
+            continue;
+        }
+        planned.push({
+            originalPath,
+            sourcePath,
+            backupPath: `${BACKUP_BIND_MOUNTS_DIR}/${planned.length + 1}-${backupDirectoryName(sourcePath)}`,
+        });
+    }
+    return planned;
+}
+
 // CR-02: Docker volume names are also passed verbatim as the `-v` source to
 // `docker run`; a name containing `/` is interpreted by Docker as a host bind
 // path rather than a named volume. The pattern is shared with the request schema.
