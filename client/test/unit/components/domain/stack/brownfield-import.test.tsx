@@ -5,6 +5,8 @@ import {MemoryRouter} from "react-router";
 import type {MigrationOperation, MigrationTarget} from "@docktor/shared";
 import {toast} from "sonner";
 import {BrownfieldImport, type BrownfieldImportApi} from "@/components/domain/stack/brownfield-import";
+import {MigrationToastTracker} from "@/components/domain/stack/migration-toast-tracker";
+import {migrationOperationsStore} from "@/lib/migration-operations-store";
 import {useContainerEvents, type StateEvent} from "@/hooks/use-container-events";
 import type {DiscoveredStack, ScanResult} from "@/lib/brownfield-types";
 import type {CodeEditorProps} from "@/components/common/code-editor";
@@ -21,7 +23,8 @@ vi.mock("sonner", () => ({
 }));
 
 // The SSE connection is exercised by the hook's own tests; here the test
-// delivers migration_progress events through the handler the component registered.
+// delivers migration_progress events through the handler the layout-level
+// tracker registered (it owns the stream and the toasts, see AppLayout).
 vi.mock("@/hooks/use-container-events", () => ({
     useContainerEvents: vi.fn(),
 }));
@@ -32,6 +35,12 @@ function emit(event: StateEvent): void {
     const handler = mockedEvents.mock.lastCall?.[0];
     if (!handler) throw new Error("useContainerEvents was not called");
     act(() => handler(event));
+}
+
+function openStream(): void {
+    const onOpen = mockedEvents.mock.lastCall?.[1]?.onOpen;
+    if (!onOpen) throw new Error("no onOpen callback registered");
+    act(() => onOpen());
 }
 
 const FALLBACK = "Migration failed. Your original stack directory was not modified. Check the error and try again.";
@@ -141,6 +150,7 @@ async function walkToConfirm(options: {backupOn?: boolean; stopOff?: boolean} = 
 function renderImport(api: BrownfieldImportApi): void {
     render(
         <MemoryRouter>
+            <MigrationToastTracker listOperations={api.listMigrationOperations} />
             <BrownfieldImport api={api} />
         </MemoryRouter>,
     );
@@ -149,6 +159,7 @@ function renderImport(api: BrownfieldImportApi): void {
 describe("BrownfieldImport migration flow", () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        migrationOperationsStore.reset();
     });
 
     it("sends backup false and stopOldStack true by default and closes the dialog", async () => {
@@ -412,6 +423,7 @@ describe("BrownfieldImport migration flow", () => {
             const api = createApi(vi.fn());
             vi.mocked(api.listMigrationOperations).mockResolvedValue({operations: [runningOperation]});
             renderImport(api);
+            openStream();
 
             await waitFor(() =>
                 expect(toast.loading).toHaveBeenCalledWith(expect.stringMatching(/^Migrating db/), {id: "op-1"}),
@@ -435,11 +447,10 @@ describe("BrownfieldImport migration flow", () => {
                 .mockResolvedValueOnce({operations: [runningOperation]})
                 .mockResolvedValueOnce({operations: [finished()]});
             renderImport(api);
+            openStream();
             await waitFor(() => expect(toast.loading).toHaveBeenCalled());
 
-            const onOpen = mockedEvents.mock.lastCall?.[1]?.onOpen;
-            expect(onOpen).toBeDefined();
-            act(() => onOpen?.());
+            openStream();
 
             await waitFor(() =>
                 expect(toast.success).toHaveBeenCalledWith(

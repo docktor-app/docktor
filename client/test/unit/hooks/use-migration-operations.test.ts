@@ -1,8 +1,9 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import {act, renderHook, waitFor} from "@testing-library/react";
 import type {MigrationOperation} from "@docktor/shared";
-import {useMigrationOperations} from "@/hooks/use-migration-operations";
+import {useMigrationOperationFeed, useMigrationOperations} from "@/hooks/use-migration-operations";
 import {useContainerEvents, type StateEvent} from "@/hooks/use-container-events";
+import {migrationOperationsStore, type FollowedChange} from "@/lib/migration-operations-store";
 
 vi.mock("@/hooks/use-container-events", () => ({
     useContainerEvents: vi.fn(),
@@ -38,178 +39,169 @@ function succeeded(overrides: Partial<MigrationOperation> = {}): MigrationOperat
     });
 }
 
-function progress(operation: MigrationOperation): StateEvent {
-    return {type: "migration_progress", operation};
-}
-
-/** Delivers an SSE event to the handler the hook registered with useContainerEvents. */
+/** Delivers an SSE event to the handler the feed registered with useContainerEvents. */
 function emit(event: StateEvent): void {
     const handler = mockedEvents.mock.lastCall?.[0];
     if (!handler) throw new Error("useContainerEvents was not called");
     act(() => handler(event));
 }
 
-describe("useMigrationOperations", () => {
+function openStream(): void {
+    const onOpen = mockedEvents.mock.lastCall?.[1]?.onOpen;
+    if (!onOpen) throw new Error("no onOpen callback registered");
+    act(() => onOpen());
+}
+
+describe("useMigrationOperationFeed", () => {
+    let changes: FollowedChange[];
+
     beforeEach(() => {
         vi.clearAllMocks();
+        migrationOperationsStore.reset();
+        changes = [];
+        migrationOperationsStore.onFollowedChange((change) => changes.push(change));
     });
 
-    it("reads the operation list once on mount and follows the running operations", async () => {
-        const running = makeOperation({id: "op-run"});
-        const done = succeeded({id: "op-done", composePath: "/host/opt/other/docker-compose.yml"});
-        const listOperations = vi.fn().mockResolvedValue({operations: [running, done]});
-        const onUpdate = vi.fn();
+    it("does not list operations on mount, only when the stream opens", async () => {
+        const listOperations = vi.fn().mockResolvedValue({operations: []});
 
-        const {result} = renderHook(() => useMigrationOperations(listOperations, {onUpdate}));
+        renderHook(() => useMigrationOperationFeed(listOperations));
+        expect(listOperations).not.toHaveBeenCalled();
 
-        await waitFor(() => expect(result.current.runningByComposePath.size).toBe(1));
-        expect(listOperations).toHaveBeenCalledTimes(1);
-        expect(result.current.runningByComposePath.get(running.composePath)).toEqual(running);
-        expect(onUpdate).toHaveBeenCalledTimes(1);
-        expect(onUpdate).toHaveBeenCalledWith(running);
-        expect(result.current.operations).toHaveLength(2);
+        openStream();
+
+        await waitFor(() => expect(listOperations).toHaveBeenCalledTimes(1));
+    });
+
+    it("lists once per stream open", async () => {
+        const listOperations = vi.fn().mockResolvedValue({operations: []});
+        renderHook(() => useMigrationOperationFeed(listOperations));
+
+        openStream();
+        await waitFor(() => expect(listOperations).toHaveBeenCalledTimes(1));
+        openStream();
+
+        await waitFor(() => expect(listOperations).toHaveBeenCalledTimes(2));
+    });
+
+    it("follows the running operations the list reports", async () => {
+        const running = makeOperation();
+        const listOperations = vi.fn().mockResolvedValue({operations: [running, succeeded({id: "op-done"})]});
+        renderHook(() => useMigrationOperationFeed(listOperations));
+
+        openStream();
+
+        await waitFor(() => expect(changes).toEqual([{kind: "updated", operation: running}]));
+        expect(migrationOperationsStore.getSnapshot()).toHaveLength(2);
+    });
+
+    it("moves a followed operation that finished while the stream was closed", async () => {
+        migrationOperationsStore.track(makeOperation());
+        changes.length = 0;
+        const listOperations = vi.fn().mockResolvedValue({operations: [succeeded()]});
+        renderHook(() => useMigrationOperationFeed(listOperations));
+
+        openStream();
+
+        await waitFor(() => expect(changes).toEqual([{kind: "updated", operation: succeeded()}]));
+    });
+
+    it("ends a followed running operation the server no longer reports as lost", async () => {
+        const operation = makeOperation();
+        migrationOperationsStore.track(operation);
+        changes.length = 0;
+        const listOperations = vi.fn().mockResolvedValue({operations: []});
+        renderHook(() => useMigrationOperationFeed(listOperations));
+
+        openStream();
+
+        await waitFor(() => expect(changes).toEqual([{kind: "lost", operation}]));
+    });
+
+    it("does not call an operation lost that started after the list was requested", async () => {
+        let resolveList: (value: {operations: MigrationOperation[]}) => void = () => undefined;
+        const listOperations = vi.fn().mockReturnValue(new Promise((resolve) => (resolveList = resolve)));
+        renderHook(() => useMigrationOperationFeed(listOperations));
+        openStream();
+
+        act(() => migrationOperationsStore.track(makeOperation()));
+        changes.length = 0;
+        await act(async () => resolveList({operations: []}));
+
+        expect(changes).toEqual([]);
+    });
+
+    it("feeds migration_progress events into the store", () => {
+        renderHook(() => useMigrationOperationFeed(vi.fn().mockResolvedValue({operations: []})));
+        const operation = makeOperation({step: "deploying"});
+
+        emit({type: "migration_progress", operation});
+
+        expect(changes).toEqual([{kind: "updated", operation}]);
+    });
+
+    it("ignores events of other types", () => {
+        renderHook(() => useMigrationOperationFeed(vi.fn().mockResolvedValue({operations: []})));
+
+        emit({type: "stack_status", stackId: "db", stackStatus: "running"});
+
+        expect(migrationOperationsStore.getSnapshot()).toEqual([]);
     });
 
     it("does not throw when the list cannot be read", async () => {
         const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
         const listOperations = vi.fn().mockRejectedValue(new Error("offline"));
+        renderHook(() => useMigrationOperationFeed(listOperations));
 
-        const {result} = renderHook(() => useMigrationOperations(listOperations));
+        openStream();
 
         await waitFor(() => expect(warn).toHaveBeenCalled());
-        expect(result.current.operations).toEqual([]);
+        expect(migrationOperationsStore.getSnapshot()).toEqual([]);
         warn.mockRestore();
     });
+});
 
-    it("stores a tracked operation and reports it through onUpdate", async () => {
-        const listOperations = vi.fn().mockResolvedValue({operations: []});
-        const onUpdate = vi.fn();
-        const {result} = renderHook(() => useMigrationOperations(listOperations, {onUpdate}));
-        await waitFor(() => expect(listOperations).toHaveBeenCalled());
+describe("useMigrationOperations", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        migrationOperationsStore.reset();
+    });
+
+    it("opens no event stream of its own", () => {
+        renderHook(() => useMigrationOperations());
+
+        expect(mockedEvents).not.toHaveBeenCalled();
+    });
+
+    it("stores a tracked operation and exposes it as running by compose path", () => {
+        const {result} = renderHook(() => useMigrationOperations());
         const operation = makeOperation();
 
         act(() => result.current.track(operation));
 
-        expect(onUpdate).toHaveBeenCalledWith(operation);
+        expect(result.current.operations).toEqual([operation]);
         expect(result.current.runningByComposePath.get(operation.composePath)).toEqual(operation);
     });
 
-    it("reports every progress event of a tracked operation and drops it from running when it succeeds", async () => {
-        const listOperations = vi.fn().mockResolvedValue({operations: []});
-        const onUpdate = vi.fn();
-        const {result} = renderHook(() => useMigrationOperations(listOperations, {onUpdate}));
-        await waitFor(() => expect(listOperations).toHaveBeenCalled());
+    it("reflects store updates made elsewhere and drops an operation from running when it finishes", () => {
+        const {result} = renderHook(() => useMigrationOperations());
         act(() => result.current.track(makeOperation()));
 
-        const copying = makeOperation({step: "copying_named_volume", stepDetail: "pgdata"});
-        emit(progress(copying));
-        expect(onUpdate).toHaveBeenLastCalledWith(copying);
-        expect(result.current.runningByComposePath.get(copying.composePath)?.step).toBe("copying_named_volume");
+        act(() => migrationOperationsStore.receive(makeOperation({step: "copying_named_volume", stepDetail: "pgdata"})));
+        expect(result.current.runningByComposePath.get(makeOperation().composePath)?.step).toBe("copying_named_volume");
 
-        const done = succeeded();
-        emit(progress(done));
-        expect(onUpdate).toHaveBeenLastCalledWith(done);
-        expect(result.current.runningByComposePath.size).toBe(0);
-        expect(onUpdate).toHaveBeenCalledTimes(3);
-    });
-
-    it("ignores a late running snapshot of an operation that already finished", async () => {
-        const listOperations = vi.fn().mockResolvedValue({operations: []});
-        const onUpdate = vi.fn();
-        const {result} = renderHook(() => useMigrationOperations(listOperations, {onUpdate}));
-        await waitFor(() => expect(listOperations).toHaveBeenCalled());
-        emit(progress(succeeded()));
-        onUpdate.mockClear();
-
-        act(() => result.current.track(makeOperation()));
-        emit(progress(makeOperation({step: "deploying"})));
-
-        expect(onUpdate).not.toHaveBeenCalled();
+        act(() => migrationOperationsStore.receive(succeeded()));
         expect(result.current.runningByComposePath.size).toBe(0);
         expect(result.current.operations[0]?.status).toBe("succeeded");
     });
 
-    it("does not let the slower start response move a tracked operation back to an earlier step", async () => {
-        const listOperations = vi.fn().mockResolvedValue({operations: []});
-        const onUpdate = vi.fn();
-        const {result} = renderHook(() => useMigrationOperations(listOperations, {onUpdate}));
-        await waitFor(() => expect(listOperations).toHaveBeenCalled());
-        emit(progress(makeOperation({step: "deploying"})));
-        onUpdate.mockClear();
+    it("keeps the same runningByComposePath map until the operations change", () => {
+        const {result, rerender} = renderHook(() => useMigrationOperations());
+        act(() => result.current.track(makeOperation()));
+        const first = result.current.runningByComposePath;
 
-        act(() => result.current.track(makeOperation({step: "starting"})));
+        rerender();
 
-        expect(onUpdate).not.toHaveBeenCalled();
-        expect(result.current.runningByComposePath.get("/host/opt/db/docker-compose.yml")?.step).toBe("deploying");
-    });
-
-    it("stays silent about finished operations it never followed", async () => {
-        const listOperations = vi.fn().mockResolvedValue({operations: []});
-        const onUpdate = vi.fn();
-        const {result} = renderHook(() => useMigrationOperations(listOperations, {onUpdate}));
-        await waitFor(() => expect(listOperations).toHaveBeenCalled());
-
-        emit(progress(succeeded({id: "op-other"})));
-
-        expect(onUpdate).not.toHaveBeenCalled();
-        expect(result.current.operations).toHaveLength(1);
-    });
-
-    it("ignores events of other types", async () => {
-        const listOperations = vi.fn().mockResolvedValue({operations: []});
-        const onUpdate = vi.fn();
-        const {result} = renderHook(() => useMigrationOperations(listOperations, {onUpdate}));
-        await waitFor(() => expect(listOperations).toHaveBeenCalled());
-
-        emit({type: "stack_status", stackId: "db", stackStatus: "running"});
-
-        expect(onUpdate).not.toHaveBeenCalled();
-        expect(result.current.operations).toEqual([]);
-    });
-
-    describe("resync when the event stream (re)opens", () => {
-        function reopen(): void {
-            const onOpen = mockedEvents.mock.lastCall?.[1]?.onOpen;
-            if (!onOpen) throw new Error("no onOpen callback registered");
-            act(() => onOpen());
-        }
-
-        it("registers an onOpen callback that re-reads the operation list", async () => {
-            const listOperations = vi.fn().mockResolvedValue({operations: []});
-            renderHook(() => useMigrationOperations(listOperations));
-            await waitFor(() => expect(listOperations).toHaveBeenCalledTimes(1));
-
-            reopen();
-
-            await waitFor(() => expect(listOperations).toHaveBeenCalledTimes(2));
-        });
-
-        it("reports a followed operation that finished while the stream was closed", async () => {
-            const listOperations = vi
-                .fn()
-                .mockResolvedValueOnce({operations: [makeOperation()]})
-                .mockResolvedValueOnce({operations: [succeeded()]});
-            const onUpdate = vi.fn();
-            const {result} = renderHook(() => useMigrationOperations(listOperations, {onUpdate}));
-            await waitFor(() => expect(onUpdate).toHaveBeenCalledTimes(1));
-
-            reopen();
-
-            await waitFor(() => expect(onUpdate).toHaveBeenLastCalledWith(succeeded()));
-            expect(onUpdate).toHaveBeenCalledTimes(2);
-            expect(result.current.runningByComposePath.size).toBe(0);
-        });
-
-        it("does not report an unchanged operation again", async () => {
-            const listOperations = vi.fn().mockResolvedValue({operations: [makeOperation()]});
-            const onUpdate = vi.fn();
-            renderHook(() => useMigrationOperations(listOperations, {onUpdate}));
-            await waitFor(() => expect(onUpdate).toHaveBeenCalledTimes(1));
-
-            reopen();
-
-            await waitFor(() => expect(listOperations).toHaveBeenCalledTimes(2));
-            expect(onUpdate).toHaveBeenCalledTimes(1);
-        });
+        expect(result.current.runningByComposePath).toBe(first);
     });
 });
