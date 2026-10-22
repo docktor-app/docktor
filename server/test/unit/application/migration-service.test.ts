@@ -15,6 +15,7 @@ import type {ExternalStackControlPort} from "../../../src/application/ports/exte
 import type {SelfStackPort} from "../../../src/application/ports/self-stack-port.js";
 import type {OwnMountsPort} from "../../../src/application/ports/own-mounts-port.js";
 import type {DirectoryIdentityPort} from "../../../src/application/ports/directory-identity-port.js";
+import type {DiskSpaceProbePort} from "../../../src/application/ports/disk-space-probe-port.js";
 import type {ComposeProjectResolverPort} from "../../../src/application/ports/compose-project-resolver-port.js";
 import {ComposeProjectResolver} from "../../../src/infrastructure/compose-project-resolver.js";
 import type {ProjectContainer} from "../../../src/domain/compose-project.js";
@@ -45,6 +46,18 @@ function createMockMigrator() {
         moveDirectory: vi.fn(),
         // #101: every Docker volume exists unless a test says otherwise.
         volumeExists: vi.fn().mockResolvedValue(true),
+    };
+}
+
+/** The path the fake reports as the filesystem every write of a migration lands on. */
+const STACKS_FILESYSTEM = "/opt/docktor/stacks";
+
+/** #107: plenty of free space and small sizes by default; a test sets the figures it cares about. */
+function createMockDiskSpace(availableBytes = 1024 ** 4) {
+    return {
+        filesystemOf: vi.fn(async (_target: string) => ({filesystemId: "fs-stacks", label: STACKS_FILESYSTEM, availableBytes})),
+        measureDirectoryBytes: vi.fn(async (_target: string): Promise<number | null> => 1_024),
+        measureVolumeBytes: vi.fn(async (_name: string): Promise<number | null> => 1_024),
     };
 }
 
@@ -146,6 +159,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
     let mockProjects: ReturnType<typeof createMockProjects>;
     let mockSelfStack: ReturnType<typeof createMockSelfStack>;
     let mockOwnMounts: ReturnType<typeof createMockOwnMounts>;
+    let mockDiskSpace: ReturnType<typeof createMockDiskSpace>;
 
     beforeEach(async () => {
         tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "docktor-migrate-"));
@@ -166,6 +180,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         mockProjects = createMockProjects(mockOldStack);
         mockSelfStack = createMockSelfStack();
         mockOwnMounts = createMockOwnMounts();
+        mockDiskSpace = createMockDiskSpace();
     });
 
     afterEach(async () => {
@@ -207,6 +222,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             selfStack: mockSelfStack as unknown as SelfStackPort,
             ownMounts: mockOwnMounts as unknown as OwnMountsPort,
             directories: hostViewDirectories(),
+            diskSpace: mockDiskSpace as unknown as DiskSpaceProbePort,
         });
     }
 
@@ -644,6 +660,142 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         expect(mockMigrator.copyVolumeToBindMount).not.toHaveBeenCalled();
         expect(mockOldStack.start).not.toHaveBeenCalled();
         await assertOriginalUntouched();
+    });
+
+    describe("free disk space on the receiving filesystem (#107, D-08)", () => {
+        const dataSource = (): string => path.join(originalDir, "data");
+
+        /** Sizes by path: the old stack directory, the ./data bind source, anything else small. */
+        function sizes(figures: {stackDir: number; data: number}): void {
+            mockDiskSpace.measureDirectoryBytes.mockImplementation(async (target: string) => {
+                if (target === originalDir) return figures.stackDir;
+                if (target === dataSource()) return figures.data;
+                return 1;
+            });
+        }
+
+        function copyingData(overrides: Partial<{backup: boolean}> = {}) {
+            return {
+                ...input(overrides),
+                volumeSelections: [{originalPath: "./data", newPath: "./volumes/data", convert: true}],
+            };
+        }
+
+        it("refuses a start before anything is stopped when the receiving filesystem is short, naming needed and available", async () => {
+            sizes({stackDir: 600, data: 400});
+            mockDiskSpace.filesystemOf.mockResolvedValue({filesystemId: "fs-stacks", label: STACKS_FILESYSTEM, availableBytes: 439});
+
+            const refusal = buildService().migrate(copyingData({backup: false}));
+
+            await expect(refusal).rejects.toBeInstanceOf(BadRequestError);
+            await expect(refusal).rejects.toThrow(
+                `Migration refused before anything was stopped: not enough free disk space. ${STACKS_FILESYSTEM} needs 440 B (including a 10% margin), 439 B available.`,
+            );
+            expectNoSideEffects();
+            expect(mockMigrator.moveDirectory).not.toHaveBeenCalled();
+            expect(mockDiskSpace.filesystemOf).toHaveBeenCalledWith(newStackPath);
+        });
+
+        it("accepts a start with exactly the required size (data times 1.1)", async () => {
+            sizes({stackDir: 600, data: 400});
+            mockDiskSpace.filesystemOf.mockResolvedValue({filesystemId: "fs-stacks", label: STACKS_FILESYSTEM, availableBytes: 440});
+
+            const plan = await buildService().preflight(copyingData({backup: false}));
+
+            expect(plan.stackId).toBe(stackId);
+        });
+
+        it("measures nothing and requires nothing when no data is copied and there is no backup", async () => {
+            mockDiskSpace.filesystemOf.mockResolvedValue({filesystemId: "fs-stacks", label: STACKS_FILESYSTEM, availableBytes: 0});
+
+            await expect(buildService().preflight(input({backup: false}))).resolves.toBeDefined();
+
+            expect(mockDiskSpace.measureDirectoryBytes).not.toHaveBeenCalled();
+            expect(mockDiskSpace.measureVolumeBytes).not.toHaveBeenCalled();
+        });
+
+        it("adds the old stack directory to what is needed when a backup is chosen", async () => {
+            sizes({stackDir: 600, data: 400});
+            mockDiskSpace.filesystemOf.mockResolvedValue({filesystemId: "fs-stacks", label: STACKS_FILESYSTEM, availableBytes: 1_099});
+
+            const refusal = buildService().preflight(copyingData({backup: true}));
+
+            await expect(refusal).rejects.toThrow(`${STACKS_FILESYSTEM} needs 1.1 KiB (including a 10% margin), 1099 B available.`);
+            expect(mockDiskSpace.measureDirectoryBytes).toHaveBeenCalledWith(originalDir);
+
+            mockDiskSpace.filesystemOf.mockResolvedValue({filesystemId: "fs-stacks", label: STACKS_FILESYSTEM, availableBytes: 1_100});
+            await expect(buildService().preflight(copyingData({backup: true}))).resolves.toBeDefined();
+        });
+
+        it("counts a bind source outside the old stack directory for the copy and for the backup", async () => {
+            const outside = path.join(tmpRoot, "media");
+            await fs.mkdir(outside);
+            await fs.writeFile(composePath, composeDeclaring([outside]), "utf-8");
+            mockDiskSpace.measureDirectoryBytes.mockImplementation(async (target: string) => (target === originalDir ? 600 : target === outside ? 300 : 1));
+            mockDiskSpace.filesystemOf.mockResolvedValue({filesystemId: "fs-stacks", label: STACKS_FILESYSTEM, availableBytes: 1_319});
+            const request = {
+                ...input({backup: true}),
+                volumeSelections: [{originalPath: outside, newPath: "./volumes/media", convert: true}],
+            };
+
+            // copy 300 + backup (600 directory + 300 outside source) = 1200, times 1.1 = 1320
+            await expect(buildService().preflight(request)).rejects.toThrow("needs 1.3 KiB");
+            mockDiskSpace.filesystemOf.mockResolvedValue({filesystemId: "fs-stacks", label: STACKS_FILESYSTEM, availableBytes: 1_320});
+            await expect(buildService().preflight(request)).resolves.toBeDefined();
+        });
+
+        it("measures a converted named volume by its real Docker name and counts it", async () => {
+            await fs.writeFile(composePath, "services:\n  web:\n    image: nginx\nvolumes:\n  data:\n", "utf-8");
+            mockDiskSpace.measureVolumeBytes.mockResolvedValue(1_000);
+            mockDiskSpace.filesystemOf.mockResolvedValue({filesystemId: "fs-stacks", label: STACKS_FILESYSTEM, availableBytes: 1_099});
+
+            const refusal = buildService().preflight({...input({backup: false}), namedVolumeSelections: new Map([["data", true]])});
+
+            await expect(refusal).rejects.toThrow(`needs 1.1 KiB (including a 10% margin), 1099 B available`);
+            expect(mockDiskSpace.measureVolumeBytes).toHaveBeenCalledWith("original_data");
+        });
+
+        it("does not count a named volume the user keeps, and never counts it for the backup", async () => {
+            await fs.writeFile(composePath, "services:\n  web:\n    image: nginx\nvolumes:\n  data:\n", "utf-8");
+
+            await buildService().preflight({...input({backup: true}), namedVolumeSelections: new Map([["data", false]])});
+
+            expect(mockDiskSpace.measureVolumeBytes).not.toHaveBeenCalled();
+        });
+
+        it("blocks a size it cannot measure instead of skipping the check, naming the path", async () => {
+            mockDiskSpace.measureDirectoryBytes.mockImplementation(async (target: string) => (target === dataSource() ? null : 1));
+
+            const refusal = buildService().preflight(copyingData({backup: false}));
+
+            await expect(refusal).rejects.toBeInstanceOf(BadRequestError);
+            await expect(refusal).rejects.toThrow(/could not be measured.*\.\/data/s);
+            expectNoSideEffects();
+        });
+
+        it("blocks a named volume whose size it cannot measure, naming the volume", async () => {
+            await fs.writeFile(composePath, "services:\n  web:\n    image: nginx\nvolumes:\n  data:\n", "utf-8");
+            mockDiskSpace.measureVolumeBytes.mockResolvedValue(null);
+
+            const refusal = buildService().preflight({...input({backup: false}), namedVolumeSelections: new Map([["data", true]])});
+
+            await expect(refusal).rejects.toThrow(/could not be measured.*original_data/s);
+            expectNoSideEffects();
+        });
+
+        it("blocks an old stack directory it cannot measure when a backup is chosen", async () => {
+            mockDiskSpace.measureDirectoryBytes.mockImplementation(async (target: string) => (target === originalDir ? null : 1));
+
+            await expect(buildService().preflight(input({backup: true}))).rejects.toThrow(/could not be measured.*original/s);
+
+            expectNoSideEffects();
+        });
+
+        it("does not ask about the old directory when no backup is chosen", async () => {
+            await buildService().preflight(copyingData({backup: false}));
+
+            expect(mockDiskSpace.measureDirectoryBytes).not.toHaveBeenCalledWith(originalDir);
+        });
     });
 
     describe("named volumes by the real Docker volume name (#101)", () => {
@@ -1350,6 +1502,18 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             expect(mockStackRepo.create).toHaveBeenCalledWith(expect.objectContaining({hostPath: originalDir}));
         });
 
+        it("counts no backup copy in place: the renamed original is the backup", async () => {
+            mockDiskSpace.measureDirectoryBytes.mockImplementation(async (target: string) =>
+                target === path.join(originalDir, "data") ? 400 : 5_000_000,
+            );
+            mockDiskSpace.filesystemOf.mockResolvedValue({filesystemId: "fs-stacks", label: STACKS_FILESYSTEM, availableBytes: 440});
+
+            const plan = await buildService().preflight(inPlaceInput({backup: true}));
+
+            expect(plan.inPlace).not.toBeNull();
+            expect(mockDiskSpace.measureDirectoryBytes).not.toHaveBeenCalledWith(originalDir);
+        });
+
         it("reports moving_original_aside after stopping and before creating the directory, without a backup step", async () => {
             mockDocker.up.mockResolvedValue(undefined);
             const listener = vi.fn();
@@ -1611,6 +1775,7 @@ describe("previewMigration (MIG-02, D-04, G-18-7)", () => {
             selfStack: mockSelfStack as unknown as SelfStackPort,
             ownMounts,
             directories: hostViewDirectories(),
+            diskSpace: createMockDiskSpace() as unknown as DiskSpaceProbePort,
         });
     }
 
@@ -1912,6 +2077,7 @@ describe.skipIf(process.platform === "win32")("a stack in the stacks folder reac
             selfStack: createMockSelfStack() as unknown as SelfStackPort,
             ownMounts: mockOwnMounts as unknown as OwnMountsPort,
             directories: directoriesOver(mockOwnMounts as unknown as OwnMountsPort),
+            diskSpace: createMockDiskSpace() as unknown as DiskSpaceProbePort,
         });
     }
 
@@ -2068,6 +2234,7 @@ describe("MigrationService environment extraction (CR-02)", () => {
             selfStack: createMockSelfStack() as unknown as SelfStackPort,
             ownMounts: createMockOwnMounts() as unknown as OwnMountsPort,
             directories: hostViewDirectories(),
+            diskSpace: createMockDiskSpace() as unknown as DiskSpaceProbePort,
         });
     }
 
@@ -2224,6 +2391,7 @@ describe("shared compose project name (G-18-22-status)", () => {
             selfStack: createMockSelfStack() as unknown as SelfStackPort,
             ownMounts: createMockOwnMounts() as unknown as OwnMountsPort,
             directories: hostViewDirectories(),
+            diskSpace: createMockDiskSpace() as unknown as DiskSpaceProbePort,
         });
     }
 
@@ -2349,6 +2517,7 @@ describe("shared compose project name (G-18-22-status)", () => {
                 selfStack: createMockSelfStack() as unknown as SelfStackPort,
                 ownMounts: createMockOwnMounts() as unknown as OwnMountsPort,
                 directories: hostViewDirectories(),
+                diskSpace: createMockDiskSpace() as unknown as DiskSpaceProbePort,
             });
         }
 
@@ -2428,6 +2597,7 @@ describe("MigrationService compose file check and dependencies (#108, T-22-03)",
             selfStack: createMockSelfStack() as unknown as SelfStackPort,
             ownMounts: createMockOwnMounts() as unknown as OwnMountsPort,
             directories: hostViewDirectories(),
+            diskSpace: createMockDiskSpace() as unknown as DiskSpaceProbePort,
         });
     }
 

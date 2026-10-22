@@ -7,6 +7,7 @@ import {
     composeFilePathSchema,
     composeVolumeNameSchema,
     discoveredStackSchema,
+    migrationDiskSpaceSchema,
     migrationExecuteSchema,
     migrationPreviewSchema,
     migrationTargetSchema,
@@ -361,5 +362,24 @@ describe("anonymousVolumeSchema (D-05)", () => {
         ["with a non-string path", {service: "db", containerPath: 3}],
     ])("rejects an entry %s", (_label, value) => {
         expect(anonymousVolumeSchema.safeParse(value).success).toBe(false);
+    });
+});
+
+describe("migrationDiskSpaceSchema (D-08)", () => {
+    const filesystem = {label: "/opt/docktor/stacks", requiredBytes: 1_100, availableBytes: 5_000};
+
+    it("accepts an assessment with its filesystems", () => {
+        expect(migrationDiskSpaceSchema.safeParse({ok: true, filesystems: [filesystem]}).success).toBe(true);
+        expect(migrationDiskSpaceSchema.safeParse({ok: true, filesystems: []}).success).toBe(true);
+    });
+
+    it.each([
+        ["no ok flag", {filesystems: [filesystem]}],
+        ["a non-boolean ok", {ok: "yes", filesystems: [filesystem]}],
+        ["a negative required size", {ok: false, filesystems: [{...filesystem, requiredBytes: -1}]}],
+        ["a fractional available size", {ok: false, filesystems: [{...filesystem, availableBytes: 1.5}]}],
+        ["a filesystem without a label", {ok: false, filesystems: [{requiredBytes: 1, availableBytes: 1}]}],
+    ])("rejects %s", (_label, value) => {
+        expect(migrationDiskSpaceSchema.safeParse(value).success).toBe(false);
     });
 });
