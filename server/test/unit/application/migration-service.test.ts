@@ -1634,6 +1634,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
                 "record:created_directory",
                 "createRecord",
                 "record:created_record",
+                "record:deploy_started",
             ]);
             expect(ledger.entries()[0]).toEqual({
                 kind: "stopped_old_stack",
@@ -1652,7 +1653,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
 
             await service.execute(await service.preflight(input({backup: false})), {ledger});
 
-            expect(ledger.entries().map((entry) => entry.kind)).toEqual(["created_directory", "created_record"]);
+            expect(ledger.entries().map((entry) => entry.kind)).toEqual(["created_directory", "created_record", "deploy_started"]);
             expect(mockOldStack.stop).not.toHaveBeenCalled();
         });
 
@@ -1979,6 +1980,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
                     "moved_aside",
                     "created_directory",
                     "created_record",
+                    "deploy_started",
                 ]);
                 expect(ledger.entries()[0]).toMatchObject({sharesProjectWithNewStack: true});
                 expect(ledger.entries()[1]).toEqual({kind: "moved_aside", originalDir, asideDir});

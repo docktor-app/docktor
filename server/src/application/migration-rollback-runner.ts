@@ -14,6 +14,7 @@ import type {ComposeProjectTarget} from "../domain/compose-project.js";
 import type {StackRepository} from "../repositories/stack-repository.js";
 import {errorMessage, reportMigrationProgress, type MigrationLogger, type MigrationProgressListener} from "./migration-progress.js";
 import type {ComposeProjectResolverPort} from "./ports/compose-project-resolver-port.js";
+import type {DockerExecutorPort} from "./ports/docker-executor-port.js";
 import type {ExternalStackControlPort} from "./ports/external-stack-control-port.js";
 import type {StackFilesystemPort} from "./ports/stack-filesystem-port.js";
 import type {VolumeMigratorPort} from "./ports/volume-migrator-port.js";
@@ -28,6 +29,8 @@ export interface MigrationRollbackRunnerDependencies {
     stackFs: Pick<StackFilesystemPort, "removeDirectory">;
     stackRepo: Pick<StackRepository, "delete">;
     migrator: Pick<VolumeMigratorPort, "moveDirectory">;
+    /** Only the keep-volumes down: the volume-deleting `down` is deliberately not reachable from a rollback (T-22-19). */
+    docker: Pick<DockerExecutorPort, "downKeepVolumes">;
     oldStack: Pick<ExternalStackControlPort, "start">;
     projects: Pick<ComposeProjectResolverPort, "listContainers">;
     /** True when anything, even a dangling symlink, occupies the path; the rename back only goes into a free one. */
@@ -85,7 +88,7 @@ export class MigrationRollbackRunner {
             case "stopped_old_stack":
                 return this.restoreOldStack(entry, state);
             case "deploy_started":
-                return Promise.resolve();
+                return this.attempt(state, "take the new stack down", () => this.deps.docker.downKeepVolumes(entry.stackId));
         }
     }
 

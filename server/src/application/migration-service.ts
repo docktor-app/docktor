@@ -426,6 +426,7 @@ export class MigrationService {
 			stackFs: this.stackFs,
 			stackRepo: this.stackRepo,
 			migrator: this.migrator,
+			docker: this.docker,
 			oldStack: this.oldStack,
 			projects: this.projects,
 			pathTaken: pathIsTaken,
@@ -1006,9 +1007,12 @@ export class MigrationService {
 		});
 		await ledger.record({kind: "created_record", stackId});
 
-		// Step 8: Deploy new stack
+		// Step 8: Deploy new stack. Recorded before the call, so a deploy that fails halfway is taken
+		// down on rollback. Without orphan removal: in place, the project is the old stack's, and
+		// removing orphans could delete containers of services the rewritten file no longer lists.
 		this.report(onProgress, "deploying");
-		await this.docker.up(stackId);
+		await ledger.record({kind: "deploy_started", stackId});
+		await this.docker.up(stackId, {removeOrphans: false});
 
 		return inPlace
 			? {success: true, stackId, originalPath: originalDir, keptOriginalAt: inPlace.asideDir}

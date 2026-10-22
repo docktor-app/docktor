@@ -47,8 +47,9 @@ export class DockerExecutor implements DockerExecutorPort {
         });
     }
 
-    async up(stackId: string): Promise<void> {
-        await this.composeExec(stackId, ["up", "-d", "--remove-orphans"]);
+    async up(stackId: string, options: {readonly removeOrphans?: boolean} = {}): Promise<void> {
+        const removeOrphans = options.removeOrphans ?? true;
+        await this.composeExec(stackId, removeOrphans ? ["up", "-d", "--remove-orphans"] : ["up", "-d"]);
     }
 
     async stop(stackId: string): Promise<void> {
@@ -61,6 +62,10 @@ export class DockerExecutor implements DockerExecutorPort {
 
     async down(stackId: string): Promise<void> {
         await this.composeExec(stackId, ["down", "-v"]);
+    }
+
+    async downKeepVolumes(stackId: string): Promise<void> {
+        await this.composeExec(stackId, ["down"]);
     }
 
     async ps(stackId: string): Promise<ContainerStatus[]> {
