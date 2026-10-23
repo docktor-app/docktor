@@ -1,7 +1,7 @@
 import {randomUUID} from "node:crypto";
 import path from "node:path";
 import {
-    maskSecrets,
+    maskErrorText,
     type MigrationJournalDocument,
     type MigrationOperation,
     type MigrationOperationResult,
@@ -48,7 +48,7 @@ const RECOVERY_NOTHING: MigrationRecovery = {count: 0, run: () => Promise.resolv
 const RESTARTED_MIGRATION_MESSAGE = "Docktor restarted during the migration";
 
 function maskError(error: string | undefined): string | undefined {
-    return error === undefined ? undefined : maskSecrets(error);
+    return error === undefined ? undefined : maskErrorText(error);
 }
 
 // Cleanup errors are filesystem and database messages that can echo paths and
@@ -56,7 +56,7 @@ function maskError(error: string | undefined): string | undefined {
 function maskRollback(rollback: MigrationRollbackReport | undefined): MigrationRollbackReport | undefined {
     return rollback === undefined
         ? undefined
-        : {...rollback, cleanupErrors: rollback.cleanupErrors.map((entry) => maskSecrets(entry))};
+        : {...rollback, cleanupErrors: rollback.cleanupErrors.map((entry) => maskErrorText(entry))};
 }
 
 // The error text is compose/docker stderr and may echo URL credentials or
@@ -262,7 +262,7 @@ export class MigrationOperationService {
             this.logger.error(`[migration-recovery] The rollback of ${operationId} failed: ${errorMessage(error)}`);
             return {
                 success: false,
-                error: maskSecrets(`${RESTARTED_MIGRATION_MESSAGE}, and the rollback failed: ${errorMessage(error)}`),
+                error: maskErrorText(`${RESTARTED_MIGRATION_MESSAGE}, and the rollback failed: ${errorMessage(error)}`),
                 originalPath,
             };
         }
@@ -321,7 +321,7 @@ export class MigrationOperationService {
             this.logger.error(`[migration] The journal of ${operation.id} could not be written: ${errorMessage(error)}`);
             return {
                 success: false,
-                error: maskSecrets(
+                error: maskErrorText(
                     `Migration not started: the migration journal could not be written: ${errorMessage(error)}`,
                 ),
                 originalPath: plan.originalDir,
@@ -348,7 +348,7 @@ export class MigrationOperationService {
             // execute reports step failures as results; a rejection is a bug or
             // an infrastructure fault, and must still end the operation.
             this.logger.error("Migration run rejected unexpectedly:", error);
-            return {success: false, error: maskSecrets(`Migration failed: ${errorMessage(error)}`), originalPath: plan.originalDir};
+            return {success: false, error: maskErrorText(`Migration failed: ${errorMessage(error)}`), originalPath: plan.originalDir};
         }
     }
 

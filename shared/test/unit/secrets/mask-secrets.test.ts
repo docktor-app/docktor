@@ -4,6 +4,7 @@ import {
     isSecretKey,
     lineHasSecret,
     maskSecretLine,
+    maskErrorText,
     maskSecrets,
     SECRET_MASK,
     textHasSecret,
@@ -55,13 +56,21 @@ describe("maskSecretLine", () => {
         ["      URL: https://u:p@example.org/x", `      URL: https://u:${M}@example.org/x`],
         ["      command: curl https://u:p@example.org/x", `      command: curl https://u:${M}@example.org/x`],
         ["DATABASE_URL=postgres://app:${DB_PASSWORD}@db/app", "DATABASE_URL=postgres://app:${DB_PASSWORD}@db/app"],
+        ["REDIS_URL=redis://:s3cret@cache:6379/0", `REDIS_URL=redis://:${M}@cache:6379/0`],
+        ["      URL: redis://default:pa/ss@cache", `      URL: redis://default:${M}@cache`],
+        ["      URL: postgres://u:pa@ss@db/app", `      URL: postgres://u:${M}@db/app`],
         ["https://example.org/path", "https://example.org/path"],
+        ["https://example.org:8080/path", "https://example.org:8080/path"],
         ["https://user@example.org/path", "https://user@example.org/path"],
         // block scalars and non-scalar values stay as they are
         ["      SECRET_KEY: |", "      SECRET_KEY: |"],
         ["      SECRET_KEY: >-", "      SECRET_KEY: >-"],
         ["      SECRET_KEY:", "      SECRET_KEY:"],
         ["      SECRET_KEY: {a: b}", "      SECRET_KEY: {a: b}"],
+        // flow-style maps
+        ["    environment: {DB_PASSWORD: x, PORT: 1}", `    environment: {DB_PASSWORD: ${M}, PORT: 1}`],
+        ['    environment: {"API_KEY": "x"}', `    environment: {"API_KEY": "${M}"}`],
+        ["    environment: {PORT: 1}", "    environment: {PORT: 1}"],
         // CRLF
         ["API_KEY=abc\r", `API_KEY=${M}\r`],
         ["      PASSWORD: abc\r", `      PASSWORD: ${M}\r`],
@@ -99,5 +108,64 @@ describe("secret detection", () => {
         expect(textHasSecret("PORT=8080\nDB_PASSWORD=x")).toBe(true);
         expect(textHasSecret("PORT=8080\n  - HOST=db")).toBe(false);
         expect(textHasSecret("")).toBe(false);
+    });
+});
+
+describe("maskSecrets block scalars", () => {
+    it("masks the continuation lines of a block scalar owned by a secret key", () => {
+        const compose = [
+            "    environment:",
+            "      PRIVATE_KEY: |",
+            "        line one",
+            "",
+            "        line two",
+            "      PORT: 8080",
+        ].join("\n");
+        expect(maskSecrets(compose)).toBe(
+            [
+                "    environment:",
+                "      PRIVATE_KEY: |",
+                `        ${M}`,
+                "",
+                `        ${M}`,
+                "      PORT: 8080",
+            ].join("\n"),
+        );
+    });
+
+    it("leaves the block of a non-secret key alone", () => {
+        const text = ["    command: |", "      echo hi"].join("\n");
+        expect(maskSecrets(text)).toBe(text);
+    });
+
+    it("keeps CRLF line endings inside a masked block", () => {
+        expect(maskSecrets("SECRET_KEY: >-\r\n  abc\r\nPORT: 1\r\n")).toBe(
+            `SECRET_KEY: >-\r\n  ${M}\r\nPORT: 1\r\n`,
+        );
+    });
+});
+
+describe("maskErrorText", () => {
+    it("masks an assignment in the middle of a line", () => {
+        expect(maskErrorText("invalid interpolation: POSTGRES_PASSWORD=hunter2 in service db")).toBe(
+            `invalid interpolation: POSTGRES_PASSWORD=${M} in service db`,
+        );
+    });
+
+    it("masks quoted and JSON fragments", () => {
+        expect(maskErrorText('failed to parse {"DB_PASSWORD":"x y"} and API_KEY="abc"')).toBe(
+            `failed to parse {"DB_PASSWORD":"${M}"} and API_KEY="${M}"`,
+        );
+    });
+
+    it("keeps non-secret assignments and variable references", () => {
+        const text = "PORT=8080 and DB_PASSWORD=${DB_PASSWORD} and empty API_KEY= end";
+        expect(maskErrorText(text)).toBe(text);
+    });
+
+    it("still applies the line rules and URL credentials", () => {
+        expect(maskErrorText("pull failed for redis://:pw@cache\nAPI_KEY=k")).toBe(
+            `pull failed for redis://:${M}@cache\nAPI_KEY=${M}`,
+        );
     });
 });

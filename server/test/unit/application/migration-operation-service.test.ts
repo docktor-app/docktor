@@ -214,6 +214,21 @@ describe("MigrationOperationService", () => {
             expect(JSON.stringify(emit.mock.calls)).not.toMatch(/s3cret|hunter2/);
         });
 
+        it("masks a redis URL without a user and an assignment in the middle of a line", async () => {
+            execute.mockResolvedValue({
+                success: false,
+                error: "Migration failed: redis://:s3cret@cache invalid interpolation: POSTGRES_PASSWORD=hunter2 in db",
+                originalPath: "/opt/old",
+            });
+
+            await service.start(inputFor("My App"));
+            await settle("op-1");
+
+            expect(service.get("op-1").result?.error).toBe(
+                "Migration failed: redis://:\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@cache invalid interpolation: POSTGRES_PASSWORD=\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022 in db",
+            );
+        });
+
         describe("the rollback report decides the final status (#100, D-07)", () => {
             const FAILED: MigrationResult = {success: false, error: "Migration failed: boom", originalPath: "/opt/old"};
 
