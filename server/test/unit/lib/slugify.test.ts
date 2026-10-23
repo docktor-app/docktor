@@ -51,4 +51,13 @@ describe("slugify", () => {
     it("handles empty string", () => {
         expect(slugify("")).toBe("");
     });
+
+    it("never ends in a hyphen after the cut to 63 characters", () => {
+        const name = `${"a".repeat(62)} tail`;
+
+        const slug = slugify(name);
+
+        expect(slug).toBe("a".repeat(62));
+        expect(slug).not.toMatch(/-$/);
+    });
 });

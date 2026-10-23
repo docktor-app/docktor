@@ -43,8 +43,11 @@ export class MigrationJournal implements MigrationJournalPort {
         const target = path.join(directory, `${operationId}${JOURNAL_SUFFIX}`);
         const temporary = path.join(directory, `.${operationId}${JOURNAL_SUFFIX}.tmp-${randomBytes(6).toString("hex")}`);
         try {
+            // A document the boot recovery could not read back is worthless: refuse it now, while the
+            // run can still stop before its next side effect (WR-03).
+            const serialized = JSON.stringify(migrationJournalSchema.parse(document));
             await fs.mkdir(directory, {recursive: true, mode: DIRECTORY_MODE});
-            await writeDurably(temporary, JSON.stringify(document));
+            await writeDurably(temporary, serialized);
             await fs.rename(temporary, target);
         } catch (error: unknown) {
             await fs.rm(temporary, {force: true}).catch(() => undefined);

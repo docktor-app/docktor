@@ -73,6 +73,16 @@ describe("MigrationJournal", () => {
             await expect(fs.stat(directory)).rejects.toHaveProperty("code", "ENOENT");
         });
 
+        it("refuses a document the recovery could not read back, and writes nothing (WR-03)", async () => {
+            const document = documentFor("op-1", [{kind: "created_directory", stackId: "ends-with-hyphen-", ownerId: "owner-1"}]);
+
+            const attempt = journal.write(document);
+
+            await expect(attempt).rejects.toBeInstanceOf(AppError);
+            await expect(attempt).rejects.toHaveProperty("cause");
+            await expect(fs.stat(directory)).rejects.toHaveProperty("code", "ENOENT");
+        });
+
         it("wraps a filesystem failure in an AppError that keeps the cause", async () => {
             await fs.mkdir(path.join(root, ".docktor"));
             await fs.writeFile(directory, "a file where the directory belongs", "utf-8");
