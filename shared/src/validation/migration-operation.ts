@@ -141,6 +141,8 @@ export const migrationJournalSchema = z.object({
     // Set when the run ended and its journal could not be removed: the journal is then rewritten
     // with an empty ledger, and the boot recovery ignores (and removes) it instead of replaying it.
     completedAt: z.iso.datetime().optional(),
+    // How many boots already tried to roll this journal back without verifying the result.
+    recoveryAttempts: z.number().int().min(0).max(100).optional(),
 });
 
 export const migrationOperationParamsSchema = z.object({

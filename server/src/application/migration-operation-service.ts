@@ -49,6 +49,15 @@ const RECOVERY_NOTHING: MigrationRecovery = {count: 0, run: () => Promise.resolv
 const JOURNAL_REMOVE_ATTEMPTS = 3;
 const JOURNAL_REMOVE_BACKOFF_MS = 200;
 
+/**
+ * A rollback that could not be verified (the Docker daemon was not ready after a
+ * reboot, a restart timed out) keeps its journal and is tried again at the next
+ * boot, this many times in all (WR-09). The replay is safe: it only touches what
+ * the journal's ownership marker still proves belongs to the interrupted run.
+ */
+const MAX_RECOVERY_ATTEMPTS = 3;
+const RETRY_NOTICE = "Docktor will try the rollback again the next time it starts.";
+
 const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 const RESTARTED_MIGRATION_MESSAGE = "Docktor restarted during the migration";
@@ -148,6 +157,11 @@ export class MigrationOperationService {
         return [...this.operations.values()];
     }
 
+    /** The operations still running, so a shutdown can say which migrations the next boot will roll back (WR-09). */
+    runningOperationIds(): string[] {
+        return [...this.operations.values()].filter((operation) => operation.status === "running").map((operation) => operation.id);
+    }
+
     get(operationId: string): MigrationOperation {
         this.prune();
         const operation = this.operations.get(operationId);
@@ -226,11 +240,8 @@ export class MigrationOperationService {
     private async recoverOne(document: MigrationJournalDocument, heldKeys: readonly string[]): Promise<void> {
         const operationId = document.operation.id;
         try {
-            const result = await this.rollBackInterrupted(document);
-            await this.discardJournal(operationId, {
-                remove: () => this.journal.remove(operationId),
-                retire: () => this.retireJournal(document),
-            });
+            const outcome = await this.rollBackInterrupted(document);
+            const result = await this.settleJournal(document, outcome);
             const current = this.operations.get(operationId);
             if (current) {
                 this.save(finishMigrationOperation(current, result, this.now()));
@@ -240,6 +251,34 @@ export class MigrationOperationService {
         } finally {
             this.releaseInFlight(heldKeys);
         }
+    }
+
+    /**
+     * Removes the journal once the rollback was verified, or when the attempts
+     * are used up. Otherwise the journal stays, with the attempt counted, so the
+     * next boot retries; the journal is removed before the finished operation is
+     * published either way.
+     */
+    private async settleJournal(
+        document: MigrationJournalDocument,
+        result: MigrationOperationResult,
+    ): Promise<MigrationOperationResult> {
+        const operationId = document.operation.id;
+        const attempts = (document.recoveryAttempts ?? 0) + 1;
+        if (migrationOperationStatusOf(result) === "rolled_back" || attempts >= MAX_RECOVERY_ATTEMPTS) {
+            await this.discardJournal(operationId, {
+                remove: () => this.journal.remove(operationId),
+                retire: () => this.retireJournal(document),
+            });
+            return result;
+        }
+        try {
+            await this.journal.write({...document, recoveryAttempts: attempts});
+        } catch (error: unknown) {
+            this.logger.error(`[migration-recovery] The journal of ${operationId} could not be kept for a retry: ${errorMessage(error)}`);
+            return result;
+        }
+        return {...result, error: `${result.error ?? "The rollback could not be verified."} ${RETRY_NOTICE}`};
     }
 
     /**

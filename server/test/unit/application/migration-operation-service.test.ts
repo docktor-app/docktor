@@ -750,7 +750,7 @@ describe("MigrationOperationService", () => {
             expect(seen).toEqual(["restarting_old_stack"]);
         });
 
-        it("finishes failed with the reason when the rollback throws, and still removes the journal", async () => {
+        it("finishes failed with the reason when the rollback throws, and keeps the journal for another try (WR-09)", async () => {
             rollbackInterrupted.mockRejectedValue(new Error("docker unreachable"));
 
             await service.recoverInterrupted([journalDocument("op-old")]).run();
@@ -761,8 +761,35 @@ describe("MigrationOperationService", () => {
                 result: {success: false, originalPath: "/opt/app"},
             });
             expect(service.get("op-old").result?.error).toContain("docker unreachable");
-            expect(journalRemove).toHaveBeenCalledWith("op-old");
+            expect(service.get("op-old").result?.error).toContain("try the rollback again");
+            expect(journalRemove).not.toHaveBeenCalled();
+            expect(journalWrite).toHaveBeenCalledWith(expect.objectContaining({recoveryAttempts: 1}));
             expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("docker unreachable"));
+        });
+
+        it("keeps the journal when the rollback report is not verified, and removes it after the last attempt", async () => {
+            const unverified: MigrationRollbackOutcome = {
+                report: {oldStack: "restart-unverified", original: "untouched", cleanupErrors: []},
+            };
+            rollbackInterrupted.mockResolvedValue(unverified);
+
+            await service.recoverInterrupted([journalDocument("op-a")]).run();
+            expect(journalRemove).not.toHaveBeenCalled();
+            expect(journalWrite).toHaveBeenCalledWith(expect.objectContaining({recoveryAttempts: 1}));
+
+            await service.recoverInterrupted([{...journalDocument("op-b"), recoveryAttempts: 2}]).run();
+            expect(journalRemove).toHaveBeenCalledWith("op-b");
+            expect(service.get("op-b").result?.error).not.toContain("try the rollback again");
+        });
+
+        it("does not claim a retry when the journal could not be kept", async () => {
+            rollbackInterrupted.mockRejectedValue(new Error("docker unreachable"));
+            journalWrite.mockRejectedValue(new Error("read-only"));
+
+            await service.recoverInterrupted([journalDocument("op-old")]).run();
+
+            expect(service.get("op-old").result?.error).not.toContain("try the rollback again");
+            expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("could not be kept"));
         });
 
         it("removes the journal before the finished operation is published, and releases the keys", async () => {
@@ -827,6 +854,19 @@ describe("MigrationOperationService", () => {
 
             expect(service.get("op-old").status).toBe("rolled_back");
             expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("busy"));
+        });
+
+        it("lists the running operations for the shutdown notice", async () => {
+            let release!: () => void;
+            execute.mockImplementation(() => new Promise<MigrationResult>((resolve) => (release = () => resolve(SUCCESS))));
+
+            await service.start(inputFor("My App"));
+            expect(service.runningOperationIds()).toEqual(["op-1"]);
+            await vi.waitFor(() => expect(execute).toHaveBeenCalled());
+
+            release();
+            await settle("op-1");
+            expect(service.runningOperationIds()).toEqual([]);
         });
 
         it("returns a no-op for no documents", async () => {
