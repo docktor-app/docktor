@@ -174,6 +174,7 @@ describe("migrationLedgerEntrySchema", () => {
         ["an empty aside path", {kind: "moved_aside", originalDir: "/opt/memos", asideDir: ""}],
         ["an empty original path", {kind: "moved_aside", originalDir: "", asideDir: "/opt/aside"}],
         ["an empty compose path", {...STOPPED, composePath: ""}],
+        ["a service name that looks like a compose flag", {...STOPPED, runningBefore: ["--force-recreate"]}],
         ["a missing sharesProjectWithNewStack flag", {kind: "stopped_old_stack", project: "memos", composePath: "/c.yml", runningBefore: []}],
     ])("rejects %s", (_label, entry) => {
         expect(migrationLedgerEntrySchema.safeParse(entry).success).toBe(false);

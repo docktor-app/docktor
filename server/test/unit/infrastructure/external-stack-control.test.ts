@@ -39,10 +39,23 @@ describe("ExternalStackControl", () => {
 
         const [file, args, options] = runner.mock.calls[0] ?? [];
         expect(file).toBe("docker");
-        expect(args).toEqual(["compose", "-p", "other", "-f", COMPOSE_PATH, "start", "db", "web"]);
+        expect(args).toEqual(["compose", "-p", "other", "-f", COMPOSE_PATH, "start", "--", "db", "web"]);
         expect(options?.timeout).toBe(120_000);
         expect(options?.cwd.replaceAll("\\", "/")).toBe("/host/opt/app");
     });
+
+    it.each(["--force-recreate", "-V", "--remove-orphans", "web db", "", "a/b"])(
+        "refuses the service name %j instead of passing it to docker compose (WR-06)",
+        async (name) => {
+            const runner = createRunner();
+            const control = new ExternalStackControl(runner);
+
+            await expect(control.start(TARGET, [name])).rejects.toBeInstanceOf(AppError);
+            await expect(control.restoreServices(TARGET, ["db", name])).rejects.toBeInstanceOf(AppError);
+
+            expect(runner).not.toHaveBeenCalled();
+        },
+    );
 
     it("start with no service runs nothing", async () => {
         const runner = createRunner();
@@ -61,7 +74,7 @@ describe("ExternalStackControl", () => {
             expect(runner).toHaveBeenCalledTimes(1);
             const [file, args, options] = runner.mock.calls[0] ?? [];
             expect(file).toBe("docker");
-            expect(args).toEqual(["compose", "-p", "other", "-f", COMPOSE_PATH, "up", "-d", "--no-build", "db"]);
+            expect(args).toEqual(["compose", "-p", "other", "-f", COMPOSE_PATH, "up", "-d", "--no-build", "--", "db"]);
             expect(options?.timeout).toBe(120_000);
             expect(options?.cwd.replaceAll("\\", "/")).toBe("/host/opt/app");
         });

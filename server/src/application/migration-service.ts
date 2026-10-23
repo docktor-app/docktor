@@ -41,6 +41,7 @@ import {
 	composeStopTimeoutMs,
 	runningServices,
 	stillRunning,
+	unsafeServiceNames,
 	stopNotVerifiedMessage,
 	type ComposeProjectTarget,
 	type ResolvedComposeProject,
@@ -1080,11 +1081,19 @@ export class MigrationService {
 			);
 		}
 		// The services of the old project that ran before the stop: what a rollback starts again (#100).
+		const runningBefore = runningServices(containers);
+		// WR-06: the names come from container labels and end up as compose arguments.
+		const unsafe = unsafeServiceNames(runningBefore);
+		if (unsafe.length > 0) {
+			throw new ConflictError(
+				`Migration refused: the service name(s) ${unsafe.map((name) => JSON.stringify(name)).join(", ")} in the Docker Compose project "${oldProject.name}" are not valid compose service names. Nothing was stopped.`,
+			);
+		}
 		await ledger.record({
 			kind: "stopped_old_stack",
 			project: oldProject.name,
 			composePath,
-			runningBefore: runningServices(containers),
+			runningBefore,
 			sharesProjectWithNewStack,
 		});
 		await this.oldStack.stop(target, {timeoutMs: composeStopTimeoutMs(running.length)});

@@ -26,6 +26,15 @@ export const composeVolumeNameSchema = z.string().regex(COMPOSE_VOLUME_NAME_PATT
     message: "Must be a Docker volume name: letters, digits, dots, underscores or hyphens, starting with a letter or digit",
 });
 
+// WR-06: a compose service name is appended to `docker compose start|up` as an
+// argument. The service label of a container can be set by anyone who creates
+// one, so a name starting with "-" would be parsed as a compose flag.
+export const COMPOSE_SERVICE_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
+
+export const composeServiceNameSchema = z.string().regex(COMPOSE_SERVICE_NAME_PATTERN, {
+    message: "Must be a compose service name: letters, digits, dots, underscores or hyphens, starting with a letter or digit",
+});
+
 function hasParentSegment(value: string): boolean {
     return value.split(/[\\/]/).includes("..");
 }

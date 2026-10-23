@@ -1,3 +1,5 @@
+import {COMPOSE_SERVICE_NAME_PATTERN} from "@docktor/shared";
+
 /** One mount of a container, as Docker records it (`Mounts` of the container list). */
 export interface ProjectContainerMount {
     readonly type: string;
@@ -72,6 +74,11 @@ export function stillRunning(containers: readonly ProjectContainer[]): string[] 
  */
 export function activeWithoutService(containers: readonly ProjectContainer[]): string[] {
     return containers.filter((container) => isActive(container) && container.service === null).map((container) => container.name);
+}
+
+/** The services whose names cannot safely be passed to `docker compose start|up` (WR-06). */
+export function unsafeServiceNames(services: readonly string[]): string[] {
+    return services.filter((service) => !COMPOSE_SERVICE_NAME_PATTERN.test(service));
 }
 
 /** The refusal for a stop that left containers of the old project running (D-04). */

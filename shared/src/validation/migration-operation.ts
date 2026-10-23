@@ -1,5 +1,7 @@
 import {z} from "zod";
 
+import {composeServiceNameSchema} from "./brownfield.js";
+
 // G-18-job: a migration can take minutes (stop up to 120 s, volume copies,
 // compose up with pulls), so POST migrate answers 202 with one of these
 // operations and the run continues in the background. The operation is what
@@ -82,7 +84,7 @@ export const migrationLedgerEntrySchema = z.discriminatedUnion("kind", [
         project: z.string(),
         composePath: z.string().min(1),
         // The services that ran before the stop; the only ones a rollback starts.
-        runningBefore: z.array(z.string()),
+        runningBefore: z.array(composeServiceNameSchema),
         // The new stack runs under the old stack's compose project (in place, or the same name).
         sharesProjectWithNewStack: z.boolean(),
     }),

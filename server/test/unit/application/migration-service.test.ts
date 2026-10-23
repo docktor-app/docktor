@@ -450,6 +450,16 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             expect(mockOldStack.start).not.toHaveBeenCalled();
         });
 
+        it("refuses to stop a project whose running service is named like a compose flag, and stops nothing (WR-06)", async () => {
+            mockProjects.listContainers.mockResolvedValue([{...runningContainer("original"), service: "--force-recreate"}]);
+
+            const result = await buildService().migrate(input());
+
+            expect(result.success).toBe(false);
+            expect(result.error).toContain("not valid compose service names");
+            expect(mockOldStack.stop).not.toHaveBeenCalled();
+        });
+
         it("gives the stop a timeout that grows with the number of containers", async () => {
             const many = Array.from({length: 10}, (_, index) => runningContainer("original", "web", index + 1));
             mockProjects.listContainers.mockResolvedValueOnce(many).mockResolvedValue([]);
