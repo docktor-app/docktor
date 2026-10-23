@@ -64,7 +64,7 @@ describe("JournaledMigrationLedger", () => {
         const recording = ledger.record(CREATED).then(() => {
             resolved = true;
         });
-        await Promise.resolve();
+        await vi.waitFor(() => expect(write).toHaveBeenCalledTimes(1));
         expect(resolved).toBe(false);
         finish();
         await recording;

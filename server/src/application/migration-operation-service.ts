@@ -13,10 +13,14 @@ import {
     startMigrationOperation,
 } from "../domain/migration-operation.js";
 import {domainEventBus} from "../infrastructure/event-bus.js";
+import {migrationJournal} from "../infrastructure/migration-journal.js";
 import {ConflictError, NotFoundError} from "../lib/errors.js";
 import {toComparablePath} from "../domain/self-stack-paths.js";
 import {slugify} from "../lib/slugify.js";
+import {errorMessage} from "./migration-progress.js";
+import {JournaledMigrationLedger} from "./journaled-migration-ledger.js";
 import type {EventBusPort} from "./ports/event-bus-port.js";
+import type {MigrationJournalPort} from "./ports/migration-journal-port.js";
 import {
     migrationService,
     type MigrationInput,
@@ -65,9 +69,11 @@ function toOperationResult(result: MigrationResult): MigrationOperationResult {
  * stack is back (not stopped, or seen running again; directory untouched or
  * moved back) and `failed` otherwise, so the outcomes shown are verified ones.
  *
- * The registry is process-local (one Docktor instance): a restart ends running
- * migrations together with the process, so persisting them would only keep
- * stale "running" rows.
+ * Operations are kept in memory (one Docktor instance). What a restart would
+ * lose is covered by the migration journal (D-06): every run writes its
+ * operation, original directory and ledger to disk before each destructive
+ * step and removes them when it ends, and the boot recovery rolls back what a
+ * restart interrupted.
  */
 export class MigrationOperationService {
     private readonly operations = new Map<string, MigrationOperation>();
@@ -78,6 +84,8 @@ export class MigrationOperationService {
         private readonly newId: () => string = randomUUID,
         private readonly now: () => Date = () => new Date(),
         private readonly events: Pick<EventBusPort, "emit"> = domainEventBus,
+        private readonly journal: MigrationJournalPort = migrationJournal,
+        private readonly logger: Pick<Console, "info" | "error"> = console,
     ) {}
 
     async start(input: MigrationInput): Promise<MigrationOperation> {
@@ -100,7 +108,7 @@ export class MigrationOperationService {
             startedAt: this.now(),
         });
         this.save(operation);
-        void this.run(operation.id, plan, heldKeys);
+        void this.run(operation, plan, heldKeys);
         return operation;
     }
 
@@ -176,31 +184,70 @@ export class MigrationOperationService {
         }
     }
 
-    private async run(operationId: string, plan: MigrationPlan, heldKeys: readonly string[]): Promise<void> {
+    private async run(operation: MigrationOperation, plan: MigrationPlan, heldKeys: readonly string[]): Promise<void> {
         try {
-            const result = await this.execute(plan, operationId);
-            const operation = this.operations.get(operationId);
-            if (operation) {
-                this.save(finishMigrationOperation(operation, result, this.now()));
+            // The journal is removed inside execute, before the finished operation is saved: a crash in
+            // between can then never replay a rollback that already ran.
+            const result = await this.execute(plan, operation);
+            const current = this.operations.get(operation.id);
+            if (current) {
+                this.save(finishMigrationOperation(current, result, this.now()));
             }
         } finally {
             this.releaseInFlight(heldKeys);
         }
     }
 
-    private async execute(plan: MigrationPlan, operationId: string): Promise<MigrationOperationResult> {
+    private async execute(plan: MigrationPlan, operation: MigrationOperation): Promise<MigrationOperationResult> {
+        const ledger = new JournaledMigrationLedger(this.journal, {
+            version: 1,
+            operation,
+            originalDir: plan.originalDir,
+        });
+        try {
+            await ledger.start();
+        } catch (error: unknown) {
+            // Nothing ran: without a journal a restart could not undo the first step, so no step runs.
+            this.logger.error(`[migration] The journal of ${operation.id} could not be written: ${errorMessage(error)}`);
+            return {
+                success: false,
+                error: maskSecrets(
+                    `Migration not started: the migration journal could not be written: ${errorMessage(error)}`,
+                ),
+                originalPath: plan.originalDir,
+            };
+        }
+        const result = await this.executeJournaled(plan, operation.id, ledger);
+        await this.discardJournal(ledger, operation.id);
+        return result;
+    }
+
+    private async executeJournaled(
+        plan: MigrationPlan,
+        operationId: string,
+        ledger: JournaledMigrationLedger,
+    ): Promise<MigrationOperationResult> {
         try {
             return toOperationResult(
                 await this.migrations.execute(plan, {
                     onProgress: (progress) => this.recordStep(operationId, progress),
+                    ledger,
                 }),
             );
         } catch (error) {
             // execute reports step failures as results; a rejection is a bug or
             // an infrastructure fault, and must still end the operation.
-            console.error("Migration run rejected unexpectedly:", error);
-            const message = error instanceof Error ? error.message : String(error);
-            return {success: false, error: maskSecrets(`Migration failed: ${message}`), originalPath: plan.originalDir};
+            this.logger.error("Migration run rejected unexpectedly:", error);
+            return {success: false, error: maskSecrets(`Migration failed: ${errorMessage(error)}`), originalPath: plan.originalDir};
+        }
+    }
+
+    /** A journal that cannot be removed is logged, never thrown: the operation's outcome is already known. */
+    private async discardJournal(ledger: JournaledMigrationLedger, operationId: string): Promise<void> {
+        try {
+            await ledger.discard();
+        } catch (error: unknown) {
+            this.logger.error(`[migration] The journal of ${operationId} could not be removed: ${errorMessage(error)}`);
         }
     }
 }
