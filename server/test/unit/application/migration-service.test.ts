@@ -3005,6 +3005,18 @@ describe("MigrationService environment extraction (CR-02)", () => {
         expect(result.success).toBe(true);
         expect(await readNewEnv()).toBe("PORT=80");
     });
+
+    it("writes the .env that holds extracted secrets readable by the owner only (IN-02)", async () => {
+        await fs.writeFile(composePath, ONE_SERVICE, "utf-8");
+        await fs.writeFile(path.join(originalDir, ".env"), "PORT=8080\n", "utf-8");
+        await fs.chmod(path.join(originalDir, ".env"), 0o600);
+
+        const result = await buildRealRewriterService().migrate(request());
+
+        expect(result.success).toBe(true);
+        const {mode} = await fs.stat(path.join(newStackPath, ".env"));
+        expect(mode & 0o777).toBe(0o600);
+    });
 });
 
 describe("shared compose project name (G-18-22-status)", () => {

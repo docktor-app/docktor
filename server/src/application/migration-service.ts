@@ -102,6 +102,9 @@ function assertWithin(base: string, target: string): string {
 	return resolved;
 }
 
+// Owner-only read/write: the new stack's `.env` can hold secrets extracted from the compose file.
+const ENV_FILE_MODE = 0o600;
+
 // How many "<id>-pre-migration[-N]" names are tried before giving up (G-18-7).
 const ASIDE_NAME_ATTEMPTS = 100;
 
@@ -1200,7 +1203,11 @@ export class MigrationService {
 			const merged = existingEnv
 				? `${existingEnv}\n\n# Extracted from docker-compose.yml\n${extractedEnv}`
 				: extractedEnv;
-			await fs.writeFile(target, merged, "utf-8");
+			// IN-02: extracted secrets must not land in a world-readable file; the mode only
+			// applies when the file is created, so a file the bind copy already brought is
+			// tightened explicitly (a verbatim `copyFile` below keeps the old file's mode).
+			await fs.writeFile(target, merged, {encoding: "utf-8", mode: ENV_FILE_MODE});
+			await fs.chmod(target, ENV_FILE_MODE);
 		} else if (existingEnv !== null) {
 			await fs.copyFile(path.join(sourceDir, ".env"), target);
 		}
