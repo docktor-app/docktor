@@ -6,7 +6,8 @@ import type {
     MigrationPlan,
     MigrationResult,
 } from "../../../src/application/migration-service.js";
-import type {MigrationOperation, MigrationRollbackReport} from "@docktor/shared";
+import type {MigrationJournalDocument, MigrationOperation, MigrationRollbackReport} from "@docktor/shared";
+import type {MigrationJournalPort} from "../../../src/application/ports/migration-journal-port.js";
 import {BadRequestError, ConflictError, NotFoundError} from "../../../src/lib/errors.js";
 
 const HOUR = 60 * 60_000;
@@ -70,6 +71,10 @@ describe("MigrationOperationService", () => {
     let counter: number;
     let service: MigrationOperationService;
     let emit: ReturnType<typeof vi.fn<(event: "migration.progressed", payload: {operation: MigrationOperation}) => void>>;
+    let journalWrite: ReturnType<typeof vi.fn<(document: MigrationJournalDocument) => Promise<void>>>;
+    let journalRemove: ReturnType<typeof vi.fn<(operationId: string) => Promise<void>>>;
+    let journal: MigrationJournalPort;
+    let logger: {info: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn>};
 
     beforeEach(() => {
         clock = new Date("2026-01-01T10:00:00.000Z");
@@ -77,11 +82,17 @@ describe("MigrationOperationService", () => {
         preflight = vi.fn(async (input: MigrationInput) => planFor(input));
         execute = vi.fn(async () => SUCCESS);
         emit = vi.fn();
+        journalWrite = vi.fn(async () => undefined);
+        journalRemove = vi.fn(async () => undefined);
+        journal = {write: journalWrite, remove: journalRemove, list: vi.fn()};
+        logger = {info: vi.fn(), error: vi.fn()};
         service = new MigrationOperationService(
             {preflight, execute},
             () => `op-${++counter}`,
             () => clock,
             {emit},
+            journal,
+            logger,
         );
     });
 
@@ -252,6 +263,114 @@ describe("MigrationOperationService", () => {
             await expect(service.start(inputFor("My App"))).resolves.toMatchObject({status: "running"});
             expect(preflight).toHaveBeenCalledTimes(2);
             await settle("op-1");
+        });
+    });
+
+    describe("the migration journal (D-06)", () => {
+        it("writes the journal before execute, hands the ledger to execute and removes the journal before the finished operation is saved", async () => {
+            const order: string[] = [];
+            journalWrite.mockImplementation(async () => void order.push("journal.write"));
+            journalRemove.mockImplementation(async () => void order.push("journal.remove"));
+            execute.mockImplementation(async () => {
+                order.push("execute");
+                return SUCCESS;
+            });
+            emit.mockImplementation((_event, payload) => void order.push(`save:${payload.operation.status}`));
+
+            await service.start(inputFor("My App"));
+            await settle("op-1");
+
+            expect(order).toEqual(["save:running", "journal.write", "execute", "journal.remove", "save:succeeded"]);
+        });
+
+        it("journals the started operation with the original directory and an empty ledger", async () => {
+            await service.start(inputFor("My App"));
+            await settle("op-1");
+
+            expect(journalWrite).toHaveBeenCalledWith({
+                version: 1,
+                operation: expect.objectContaining({id: "op-1", status: "running", step: "starting"}),
+                originalDir: "/opt/old",
+                ledger: [],
+            });
+        });
+
+        it("passes a ledger to execute that persists every entry it records", async () => {
+            execute.mockImplementation(async (_plan, options) => {
+                await options?.ledger?.record({kind: "created_directory", stackId: "my-app"});
+                return SUCCESS;
+            });
+
+            await service.start(inputFor("My App"));
+            await settle("op-1");
+
+            expect(journalWrite).toHaveBeenCalledTimes(2);
+            expect(journalWrite.mock.calls[1]?.[0].ledger).toEqual([{kind: "created_directory", stackId: "my-app"}]);
+        });
+
+        it("removes the journal of a failed migration as well", async () => {
+            execute.mockResolvedValue({success: false, error: "boom", originalPath: "/opt/old"});
+
+            await service.start(inputFor("My App"));
+            await settle("op-1");
+
+            expect(journalRemove).toHaveBeenCalledWith("op-1");
+        });
+
+        it("removes the journal when execute rejects unexpectedly", async () => {
+            vi.spyOn(console, "error").mockImplementation(() => undefined);
+            execute.mockRejectedValueOnce(new Error("bug"));
+
+            await service.start(inputFor("My App"));
+            await settle("op-1");
+
+            expect(journalRemove).toHaveBeenCalledWith("op-1");
+        });
+
+        it("finishes the operation failed without executing anything when the first journal write fails", async () => {
+            journalWrite.mockRejectedValueOnce(new Error("read-only file system"));
+
+            await service.start(inputFor("My App"));
+            await settle("op-1");
+
+            expect(execute).not.toHaveBeenCalled();
+            expect(service.get("op-1")).toMatchObject({
+                status: "failed",
+                step: "finished",
+                result: {
+                    success: false,
+                    error: "Migration not started: the migration journal could not be written: read-only file system",
+                    originalPath: "/opt/old",
+                },
+            });
+        });
+
+        it("releases the slot after a journal write failure", async () => {
+            journalWrite.mockRejectedValueOnce(new Error("read-only"));
+            await service.start(inputFor("My App"));
+            await settle("op-1");
+
+            await expect(service.start(inputFor("My App"))).resolves.toMatchObject({id: "op-2"});
+            await settle("op-2");
+        });
+
+        it("masks secrets in the journal write failure it stores", async () => {
+            journalWrite.mockRejectedValueOnce(new Error("cannot write postgres://app:s3cret@db"));
+
+            await service.start(inputFor("My App"));
+            await settle("op-1");
+
+            expect(service.get("op-1").result?.error).not.toContain("s3cret");
+        });
+
+        it("logs a failing journal removal and still saves the finished operation", async () => {
+            journalRemove.mockRejectedValueOnce(new Error("busy"));
+
+            await service.start(inputFor("My App"));
+            await settle("op-1");
+
+            expect(service.get("op-1").status).toBe("succeeded");
+            expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("busy"));
         });
     });
 
