@@ -53,6 +53,9 @@ function visibleNewLines(hunks: ReadonlyArray<UnifiedDiffHunk>): ReadonlySet<num
     return lines;
 }
 
+// A finding whose line is known (IN-03): narrows `line` from `number | null` to `number`.
+type AnchoredFinding = ReviewFinding & {readonly line: number};
+
 function findingKey(finding: ReviewFinding, index: number): string {
     return `${finding.ruleId}-${finding.serviceName ?? ""}-${index}`;
 }
@@ -114,7 +117,8 @@ export function DiffConfirmDialog({
     // finding (including every finding when the subject is an env edit or a
     // create review, which has no diff at all) is listed above instead.
     const visibleLines = isComposeEdit ? visibleNewLines(hunks) : new Set<number>();
-    const isAnchored = (finding: ReviewFinding): boolean =>
+    // The type predicate carries the `line !== null` check into `anchoredFindings`.
+    const isAnchored = (finding: ReviewFinding): finding is AnchoredFinding =>
         isComposeEdit && finding.line !== null && visibleLines.has(finding.line);
     const anchoredFindings = findings.filter(isAnchored);
     const listedFindings = findings.filter((finding) => !isAnchored(finding));
@@ -123,10 +127,9 @@ export function DiffConfirmDialog({
     if (isComposeEdit) {
         const byLine = new Map<number, ReviewFinding[]>();
         for (const finding of anchoredFindings) {
-            const line = finding.line as number;
-            const existing = byLine.get(line) ?? [];
+            const existing = byLine.get(finding.line) ?? [];
             existing.push(finding);
-            byLine.set(line, existing);
+            byLine.set(finding.line, existing);
         }
         for (const [line, lineFindings] of byLine) {
             annotations.set(
