@@ -103,6 +103,38 @@ function assertWithin(base: string, target: string): string {
 	return resolved;
 }
 
+/**
+ * IN-01: `assertWithin` is lexical, but an earlier copy (the stack-root mount) can leave a symlink
+ * inside the new stack, and a later destination that runs through it would be written outside of it.
+ * Resolves the deepest part of `target` that exists and confines that to the real `base`. A symlink
+ * that points nowhere cannot be resolved and is refused, because the copy would still write through it.
+ */
+async function assertRealpathWithin(base: string, target: string): Promise<void> {
+	const realBase = await fs.realpath(base);
+	let probe = target;
+	for (;;) {
+		try {
+			const real = await fs.realpath(probe);
+			if (real !== realBase && !real.startsWith(realBase + path.sep)) {
+				throw new BadRequestError(`Path escapes managed directory: ${target}`);
+			}
+			return;
+		} catch (error: unknown) {
+			if (!hasErrorCode(error, "ENOENT")) {
+				throw error;
+			}
+		}
+		if ((await fs.lstat(probe).catch(() => null))?.isSymbolicLink()) {
+			throw new BadRequestError(`Path escapes managed directory: ${target}`);
+		}
+		const parent = path.dirname(probe);
+		if (parent === probe) {
+			throw new BadRequestError(`Path escapes managed directory: ${target}`);
+		}
+		probe = parent;
+	}
+}
+
 // Owner-only read/write: the new stack's `.env` can hold secrets extracted from the compose file.
 const ENV_FILE_MODE = 0o600;
 
@@ -1244,6 +1276,7 @@ export class MigrationService {
 			// CR-02: copy.newPath is fully attacker-controlled — confine the
 			// resolved destination to be a strict descendant of newStackPath.
 			const destPath = assertWithin(newStackPath, copy.newPath);
+			await assertRealpathWithin(newStackPath, destPath);
 
 			if (copy.sourcePath === null) {
 				await fs.mkdir(destPath, {recursive: true});

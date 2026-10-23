@@ -1268,6 +1268,34 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             expect(await fs.readFile(path.join(newStackPath, "keep.txt"), "utf-8")).toBe("old");
         });
 
+        it.skipIf(process.platform === "win32")(
+            "refuses to copy into a destination that runs through a symlink the stack-root copy brought along (IN-01)",
+            async () => {
+                const outside = path.join(tmpRoot, "outside");
+                await fs.mkdir(outside, {recursive: true});
+                await fs.writeFile(composePath, composeDeclaring([".", "./data"]), "utf-8");
+                mockDocker.up.mockResolvedValue(undefined);
+                mockMigrator.copyDirectory.mockImplementationOnce(async (_source: string, destination: string) => {
+                    await fs.mkdir(destination, {recursive: true});
+                    await fs.symlink(outside, path.join(destination, "assets"));
+                });
+
+                const result = await buildService().migrate({
+                    ...input({backup: false}),
+                    volumeSelections: [
+                        {originalPath: ".", newPath: ".", convert: true},
+                        {originalPath: "./data", newPath: "./assets/data", convert: true},
+                    ],
+                });
+
+                expect(result.success).toBe(false);
+                expect(result.error).toContain("escapes");
+                expect(mockMigrator.copyDirectory).toHaveBeenCalledTimes(1);
+                expect(await fs.readdir(outside)).toEqual([]);
+                expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+            },
+        );
+
         it("accepts the stack-directory mount copied to the stack root", async () => {
             await fs.writeFile(composePath, composeDeclaring(["."]), "utf-8");
 
