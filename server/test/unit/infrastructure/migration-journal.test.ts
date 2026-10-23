@@ -1,4 +1,4 @@
-import {afterEach, beforeEach, describe, expect, it} from "vitest";
+import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -39,6 +39,7 @@ describe("MigrationJournal", () => {
     });
 
     afterEach(async () => {
+        vi.restoreAllMocks();
         await fs.rm(root, {recursive: true, force: true});
     });
 
@@ -50,6 +51,20 @@ describe("MigrationJournal", () => {
 
             const stored: unknown = JSON.parse(await fs.readFile(path.join(directory, "op-1.json"), "utf-8"));
             expect(stored).toEqual(document);
+        });
+
+        it("syncs the journal directory after the rename so the entry survives a power loss (IN-06)", async () => {
+            const realOpen = fs.open.bind(fs);
+            const opened: string[] = [];
+            vi.spyOn(fs, "open").mockImplementation(async (file, ...rest) => {
+                opened.push(String(file));
+                return realOpen(file, ...rest);
+            });
+
+            await journal.write(documentFor("op-1"));
+
+            expect(opened.at(-1)).toBe(directory);
+            await expect(fs.readFile(path.join(directory, "op-1.json"), "utf-8")).resolves.toContain('"op-1"');
         });
 
         it.skipIf(process.platform === "win32")("creates the directory with mode 0700 and the file with mode 0600", async () => {

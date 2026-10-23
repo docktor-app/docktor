@@ -19,7 +19,7 @@ import {migrationJournal} from "../infrastructure/migration-journal.js";
 import {ConflictError, NotFoundError} from "../lib/errors.js";
 import {toComparablePath} from "../domain/self-stack-paths.js";
 import {slugify} from "../lib/slugify.js";
-import {errorMessage} from "./migration-progress.js";
+import {errorMessage, loggableErrorMessage} from "./migration-progress.js";
 import {JournaledMigrationLedger} from "./journaled-migration-ledger.js";
 import type {EventBusPort} from "./ports/event-bus-port.js";
 import type {MigrationJournalPort} from "./ports/migration-journal-port.js";
@@ -247,7 +247,7 @@ export class MigrationOperationService {
                 this.save(finishMigrationOperation(current, result, this.now()));
             }
         } catch (error: unknown) {
-            this.logger.error(`[migration-recovery] Recovering ${operationId} failed unexpectedly: ${errorMessage(error)}`);
+            this.logger.error(`[migration-recovery] Recovering ${operationId} failed unexpectedly: ${loggableErrorMessage(error)}`);
         } finally {
             this.releaseInFlight(heldKeys);
         }
@@ -275,7 +275,7 @@ export class MigrationOperationService {
         try {
             await this.journal.write({...document, recoveryAttempts: attempts});
         } catch (error: unknown) {
-            this.logger.error(`[migration-recovery] The journal of ${operationId} could not be kept for a retry: ${errorMessage(error)}`);
+            this.logger.error(`[migration-recovery] The journal of ${operationId} could not be kept for a retry: ${loggableErrorMessage(error)}`);
             return result;
         }
         return {...result, error: `${result.error ?? "The rollback could not be verified."} ${RETRY_NOTICE}`};
@@ -308,7 +308,7 @@ export class MigrationOperationService {
                 error: `${RESTARTED_MIGRATION_MESSAGE}. The migration was stopped and rolled back as far as Docktor could verify; see the rollback report.${restart}`,
             });
         } catch (error: unknown) {
-            this.logger.error(`[migration-recovery] The rollback of ${operationId} failed: ${errorMessage(error)}`);
+            this.logger.error(`[migration-recovery] The rollback of ${operationId} failed: ${loggableErrorMessage(error)}`);
             return {
                 success: false,
                 error: maskErrorText(`${RESTARTED_MIGRATION_MESSAGE}, and the rollback failed: ${errorMessage(error)}`),
@@ -355,7 +355,7 @@ export class MigrationOperationService {
         } catch (error: unknown) {
             // `run` is not awaited: a throw here (a failing listener, a bug) must neither become an
             // unhandled rejection that ends the process mid-migration nor leave the operation running.
-            this.logger.error(`[migration] Run ${operation.id} ended unexpectedly: ${errorMessage(error)}`);
+            this.logger.error(`[migration] Run ${operation.id} ended unexpectedly: ${loggableErrorMessage(error)}`);
             this.failUnexpectedly(operation, plan, error);
         } finally {
             this.releaseInFlight(heldKeys);
@@ -375,7 +375,7 @@ export class MigrationOperationService {
                 this.save(finishMigrationOperation(current, result, this.now()));
             }
         } catch (error: unknown) {
-            this.logger.error(`[migration] Run ${operation.id} could not be marked failed: ${errorMessage(error)}`);
+            this.logger.error(`[migration] Run ${operation.id} could not be marked failed: ${loggableErrorMessage(error)}`);
         }
     }
 
@@ -389,11 +389,11 @@ export class MigrationOperationService {
             await ledger.start();
         } catch (error: unknown) {
             // Nothing ran: without a journal a restart could not undo the first step, so no step runs.
-            this.logger.error(`[migration] The journal of ${operation.id} could not be written: ${errorMessage(error)}`);
+            this.logger.error(`[migration] The journal of ${operation.id} could not be written: ${loggableErrorMessage(error)}`);
             return {
                 success: false,
                 error: maskErrorText(
-                    `Migration not started: the migration journal could not be written: ${errorMessage(error)}`,
+                    `Migration not started: the migration journal could not be written: ${loggableErrorMessage(error)}`,
                 ),
                 originalPath: plan.originalDir,
             };

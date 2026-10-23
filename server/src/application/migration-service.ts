@@ -69,6 +69,7 @@ import {assertNotManaged} from "./managed-stack-guard.js";
 import {MigrationRollbackRunner, type MigrationRollbackOutcome} from "./migration-rollback-runner.js";
 import {
 	errorMessage,
+	loggableErrorMessage,
 	reportMigrationProgress,
 	type MigrationLogger,
 	type MigrationProgressListener,
@@ -174,7 +175,7 @@ function anonymousVolumesMessage(anonymous: readonly AnonymousVolume[]): string 
 
 /** D-08: a size Docktor cannot measure blocks the migration, because skipping the check could fill the disk while the old stack is down. */
 function unmeasurableSizeMessage(what: string): string {
-    return `Migration refused: the size of ${what} could not be measured, so Docktor cannot tell whether there is enough free disk space.`;
+	return `Migration refused: the size of ${what} could not be measured, so Docktor cannot tell whether there is enough free disk space.`;
 }
 
 /**
@@ -918,7 +919,7 @@ export class MigrationService {
 	): Promise<MigrationResult> {
 		this.report(onProgress, "rolling_back");
 		const message = errorMessage(cause);
-		this.logger.error(`[MigrationService] Migration failed, rolling back: ${message}`);
+		this.logger.error(`[MigrationService] Migration failed, rolling back: ${loggableErrorMessage(cause)}`);
 		const outcome = await this.rollback.run(ledger.entries(), {onProgress});
 		const failure = `Migration failed: ${message}`;
 		return {
@@ -1052,7 +1053,7 @@ export class MigrationService {
 		try {
 			await this.stackFs.releaseDirectory(stackId, ownerId);
 		} catch (error: unknown) {
-			this.logger.warn(`[MigrationService] Could not remove the ownership marker of "${stackId}": ${errorMessage(error)}`);
+			this.logger.warn(`[MigrationService] Could not remove the ownership marker of "${stackId}": ${loggableErrorMessage(error)}`);
 		}
 	}
 

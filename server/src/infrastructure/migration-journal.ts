@@ -49,6 +49,7 @@ export class MigrationJournal implements MigrationJournalPort {
             await fs.mkdir(directory, {recursive: true, mode: DIRECTORY_MODE});
             await writeDurably(temporary, serialized);
             await fs.rename(temporary, target);
+            await syncDirectory(directory);
         } catch (error: unknown) {
             await fs.rm(temporary, {force: true}).catch(() => undefined);
             throw new AppError(`Failed to write the migration journal ${target}`, 500, undefined, {cause: error});
@@ -105,6 +106,31 @@ async function writeDurably(file: string, content: string): Promise<void> {
     try {
         await handle.writeFile(content, "utf-8");
         await handle.sync();
+    } finally {
+        await handle.close();
+    }
+}
+
+/**
+ * Syncs the directory entry of a renamed file: fsyncing the file alone does not make the rename itself
+ * durable across a power loss (IN-06). Platforms that cannot open or sync a directory (Windows) skip it.
+ */
+async function syncDirectory(directory: string): Promise<void> {
+    let handle: Awaited<ReturnType<typeof fs.open>>;
+    try {
+        handle = await fs.open(directory, "r");
+    } catch (error: unknown) {
+        if (hasErrorCode(error, "EISDIR") || hasErrorCode(error, "EPERM") || hasErrorCode(error, "EACCES")) {
+            return;
+        }
+        throw error;
+    }
+    try {
+        await handle.sync();
+    } catch (error: unknown) {
+        if (!hasErrorCode(error, "EINVAL") && !hasErrorCode(error, "EPERM") && !hasErrorCode(error, "ENOTSUP")) {
+            throw error;
+        }
     } finally {
         await handle.close();
     }

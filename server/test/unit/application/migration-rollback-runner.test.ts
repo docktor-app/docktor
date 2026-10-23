@@ -210,6 +210,18 @@ describe("MigrationRollbackRunner", () => {
         expect(outcome.report.oldStack).toBe("restored-running");
     });
 
+    it("masks secrets in the error text it logs (IN-06)", async () => {
+        const leaked = "invalid interpolation: POSTGRES_PASSWORD=hunter2";
+        vi.mocked(deps.stackFs.removeDirectory).mockRejectedValue(new Error(leaked));
+        start.mockRejectedValue(new Error(leaked));
+
+        await runner().run([stopped(["web"]), createdDirectory]);
+
+        const logged = JSON.stringify([...logger.error.mock.calls, ...logger.warn.mock.calls]);
+        expect(logger.error).toHaveBeenCalledTimes(2);
+        expect(logged).not.toContain("hunter2");
+    });
+
     it("is not affected by a progress listener that throws", async () => {
         const progress = vi.fn(() => {
             throw new Error("listener exploded");

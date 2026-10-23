@@ -12,7 +12,7 @@ import {
 } from "../domain/migration-rollback.js";
 import type {ComposeProjectTarget} from "../domain/compose-project.js";
 import type {StackRepository} from "../repositories/stack-repository.js";
-import {errorMessage, reportMigrationProgress, type MigrationLogger, type MigrationProgressListener} from "./migration-progress.js";
+import {errorMessage, loggableErrorMessage, reportMigrationProgress, type MigrationLogger, type MigrationProgressListener} from "./migration-progress.js";
 import type {ComposeProjectResolverPort} from "./ports/compose-project-resolver-port.js";
 import type {DockerExecutorPort} from "./ports/docker-executor-port.js";
 import type {ExternalStackControlPort} from "./ports/external-stack-control-port.js";
@@ -149,7 +149,7 @@ export class MigrationRollbackRunner {
 
     private recordCleanupError(state: RollbackState, what: string, error: unknown): void {
         const message = `${what}: ${errorMessage(error)}`;
-        this.deps.logger.error(`[MigrationService] Rollback could not ${message}`);
+        this.deps.logger.error(`[MigrationService] Rollback could not ${what}: ${loggableErrorMessage(error)}`);
         state.cleanupErrors.push(message);
     }
 
@@ -195,7 +195,7 @@ export class MigrationRollbackRunner {
         try {
             await this.bringBack(entry, target, state);
         } catch (error: unknown) {
-            this.deps.logger.error(`[MigrationService] Failed to restart the old stack: ${errorMessage(error)}`);
+            this.deps.logger.error(`[MigrationService] Failed to restart the old stack: ${loggableErrorMessage(error)}`);
             state.oldStack = "restart-failed";
             state.restartError = errorMessage(error);
             return;
@@ -237,7 +237,7 @@ export class MigrationRollbackRunner {
         try {
             return allServicesRunning(services, await this.deps.projects.listContainers(target.project, target.composePath));
         } catch (error: unknown) {
-            this.deps.logger.warn(`[MigrationService] Could not check whether the old stack runs yet: ${errorMessage(error)}`);
+            this.deps.logger.warn(`[MigrationService] Could not check whether the old stack runs yet: ${loggableErrorMessage(error)}`);
             return false;
         }
     }
