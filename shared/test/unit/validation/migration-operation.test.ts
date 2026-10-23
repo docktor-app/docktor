@@ -7,6 +7,7 @@ import {
     migrationOperationListSchema,
     migrationOperationParamsSchema,
     migrationOperationSchema,
+    migrationJournalSchema,
     migrationLedgerEntrySchema,
     migrationResultSchema,
     migrationRollbackReportSchema,
@@ -174,5 +175,37 @@ describe("migrationLedgerEntrySchema", () => {
         ["a missing sharesProjectWithNewStack flag", {kind: "stopped_old_stack", project: "memos", composePath: "/c.yml", runningBefore: []}],
     ])("rejects %s", (_label, entry) => {
         expect(migrationLedgerEntrySchema.safeParse(entry).success).toBe(false);
+    });
+});
+
+describe("migrationJournalSchema", () => {
+    const DOCUMENT = {
+        version: 1,
+        operation: RUNNING,
+        originalDir: "/opt/memos",
+        ledger: [{kind: "created_directory", stackId: "my-app"}],
+    };
+
+    it("parses a versioned document with an operation, the original directory and a ledger", () => {
+        expect(migrationJournalSchema.safeParse(DOCUMENT).success).toBe(true);
+        expect(migrationJournalSchema.safeParse({...DOCUMENT, ledger: []}).success).toBe(true);
+    });
+
+    it.each([
+        ["another version", {...DOCUMENT, version: 2}],
+        ["no version", {operation: RUNNING, originalDir: "/opt/memos", ledger: []}],
+        ["an operation id with a slash", {...DOCUMENT, operation: {...RUNNING, id: "../op"}}],
+        ["an operation id with a dot", {...DOCUMENT, operation: {...RUNNING, id: "op.1"}}],
+        ["an operation id of 65 characters", {...DOCUMENT, operation: {...RUNNING, id: "a".repeat(65)}}],
+        ["an invalid ledger entry", {...DOCUMENT, ledger: [{kind: "deleted_volume", stackId: "my-app"}]}],
+        ["an empty original directory", {...DOCUMENT, originalDir: ""}],
+        ["an invalid operation", {...DOCUMENT, operation: {...RUNNING, status: "paused"}}],
+    ])("rejects %s", (_label, document) => {
+        expect(migrationJournalSchema.safeParse(document).success).toBe(false);
+    });
+
+    it("accepts a UUID operation id", () => {
+        const operation = {...RUNNING, id: "0b1f4f5e-9a39-4a7e-8d0b-6a7d3c1d2e3f"};
+        expect(migrationJournalSchema.safeParse({...DOCUMENT, operation}).success).toBe(true);
     });
 });

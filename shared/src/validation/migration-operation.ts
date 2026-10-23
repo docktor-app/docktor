@@ -116,6 +116,24 @@ export const migrationOperationSchema = z.object({
     result: migrationResultSchema.nullable(),
 });
 
+// The operation id names the journal file, so it is limited to the characters
+// of a UUID (and the short ids tests use) before any path is built from it.
+export const MIGRATION_JOURNAL_ID_PATTERN = /^[A-Za-z0-9-]{1,64}$/;
+
+// D-06: what Docktor writes to disk while a migration runs, so a restart in the
+// middle can roll it back. `version` makes the on-disk format migratable: a
+// later Docktor reads the shapes it knows and sets any other aside.
+export const migrationJournalSchema = z.object({
+    version: z.literal(1),
+    operation: migrationOperationSchema.refine((operation) => MIGRATION_JOURNAL_ID_PATTERN.test(operation.id), {
+        message: "The operation id must be 1 to 64 letters, digits or hyphens",
+        path: ["id"],
+    }),
+    // The directory the migration reads from; where a restore puts the original back.
+    originalDir: z.string().min(1),
+    ledger: z.array(migrationLedgerEntrySchema),
+});
+
 export const migrationOperationParamsSchema = z.object({
     operationId: z.string().min(1).max(64),
 });
@@ -125,6 +143,7 @@ export const migrationOperationListSchema = z.object({
 });
 
 export type MigrationLedgerEntry = z.infer<typeof migrationLedgerEntrySchema>;
+export type MigrationJournalDocument = z.infer<typeof migrationJournalSchema>;
 export type MigrationOperationStatus = z.infer<typeof migrationOperationStatusSchema>;
 export type MigrationOperationStep = z.infer<typeof migrationOperationStepSchema>;
 export type MigrationRollbackReport = z.infer<typeof migrationRollbackReportSchema>;
