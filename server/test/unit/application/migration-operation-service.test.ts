@@ -371,6 +371,29 @@ describe("MigrationOperationService", () => {
             expect(journalRemove).toHaveBeenCalledWith("op-1");
         });
 
+        it("does not let a throwing listener turn the background run into an unhandled rejection (WR-08)", async () => {
+            const unhandled = vi.fn();
+            process.on("unhandledRejection", unhandled);
+            try {
+                emit.mockImplementation((_event, payload) => {
+                    if (payload.operation.status === "succeeded") {
+                        throw new Error("listener exploded");
+                    }
+                });
+
+                await service.start(inputFor("My App"));
+                await vi.waitFor(() => expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("listener exploded")));
+                await new Promise((resolve) => setImmediate(resolve));
+
+                expect(unhandled).not.toHaveBeenCalled();
+                expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("ended unexpectedly"));
+                // The slot is released, so the same stack can be migrated again.
+                await expect(service.start(inputFor("My App"))).resolves.toMatchObject({status: "running"});
+            } finally {
+                process.off("unhandledRejection", unhandled);
+            }
+        });
+
         describe("a journal that cannot be removed (CR-02)", () => {
             it("retries the removal with a backoff and stops once it worked", async () => {
                 journalRemove.mockRejectedValueOnce(new Error("EIO")).mockResolvedValueOnce(undefined);

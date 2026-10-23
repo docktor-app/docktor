@@ -352,8 +352,30 @@ export class MigrationOperationService {
             if (current) {
                 this.save(finishMigrationOperation(current, result, this.now()));
             }
+        } catch (error: unknown) {
+            // `run` is not awaited: a throw here (a failing listener, a bug) must neither become an
+            // unhandled rejection that ends the process mid-migration nor leave the operation running.
+            this.logger.error(`[migration] Run ${operation.id} ended unexpectedly: ${errorMessage(error)}`);
+            this.failUnexpectedly(operation, plan, error);
         } finally {
             this.releaseInFlight(heldKeys);
+        }
+    }
+
+    /** Ends an operation that is still running after an unexpected throw; never throws itself. */
+    private failUnexpectedly(operation: MigrationOperation, plan: MigrationPlan, cause: unknown): void {
+        try {
+            const current = this.operations.get(operation.id);
+            if (current?.status === "running") {
+                const result: MigrationOperationResult = {
+                    success: false,
+                    error: maskErrorText(`Migration failed unexpectedly: ${errorMessage(cause)}`),
+                    originalPath: plan.originalDir,
+                };
+                this.save(finishMigrationOperation(current, result, this.now()));
+            }
+        } catch (error: unknown) {
+            this.logger.error(`[migration] Run ${operation.id} could not be marked failed: ${errorMessage(error)}`);
         }
     }
 
