@@ -12,10 +12,10 @@ Issue numbers refer to `docktor-app/docktor`. Research: `.planning/research/SUMM
 - [x] **MIG-05**: Migration verifies the old stack is really stopped (compose project resolved correctly) before copying data (#102)
 - [x] **MIG-06**: Migration copies the correct named volume and detects anonymous volumes instead of silently creating empty ones (#101)
 - [x] **MIG-07**: Migration handles `~` bind sources correctly in analysis, rewrite and copy (#104)
-- [ ] **MIG-08**: Migration rollback reliably restores the original stack without deleting volumes, reports only verified outcomes, and recovers after a Docktor restart mid-migration (#100)
+- [x] **MIG-08**: Migration rollback reliably restores the original stack without deleting volumes, reports only verified outcomes, and recovers after a Docktor restart mid-migration (#100)
 - [x] **MIG-09**: Migration backs up after the verified stop of the old stack and before any data copy or destructive step (no data is changed before a backup exists), and checks free disk space on the right filesystem (#107)
 - [x] **MIG-10**: Secrets are masked in the migration compose diff (#103)
-- [ ] **MIG-11**: Migration progress toast never gets stuck (#105)
+- [x] **MIG-11**: Migration progress toast never gets stuck (#105)
 - [ ] **MIG-12**: Migration flow follows project conventions and hardens paths (#108)
 - [x] **MIG-13**: Compose child processes receive an allowlisted environment, and ownership preservation is verified on Linux in CI (#109)
 
@@ -82,10 +82,10 @@ Issue numbers refer to `docktor-app/docktor`. Research: `.planning/research/SUMM
 | MIG-05 | Phase 22 | Complete |
 | MIG-06 | Phase 22 | Complete |
 | MIG-07 | Phase 22 | Complete |
-| MIG-08 | Phase 22 | Pending |
+| MIG-08 | Phase 22 | Complete |
 | MIG-09 | Phase 22 | Complete |
 | MIG-10 | Phase 22 | Complete |
-| MIG-11 | Phase 22 | Pending |
+| MIG-11 | Phase 22 | Complete |
 | MIG-12 | Phase 22 | Pending |
 | MIG-13 | Phase 22 | Complete |
 | PRX-01 | Phase 23 | Pending |

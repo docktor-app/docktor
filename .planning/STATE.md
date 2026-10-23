@@ -4,17 +4,17 @@ milestone: v0.2.0
 milestone_name: Migration Hardening, Proxy & Access
 current_phase: 22
 current_phase_name: Migration Hardening
-status: executing
-stopped_at: Completed 22-07-PLAN.md
-last_updated: "2026-10-22T18:38:32.844Z"
+status: verifying
+stopped_at: Completed 22-08-PLAN.md
+last_updated: "2026-10-23T07:07:19.226Z"
 last_activity: 2026-10-22
 last_activity_desc: Phase 22 execution started
-state_head: 45b02aca49ed5fc61b8fb741aed01fb2aa2aa83a
+state_head: afc90476f80e2acb393b8ffe1e6ef7b7e84898b2
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 8
-  completed_plans: 7
+  completed_plans: 8
   percent: 0
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-10-21)
 
 Phase: 22 (Migration Hardening) — EXECUTING
 Plan: 8 of 8
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-22 — Phase 22 execution started
 
 Progress: [░░░░░░░░░░] 0%
@@ -64,6 +64,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 22 P05 | 1 session | 3 tasks | 27 files |
 | Phase 22 P06 | 18 min | 3 tasks | 25 files |
 | Phase 22 P07 | 17 min | 3 tasks | 18 files |
+| Phase 22 P08 | 11 min | 2 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -92,6 +93,8 @@ Roadmap decisions for v0.2.0:
 - [Phase 22]: 22-07: rollback ledger entries are recorded before the stop and the deploy and after the rename, directory and record, so nothing foreign is undone
 - [Phase 22]: 22-07: a rollback restores the old stack with restoreServices (up -d --no-build) instead of start when the new stack shared its project and the deploy started; the runner depends only on downKeepVolumes, never down -v
 - [Phase 22]: 22-07: the failure error carries only the failure; outcome claims live in the verified rollback report (restored-running only after listContainers saw the services running)
+- [Phase 22]: 22-08: journal removed before the finished operation is saved; a rollback that throws also removes its journal; recovery says 'rolled back' only when the report verified it
+- [Phase 22]: 22-08: invalid journal files (unparsable, wrong version, name not equal to operation id) are renamed to <name>.invalid and logged; recovery is prepare() before listen, run() after listen, never awaited
 
 ### Pending Todos
 
@@ -119,6 +122,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-22T18:38:32.637Z
-Stopped at: Completed 22-07-PLAN.md
+Last session: 2026-10-23T07:07:18.945Z
+Stopped at: Completed 22-08-PLAN.md
 Resume file: None
