@@ -5,16 +5,16 @@ milestone_name: Migration Hardening, Proxy & Access
 current_phase: 22
 current_phase_name: Migration Hardening
 status: executing
-stopped_at: Completed 22-06-PLAN.md
-last_updated: "2026-10-22T18:23:11.352Z"
+stopped_at: Completed 22-07-PLAN.md
+last_updated: "2026-10-22T18:38:32.844Z"
 last_activity: 2026-10-22
 last_activity_desc: Phase 22 execution started
-state_head: 3e25860f081585b5827ae69703428e42183bffd1
+state_head: 45b02aca49ed5fc61b8fb741aed01fb2aa2aa83a
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 8
-  completed_plans: 6
+  completed_plans: 7
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-21)
 ## Current Position
 
 Phase: 22 (Migration Hardening) — EXECUTING
-Plan: 7 of 8
+Plan: 8 of 8
 Status: Ready to execute
 Last activity: 2026-10-22 — Phase 22 execution started
 
@@ -63,6 +63,7 @@ v0.1.0 metrics (133 plans across Phases 1-16) are preserved in `.planning/milest
 | Phase 22 P04 | 2 sessions | 3 tasks | 16 files |
 | Phase 22 P05 | 1 session | 3 tasks | 27 files |
 | Phase 22 P06 | 18 min | 3 tasks | 25 files |
+| Phase 22 P07 | 17 min | 3 tasks | 18 files |
 
 ## Accumulated Context
 
@@ -88,6 +89,9 @@ Roadmap decisions for v0.2.0:
 - [Phase 22]: 22-05: anonymous volumes never copied; acknowledgeAnonymousVolumes mandatory in the schema and enforced in preflight (D-05); external volumes default to staying
 - [Phase 22]: 22-06: the disk requirement lands on the filesystem holding the new stack directory; in place no backup copy is counted; an unmeasurable size refuses before any stop (preview and start alike)
 - [Phase 22]: 22-06: backup layout stack/, bind-mounts/<n>-<name>/, manifest.json under pre-migration-backup/, taken after the verified stop and before any data copy; named volumes are not duplicated
+- [Phase 22]: 22-07: rollback ledger entries are recorded before the stop and the deploy and after the rename, directory and record, so nothing foreign is undone
+- [Phase 22]: 22-07: a rollback restores the old stack with restoreServices (up -d --no-build) instead of start when the new stack shared its project and the deploy started; the runner depends only on downKeepVolumes, never down -v
+- [Phase 22]: 22-07: the failure error carries only the failure; outcome claims live in the verified rollback report (restored-running only after listContainers saw the services running)
 
 ### Pending Todos
 
@@ -115,6 +119,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-22T18:23:11.204Z
-Stopped at: Completed 22-06-PLAN.md
+Last session: 2026-10-22T18:38:32.637Z
+Stopped at: Completed 22-07-PLAN.md
 Resume file: None
