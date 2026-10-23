@@ -1249,6 +1249,25 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             expectNoSideEffects();
         });
 
+        it("drops the compose files the stack-root copy brought along, so the rewritten file is the one Compose uses (WR-04)", async () => {
+            await fs.writeFile(composePath, composeDeclaring(["."]), "utf-8");
+            mockDocker.up.mockResolvedValue(undefined);
+            mockMigrator.copyDirectory.mockImplementation(async (_source: string, destination: string) => {
+                await fs.mkdir(destination, {recursive: true});
+                for (const name of ["compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml", "keep.txt"]) {
+                    await fs.writeFile(path.join(destination, name), "old", "utf-8");
+                }
+            });
+
+            const result = await buildService().migrate(converting(".", "."));
+
+            expect(result.success).toBe(true);
+            const files = (await fs.readdir(newStackPath)).filter((name) => !name.startsWith("."));
+            expect(files.sort()).toEqual(["docker-compose.yml", "keep.txt", "volumes"]);
+            expect(await fs.readFile(path.join(newStackPath, "docker-compose.yml"), "utf-8")).toBe(COMPOSE);
+            expect(await fs.readFile(path.join(newStackPath, "keep.txt"), "utf-8")).toBe("old");
+        });
+
         it("accepts the stack-directory mount copied to the stack root", async () => {
             await fs.writeFile(composePath, composeDeclaring(["."]), "utf-8");
 

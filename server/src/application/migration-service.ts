@@ -993,6 +993,7 @@ export class MigrationService {
 
 		// Step 5: Copy bind mount data
 		await this.copyBindMounts(bindCopies, {originalDir, sourceDir}, newStackPath, onProgress);
+		await this.removeCopiedComposeFiles(newStackPath);
 
 		// Step 6: Rewrite compose file
 		this.report(onProgress, "writing_compose");
@@ -1202,6 +1203,19 @@ export class MigrationService {
 			await fs.writeFile(target, merged, "utf-8");
 		} else if (existingEnv !== null) {
 			await fs.copyFile(path.join(sourceDir, ".env"), target);
+		}
+	}
+
+	/**
+	 * WR-04: the stack-directory mount (`./:/app`) copies the whole old directory into the
+	 * new stack root, including the old compose file. The rewritten file is always written as
+	 * `docker-compose.yml`, and Compose prefers `compose.yaml` and the other names over it, so a
+	 * copied one would deploy the unrewritten file. Only the copies in the NEW directory are
+	 * removed (nothing has written a compose file there yet); the original is never touched.
+	 */
+	private async removeCopiedComposeFiles(newStackPath: string): Promise<void> {
+		for (const name of COMPOSE_FILE_NAMES) {
+			await fs.rm(path.join(newStackPath, name), {force: true});
 		}
 	}
 
