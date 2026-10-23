@@ -1,26 +1,28 @@
 ---
 phase: 22-migration-hardening
-fixed_at: 2026-10-23T17:30:00Z
+fixed_at: 2026-10-24T00:30:00Z
 review_path: .planning/phases/22-migration-hardening/22-REVIEW.md
-iteration: 1
-findings_in_scope: 12
-fixed: 12
-skipped: 0
-status: all_fixed
+iteration: 2
+findings_in_scope: 18
+fixed: 17
+skipped: 1
+status: partial
 ---
 
 # Phase 22: Code Review Fix Report
 
-**Fixed at:** 2026-10-23
+**Fixed at:** 2026-10-24
 **Source review:** `.planning/phases/22-migration-hardening/22-REVIEW.md`
-**Iteration:** 1
+**Iteration:** 2 (iteration 1 fixed CR-01..03 and WR-01..09; iteration 2 added IN-01..06 with `fix_scope: all`)
 
 **Summary:**
-- Findings in scope: 12 (3 critical, 9 warning; Info findings are out of scope for `critical_warning`)
-- Fixed: 12 (9 are logic changes flagged "fixed: requires human verification"; WR-03 and WR-04 were fixed in part, see their notes)
-- Skipped: 0
+- Findings in scope: 18 (3 critical, 9 warning, 6 info)
+- Fixed: 17 (12 from iteration 1, of which 9 are logic changes flagged "fixed: requires human verification" and WR-03, WR-04, WR-06, WR-09 were fixed in part; 5 from iteration 2: IN-01, IN-02, IN-03, IN-04, IN-06, with IN-06 fixed in part)
+- Skipped: 1 (IN-05, already satisfied by the current workflow)
 
 **Verification:** run in the isolated worktree (`/home/raphael/workspace/docktor/.claude/worktrees/bridge-cse_01GoBQizyDtQbVBYvsPj9rQt`, `workflow.use_worktrees` handling: the session already ran in a dedicated worktree, so no nested worktree was created). Targeted vitest runs for every touched test file (shared: mask-secrets and migration-operation; server: application, domain, infrastructure and lib unit projects; client: `secret-mask.test.ts`). A scoped `tsc --noEmit` over the touched server source files (plus their imports) reported no errors. No full `tsc --build`, integration tests or Playwright runs were done, per the host constraint; CI must run those.
+
+**Iteration 2 verification:** also run in the same worktree (the session's dedicated worktree; no nested worktree). Targeted vitest runs of every touched test file (server: `migration-service`, `migration-rollback-runner`, `migration-operation-service`, `migration-recovery-service`, `migration-journal`; client: `diff-confirm-dialog`, `migration-progress`), each new test seen failing before its fix. `tsc --noEmit -p tsconfig.json` for the `server` and `client` workspaces reported no errors (a project-scoped no-emit check, not `tsc --build`).
 
 ## Fixed Issues
 
@@ -112,9 +114,53 @@ status: all_fixed
 **Applied fix:** A recovery whose report is not a verified `rolled_back` keeps its journal with `recoveryAttempts` incremented, so the next boot retries (3 attempts in all, then the journal is removed as before). The published error says the rollback will be tried again, only when the journal was actually kept. The replay is safe because of the CR-01 ownership marker. `runningOperationIds()` was added, and the graceful shutdown has a new first step that names the migrations still running.
 **Note:** The shutdown does not wait for migrations or recovery. A migration can run for minutes, far past Docker's 10 s stop grace and the 9 s hard deadline, so waiting is not possible; the journal plus the ownership marker make the interruption safe instead. The shutdown budget in the comment went from 7.5 s to 8 s (new 0.5 s step).
 
+### IN-01: `assertWithin` and destination checks are lexical, not realpath-based
+
+**Status:** fixed: requires human verification
+**Files modified:** `server/src/application/migration-service.ts`, `server/test/unit/application/migration-service.test.ts`
+**Commit:** 87b466e
+**Applied fix:** `copyBindMounts` now also resolves the deepest existing part of each destination with `fs.realpath` and confines it to the real new stack directory (`assertRealpathWithin`) before it copies. A symlink brought along by the stack-root copy that redirects a later destination outside the stack is refused, the migration rolls back and nothing is written outside. A dangling symlink on the path is refused as well, because the copy would write through it. The new test copies a symlink into the stack in the first copy and checks that the second copy is refused and the outside directory stays empty.
+**Note:** Only the bind-copy destinations are covered. The named-volume destinations sit below `volumes/`, which Docktor creates itself right before, so no copied symlink can precede them.
+
+### IN-02: Extracted secrets are written to `.env` with default (world-readable) mode
+
+**Status:** fixed
+**Files modified:** `server/src/application/migration-service.ts`, `server/test/unit/application/migration-service.test.ts`
+**Commit:** 16c965f
+**Applied fix:** The merged `.env` (old content plus the extracted block) is written with mode `0o600` and then `chmod`ed to `0o600`, because the mode only applies at creation and the stack-root copy may already have brought a `.env` along. The verbatim `copyFile` branch is unchanged: it keeps the old file's mode.
+
+### IN-03: Unchecked cast without justification in `DiffConfirmDialog`
+
+**Status:** fixed
+**Files modified:** `client/src/components/domain/stack/diff-confirm-dialog.tsx`
+**Commit:** 98ac228
+**Applied fix:** `isAnchored` is now a type predicate (`finding is AnchoredFinding`, `ReviewFinding & {line: number}`), so the `line as number` cast is gone. A pure type-level change; the existing dialog tests cover the behaviour.
+
+### IN-04: A succeeded operation without `stackId` is shown as a failure
+
+**Status:** fixed
+**Files modified:** `client/src/lib/migration-progress.ts`, `client/test/unit/lib/migration-progress.test.ts`
+**Commit:** 1d04b86
+**Applied fix:** A `succeeded` operation always renders the success toast. The "View stack" action is added only when `result.stackId` exists, instead of falling through to the "Migration of X failed" wording.
+
+### IN-06: Minor robustness and quality notes
+
+**Status:** fixed (partial: see note)
+**Files modified:** `server/src/infrastructure/migration-journal.ts`, `server/src/application/migration-progress.ts`, `server/src/application/migration-rollback-runner.ts`, `server/src/application/migration-service.ts`, `server/src/application/migration-operation-service.ts`, plus tests
+**Commit:** 64842c2
+**Applied fix:**
+- Journal durability: after the rename, `MigrationJournal.write` fsyncs the journal directory (best effort on platforms that cannot sync a directory), so the rename survives a power loss.
+- Logged errors: new `loggableErrorMessage` (the error text through `maskErrorText`) is used for the migration log lines in the service, the rollback runner and the operation service, so compose stderr that echoes a secret no longer reaches the console. The stored and broadcast `cleanupErrors` and `restartError` were already masked in the operation service.
+- Indentation: the space-indented `return` in `unmeasurableSizeMessage` (`migration-service.ts`) now uses a tab like the rest of the file.
+**Note:** Two sub-items were not done. The floating `alpine` image in `volume-migrator.ts` and `disk-space-probe.ts` was neither pinned nor pre-pulled: a digest has to be chosen and maintained by the project, and a pre-pull in preflight changes the offline behaviour, so this needs a decision. The "mixed indentation in `migration-rollback-runner.ts`" remark did not apply: that file is consistently indented with four spaces (the file's own style), so nothing was changed there.
+
 ## Skipped Issues
 
-None.
+### IN-05: CI additions
+
+**File:** `.github/workflows/ci.yml:126-157`
+**Reason:** The workflow already satisfies the finding. Every job pins its actions by SHA (including the older ones), there is a top-level `permissions: contents: read` block, and in `linux-root-migration` only the final `vitest` command runs under `sudo` (install, build and the other steps run as the normal runner user). The remaining point (`yarn` as the process under `sudo -E`) is needed to run the ownership test as root and affects a throwaway runner only, so no change was made.
+**Original issue:** The new job pins actions by SHA while others float, runs `yarn` as root through `sudo -E`, and sets no `permissions:` block.
 
 ## Side effects worth knowing
 
@@ -125,6 +171,6 @@ None.
 
 ---
 
-_Fixed: 2026-10-23_
+_Fixed: 2026-10-24_
 _Fixer: Claude (gsd-code-fixer)_
-_Iteration: 1_
+_Iteration: 2_

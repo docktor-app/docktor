@@ -19,9 +19,9 @@ review: 22-REVIEW.md
 | WR-07 | Warning | fixed |
 | WR-08 | Warning | fixed |
 | WR-09 | Warning | fixed (partial, see REVIEW-FIX.md) |
-| IN-01 | Info | open |
-| IN-02 | Info | open |
-| IN-03 | Info | open |
-| IN-04 | Info | open |
-| IN-05 | Info | open |
-| IN-06 | Info | open |
+| IN-01 | Info | fixed |
+| IN-02 | Info | fixed |
+| IN-03 | Info | fixed |
+| IN-04 | Info | fixed |
+| IN-05 | Info | skipped (already met, see REVIEW-FIX.md) |
+| IN-06 | Info | fixed (partial, see REVIEW-FIX.md) |
