@@ -174,4 +174,17 @@ describe("showMigrationToast", () => {
             expect.objectContaining({id: "op-1", action: expect.objectContaining({label: "View stack"})}),
         );
     });
+
+    it("renders a succeeded operation without a stack id as a success without the View stack action (IN-04)", () => {
+        showMigrationToast(
+            makeOperation({status: "succeeded", step: "finished", result: {success: true, originalPath: "/host/opt/db"}}),
+            vi.fn(),
+        );
+
+        expect(toast.success).toHaveBeenCalledWith(
+            "Migration complete! db is now managed by Docktor",
+            expect.not.objectContaining({action: expect.anything()}),
+        );
+        expect(toast.error).not.toHaveBeenCalled();
+    });
 });

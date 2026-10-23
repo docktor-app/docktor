@@ -101,14 +101,15 @@ export function showMigrationToast(operation: MigrationOperation, navigate: (to:
     return;
   }
 
-  const {result} = operation;
-  if (operation.status === "succeeded" && result?.stackId) {
-    const {stackId} = result;
+  if (operation.status === "succeeded") {
+    // The server always sets result.stackId on success; should it be missing, the migration
+    // still succeeded, so show the success without the link instead of calling it a failure.
+    const stackId = operation.result?.stackId;
     const description = successDescription(operation);
     toast.success(`Migration complete! ${operation.displayName} is now managed by Docktor`, {
       id,
       ...(description && {description}),
-      action: {label: "View stack", onClick: () => navigate(`/stacks/${stackId}`)},
+      ...(stackId && {action: {label: "View stack", onClick: () => navigate(`/stacks/${stackId}`)}}),
     });
     return;
   }
