@@ -1765,6 +1765,70 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         });
     });
 
+    describe("rollbackInterrupted: a journalled ledger replayed after a Docktor restart (#100, D-06)", () => {
+        const stopped: MigrationLedgerEntry = {
+            kind: "stopped_old_stack",
+            project: "original",
+            composePath,
+            runningBefore: ["web"],
+            sharesProjectWithNewStack: false,
+        };
+
+        it("runs the same rollback a failed step runs: record, directory, then the old stack back", async () => {
+            const entries: MigrationLedgerEntry[] = [
+                stopped,
+                {kind: "created_directory", stackId},
+                {kind: "created_record", stackId},
+            ];
+
+            const outcome = await buildService().rollbackInterrupted(entries, {});
+
+            expect(outcome.report).toEqual({oldStack: "restored-running", original: "untouched", cleanupErrors: []});
+            expect(mockStackRepo.delete).toHaveBeenCalledWith(stackId);
+            expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
+            expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+            const order = (mock: {mock: {invocationCallOrder: number[]}}): number => mock.mock.invocationCallOrder[0] ?? Number.NaN;
+            expect(order(mockStackRepo.delete)).toBeLessThan(order(mockStackFs.removeDirectory));
+            expect(order(mockStackFs.removeDirectory)).toBeLessThan(order(mockOldStack.start));
+        });
+
+        it("moves an in-place original back and restores its services from the restored files after an interrupted deploy", async () => {
+            const asideDir = `${originalDir}-pre-migration`;
+            const entries: MigrationLedgerEntry[] = [
+                {...stopped, sharesProjectWithNewStack: true},
+                {kind: "moved_aside", originalDir, asideDir},
+                {kind: "created_directory", stackId},
+                {kind: "deploy_started", stackId},
+            ];
+            await fs.rename(originalDir, asideDir);
+
+            const outcome = await buildService().rollbackInterrupted(entries, {});
+
+            expect(mockDocker.downKeepVolumes).toHaveBeenCalledWith(stackId);
+            expect(mockDocker.down).not.toHaveBeenCalled();
+            expect(mockMigrator.moveDirectory).toHaveBeenCalledWith(asideDir, originalDir);
+            expect(mockOldStack.restoreServices).toHaveBeenCalledTimes(1);
+            expect(mockOldStack.start).not.toHaveBeenCalled();
+            expect(outcome.report).toMatchObject({oldStack: "restored-running", original: "restored"});
+        });
+
+        it("reports progress through the listener", async () => {
+            const steps: string[] = [];
+
+            await buildService().rollbackInterrupted([stopped], {onProgress: (progress) => steps.push(progress.step)});
+
+            expect(steps).toEqual(["restarting_old_stack"]);
+        });
+
+        it("reports not-stopped for an empty ledger and touches nothing", async () => {
+            const outcome = await buildService().rollbackInterrupted([], {});
+
+            expect(outcome.report).toEqual({oldStack: "not-stopped", original: "untouched", cleanupErrors: []});
+            expect(mockOldStack.start).not.toHaveBeenCalled();
+            expect(mockStackFs.removeDirectory).not.toHaveBeenCalled();
+        });
+    });
+
     describe("in-place migration (G-18-7)", () => {
         const ASIDE_COMPOSE = COMPOSE;
         const REWRITTEN = "services:\n  web:\n    image: nginx:1.27\n";
