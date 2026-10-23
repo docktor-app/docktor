@@ -947,19 +947,20 @@ export class MigrationService {
 		// stack can take its directory; the renamed original is the backup.
 		if (inPlace) {
 			this.report(onProgress, "moving_original_aside");
-			await this.migrator.moveDirectory(originalDir, inPlace.asideDir);
+			// Write-ahead (WR-01): recorded before the rename, so a restart in between still finds the
+			// intent. The rollback only moves the directory back when it finds it under the aside name.
 			await ledger.record({kind: "moved_aside", originalDir, asideDir: inPlace.asideDir});
+			await this.migrator.moveDirectory(originalDir, inPlace.asideDir);
 		}
 
-		// Step 2: Create the new stack directory exclusively. An EEXIST rejection
-		// is not recorded, so rollback never removes a foreign directory.
+		// Step 2: Create the new stack directory exclusively. Write-ahead (WR-01): the entry is recorded
+		// before the mkdir, and the rollback only removes a directory carrying this run's marker (CR-01,
+		// CR-02), so an EEXIST rejection never leads to the removal of a foreign directory.
 		this.report(onProgress, "creating_directory");
-		const newStackPath = await this.stackFs.createDirectoryExclusive(stackId);
-		// CR-01, CR-02: the marker proves later on that this run created the directory; a rollback
-		// (also one replayed from a journal after a restart) leaves anything without it alone.
 		const ownerId = randomUUID();
-		await this.stackFs.claimDirectory(stackId, ownerId);
 		await ledger.record({kind: "created_directory", stackId, ownerId});
+		const newStackPath = await this.stackFs.createDirectoryExclusive(stackId);
+		await this.stackFs.claimDirectory(stackId, ownerId);
 
 		// Step 3 (D-01, D-02, D-03): the backup, when opted in (D-07). The old stack
 		// is down and verified, and nothing has been copied or changed yet. In place,
@@ -1014,6 +1015,7 @@ export class MigrationService {
 
 		// Step 7: Create stack record
 		this.report(onProgress, "recording_stack");
+		await ledger.record({kind: "created_record", stackId, ownerId});
 		const composeConfig = createComposeConfig(rewriteResult.rewrittenCompose);
 		await this.stackRepo.create({
 			id: stackId,
@@ -1024,7 +1026,6 @@ export class MigrationService {
 			hostPath: newStackPath,
 			composeConfig,
 		});
-		await ledger.record({kind: "created_record", stackId, ownerId});
 
 		// Step 8: Deploy new stack. Recorded before the call, so a deploy that fails halfway is taken
 		// down on rollback. Without orphan removal: in place, the project is the old stack's, and

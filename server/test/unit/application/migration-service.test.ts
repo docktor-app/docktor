@@ -587,6 +587,8 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
     });
 
     it("leaves a directory that appeared during the stop window untouched and restarts the old stack (CR-02)", async () => {
+        // A foreign directory carries no ownership marker of this run.
+        mockStackFs.ownsDirectory.mockResolvedValue(false);
         mockOldStack.stop.mockImplementation(async () => {
             await fs.mkdir(newStackPath, {recursive: true});
             await fs.writeFile(path.join(newStackPath, "marker.txt"), "theirs", "utf-8");
@@ -1619,7 +1621,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             };
         }
 
-        it("records the stop before it happens and the directory and the record after they exist", async () => {
+        it("records every destructive step before it happens (write-ahead, WR-01)", async () => {
             mockDocker.up.mockResolvedValue(undefined);
             const log: string[] = [];
             mockOldStack.stop.mockImplementation(async () => {
@@ -1643,10 +1645,10 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             expect(log).toEqual([
                 "record:stopped_old_stack",
                 "stop",
-                "createDirectory",
                 "record:created_directory",
-                "createRecord",
+                "createDirectory",
                 "record:created_record",
+                "createRecord",
                 "record:deploy_started",
             ]);
             expect(ledger.entries()[0]).toEqual({
@@ -1711,14 +1713,16 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             expect(mockOldStack.stop).not.toHaveBeenCalled();
         });
 
-        it("does not record a directory the exclusive create refused, so rollback never removes a foreign one", async () => {
+        it("never removes a directory the exclusive create refused, although its entry is written ahead", async () => {
             mockStackFs.createDirectoryExclusive.mockRejectedValue(new Error("EEXIST"));
+            mockStackFs.ownsDirectory.mockResolvedValue(false);
             const service = buildService();
             const ledger = new InMemoryMigrationLedger();
 
             const result = await service.execute(await service.preflight(input()), {ledger});
 
-            expect(ledger.entries().map((entry) => entry.kind)).toEqual(["stopped_old_stack"]);
+            expect(ledger.entries().map((entry) => entry.kind)).toEqual(["stopped_old_stack", "created_directory"]);
+            expect(mockStackFs.claimDirectory).not.toHaveBeenCalled();
             expect(mockStackFs.removeDirectory).not.toHaveBeenCalled();
             expect(result.rollback?.oldStack).toBe("restored-running");
         });
@@ -1972,6 +1976,31 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             const destinations = mockMigrator.copyDirectory.mock.calls.map((call) => String(call[1]));
             expect(destinations.some((dest) => dest.endsWith(BACKUP_DIR_NAME))).toBe(false);
             expect(mockStackRepo.create).toHaveBeenCalledWith(expect.objectContaining({hostPath: originalDir}));
+        });
+
+        it("records the rename before it happens and rolls back cleanly when the rename itself fails (WR-01)", async () => {
+            const log: string[] = [];
+            mockMigrator.moveDirectory.mockImplementation(async () => {
+                log.push("move");
+                throw new Error("EBUSY: resource busy");
+            });
+            const service = buildService();
+            const inner = new InMemoryMigrationLedger();
+            const ledger: MigrationLedger = {
+                record: async (entry: MigrationLedgerEntry) => {
+                    log.push(`record:${entry.kind}`);
+                    await inner.record(entry);
+                },
+                entries: () => inner.entries(),
+            };
+
+            const result = await service.execute(await service.preflight(inPlaceInput()), {ledger});
+
+            expect(log.slice(0, 3)).toEqual(["record:stopped_old_stack", "record:moved_aside", "move"]);
+            expect(result.success).toBe(false);
+            expect(result.rollback).toEqual({oldStack: "restored-running", original: "untouched", cleanupErrors: []});
+            expect(await fs.readFile(path.join(originalDir, "data", "keep.txt"), "utf-8")).toBe("keep me");
+            expect(mockMigrator.moveDirectory).toHaveBeenCalledTimes(1);
         });
 
         it("counts no backup copy in place: the renamed original is the backup", async () => {
