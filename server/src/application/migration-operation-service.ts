@@ -2,12 +2,14 @@ import {randomUUID} from "node:crypto";
 import path from "node:path";
 import {
     maskSecrets,
+    type MigrationJournalDocument,
     type MigrationOperation,
     type MigrationOperationResult,
     type MigrationRollbackReport,
 } from "@docktor/shared";
 import {
     finishMigrationOperation,
+    migrationOperationStatusOf,
     pruneFinishedOperations,
     recordMigrationStep,
     startMigrationOperation,
@@ -33,7 +35,17 @@ import {
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const MAX_FINISHED_OPERATIONS = 50;
 
-type MigrationRunner = Pick<MigrationService, "preflight" | "execute">;
+type MigrationRunner = Pick<MigrationService, "preflight" | "execute" | "rollbackInterrupted">;
+
+/** What a boot recovery registered: how many migrations it will roll back, and the (never rejecting) rollback itself. */
+export interface MigrationRecovery {
+    readonly count: number;
+    run(): Promise<void>;
+}
+
+const RECOVERY_NOTHING: MigrationRecovery = {count: 0, run: () => Promise.resolve()};
+
+const RESTARTED_MIGRATION_MESSAGE = "Docktor restarted during the migration";
 
 function maskError(error: string | undefined): string | undefined {
     return error === undefined ? undefined : maskSecrets(error);
@@ -57,6 +69,17 @@ function toOperationResult(result: MigrationResult): MigrationOperationResult {
         originalPath: result.originalPath,
         keptOriginalAt: result.keptOriginalAt,
         rollback: maskRollback(result.rollback),
+    };
+}
+
+/**
+ * The keys a migration holds while it runs: its stack slug and its compose file.
+ * One definition for a start and a recovery, so the two guards cannot drift.
+ */
+function inFlightKeys(stackSlug: string, composePath: string): {stackKey: string | null; composeKey: string} {
+    return {
+        stackKey: stackSlug === "" ? null : `stack:${stackSlug}`,
+        composeKey: `compose:${toComparablePath(path.resolve(composePath))}`,
     };
 }
 
@@ -137,14 +160,17 @@ export class MigrationOperationService {
     private holdInFlight(input: MigrationInput): string[] {
         const slug = slugify(input.displayName);
         // An empty slug has no stack key; preflight refuses it.
-        const stackKey = slug === "" ? null : `stack:${slug}`;
-        const composeKey = `compose:${toComparablePath(path.resolve(input.composePath))}`;
+        const {stackKey, composeKey} = inFlightKeys(slug, input.composePath);
         if (stackKey !== null && this.inFlight.has(stackKey)) {
             throw new ConflictError(`A migration to stack "${slug}" is already running`);
         }
         if (this.inFlight.has(composeKey)) {
             throw new ConflictError("This stack is already being migrated");
         }
+        return this.hold(stackKey, composeKey);
+    }
+
+    private hold(stackKey: string | null, composeKey: string): string[] {
         const keys = stackKey === null ? [composeKey] : [stackKey, composeKey];
         for (const key of keys) {
             this.inFlight.add(key);
@@ -155,6 +181,90 @@ export class MigrationOperationService {
     private releaseInFlight(keys: readonly string[]): void {
         for (const key of keys) {
             this.inFlight.delete(key);
+        }
+    }
+
+    /**
+     * D-06: registers the migrations a restart interrupted, each as running at
+     * `rolling_back` under its own id so a client that was following it finds it
+     * again, and holds its stack and compose keys so none can start again while
+     * the recovery runs. Synchronous like {@link start}, so the keys are held
+     * before the server accepts a request. `run` rolls the documents back one
+     * after the other with the same runner a failed step uses, removes each
+     * journal before the finished operation is published, and never rejects.
+     */
+    recoverInterrupted(documents: readonly MigrationJournalDocument[]): MigrationRecovery {
+        if (documents.length === 0) {
+            return RECOVERY_NOTHING;
+        }
+        const pending = documents.map((document) => this.registerInterrupted(document));
+        return {
+            count: documents.length,
+            run: async () => {
+                for (const {document, heldKeys} of pending) {
+                    await this.recoverOne(document, heldKeys);
+                }
+            },
+        };
+    }
+
+    private registerInterrupted(document: MigrationJournalDocument): {document: MigrationJournalDocument; heldKeys: string[]} {
+        const {operation} = document;
+        const {stackKey, composeKey} = inFlightKeys(operation.stackId, operation.composePath);
+        const heldKeys = this.hold(stackKey, composeKey);
+        this.save({...operation, status: "running", step: "rolling_back", stepDetail: null, finishedAt: null, result: null});
+        return {document, heldKeys};
+    }
+
+    private async recoverOne(document: MigrationJournalDocument, heldKeys: readonly string[]): Promise<void> {
+        const operationId = document.operation.id;
+        try {
+            const result = await this.rollBackInterrupted(document);
+            await this.discardJournalOf(operationId);
+            const current = this.operations.get(operationId);
+            if (current) {
+                this.save(finishMigrationOperation(current, result, this.now()));
+            }
+        } catch (error: unknown) {
+            this.logger.error(`[migration-recovery] Recovering ${operationId} failed unexpectedly: ${errorMessage(error)}`);
+        } finally {
+            this.releaseInFlight(heldKeys);
+        }
+    }
+
+    /**
+     * The result of a rollback after a restart. "Was rolled back" is only said
+     * when the report verified it (the same rule that decides `rolled_back`);
+     * anything else says what was attempted and leaves the verdict to the report.
+     */
+    private async rollBackInterrupted(document: MigrationJournalDocument): Promise<MigrationOperationResult> {
+        const operationId = document.operation.id;
+        const originalPath = document.originalDir;
+        try {
+            const outcome = await this.migrations.rollbackInterrupted(document.ledger, {
+                onProgress: (progress) => this.recordStep(operationId, progress),
+            });
+            const verified: MigrationOperationResult = {
+                success: false,
+                error: `${RESTARTED_MIGRATION_MESSAGE}, so the migration was rolled back.`,
+                originalPath,
+                rollback: outcome.report,
+            };
+            if (migrationOperationStatusOf(verified) === "rolled_back") {
+                return toOperationResult(verified);
+            }
+            const restart = outcome.restartError === undefined ? "" : ` Restarting the old stack failed: ${outcome.restartError}.`;
+            return toOperationResult({
+                ...verified,
+                error: `${RESTARTED_MIGRATION_MESSAGE}. The migration was stopped and rolled back as far as Docktor could verify; see the rollback report.${restart}`,
+            });
+        } catch (error: unknown) {
+            this.logger.error(`[migration-recovery] The rollback of ${operationId} failed: ${errorMessage(error)}`);
+            return {
+                success: false,
+                error: maskSecrets(`${RESTARTED_MIGRATION_MESSAGE}, and the rollback failed: ${errorMessage(error)}`),
+                originalPath,
+            };
         }
     }
 
@@ -218,7 +328,7 @@ export class MigrationOperationService {
             };
         }
         const result = await this.executeJournaled(plan, operation.id, ledger);
-        await this.discardJournal(ledger, operation.id);
+        await this.discardJournalOf(operation.id, ledger);
         return result;
     }
 
@@ -243,9 +353,9 @@ export class MigrationOperationService {
     }
 
     /** A journal that cannot be removed is logged, never thrown: the operation's outcome is already known. */
-    private async discardJournal(ledger: JournaledMigrationLedger, operationId: string): Promise<void> {
+    private async discardJournalOf(operationId: string, ledger?: JournaledMigrationLedger): Promise<void> {
         try {
-            await ledger.discard();
+            await (ledger ? ledger.discard() : this.journal.remove(operationId));
         } catch (error: unknown) {
             this.logger.error(`[migration] The journal of ${operationId} could not be removed: ${errorMessage(error)}`);
         }

@@ -50,6 +50,7 @@ import {
 	COMPOSE_VOLUME_NAME_PATTERN,
 	stackDirectoryNameSchema,
 	type MigrationDiskSpace,
+	type MigrationLedgerEntry,
 	type MigrationOperationStep,
 	type MigrationPreviewDiskSpace,
 	type MigrationRollbackReport,
@@ -62,7 +63,7 @@ import {composeProjectResolver} from "../infrastructure/compose-project-resolver
 import {dockerSelfStack} from "../infrastructure/docker-self-stack.js";
 import {assertNotOwnStack} from "./own-stack-guard.js";
 import {assertNotManaged} from "./managed-stack-guard.js";
-import {MigrationRollbackRunner} from "./migration-rollback-runner.js";
+import {MigrationRollbackRunner, type MigrationRollbackOutcome} from "./migration-rollback-runner.js";
 import {
 	errorMessage,
 	reportMigrationProgress,
@@ -887,6 +888,19 @@ export class MigrationService {
 		} catch (err: unknown) {
 			return await this.rollBack(plan, ledger, err, onProgress);
 		}
+	}
+
+	/**
+	 * D-06: undoes what an interrupted run did, from the ledger its journal kept
+	 * across a Docktor restart. It is the same runner a failed step uses (ROADMAP
+	 * SC#3), so the old stack is only started, never recreated, no volume is
+	 * deleted, and the outcome is only what was verified.
+	 */
+	rollbackInterrupted(
+		entries: readonly MigrationLedgerEntry[],
+		options: {readonly onProgress?: MigrationProgressListener} = {},
+	): Promise<MigrationRollbackOutcome> {
+		return this.rollback.run(entries, options);
 	}
 
 	/** The failure path: undo the ledger and describe what happened without claiming more than was verified. */

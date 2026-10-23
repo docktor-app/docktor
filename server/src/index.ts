@@ -84,6 +84,20 @@ switch (schemaSyncResult.outcome) {
 const {buildApp} = await import("./app.js");
 const app = await buildApp();
 
+// D-06: migrations that a restart interrupted. `prepare` only reads the journal
+// files and locks the stacks involved, so it runs before the server accepts a
+// request (no new migration of those stacks can start); the rollback itself
+// starts after listen and is never awaited. Loaded dynamically for the same
+// reason as app.js: its import graph reaches lib/auth.ts. A failure here is
+// logged and never keeps the server from starting.
+let migrationRecovery: {run(): Promise<void>} = {run: () => Promise.resolve()};
+try {
+    const {migrationRecoveryService} = await import("./application/migration-recovery-service.js");
+    migrationRecovery = await migrationRecoveryService.prepare();
+} catch (err) {
+    console.error("[migration-recovery] Could not prepare the recovery of interrupted migrations:", err);
+}
+
 const port = Number.parseInt(process.env.PORT ?? "3000", 10);
 const host = process.env.HOST ?? "0.0.0.0";
 
@@ -93,6 +107,10 @@ try {
     app.log.error(err);
     process.exit(1);
 }
+
+migrationRecovery.run().catch((err: unknown) => {
+    console.error("[migration-recovery] Recovering interrupted migrations failed:", err);
+});
 
 // Graceful shutdown (G-14-1a): Node is PID 1 in the image, so without this a
 // `docker stop` ends in SIGKILL and leaves the probe network attachment that
