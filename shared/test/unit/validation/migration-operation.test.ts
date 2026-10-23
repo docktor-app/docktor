@@ -191,11 +191,15 @@ describe("migrationJournalSchema", () => {
     it("parses a versioned document with an operation, the original directory and a ledger", () => {
         expect(migrationJournalSchema.safeParse(DOCUMENT).success).toBe(true);
         expect(migrationJournalSchema.safeParse({...DOCUMENT, ledger: []}).success).toBe(true);
+        expect(
+            migrationJournalSchema.safeParse({...DOCUMENT, ledger: [], completedAt: "2026-01-01T10:05:00.000Z"}).success,
+        ).toBe(true);
     });
 
     it.each([
         ["another version", {...DOCUMENT, version: 2}],
         ["no version", {operation: RUNNING, originalDir: "/opt/memos", ledger: []}],
+        ["a completion time that is not a date", {...DOCUMENT, completedAt: "later"}],
         ["an operation id with a slash", {...DOCUMENT, operation: {...RUNNING, id: "../op"}}],
         ["an operation id with a dot", {...DOCUMENT, operation: {...RUNNING, id: "op.1"}}],
         ["an operation id of 65 characters", {...DOCUMENT, operation: {...RUNNING, id: "a".repeat(65)}}],

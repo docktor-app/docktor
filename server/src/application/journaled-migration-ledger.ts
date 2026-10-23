@@ -36,6 +36,14 @@ export class JournaledMigrationLedger implements MigrationLedger {
         await this.journal.remove(this.document.operation.id);
     }
 
+    /**
+     * The fallback for a journal that could not be removed: rewrites it as
+     * completed, with nothing left to undo, so no later boot replays it (CR-02).
+     */
+    async complete(completedAt: string): Promise<void> {
+        await this.journal.write({...this.document, ledger: [], completedAt});
+    }
+
     private async persist(): Promise<void> {
         await this.journal.write({...this.document, ledger: [...this.recorded.entries()]});
     }

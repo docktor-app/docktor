@@ -138,6 +138,9 @@ export const migrationJournalSchema = z.object({
     // The directory the migration reads from; where a restore puts the original back.
     originalDir: z.string().min(1),
     ledger: z.array(migrationLedgerEntrySchema),
+    // Set when the run ended and its journal could not be removed: the journal is then rewritten
+    // with an empty ledger, and the boot recovery ignores (and removes) it instead of replaying it.
+    completedAt: z.iso.datetime().optional(),
 });
 
 export const migrationOperationParamsSchema = z.object({

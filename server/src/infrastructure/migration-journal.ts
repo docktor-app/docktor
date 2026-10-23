@@ -72,8 +72,11 @@ export class MigrationJournal implements MigrationJournalPort {
             if (document === null) {
                 invalid.push(name);
                 await setAside(path.join(directory, name));
-            } else {
+            } else if (document.completedAt === undefined) {
                 documents.push(document);
+            } else {
+                // A finished run whose journal could not be removed at the time: nothing to roll back (CR-02).
+                await this.remove(document.operation.id).catch(() => undefined);
             }
         }
         return {documents, invalid};

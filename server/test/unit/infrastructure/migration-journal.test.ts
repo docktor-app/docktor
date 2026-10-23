@@ -120,6 +120,17 @@ describe("MigrationJournal", () => {
             expect(documents.map((document) => document.operation.id).sort()).toEqual(["op-1", "op-2"]);
         });
 
+        it("ignores and removes a journal that was marked completed (CR-02)", async () => {
+            await journal.write({...documentFor("op-1", []), completedAt: "2026-01-01T10:05:00.000Z"});
+            await journal.write(documentFor("op-2"));
+
+            const {documents, invalid} = await journal.list();
+
+            expect(documents.map((document) => document.operation.id)).toEqual(["op-2"]);
+            expect(invalid).toEqual([]);
+            expect((await fs.readdir(directory)).sort()).toEqual(["op-2.json"]);
+        });
+
         it("sets an unparsable file aside as <name>.invalid and reports it", async () => {
             await fs.mkdir(directory, {recursive: true});
             await fs.writeFile(path.join(directory, "broken.json"), "{not json", "utf-8");

@@ -45,6 +45,12 @@ export interface MigrationRecovery {
 
 const RECOVERY_NOTHING: MigrationRecovery = {count: 0, run: () => Promise.resolve()};
 
+/** A journal that stays on disk would be replayed at the next boot, so its removal is retried before the fallback. */
+const JOURNAL_REMOVE_ATTEMPTS = 3;
+const JOURNAL_REMOVE_BACKOFF_MS = 200;
+
+const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
 const RESTARTED_MIGRATION_MESSAGE = "Docktor restarted during the migration";
 
 function maskError(error: string | undefined): string | undefined {
@@ -109,6 +115,7 @@ export class MigrationOperationService {
         private readonly events: Pick<EventBusPort, "emit"> = domainEventBus,
         private readonly journal: MigrationJournalPort = migrationJournal,
         private readonly logger: Pick<Console, "info" | "error"> = console,
+        private readonly sleep: (ms: number) => Promise<void> = defaultSleep,
     ) {}
 
     async start(input: MigrationInput): Promise<MigrationOperation> {
@@ -220,7 +227,10 @@ export class MigrationOperationService {
         const operationId = document.operation.id;
         try {
             const result = await this.rollBackInterrupted(document);
-            await this.discardJournalOf(operationId);
+            await this.discardJournal(operationId, {
+                remove: () => this.journal.remove(operationId),
+                retire: () => this.retireJournal(document),
+            });
             const current = this.operations.get(operationId);
             if (current) {
                 this.save(finishMigrationOperation(current, result, this.now()));
@@ -352,12 +362,50 @@ export class MigrationOperationService {
         }
     }
 
-    /** A journal that cannot be removed is logged, never thrown: the operation's outcome is already known. */
-    private async discardJournalOf(operationId: string, ledger?: JournaledMigrationLedger): Promise<void> {
+    /** Removes the journal of a run that ended; its ledger knows how to retire it. */
+    private discardJournalOf(operationId: string, ledger: JournaledMigrationLedger): Promise<void> {
+        return this.discardJournal(operationId, {
+            remove: () => ledger.discard(),
+            retire: () => ledger.complete(this.now().toISOString()),
+        });
+    }
+
+    /** The journal of a recovered migration, rewritten as completed when it cannot be removed. */
+    private retireJournal(document: MigrationJournalDocument): Promise<void> {
+        return this.journal.write({...document, ledger: [], completedAt: this.now().toISOString()});
+    }
+
+    /**
+     * The operation's outcome is already known, so a journal that cannot be
+     * removed is logged, never thrown. It is retried with a backoff first, then
+     * rewritten as completed (empty ledger, `completedAt`) so the next boot does
+     * not replay a rollback against whatever lives at that slug by then (CR-02).
+     */
+    private async discardJournal(
+        operationId: string,
+        actions: {readonly remove: () => Promise<void>; readonly retire: () => Promise<void>},
+    ): Promise<void> {
+        for (let attempt = 1; attempt <= JOURNAL_REMOVE_ATTEMPTS; attempt += 1) {
+            try {
+                await actions.remove();
+                return;
+            } catch (error: unknown) {
+                this.logger.error(
+                    `[migration] The journal of ${operationId} could not be removed (attempt ${attempt}/${JOURNAL_REMOVE_ATTEMPTS}): ${errorMessage(error)}`,
+                );
+                if (attempt < JOURNAL_REMOVE_ATTEMPTS) {
+                    await this.sleep(JOURNAL_REMOVE_BACKOFF_MS * 4 ** (attempt - 1));
+                }
+            }
+        }
         try {
-            await (ledger ? ledger.discard() : this.journal.remove(operationId));
+            await actions.retire();
+            this.logger.info(`[migration] The journal of ${operationId} was marked completed instead; it is not replayed.`);
         } catch (error: unknown) {
-            this.logger.error(`[migration] The journal of ${operationId} could not be removed: ${errorMessage(error)}`);
+            this.logger.error(
+                `[migration] The journal of ${operationId} could not be marked completed either: ${errorMessage(error)}. ` +
+                    "A rollback replayed from it only touches directories this migration still owns.",
+            );
         }
     }
 }

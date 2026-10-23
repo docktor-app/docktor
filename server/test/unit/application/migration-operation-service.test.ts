@@ -107,6 +107,7 @@ describe("MigrationOperationService", () => {
     let journalRemove: ReturnType<typeof vi.fn<(operationId: string) => Promise<void>>>;
     let journal: MigrationJournalPort;
     let logger: {info: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn>};
+    let sleep: ReturnType<typeof vi.fn<(ms: number) => Promise<void>>>;
     let rollbackInterrupted: ReturnType<
         typeof vi.fn<(entries: readonly MigrationLedgerEntry[], options: {onProgress?: MigrationProgressListener}) => Promise<MigrationRollbackOutcome>>
     >;
@@ -122,6 +123,7 @@ describe("MigrationOperationService", () => {
         journalRemove = vi.fn(async () => undefined);
         journal = {write: journalWrite, remove: journalRemove, list: vi.fn()};
         logger = {info: vi.fn(), error: vi.fn()};
+        sleep = vi.fn(async () => undefined);
         service = new MigrationOperationService(
             {preflight, execute, rollbackInterrupted},
             () => `op-${++counter}`,
@@ -129,6 +131,7 @@ describe("MigrationOperationService", () => {
             {emit},
             journal,
             logger,
+            sleep,
         );
     });
 
@@ -366,6 +369,58 @@ describe("MigrationOperationService", () => {
             await settle("op-1");
 
             expect(journalRemove).toHaveBeenCalledWith("op-1");
+        });
+
+        describe("a journal that cannot be removed (CR-02)", () => {
+            it("retries the removal with a backoff and stops once it worked", async () => {
+                journalRemove.mockRejectedValueOnce(new Error("EIO")).mockResolvedValueOnce(undefined);
+
+                await service.start(inputFor("My App"));
+                await settle("op-1");
+
+                expect(journalRemove).toHaveBeenCalledTimes(2);
+                expect(sleep).toHaveBeenCalledTimes(1);
+                expect(journalWrite).toHaveBeenCalledTimes(1);
+                expect(service.get("op-1").status).toBe("succeeded");
+            });
+
+            it("rewrites the journal as completed with an empty ledger when every removal failed", async () => {
+                journalRemove.mockRejectedValue(new Error("EACCES: read-only file system"));
+
+                await service.start(inputFor("My App"));
+                await settle("op-1");
+
+                expect(journalRemove).toHaveBeenCalledTimes(3);
+                expect(sleep).toHaveBeenCalledTimes(2);
+                expect(journalWrite.mock.calls.at(-1)?.[0]).toMatchObject({
+                    ledger: [],
+                    completedAt: "2026-01-01T10:00:00.000Z",
+                });
+                expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("EACCES"));
+                expect(service.get("op-1").status).toBe("succeeded");
+            });
+
+            it("still finishes the operation when the journal cannot be marked completed either", async () => {
+                journalRemove.mockRejectedValue(new Error("EIO"));
+                journalWrite.mockResolvedValueOnce(undefined).mockRejectedValue(new Error("EIO again"));
+
+                await service.start(inputFor("My App"));
+                await settle("op-1");
+
+                expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("could not be marked completed"));
+                expect(service.get("op-1").status).toBe("succeeded");
+            });
+
+            it("retires the journal of a recovered migration the same way", async () => {
+                journalRemove.mockRejectedValue(new Error("EIO"));
+
+                await service.recoverInterrupted([journalDocument("op-old")]).run();
+
+                expect(journalWrite).toHaveBeenCalledWith(
+                    expect.objectContaining({ledger: [], completedAt: "2026-01-01T10:00:00.000Z"}),
+                );
+                expect(service.get("op-old").status).toBe("rolled_back");
+            });
         });
 
         it("removes the journal when execute rejects unexpectedly", async () => {

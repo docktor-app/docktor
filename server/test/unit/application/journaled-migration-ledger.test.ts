@@ -40,6 +40,23 @@ describe("JournaledMigrationLedger", () => {
         expect(write).toHaveBeenCalledWith({version: 1, operation: OPERATION, originalDir: "/opt/app", ledger: []});
     });
 
+    it("complete rewrites the document with an empty ledger and the completion time", async () => {
+        const {journal, write} = fakeJournal();
+        const ledger = ledgerWith(journal);
+        await ledger.start();
+        await ledger.record(CREATED);
+
+        await ledger.complete("2026-01-01T10:05:00.000Z");
+
+        expect(write.mock.calls.at(-1)?.[0]).toEqual({
+            version: 1,
+            operation: OPERATION,
+            originalDir: "/opt/app",
+            ledger: [],
+            completedAt: "2026-01-01T10:05:00.000Z",
+        });
+    });
+
     it("record appends the entry and writes the whole document before it resolves", async () => {
         const {journal, write} = fakeJournal();
         const ledger = ledgerWith(journal);
