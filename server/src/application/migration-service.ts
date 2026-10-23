@@ -37,6 +37,7 @@ import {
 	type ComposeVolumeName,
 } from "../domain/compose-volumes.js";
 import {
+	activeWithoutService,
 	composeStopTimeoutMs,
 	runningServices,
 	stillRunning,
@@ -1069,6 +1070,14 @@ export class MigrationService {
 		this.report(onProgress, "stopping_old_stack", running.length === 0 ? "(nothing was running)" : null);
 		if (running.length === 0) {
 			return;
+		}
+		// WR-05: a rollback starts services by name. An active container without a service label could
+		// not be started again, so the stop is refused while nothing has been stopped yet.
+		const unmapped = activeWithoutService(containers);
+		if (unmapped.length > 0) {
+			throw new ConflictError(
+				`Migration refused: ${unmapped.join(", ")} in the Docker Compose project "${oldProject.name}" has no compose service label, so Docktor could not start it again if the migration had to be rolled back. Nothing was stopped.`,
+			);
 		}
 		// The services of the old project that ran before the stop: what a rollback starts again (#100).
 		await ledger.record({

@@ -1,6 +1,8 @@
 import {describe, expect, it} from "vitest";
 import {
+    activeWithoutService,
     composeStopTimeoutMs,
+    isActive,
     runningServices,
     stillRunning,
     stopNotVerifiedMessage,
@@ -32,6 +34,31 @@ describe("runningServices", () => {
     });
 });
 
+describe("isActive (WR-02)", () => {
+    it("is true for a running, a restarting and a paused container", () => {
+        expect(isActive(container({name: "a"}))).toBe(true);
+        expect(isActive(container({name: "a", running: false, restartingOrPaused: true}))).toBe(true);
+    });
+
+    it("is false for an exited, created or dead container", () => {
+        expect(isActive(container({name: "a", running: false}))).toBe(false);
+        expect(isActive(container({name: "a", running: false, restartingOrPaused: false}))).toBe(false);
+    });
+});
+
+describe("activeWithoutService (WR-05)", () => {
+    it("names the active containers that carry no service label", () => {
+        const containers = [
+            container({name: "p-web-1", service: "web"}),
+            container({name: "orphan", service: null}),
+            container({name: "looping", service: null, running: false, restartingOrPaused: true}),
+            container({name: "stopped", service: null, running: false}),
+        ];
+
+        expect(activeWithoutService(containers)).toEqual(["orphan", "looping"]);
+    });
+});
+
 describe("stillRunning", () => {
     it("returns the names of the running containers only", () => {
         const containers = [
@@ -41,6 +68,16 @@ describe("stillRunning", () => {
         ];
 
         expect(stillRunning(containers)).toEqual(["p-db-1", "p-web-1"]);
+    });
+
+    it("counts a restarting or paused container as still running (WR-02)", () => {
+        const containers = [
+            container({name: "p-db-1", service: "db", running: false, restartingOrPaused: true}),
+            container({name: "p-web-1", service: "web", running: false}),
+        ];
+
+        expect(stillRunning(containers)).toEqual(["p-db-1"]);
+        expect(runningServices(containers)).toEqual(["db"]);
     });
 
     it("is empty when everything is stopped", () => {

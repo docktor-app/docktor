@@ -415,6 +415,41 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             expect(result.rollback?.oldStack).toBe("not-stopped");
         });
 
+        it("stops a project whose containers are all crash-looping instead of treating it as stopped (WR-02)", async () => {
+            const looping = {...runningContainer("original"), running: false, restartingOrPaused: true};
+            mockProjects.listContainers.mockResolvedValueOnce([looping]).mockResolvedValue([]);
+            mockDocker.up.mockResolvedValue(undefined);
+
+            const result = await buildService().migrate(input());
+
+            expect(result.success).toBe(true);
+            expect(mockOldStack.stop).toHaveBeenCalledTimes(1);
+        });
+
+        it("refuses the migration while a container keeps restarting after the stop (WR-02)", async () => {
+            const looping = {...runningContainer("original"), running: false, restartingOrPaused: true};
+            mockProjects.listContainers.mockResolvedValueOnce([runningContainer("original")]).mockResolvedValue([looping]);
+
+            const result = await buildService().migrate(input());
+
+            expect(result.success).toBe(false);
+            expect(result.error).toContain("still running");
+            expect(mockStackFs.createDirectoryExclusive).not.toHaveBeenCalled();
+        });
+
+        it("refuses to stop a project with an active container that has no service label, and stops nothing (WR-05)", async () => {
+            const unlabelled = {...runningContainer("original"), service: null};
+            mockProjects.listContainers.mockResolvedValue([unlabelled]);
+
+            const result = await buildService().migrate(input());
+
+            expect(result.success).toBe(false);
+            expect(result.error).toContain("no compose service label");
+            expect(mockOldStack.stop).not.toHaveBeenCalled();
+            expect(result.rollback?.oldStack).toBe("not-stopped");
+            expect(mockOldStack.start).not.toHaveBeenCalled();
+        });
+
         it("gives the stop a timeout that grows with the number of containers", async () => {
             const many = Array.from({length: 10}, (_, index) => runningContainer("original", "web", index + 1));
             mockProjects.listContainers.mockResolvedValueOnce(many).mockResolvedValue([]);

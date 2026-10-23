@@ -77,6 +77,27 @@ describe("ComposeProjectResolver.resolve (#102)", () => {
         ]);
     });
 
+    it("marks restarting and paused containers as active although they do not count as running (WR-02)", async () => {
+        const {resolver} = build([
+            info("other-web-1", labelled("other"), {State: "restarting"}),
+            info("other-db-1", labelled("other", {"com.docker.compose.service": "db"}), {State: "paused"}),
+            info("other-job-1", labelled("other", {"com.docker.compose.service": "job"}), {State: "exited"}),
+        ]);
+
+        const resolution = await resolver.resolve(COMPOSE_PATH);
+
+        if (resolution.kind !== "resolved") {
+            throw new Error("expected a resolved project");
+        }
+        expect(
+            resolution.project.containers.map((container) => [container.name, container.running, container.restartingOrPaused]),
+        ).toEqual([
+            ["other-web-1", false, true],
+            ["other-db-1", false, true],
+            ["other-job-1", false, false],
+        ]);
+    });
+
     it("lists all containers, including stopped ones", async () => {
         const {resolver, docker} = build([]);
 

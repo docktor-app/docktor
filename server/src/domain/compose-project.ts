@@ -13,6 +13,11 @@ export interface ProjectContainer {
     /** The compose service the container runs, or null when the label is missing. */
     readonly service: string | null;
     readonly running: boolean;
+    /**
+     * The container is restarting or paused: not `running`, yet a process that
+     * can still write to its volumes. Absent means false.
+     */
+    readonly restartingOrPaused?: boolean;
     readonly mounts: readonly ProjectContainerMount[];
 }
 
@@ -38,17 +43,35 @@ export interface ComposeProjectTarget {
     readonly project: string;
 }
 
-/** The sorted, unique services of the running containers. */
+/**
+ * True while the container can still write to its volumes: running, restarting
+ * (a crash loop) or paused. Only an exited, created or dead container is down,
+ * so only those may count as stopped (WR-02).
+ */
+export function isActive(container: ProjectContainer): boolean {
+    return container.running || container.restartingOrPaused === true;
+}
+
+/** The sorted, unique services of the active containers: what a rollback starts again. */
 export function runningServices(containers: readonly ProjectContainer[]): string[] {
     const services = containers
-        .filter((container) => container.running)
+        .filter(isActive)
         .flatMap((container) => (container.service === null ? [] : [container.service]));
     return [...new Set(services)].sort((a, b) => a.localeCompare(b));
 }
 
-/** The names of the running containers. */
+/** The names of the active containers (running, restarting or paused). */
 export function stillRunning(containers: readonly ProjectContainer[]): string[] {
-    return containers.filter((container) => container.running).map((container) => container.name);
+    return containers.filter(isActive).map((container) => container.name);
+}
+
+/**
+ * The names of the active containers that carry no compose service label. A
+ * rollback starts services by name, so such a container could not be started
+ * again after the stop (WR-05).
+ */
+export function activeWithoutService(containers: readonly ProjectContainer[]): string[] {
+    return containers.filter((container) => isActive(container) && container.service === null).map((container) => container.name);
 }
 
 /** The refusal for a stop that left containers of the old project running (D-04). */

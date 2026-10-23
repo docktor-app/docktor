@@ -57,6 +57,7 @@ function toProjectContainer(info: Dockerode.ContainerInfo): ProjectContainer {
         name,
         service: info.Labels?.[COMPOSE_SERVICE_LABEL] ?? null,
         running: info.State === "running",
+        restartingOrPaused: info.State === "restarting" || info.State === "paused",
         mounts: (info.Mounts ?? []).map((mount) => ({
             type: mount.Type,
             name: mount.Name,
