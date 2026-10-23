@@ -7,18 +7,18 @@ review: 22-REVIEW.md
 
 | Finding | Severity | Disposition |
 |---------|----------|-------------|
-| CR-01 | Critical | open |
-| CR-02 | Critical | open |
-| CR-03 | Critical | open |
-| WR-01 | Warning | open |
-| WR-02 | Warning | open |
-| WR-03 | Warning | open |
-| WR-04 | Warning | open |
-| WR-05 | Warning | open |
-| WR-06 | Warning | open |
-| WR-07 | Warning | open |
-| WR-08 | Warning | open |
-| WR-09 | Warning | open |
+| CR-01 | Critical | fixed |
+| CR-02 | Critical | fixed |
+| CR-03 | Critical | fixed |
+| WR-01 | Warning | fixed |
+| WR-02 | Warning | fixed |
+| WR-03 | Warning | fixed (partial, see REVIEW-FIX.md) |
+| WR-04 | Warning | fixed (partial, see REVIEW-FIX.md) |
+| WR-05 | Warning | fixed |
+| WR-06 | Warning | fixed (partial, see REVIEW-FIX.md) |
+| WR-07 | Warning | fixed |
+| WR-08 | Warning | fixed |
+| WR-09 | Warning | fixed (partial, see REVIEW-FIX.md) |
 | IN-01 | Info | open |
 | IN-02 | Info | open |
 | IN-03 | Info | open |
