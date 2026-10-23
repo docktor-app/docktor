@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
-import {VolumeMigrator, type VolumeDockerRunner} from "../../../src/infrastructure/volume-migrator.js";
+import {runCommand, VolumeMigrator, type VolumeDockerRunner} from "../../../src/infrastructure/volume-migrator.js";
 import {AppError} from "../../../src/lib/errors.js";
 
 describe("VolumeMigrator.moveDirectory (G-18-7)", () => {
@@ -344,5 +344,24 @@ describe("VolumeMigrator docker paths (#101)", () => {
 
             await expect(new VolumeMigrator(docker).copyVolumeToBindMount("data", path.join(tmpRoot, "d"))).rejects.toThrow("disk full");
         });
+    });
+});
+
+describe.skipIf(process.platform === "win32")("runCommand (WR-07)", () => {
+    it("resolves when the command exits 0", async () => {
+        await expect(runCommand("true", [], "Test command")).resolves.toBeUndefined();
+    });
+
+    it("rejects with the exit code and stderr on a non-zero exit", async () => {
+        await expect(runCommand("sh", ["-c", "echo boom >&2; exit 3"], "Test command")).rejects.toThrow(
+            "Test command failed (exit 3): boom",
+        );
+    });
+
+    it("kills a command that outlives its timeout and rejects with a timeout error", async () => {
+        const attempt = runCommand("sleep", ["30"], "Test copy", 100);
+
+        await expect(attempt).rejects.toBeInstanceOf(AppError);
+        await expect(attempt).rejects.toThrow("Test copy was stopped after");
     });
 });

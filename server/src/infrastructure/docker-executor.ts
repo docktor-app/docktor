@@ -6,6 +6,12 @@ import type {DockerExecutorPort} from "../application/ports/docker-executor-port
 
 const execFileAsync = promisify(execFile);
 
+const COMPOSE_TIMEOUT_MS = 120_000;
+
+// `up -d` pulls missing images first: a first deploy of a multi-image stack on a slow link takes
+// far longer than two minutes, and a kill halfway fails a migration that was fine (WR-07).
+const COMPOSE_UP_TIMEOUT_MS = 20 * 60_000;
+
 /**
  * Injectable shell-out seam for testability (mirrors ExternalStackControl's runner): tests
  * substitute a fake runner instead of mocking node:child_process.
@@ -39,17 +45,18 @@ export class DockerExecutor implements DockerExecutorPort {
     private async composeExec(
         stackId: string,
         args: string[],
+        timeoutMs: number = COMPOSE_TIMEOUT_MS,
     ): Promise<{stdout: string; stderr: string}> {
         return this.run("docker", ["compose", ...args], {
             cwd: getStackPath(stackId),
-            timeout: 120_000,
+            timeout: timeoutMs,
             env: this.environment(),
         });
     }
 
     async up(stackId: string, options: {readonly removeOrphans?: boolean} = {}): Promise<void> {
         const removeOrphans = options.removeOrphans ?? true;
-        await this.composeExec(stackId, removeOrphans ? ["up", "-d", "--remove-orphans"] : ["up", "-d"]);
+        await this.composeExec(stackId, removeOrphans ? ["up", "-d", "--remove-orphans"] : ["up", "-d"], COMPOSE_UP_TIMEOUT_MS);
     }
 
     async stop(stackId: string): Promise<void> {

@@ -7,22 +7,35 @@ import {dockerCliEnvironment} from "../lib/compose-env.js";
 import {AppError, BadRequestError, hasErrorCode} from "../lib/errors.js";
 import type {VolumeMigratorPort} from "../application/ports/volume-migrator-port.js";
 
+// A copy of a large volume legitimately takes hours, but never forever: a hung copy would hold the
+// in-flight keys and leave the old stack stopped. Past this bound the child is killed and the
+// migration fails into its rollback (WR-07).
+export const COPY_TIMEOUT_MS = 4 * 60 * 60 * 1000;
+
 /**
  * Runs `command` with an argument array (never through a shell) and resolves on exit 0.
- * A non-zero exit rejects with an AppError naming `purpose`, the exit code and stderr.
+ * A non-zero exit rejects with an AppError naming `purpose`, the exit code and stderr; a child
+ * that outlives `timeoutMs` is killed and rejects with a timeout error.
  */
-function runCommand(command: string, args: readonly string[], purpose: string): Promise<void> {
+export function runCommand(
+	command: string,
+	args: readonly string[],
+	purpose: string,
+	timeoutMs: number = COPY_TIMEOUT_MS,
+): Promise<void> {
 	return new Promise((resolve, reject) => {
-		const proc = spawn(command, args);
+		const proc = spawn(command, args, {timeout: timeoutMs});
 
 		let stderr = "";
 		proc.stderr.on("data", (chunk: Buffer) => {
 			stderr += chunk.toString();
 		});
 
-		proc.on("close", (code) => {
+		proc.on("close", (code, signal) => {
 			if (code === 0) {
 				resolve();
+			} else if (signal !== null) {
+				reject(new AppError(`${purpose} was stopped after ${Math.round(timeoutMs / 1000)} s (${signal}): ${stderr.trim()}`));
 			} else {
 				reject(new AppError(`${purpose} failed (exit ${code}): ${stderr.trim()}`));
 			}
@@ -40,7 +53,7 @@ export type VolumeDockerRunner = (args: readonly string[], purpose: string) => P
 /** The production {@link VolumeDockerRunner}: an argument array, never a shell, and only the allowlisted environment (#109). */
 export const defaultVolumeDockerRunner: VolumeDockerRunner = (args, purpose) =>
 	new Promise((resolve, reject) => {
-		const proc = spawn("docker", [...args], {env: dockerCliEnvironment(process.env)});
+		const proc = spawn("docker", [...args], {env: dockerCliEnvironment(process.env), timeout: COPY_TIMEOUT_MS});
 
 		let stdout = "";
 		let stderr = "";
@@ -51,9 +64,11 @@ export const defaultVolumeDockerRunner: VolumeDockerRunner = (args, purpose) =>
 			stderr += chunk.toString();
 		});
 
-		proc.on("close", (code) => {
+		proc.on("close", (code, signal) => {
 			if (code === 0) {
 				resolve({stdout, stderr});
+			} else if (signal !== null) {
+				reject(new AppError(`${purpose} was stopped after ${Math.round(COPY_TIMEOUT_MS / 1000)} s (${signal}): ${stderr.trim()}`));
 			} else {
 				reject(new AppError(`${purpose} failed (exit ${code}): ${stderr.trim()}`));
 			}

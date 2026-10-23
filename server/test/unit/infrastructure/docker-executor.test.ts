@@ -16,7 +16,6 @@ function createExecutor(runner: ReturnType<typeof createRunner>): DockerExecutor
 describe("DockerExecutor", () => {
     describe("compose commands", () => {
         it.each([
-            ["up", ["compose", "up", "-d", "--remove-orphans"]],
             ["stop", ["compose", "stop"]],
             ["restart", ["compose", "restart"]],
             ["down", ["compose", "down", "-v"]],
@@ -32,6 +31,19 @@ describe("DockerExecutor", () => {
             expect(options?.cwd).toBe(getStackPath("my-stack"));
             expect(options?.timeout).toBe(120_000);
             expect(options?.env).toBe(SAFE_ENV);
+        });
+
+        it("gives up -d a timeout long enough for image pulls (WR-07)", async () => {
+            const runner = createRunner();
+
+            await createExecutor(runner).up("my-stack");
+
+            const [file, args, options] = runner.mock.calls[0] ?? [];
+            expect(file).toBe("docker");
+            expect(args).toEqual(["compose", "up", "-d", "--remove-orphans"]);
+            expect(options?.cwd).toBe(getStackPath("my-stack"));
+            expect(options?.env).toBe(SAFE_ENV);
+            expect(options?.timeout).toBe(20 * 60_000);
         });
 
         it("up without orphan removal runs docker compose up -d only", async () => {
