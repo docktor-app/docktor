@@ -67,6 +67,12 @@ const ledgerStackIdSchema = z
     .max(63)
     .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {message: "Must be a slugified stack id"});
 
+// Proves a directory is the one this run created: the run writes the token into
+// a marker file in the new stack directory, and a rollback (also one replayed
+// after a restart, from a stale journal) only removes the directory, record or
+// containers while the marker still holds the token (CR-01, CR-02).
+const ledgerOwnerIdSchema = z.string().min(1).max(64);
+
 // What a migration run did to the world, in the order it did it. Rollback undoes
 // the entries in reverse; each entry is recorded only after (or, for the stop,
 // right before) the side effect it names, so nothing foreign is ever undone.
@@ -81,9 +87,9 @@ export const migrationLedgerEntrySchema = z.discriminatedUnion("kind", [
         sharesProjectWithNewStack: z.boolean(),
     }),
     z.object({kind: z.literal("moved_aside"), originalDir: z.string().min(1), asideDir: z.string().min(1)}),
-    z.object({kind: z.literal("created_directory"), stackId: ledgerStackIdSchema}),
-    z.object({kind: z.literal("created_record"), stackId: ledgerStackIdSchema}),
-    z.object({kind: z.literal("deploy_started"), stackId: ledgerStackIdSchema}),
+    z.object({kind: z.literal("created_directory"), stackId: ledgerStackIdSchema, ownerId: ledgerOwnerIdSchema}),
+    z.object({kind: z.literal("created_record"), stackId: ledgerStackIdSchema, ownerId: ledgerOwnerIdSchema}),
+    z.object({kind: z.literal("deploy_started"), stackId: ledgerStackIdSchema, ownerId: ledgerOwnerIdSchema}),
 ]);
 
 export const migrationOperationStatusSchema = z.enum(MIGRATION_OPERATION_STATUSES);

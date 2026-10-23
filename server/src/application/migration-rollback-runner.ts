@@ -26,8 +26,8 @@ export interface MigrationRollbackOutcome {
 }
 
 export interface MigrationRollbackRunnerDependencies {
-    stackFs: Pick<StackFilesystemPort, "removeDirectory">;
-    stackRepo: Pick<StackRepository, "delete">;
+    stackFs: Pick<StackFilesystemPort, "removeDirectory" | "ownsDirectory">;
+    stackRepo: Pick<StackRepository, "delete" | "exists">;
     migrator: Pick<VolumeMigratorPort, "moveDirectory">;
     /** Only the keep-volumes down: the volume-deleting `down` is deliberately not reachable from a rollback (T-22-19). */
     docker: Pick<DockerExecutorPort, "downKeepVolumes">;
@@ -58,6 +58,12 @@ interface RollbackState {
  * (#100). It only undoes what the ledger says this run did, never deletes a
  * volume, never replaces a path, and reports only what it verified: the old
  * stack counts as restored once its services were seen running (D-07).
+ *
+ * The runner is replay-safe, because a journal replayed after a restart may
+ * describe work that was already undone, or that a later run has replaced:
+ * the new stack's directory, record and containers are only touched while the
+ * directory still carries this run's ownership marker (CR-01, CR-02), and the
+ * original is only moved back when it is not already in place.
  */
 export class MigrationRollbackRunner {
     constructor(private readonly deps: MigrationRollbackRunnerDependencies) {}
@@ -88,15 +94,47 @@ export class MigrationRollbackRunner {
     private compensate(entry: MigrationLedgerEntry, state: RollbackState): Promise<void> {
         switch (entry.kind) {
             case "created_record":
-                return this.attempt(state, "remove the stack record", () => this.deps.stackRepo.delete(entry.stackId));
+                return this.attempt(state, "remove the stack record", () =>
+                    this.whenOwned(entry, () => this.removeRecord(entry.stackId)),
+                );
             case "created_directory":
-                return this.attempt(state, "remove the new stack directory", () => this.deps.stackFs.removeDirectory(entry.stackId));
+                return this.attempt(state, "remove the new stack directory", () =>
+                    this.whenOwned(entry, () => this.deps.stackFs.removeDirectory(entry.stackId)),
+                );
             case "moved_aside":
                 return this.moveOriginalBack(entry, state);
             case "stopped_old_stack":
                 return this.restoreOldStack(entry, state);
             case "deploy_started":
-                return this.attempt(state, "take the new stack down", () => this.deps.docker.downKeepVolumes(entry.stackId));
+                return this.attempt(state, "take the new stack down", () =>
+                    this.whenOwned(entry, () => this.deps.docker.downKeepVolumes(entry.stackId)),
+                );
+        }
+    }
+
+    /**
+     * Runs `action` only while the stack directory still carries this run's
+     * marker. Without it the directory, record or project belongs to someone
+     * else (the restored original, or a stack that has been in use since) and is
+     * left alone.
+     */
+    private async whenOwned(
+        entry: Extract<MigrationLedgerEntry, {kind: "created_directory" | "created_record" | "deploy_started"}>,
+        action: () => Promise<void>,
+    ): Promise<void> {
+        if (await this.deps.stackFs.ownsDirectory(entry.stackId, entry.ownerId)) {
+            await action();
+            return;
+        }
+        this.deps.logger.info(
+            `[MigrationService] Rollback left "${entry.stackId}" alone for ${entry.kind}: it is not marked as created by this migration`,
+        );
+    }
+
+    /** A record that was never created (the write-ahead entry preceded the create) or is gone already needs no delete. */
+    private async removeRecord(stackId: string): Promise<void> {
+        if (await this.deps.stackRepo.exists(stackId)) {
+            await this.deps.stackRepo.delete(stackId);
         }
     }
 
@@ -126,6 +164,11 @@ export class MigrationRollbackRunner {
             if (!(await this.deps.pathTaken(originalDir))) {
                 await this.deps.migrator.moveDirectory(asideDir, originalDir);
                 state.original = "restored";
+                return;
+            }
+            if (!(await this.deps.pathTaken(asideDir))) {
+                // Nothing under the aside name: the original already is where it belongs (an earlier
+                // rollback moved it back, or the rename never happened). Never touch what is there.
                 return;
             }
         } catch (error: unknown) {

@@ -16,8 +16,8 @@ const STOPPED: MigrationLedgerEntry = {
     runningBefore: ["web"],
     sharesProjectWithNewStack: false,
 };
-const DIRECTORY: MigrationLedgerEntry = {kind: "created_directory", stackId: "memos-new"};
-const RECORD: MigrationLedgerEntry = {kind: "created_record", stackId: "memos-new"};
+const DIRECTORY: MigrationLedgerEntry = {kind: "created_directory", stackId: "memos-new", ownerId: "owner-1"};
+const RECORD: MigrationLedgerEntry = {kind: "created_record", stackId: "memos-new", ownerId: "owner-1"};
 
 function container(service: string | null, running: boolean): ProjectContainer {
     return {id: `${service}-1`, name: `memos-${service}-1`, service, running, mounts: []};

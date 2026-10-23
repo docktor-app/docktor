@@ -78,15 +78,24 @@ function createMockStackFs(stacksRoot: string) {
             return target;
         }),
         removeDirectory: vi.fn().mockResolvedValue(undefined),
+        claimDirectory: vi.fn().mockResolvedValue(undefined),
+        releaseDirectory: vi.fn().mockResolvedValue(undefined),
+        ownsDirectory: vi.fn().mockResolvedValue(true),
     };
 }
 
 function createMockStackRepo() {
+    // Stateful like the real repository: a created record exists until it is deleted.
+    const stored = new Set<string>();
     return {
-        exists: vi.fn().mockResolvedValue(false),
+        exists: vi.fn(async (id: string) => stored.has(id)),
         listLocations: vi.fn().mockResolvedValue([] as Array<{id: string; displayName: string; hostPath: string}>),
-        create: vi.fn().mockResolvedValue(undefined),
-        delete: vi.fn().mockResolvedValue(undefined),
+        create: vi.fn(async (data: {id: string}) => {
+            stored.add(data.id);
+        }),
+        delete: vi.fn(async (id: string) => {
+            stored.delete(id);
+        }),
     };
 }
 
@@ -1649,6 +1658,47 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             });
         });
 
+        it("claims the new directory for the run, records the same owner and releases the claim once the stack is up (CR-01, CR-02)", async () => {
+            mockDocker.up.mockResolvedValue(undefined);
+            const service = buildService();
+            const ledger = new InMemoryMigrationLedger();
+
+            const result = await service.execute(await service.preflight(input({backup: false})), {ledger});
+
+            expect(result.success).toBe(true);
+            const owners = ledger
+                .entries()
+                .flatMap((entry) => (entry.kind === "stopped_old_stack" || entry.kind === "moved_aside" ? [] : [entry.ownerId]));
+            expect(owners).toHaveLength(3);
+            expect(new Set(owners).size).toBe(1);
+            expect(mockStackFs.claimDirectory).toHaveBeenCalledWith(stackId, owners[0]);
+            expect(mockStackFs.releaseDirectory).toHaveBeenCalledWith(stackId, owners[0]);
+            expect(mockStackFs.releaseDirectory.mock.invocationCallOrder[0]).toBeGreaterThan(
+                mockDocker.up.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+            );
+        });
+
+        it("keeps the claim when the deploy fails, so the rollback can still remove the directory", async () => {
+            mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
+            const service = buildService();
+
+            await service.execute(await service.preflight(input({backup: false})), {ledger: new InMemoryMigrationLedger()});
+
+            expect(mockStackFs.releaseDirectory).not.toHaveBeenCalled();
+            expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
+        });
+
+        it("still succeeds when the claim cannot be released", async () => {
+            mockDocker.up.mockResolvedValue(undefined);
+            mockStackFs.releaseDirectory.mockRejectedValue(new Error("EACCES"));
+            const service = buildService();
+
+            const result = await service.execute(await service.preflight(input({backup: false})));
+
+            expect(result.success).toBe(true);
+            expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining("ownership marker"));
+        });
+
         it("records nothing for a stop that was not needed", async () => {
             mockDocker.up.mockResolvedValue(undefined);
             mockProjects.listContainers.mockResolvedValue([]);
@@ -1777,9 +1827,11 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         it("runs the same rollback a failed step runs: record, directory, then the old stack back", async () => {
             const entries: MigrationLedgerEntry[] = [
                 stopped,
-                {kind: "created_directory", stackId},
-                {kind: "created_record", stackId},
+                {kind: "created_directory", stackId, ownerId: "owner-1"},
+                {kind: "created_record", stackId, ownerId: "owner-1"},
             ];
+
+            await mockStackRepo.create({id: stackId});
 
             const outcome = await buildService().rollbackInterrupted(entries, {});
 
@@ -1797,8 +1849,8 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             const entries: MigrationLedgerEntry[] = [
                 {...stopped, sharesProjectWithNewStack: true},
                 {kind: "moved_aside", originalDir, asideDir},
-                {kind: "created_directory", stackId},
-                {kind: "deploy_started", stackId},
+                {kind: "created_directory", stackId, ownerId: "owner-1"},
+                {kind: "deploy_started", stackId, ownerId: "owner-1"},
             ];
             await fs.rename(originalDir, asideDir);
 
@@ -1810,6 +1862,44 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             expect(mockOldStack.restoreServices).toHaveBeenCalledTimes(1);
             expect(mockOldStack.start).not.toHaveBeenCalled();
             expect(outcome.report).toMatchObject({oldStack: "restored-running", original: "restored"});
+        });
+
+        it("leaves the directory, the record and the containers of a stack it does not own alone (CR-01, CR-02)", async () => {
+            mockStackFs.ownsDirectory.mockResolvedValue(false);
+            await mockStackRepo.create({id: stackId});
+            const entries: MigrationLedgerEntry[] = [
+                stopped,
+                {kind: "created_directory", stackId, ownerId: "owner-1"},
+                {kind: "created_record", stackId, ownerId: "owner-1"},
+                {kind: "deploy_started", stackId, ownerId: "owner-1"},
+            ];
+
+            const outcome = await buildService().rollbackInterrupted(entries, {});
+
+            expect(mockStackFs.ownsDirectory).toHaveBeenCalledWith(stackId, "owner-1");
+            expect(mockDocker.downKeepVolumes).not.toHaveBeenCalled();
+            expect(mockStackRepo.delete).not.toHaveBeenCalled();
+            expect(mockStackFs.removeDirectory).not.toHaveBeenCalled();
+            expect(outcome.report.cleanupErrors).toEqual([]);
+        });
+
+        it("does not delete the restored original when the same in-place ledger is replayed after the move back", async () => {
+            // First rollback finished the directory removal and the move back, then Docktor stopped
+            // before the journal was removed. The replay finds the original at its path and no aside.
+            mockStackFs.ownsDirectory.mockResolvedValue(false);
+            const asideDir = `${originalDir}-pre-migration`;
+            const entries: MigrationLedgerEntry[] = [
+                stopped,
+                {kind: "moved_aside", originalDir, asideDir},
+                {kind: "created_directory", stackId, ownerId: "owner-1"},
+            ];
+
+            const outcome = await buildService().rollbackInterrupted(entries, {});
+
+            expect(mockStackFs.removeDirectory).not.toHaveBeenCalled();
+            expect(mockMigrator.moveDirectory).not.toHaveBeenCalled();
+            await expect(fs.access(originalDir)).resolves.toBeUndefined();
+            expect(outcome.report).toEqual({oldStack: "restored-running", original: "untouched", cleanupErrors: []});
         });
 
         it("reports progress through the listener", async () => {

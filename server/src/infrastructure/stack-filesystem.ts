@@ -4,6 +4,9 @@ import {AppError, ConflictError, hasErrorCode} from "../lib/errors.js";
 import {getComposePath, getEnvPath, getStackPath,} from "../lib/stacks-dir.js";
 import type {StackFilesystemPort} from "../application/ports/stack-filesystem-port.js";
 
+/** The ownership marker of a migration-created directory; a dot file, so no compose or env watcher reacts to it. */
+const OWNER_MARKER_NAME = ".docktor-migration-owner";
+
 export class StackFilesystem implements StackFilesystemPort {
     getStackDirectory(stackId: string): string {
         return getStackPath(stackId);
@@ -61,5 +64,26 @@ export class StackFilesystem implements StackFilesystemPort {
 
     async removeDirectory(stackId: string): Promise<void> {
         await fs.rm(getStackPath(stackId), {recursive: true, force: true});
+    }
+
+    async claimDirectory(stackId: string, ownerId: string): Promise<void> {
+        await fs.writeFile(path.join(getStackPath(stackId), OWNER_MARKER_NAME), ownerId, {encoding: "utf-8", mode: 0o600});
+    }
+
+    async releaseDirectory(stackId: string, ownerId: string): Promise<void> {
+        if (await this.ownsDirectory(stackId, ownerId)) {
+            await fs.rm(path.join(getStackPath(stackId), OWNER_MARKER_NAME), {force: true});
+        }
+    }
+
+    async ownsDirectory(stackId: string, ownerId: string): Promise<boolean> {
+        try {
+            return (await fs.readFile(path.join(getStackPath(stackId), OWNER_MARKER_NAME), "utf-8")) === ownerId;
+        } catch (error: unknown) {
+            if (hasErrorCode(error, "ENOENT") || hasErrorCode(error, "ENOTDIR")) {
+                return false;
+            }
+            throw error;
+        }
     }
 }

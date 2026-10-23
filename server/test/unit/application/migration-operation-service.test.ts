@@ -88,7 +88,7 @@ function journalDocument(id: string, overrides: Partial<MigrationOperation> = {}
             ...overrides,
         },
         originalDir: "/opt/app",
-        ledger: [{kind: "created_directory", stackId: "my-app"}],
+        ledger: [{kind: "created_directory", stackId: "my-app", ownerId: "owner-1"}],
     };
 }
 
@@ -348,7 +348,7 @@ describe("MigrationOperationService", () => {
 
         it("passes a ledger to execute that persists every entry it records", async () => {
             execute.mockImplementation(async (_plan, options) => {
-                await options?.ledger?.record({kind: "created_directory", stackId: "my-app"});
+                await options?.ledger?.record({kind: "created_directory", stackId: "my-app", ownerId: "owner-1"});
                 return SUCCESS;
             });
 
@@ -356,7 +356,7 @@ describe("MigrationOperationService", () => {
             await settle("op-1");
 
             expect(journalWrite).toHaveBeenCalledTimes(2);
-            expect(journalWrite.mock.calls[1]?.[0].ledger).toEqual([{kind: "created_directory", stackId: "my-app"}]);
+            expect(journalWrite.mock.calls[1]?.[0].ledger).toEqual([{kind: "created_directory", stackId: "my-app", ownerId: "owner-1"}]);
         });
 
         it("removes the journal of a failed migration as well", async () => {

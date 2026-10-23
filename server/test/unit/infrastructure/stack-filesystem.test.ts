@@ -70,4 +70,37 @@ describe("StackFilesystem directory creation", () => {
             await expect(new StackFilesystem().createDirectory("taken")).resolves.toBe(path.join(tmpRoot, "taken"));
         });
     });
+
+    describe("directory ownership marker (CR-01, CR-02)", () => {
+        it("owns a claimed directory only for the claiming owner", async () => {
+            const stackFs = new StackFilesystem();
+            await stackFs.createDirectoryExclusive("mine");
+
+            await stackFs.claimDirectory("mine", "op-1");
+
+            await expect(stackFs.ownsDirectory("mine", "op-1")).resolves.toBe(true);
+            await expect(stackFs.ownsDirectory("mine", "op-2")).resolves.toBe(false);
+        });
+
+        it("owns neither a missing directory nor a directory without a marker", async () => {
+            const stackFs = new StackFilesystem();
+            await fs.mkdir(path.join(tmpRoot, "plain"));
+
+            await expect(stackFs.ownsDirectory("missing", "op-1")).resolves.toBe(false);
+            await expect(stackFs.ownsDirectory("plain", "op-1")).resolves.toBe(false);
+        });
+
+        it("stops owning the directory once it is released, and releasing for another owner changes nothing", async () => {
+            const stackFs = new StackFilesystem();
+            await stackFs.createDirectoryExclusive("mine");
+            await stackFs.claimDirectory("mine", "op-1");
+
+            await stackFs.releaseDirectory("mine", "op-2");
+            await expect(stackFs.ownsDirectory("mine", "op-1")).resolves.toBe(true);
+
+            await stackFs.releaseDirectory("mine", "op-1");
+            await expect(stackFs.ownsDirectory("mine", "op-1")).resolves.toBe(false);
+            await expect(stackFs.releaseDirectory("mine", "op-1")).resolves.toBeUndefined();
+        });
+    });
 });

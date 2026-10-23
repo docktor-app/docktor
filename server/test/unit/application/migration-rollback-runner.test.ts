@@ -19,9 +19,9 @@ const stopped = (runningBefore: string[], sharesProjectWithNewStack = false): Mi
     sharesProjectWithNewStack,
 });
 const movedAside: MigrationLedgerEntry = {kind: "moved_aside", originalDir: ORIGINAL_DIR, asideDir: ASIDE_DIR};
-const createdDirectory: MigrationLedgerEntry = {kind: "created_directory", stackId: "memos-new"};
-const createdRecord: MigrationLedgerEntry = {kind: "created_record", stackId: "memos-new"};
-const deployStarted: MigrationLedgerEntry = {kind: "deploy_started", stackId: "memos-new"};
+const createdDirectory: MigrationLedgerEntry = {kind: "created_directory", stackId: "memos-new", ownerId: "owner-1"};
+const createdRecord: MigrationLedgerEntry = {kind: "created_record", stackId: "memos-new", ownerId: "owner-1"};
+const deployStarted: MigrationLedgerEntry = {kind: "deploy_started", stackId: "memos-new", ownerId: "owner-1"};
 
 function container(service: string, running: boolean): ProjectContainer {
     return {id: `${service}-1`, name: `memos-${service}-1`, service, running, mounts: []};
@@ -56,11 +56,13 @@ describe("MigrationRollbackRunner", () => {
                 delete: vi.fn(async (id: string) => {
                     calls.push(`deleteRecord:${id}`);
                 }),
+                exists: vi.fn(async () => true),
             },
             stackFs: {
                 removeDirectory: vi.fn(async (id: string) => {
                     calls.push(`removeDirectory:${id}`);
                 }),
+                ownsDirectory: vi.fn(async () => true),
             },
             migrator: {
                 moveDirectory: vi.fn(async (source: string, destination: string) => {
@@ -225,6 +227,45 @@ describe("MigrationRollbackRunner", () => {
         await runner().run(entries);
 
         expect(entries).toEqual([stopped(["web"]), createdDirectory]);
+    });
+
+    describe("a replayed or stale ledger (CR-01, CR-02)", () => {
+        it("removes the directory, record and project only while the run still owns the directory", async () => {
+            vi.mocked(deps.stackFs.ownsDirectory).mockResolvedValue(false);
+
+            const outcome = await runner().run([stopped(["web"]), createdDirectory, createdRecord, deployStarted]);
+
+            expect(deps.stackFs.ownsDirectory).toHaveBeenCalledWith("memos-new", "owner-1");
+            expect(calls).toEqual(["start:web"]);
+            expect(outcome.report).toEqual({oldStack: "restored-running", original: "untouched", cleanupErrors: []});
+        });
+
+        it("lists a failing ownership check as a cleanup error and removes nothing", async () => {
+            vi.mocked(deps.stackFs.ownsDirectory).mockRejectedValue(new Error("EIO"));
+
+            const outcome = await runner().run([createdDirectory]);
+
+            expect(calls).toEqual([]);
+            expect(outcome.report.cleanupErrors).toEqual([expect.stringContaining("EIO")]);
+        });
+
+        it("skips the delete of a record that does not exist", async () => {
+            vi.mocked(deps.stackRepo.exists).mockResolvedValue(false);
+
+            const outcome = await runner().run([createdRecord]);
+
+            expect(deps.stackRepo.delete).not.toHaveBeenCalled();
+            expect(outcome.report.cleanupErrors).toEqual([]);
+        });
+
+        it("leaves an original that is already back in place alone and does not report it as left aside", async () => {
+            pathTaken.mockImplementation(async (target) => target === ORIGINAL_DIR);
+
+            const outcome = await runner().run([stopped(["web"]), movedAside]);
+
+            expect(deps.migrator.moveDirectory).not.toHaveBeenCalled();
+            expect(outcome.report).toEqual({oldStack: "restored-running", original: "untouched", cleanupErrors: []});
+        });
     });
 
     describe("a deploy that started (#100, T-22-19)", () => {

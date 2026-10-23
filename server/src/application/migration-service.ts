@@ -1,3 +1,4 @@
+import {randomUUID} from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {dockerExecutor} from "../infrastructure/docker-executor.js";
@@ -954,7 +955,11 @@ export class MigrationService {
 		// is not recorded, so rollback never removes a foreign directory.
 		this.report(onProgress, "creating_directory");
 		const newStackPath = await this.stackFs.createDirectoryExclusive(stackId);
-		await ledger.record({kind: "created_directory", stackId});
+		// CR-01, CR-02: the marker proves later on that this run created the directory; a rollback
+		// (also one replayed from a journal after a restart) leaves anything without it alone.
+		const ownerId = randomUUID();
+		await this.stackFs.claimDirectory(stackId, ownerId);
+		await ledger.record({kind: "created_directory", stackId, ownerId});
 
 		// Step 3 (D-01, D-02, D-03): the backup, when opted in (D-07). The old stack
 		// is down and verified, and nothing has been copied or changed yet. In place,
@@ -1019,18 +1024,29 @@ export class MigrationService {
 			hostPath: newStackPath,
 			composeConfig,
 		});
-		await ledger.record({kind: "created_record", stackId});
+		await ledger.record({kind: "created_record", stackId, ownerId});
 
 		// Step 8: Deploy new stack. Recorded before the call, so a deploy that fails halfway is taken
 		// down on rollback. Without orphan removal: in place, the project is the old stack's, and
 		// removing orphans could delete containers of services the rewritten file no longer lists.
 		this.report(onProgress, "deploying");
-		await ledger.record({kind: "deploy_started", stackId});
+		await ledger.record({kind: "deploy_started", stackId, ownerId});
 		await this.docker.up(stackId, {removeOrphans: false});
+		// The stack is up and in use from here on: it is no longer a migration artefact a rollback may remove.
+		await this.releaseOwnership(stackId, ownerId);
 
 		return inPlace
 			? {success: true, stackId, originalPath: originalDir, keptOriginalAt: inPlace.asideDir}
 			: {success: true, stackId, originalPath: originalDir};
+	}
+
+	/** A marker that cannot be removed is harmless to the stack and is only logged: the migration itself succeeded. */
+	private async releaseOwnership(stackId: string, ownerId: string): Promise<void> {
+		try {
+			await this.stackFs.releaseDirectory(stackId, ownerId);
+		} catch (error: unknown) {
+			this.logger.warn(`[MigrationService] Could not remove the ownership marker of "${stackId}": ${errorMessage(error)}`);
+		}
 	}
 
 	/**

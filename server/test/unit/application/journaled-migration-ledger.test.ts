@@ -18,8 +18,8 @@ const OPERATION: MigrationOperation = {
     result: null,
 };
 
-const CREATED: MigrationLedgerEntry = {kind: "created_directory", stackId: "my-app"};
-const RECORD: MigrationLedgerEntry = {kind: "created_record", stackId: "my-app"};
+const CREATED: MigrationLedgerEntry = {kind: "created_directory", stackId: "my-app", ownerId: "owner-1"};
+const RECORD: MigrationLedgerEntry = {kind: "created_record", stackId: "my-app", ownerId: "owner-1"};
 
 function fakeJournal(): {journal: MigrationJournalPort; write: ReturnType<typeof vi.fn>; remove: ReturnType<typeof vi.fn>} {
     const write = vi.fn(async (_document: MigrationJournalDocument) => undefined);

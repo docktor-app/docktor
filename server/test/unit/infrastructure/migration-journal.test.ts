@@ -44,7 +44,7 @@ describe("MigrationJournal", () => {
 
     describe("write", () => {
         it("creates the directory and writes <id>.json with the document", async () => {
-            const document = documentFor("op-1", [{kind: "created_directory", stackId: "my-app"}]);
+            const document = documentFor("op-1", [{kind: "created_directory", stackId: "my-app", ownerId: "owner-1"}]);
 
             await journal.write(document);
 
@@ -61,10 +61,10 @@ describe("MigrationJournal", () => {
 
         it("replaces the content on a second write and leaves no temporary file behind", async () => {
             await journal.write(documentFor("op-1"));
-            await journal.write(documentFor("op-1", [{kind: "deploy_started", stackId: "my-app"}]));
+            await journal.write(documentFor("op-1", [{kind: "deploy_started", stackId: "my-app", ownerId: "owner-1"}]));
 
             const stored = JSON.parse(await fs.readFile(path.join(directory, "op-1.json"), "utf-8")) as MigrationJournalDocument;
-            expect(stored.ledger).toEqual([{kind: "deploy_started", stackId: "my-app"}]);
+            expect(stored.ledger).toEqual([{kind: "deploy_started", stackId: "my-app", ownerId: "owner-1"}]);
             expect(await fs.readdir(directory)).toEqual(["op-1.json"]);
         });
 
@@ -112,7 +112,7 @@ describe("MigrationJournal", () => {
 
         it("returns every valid document", async () => {
             await journal.write(documentFor("op-1"));
-            await journal.write(documentFor("op-2", [{kind: "created_record", stackId: "my-app"}]));
+            await journal.write(documentFor("op-2", [{kind: "created_record", stackId: "my-app", ownerId: "owner-1"}]));
 
             const {documents, invalid} = await journal.list();
 

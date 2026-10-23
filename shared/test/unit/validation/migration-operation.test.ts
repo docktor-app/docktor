@@ -156,19 +156,21 @@ describe("migrationLedgerEntrySchema", () => {
     it.each([
         ["stopped_old_stack", STOPPED],
         ["moved_aside", {kind: "moved_aside", originalDir: "/opt/memos", asideDir: "/opt/memos-pre-migration"}],
-        ["created_directory", {kind: "created_directory", stackId: "my-app"}],
-        ["created_record", {kind: "created_record", stackId: "my-app"}],
-        ["deploy_started", {kind: "deploy_started", stackId: "my-app"}],
+        ["created_directory", {kind: "created_directory", stackId: "my-app", ownerId: "owner-1"}],
+        ["created_record", {kind: "created_record", stackId: "my-app", ownerId: "owner-1"}],
+        ["deploy_started", {kind: "deploy_started", stackId: "my-app", ownerId: "owner-1"}],
     ])("parses a %s entry", (_kind, entry) => {
         expect(migrationLedgerEntrySchema.safeParse(entry).success).toBe(true);
     });
 
     it.each([
         ["an unknown kind", {kind: "deleted_volume", stackId: "my-app"}],
-        ["an uppercase stack id", {kind: "created_directory", stackId: "My-App"}],
-        ["a stack id with a path separator", {kind: "created_record", stackId: "../etc"}],
-        ["a stack id with a double hyphen", {kind: "deploy_started", stackId: "my--app"}],
-        ["a stack id of 64 characters", {kind: "created_directory", stackId: "a".repeat(64)}],
+        ["an uppercase stack id", {kind: "created_directory", stackId: "My-App", ownerId: "owner-1"}],
+        ["a stack id with a path separator", {kind: "created_record", stackId: "../etc", ownerId: "owner-1"}],
+        ["a stack id with a double hyphen", {kind: "deploy_started", stackId: "my--app", ownerId: "owner-1"}],
+        ["a stack id of 64 characters", {kind: "created_directory", stackId: "a".repeat(64), ownerId: "owner-1"}],
+        ["a missing owner id", {kind: "created_directory", stackId: "my-app"}],
+        ["an empty owner id", {kind: "deploy_started", stackId: "my-app", ownerId: ""}],
         ["an empty aside path", {kind: "moved_aside", originalDir: "/opt/memos", asideDir: ""}],
         ["an empty original path", {kind: "moved_aside", originalDir: "", asideDir: "/opt/aside"}],
         ["an empty compose path", {...STOPPED, composePath: ""}],
@@ -183,7 +185,7 @@ describe("migrationJournalSchema", () => {
         version: 1,
         operation: RUNNING,
         originalDir: "/opt/memos",
-        ledger: [{kind: "created_directory", stackId: "my-app"}],
+        ledger: [{kind: "created_directory", stackId: "my-app", ownerId: "owner-1"}],
     };
 
     it("parses a versioned document with an operation, the original directory and a ledger", () => {
