@@ -215,8 +215,8 @@ describe("DiffConfirmDialog", () => {
             expect(screen.queryByRole("button", {name: /show secret values/i})).not.toBeInTheDocument();
         });
 
-        it("never masks a compose diff, even if a line happens to match KEY=value shape", () => {
-            const composeLikeSecret: UnifiedDiff = {
+        it("masks a map-form secret in a compose diff with the shared rules and offers the reveal toggle", async () => {
+            const composeSecret: UnifiedDiff = {
                 added: 1,
                 removed: 0,
                 hunks: [
@@ -225,7 +225,7 @@ describe("DiffConfirmDialog", () => {
                         oldLines: 0,
                         newStart: 1,
                         newLines: 1,
-                        lines: [{kind: "added", text: "DB_PASSWORD=hunter2", oldLine: null, newLine: 1}],
+                        lines: [{kind: "added", text: "      MYSQL_ROOT_PASSWORD: secret", oldLine: null, newLine: 1}],
                     },
                 ],
             };
@@ -233,12 +233,42 @@ describe("DiffConfirmDialog", () => {
                 <DiffConfirmDialog
                     open
                     stackName="My App"
-                    subject={makeSubject("compose", composeLikeSecret)}
+                    subject={makeSubject("compose", composeSecret)}
                     onConfirm={vi.fn()}
                     onCancel={vi.fn()}
                 />,
             );
-            expect(screen.getByText("DB_PASSWORD=hunter2")).toBeVisible();
+            expect(screen.getByText("MYSQL_ROOT_PASSWORD: ••••••••")).toBeVisible();
+            expect(screen.queryByText(/secret$/)).not.toBeInTheDocument();
+
+            await userEvent.click(screen.getByRole("button", {name: "Show secret values"}));
+            expect(screen.getByText("MYSQL_ROOT_PASSWORD: secret")).toBeVisible();
+        });
+
+        it("keeps a compose line without a secret as it is and offers no toggle", () => {
+            const plain: UnifiedDiff = {
+                added: 1,
+                removed: 0,
+                hunks: [
+                    {
+                        oldStart: 1,
+                        oldLines: 0,
+                        newStart: 1,
+                        newLines: 1,
+                        lines: [{kind: "added", text: "      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}", oldLine: null, newLine: 1}],
+                    },
+                ],
+            };
+            render(
+                <DiffConfirmDialog
+                    open
+                    stackName="My App"
+                    subject={makeSubject("compose", plain)}
+                    onConfirm={vi.fn()}
+                    onCancel={vi.fn()}
+                />,
+            );
+            expect(screen.getByText("MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}")).toBeVisible();
             expect(screen.queryByRole("button", {name: /show secret values/i})).not.toBeInTheDocument();
         });
 

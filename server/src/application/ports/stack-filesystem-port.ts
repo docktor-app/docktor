@@ -30,4 +30,18 @@ export interface StackFilesystemPort {
     removeEnv(stackId: string): Promise<void>;
 
     removeDirectory(stackId: string): Promise<void>;
+
+    /**
+     * Marks the stack directory as created by the migration run `ownerId` (a
+     * marker file inside it). A rollback only removes a directory it still owns,
+     * so a journal replayed after a restart can never delete a restored original
+     * or a stack that has been in use since (CR-01, CR-02).
+     */
+    claimDirectory(stackId: string, ownerId: string): Promise<void>;
+
+    /** Removes the ownership marker once the migration succeeded; a missing marker is not an error. */
+    releaseDirectory(stackId: string, ownerId: string): Promise<void>;
+
+    /** True only while the stack directory carries the marker of `ownerId`. A missing directory or marker is not owned. */
+    ownsDirectory(stackId: string, ownerId: string): Promise<boolean>;
 }

@@ -90,6 +90,7 @@ describe("Imports API (post-setup brownfield scan/adopt/migrate)", () => {
                     namedVolumeSelections: {},
                     backup: true,
                     stopOldStack: true,
+                    acknowledgeAnonymousVolumes: false,
                 },
             });
             expect(res.statusCode).toBe(401);
@@ -119,6 +120,9 @@ describe("Imports API (post-setup brownfield scan/adopt/migrate)", () => {
         expect(typeof body.diff.added).toBe("number");
         expect(typeof body.diff.removed).toBe("number");
         expect(typeof body.extractedEnv).toBe("string");
+        // #107: the preview carries the disk space assessment for both backup choices.
+        expect(typeof body.diskSpace.withoutBackup.ok).toBe("boolean");
+        expect(typeof body.diskSpace.withBackup.ok).toBe("boolean");
     });
 
     it("POST /api/stacks/import/migrate without a backup flag → 400 and nothing runs (D-12)", async () => {
@@ -222,6 +226,7 @@ describe("Imports API (post-setup brownfield scan/adopt/migrate)", () => {
                 namedVolumeSelections: {},
                 backup: false,
                 stopOldStack: false,
+                acknowledgeAnonymousVolumes: false,
             },
         });
         expect(migrateRes.statusCode).toBe(409);

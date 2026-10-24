@@ -3,8 +3,11 @@ import {describe, expect, it} from "vitest";
 import {
     locateBindSource,
     needsOwnMounts,
+    resolveHomeRelativeSources,
+    type HomeSourceResolution,
     type OwnMountsView,
 } from "../../../src/domain/bind-mount-sources.js";
+import type {ProjectContainer, ProjectContainerMount} from "../../../src/domain/compose-project.js";
 import {toComparablePath, type ContainerMount} from "../../../src/domain/self-stack-paths.js";
 
 const ROOT_AT_HOST: ContainerMount = {type: "bind", source: "/", destination: "/host"};
@@ -129,10 +132,103 @@ describe("locateBindSource", () => {
     });
 
     describe("home-relative sources", () => {
-        it.each([HOST, UNKNOWN, container(ROOT_AT_HOST)])("refuses ~ and ~/data in every view (%j)", (view) => {
-            expect(locateBindSource("~/data", "/work/stack", view)).toEqual({kind: "refused", reason: "home-relative"});
-            expect(locateBindSource("~", "/work/stack", view)).toEqual({kind: "refused", reason: "home-relative"});
+        it.each([HOST, UNKNOWN, container(ROOT_AT_HOST)])("refuses a raw ~ and ~/data in every view as a backstop (%j)", (view) => {
+            expect(locateBindSource("~/data", "/work/stack", view)).toEqual({kind: "refused", reason: "home-unresolved"});
+            expect(locateBindSource("~", "/work/stack", view)).toEqual({kind: "refused", reason: "home-unresolved"});
         });
+    });
+});
+
+function projectContainer(service: string | null, mounts: readonly ProjectContainerMount[], index = 1): ProjectContainer {
+    return {id: `c${index}`, name: `app-${service ?? "x"}-${index}`, service, running: true, mounts};
+}
+
+const bind = (source: string, destination: string): ProjectContainerMount => ({type: "bind", source, destination});
+const declared = (path: string, serviceName: string, containerPath: string) => ({path, serviceName, containerPath});
+
+describe("resolveHomeRelativeSources", () => {
+    const resolved = (hostPath: string): HomeSourceResolution => ({kind: "resolved", hostPath});
+    const unresolved = (reason: "no-container" | "inconsistent" | "unsupported"): HomeSourceResolution => ({
+        kind: "unresolved",
+        reason,
+    });
+
+    it("resolves ~/data to the host directory the service's container mounts at that destination", () => {
+        const result = resolveHomeRelativeSources(
+            [declared("~/data", "db", "/var/lib/data")],
+            [projectContainer("db", [bind("/home/alice/data", "/var/lib/data")])],
+        );
+
+        expect(result.get("~/data")).toEqual(resolved("/home/alice/data"));
+    });
+
+    it("resolves a bare ~ to the home directory the container mounts", () => {
+        const result = resolveHomeRelativeSources(
+            [declared("~", "db", "/root")],
+            [projectContainer("db", [bind("/home/alice", "/root")])],
+        );
+
+        expect(result.get("~")).toEqual(resolved("/home/alice"));
+    });
+
+    it("leaves sources that do not start with ~ out of the result", () => {
+        const result = resolveHomeRelativeSources(
+            [declared("./data", "db", "/a"), declared("/opt/x", "db", "/b"), declared("named", "db", "/c")],
+            [projectContainer("db", [bind("/opt/x", "/b")])],
+        );
+
+        expect(result.size).toBe(0);
+    });
+
+    it("is unresolved when no container of the service mounts that destination", () => {
+        const containers = [
+            projectContainer("web", [bind("/home/alice/data", "/var/lib/data")]),
+            projectContainer("db", [bind("/home/alice/data", "/other")]),
+            projectContainer("db", [{type: "volume", name: "v", source: "/var/lib/docker/volumes/v/_data", destination: "/var/lib/data"}], 2),
+        ];
+
+        expect(resolveHomeRelativeSources([declared("~/data", "db", "/var/lib/data")], containers).get("~/data")).toEqual(
+            unresolved("no-container"),
+        );
+        expect(resolveHomeRelativeSources([declared("~/data", "db", "/var/lib/data")], []).get("~/data")).toEqual(
+            unresolved("no-container"),
+        );
+    });
+
+    it("is inconsistent when two services resolve the same ~ source to different directories", () => {
+        const result = resolveHomeRelativeSources(
+            [declared("~/data", "db", "/a"), declared("~/data", "web", "/b")],
+            [projectContainer("db", [bind("/home/alice/data", "/a")]), projectContainer("web", [bind("/home/bob/data", "/b")])],
+        );
+
+        expect(result.get("~/data")).toEqual(unresolved("inconsistent"));
+    });
+
+    it("is inconsistent when the recorded source does not end in the declared remainder", () => {
+        const result = resolveHomeRelativeSources(
+            [declared("~/data", "db", "/a")],
+            [projectContainer("db", [bind("/srv/elsewhere", "/a")])],
+        );
+
+        expect(result.get("~/data")).toEqual(unresolved("inconsistent"));
+    });
+
+    it("resolves the same ~ source declared by two services to one directory", () => {
+        const result = resolveHomeRelativeSources(
+            [declared("~/data", "db", "/a"), declared("~/data", "web", "/b")],
+            [projectContainer("db", [bind("/home/alice/data", "/a")]), projectContainer("web", [bind("/home/alice/data/", "/b")])],
+        );
+
+        expect(result.get("~/data")).toEqual(resolved("/home/alice/data"));
+    });
+
+    it.each(["~other/x", "~+/x", "~-"])("does not support %s", (declaredPath) => {
+        const result = resolveHomeRelativeSources(
+            [declared(declaredPath, "db", "/a")],
+            [projectContainer("db", [bind("/home/other/x", "/a")])],
+        );
+
+        expect(result.get(declaredPath)).toEqual(unresolved("unsupported"));
     });
 });
 

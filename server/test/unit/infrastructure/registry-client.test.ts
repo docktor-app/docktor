@@ -222,3 +222,19 @@ describe("RegistryClient", () => {
         })
     })
 })
+
+describe("RegistryUnavailableError", () => {
+    it("exposes the cause it was given and the 502 status", () => {
+        const cause = new Error("socket hang up")
+
+        const error = new RegistryUnavailableError("nginx:1.25", "unreachable", {cause})
+
+        expect(error.cause).toBe(cause)
+        expect(error.statusCode).toBe(502)
+        expect(error.message).toContain("nginx:1.25")
+    })
+
+    it("has no cause when none is given", () => {
+        expect(new RegistryUnavailableError("nginx:1.25", "rate limited").cause).toBeUndefined()
+    })
+})

@@ -159,6 +159,76 @@ volumes:
         });
     });
 
+    describe("rewrite (#104: ~ bind sources)", () => {
+        const HOME_SOURCES = new Map([["~/data", "/home/alice/data"]]);
+        const SHORT = lines("services:", "  db:", "    image: postgres", "    volumes:", "      - ~/data:/var/lib/data", "");
+        const LONG = lines(
+            "services:",
+            "  db:",
+            "    image: postgres",
+            "    volumes:",
+            "      - type: bind",
+            "        source: ~/data",
+            "        target: /var/lib/data",
+            "",
+        );
+        const convertData = [{originalPath: "~/data", newPath: "./volumes/data", convert: true}];
+        const keepData = [{originalPath: "~/data", newPath: "~/data", convert: false}];
+
+        it("rewrites a converted short-form ~ source to the selected destination", () => {
+            const result = new ComposeRewriter().rewrite(SHORT, convertData, new Map(), undefined, {homeSources: HOME_SOURCES});
+
+            expect(result.rewrittenCompose).toBe(SHORT.replace("~/data:/var/lib/data", "./volumes/data:/var/lib/data"));
+        });
+
+        it("rewrites a kept short-form ~ source to the absolute host path", () => {
+            const result = new ComposeRewriter().rewrite(SHORT, keepData, new Map(), undefined, {homeSources: HOME_SOURCES});
+
+            expect(result.rewrittenCompose).toBe(SHORT.replace("~/data:/var/lib/data", "/home/alice/data:/var/lib/data"));
+        });
+
+        it("keeps the mode of a short-form ~ source", () => {
+            const compose = SHORT.replace("/var/lib/data", "/var/lib/data:ro");
+
+            const result = new ComposeRewriter().rewrite(compose, keepData, new Map(), undefined, {homeSources: HOME_SOURCES});
+
+            expect(result.rewrittenCompose).toContain("- /home/alice/data:/var/lib/data:ro");
+        });
+
+        it.each([
+            ["converted", convertData, "./volumes/data"],
+            ["kept", keepData, "/home/alice/data"],
+        ])("rewrites the source of a %s long-form bind ~ source", (_label, selections, expected) => {
+            const result = new ComposeRewriter().rewrite(LONG, selections, new Map(), undefined, {homeSources: HOME_SOURCES});
+
+            const [vol] = parseYaml(result.rewrittenCompose).services.db.volumes;
+            expect(vol).toEqual({type: "bind", source: expected, target: "/var/lib/data"});
+        });
+
+        it("never treats a ~ source as a named volume", () => {
+            const result = new ComposeRewriter().rewrite(SHORT, [], new Map([["~/data", true]]), undefined, {
+                homeSources: HOME_SOURCES,
+            });
+
+            expect(result.rewrittenCompose).toBe(SHORT.replace("~/data:/var/lib/data", "/home/alice/data:/var/lib/data"));
+        });
+
+        it("leaves a ~ source unchanged without homeSources", () => {
+            expect(new ComposeRewriter().rewrite(SHORT, keepData, new Map()).rewrittenCompose).toBe(SHORT);
+            expect(new ComposeRewriter().rewrite(SHORT, convertData, new Map()).rewrittenCompose).toBe(
+                SHORT.replace("~/data:/var/lib/data", "./volumes/data:/var/lib/data"),
+            );
+        });
+
+        it("produces byte-identical output with an empty options object for an existing fixture", () => {
+            const rewriter = new ComposeRewriter();
+
+            expect(rewriter.rewrite(MEMOS_COMMENTED, CONVERT_DATA, new Map(), undefined, {})).toEqual(
+                rewriter.rewrite(MEMOS_COMMENTED, CONVERT_DATA, new Map()),
+            );
+        });
+    });
+
     describe("rewrite (G-18-4 B: source-preserving edits)", () => {
         const rewriter = new ComposeRewriter();
 
@@ -390,6 +460,91 @@ volumes:
             expect(rewriter.rewrite(compose, [], new Map()).rewrittenCompose).toBe(compose);
         });
 
+        describe("kept volumes keep their real Docker name (#101)", () => {
+            const KEPT = lines(
+                "services:",
+                "  app:",
+                "    volumes:",
+                "      - data:/data",
+                "      - cache:/cache",
+                "volumes:",
+                "  data:",
+                "  cache:",
+                "    name: custom_cache",
+                "",
+            );
+            const real = (name: string, exists: boolean) => ({name, exists});
+
+            it("declares an existing kept volume as external under its real name", () => {
+                const volumes = new Map([["data", real("myproj_data", true)], ["cache", real("custom_cache", true)]]);
+
+                const result = rewriter.rewrite(KEPT, [], new Map(), undefined, {volumes});
+
+                expect(result.rewrittenCompose).toBe(
+                    lines(
+                        "services:",
+                        "  app:",
+                        "    volumes:",
+                        "      - data:/data",
+                        "      - cache:/cache",
+                        "volumes:",
+                        '  data: {external: true, name: "myproj_data"}',
+                        '  cache: {external: true, name: "custom_cache"}',
+                        "",
+                    ),
+                );
+            });
+
+            it("names a kept volume Docker has not created yet without marking it external", () => {
+                const volumes = new Map([["data", real("myproj_data", false)], ["cache", real("custom_cache", false)]]);
+
+                const result = rewriter.rewrite(KEPT, [], new Map(), undefined, {volumes});
+
+                expect(result.rewrittenCompose).toContain('  data: {name: "myproj_data"}');
+                expect(result.rewrittenCompose).toContain('  cache: {name: "custom_cache"}');
+                expect(result.rewrittenCompose).not.toContain("external");
+            });
+
+            it("leaves an entry that already declares external untouched", () => {
+                const compose = lines("services:", "  app:", "    volumes:", "      - shared:/s", "volumes:", "  shared:", "    external: true", "");
+
+                const result = rewriter.rewrite(compose, [], new Map(), undefined, {volumes: new Map([["shared", real("shared", true)]])});
+
+                expect(result.rewrittenCompose).toBe(compose);
+            });
+
+            it("falls back to a plain external entry for a key the map does not know", () => {
+                const result = rewriter.rewrite(KEPT, [], new Map(), undefined, {volumes: new Map([["data", real("myproj_data", true)]])});
+
+                expect(result.rewrittenCompose).toContain('  data: {external: true, name: "myproj_data"}');
+                expect(result.rewrittenCompose).toContain("  cache: {external: true}");
+            });
+
+            it("gives the flow-style map the same texts", () => {
+                const compose = lines(
+                    "services:",
+                    "  app:",
+                    "    volumes:",
+                    "      - pgdata:/data",
+                    "      - cache:/cache",
+                    "volumes: {pgdata: {}, cache: {}}",
+                    "",
+                );
+                const volumes = new Map([["cache", real("myproj_cache", true)]]);
+
+                const result = rewriter.rewrite(compose, [], new Map([["pgdata", true]]), undefined, {volumes});
+
+                expect(result.rewrittenCompose).toContain('volumes: {cache: {external: true, name: "myproj_cache"}}');
+            });
+
+            it("produces exactly today's output when no volumes are given", () => {
+                expect(rewriter.rewrite(KEPT, [], new Map(), undefined, {}).rewrittenCompose).toBe(
+                    rewriter.rewrite(KEPT, [], new Map()).rewrittenCompose,
+                );
+                expect(rewriter.rewrite(KEPT, [], new Map()).rewrittenCompose).toContain("  data: {external: true}");
+            });
+        });
+
         it.each([
             ["an empty document", ""],
             ["a null services node", "services:\n"],
@@ -580,14 +735,28 @@ volumes:
                 expect(result.extractedEnv).toBe("WEB_PORT=80");
             });
 
-            it("reserves the variables of Docktor's own process environment by default", () => {
-                vi.stubEnv("DOCKTOR_TEST_SHADOW", "x");
+            it("reserves the variables that reach docker compose by default", () => {
+                vi.stubEnv("HTTP_PROXY", "http://proxy:3128");
                 try {
-                    const compose = lines("services:", ...service("web", "DOCKTOR_TEST_SHADOW: y"), "");
+                    const compose = lines("services:", ...service("web", "HTTP_PROXY: y"), "");
 
                     const result = new ComposeRewriter().rewrite(compose, [], new Map());
 
-                    expect(result.envVars).toEqual({WEB_DOCKTOR_TEST_SHADOW: "y"});
+                    expect(result.envVars).toEqual({WEB_HTTP_PROXY: "y"});
+                } finally {
+                    vi.unstubAllEnvs();
+                }
+            });
+
+            it("does not reserve a Docktor secret because compose never sees it", () => {
+                vi.stubEnv("DATABASE_URL", "postgres://docktor");
+                try {
+                    const compose = lines("services:", ...service("web", "DATABASE_URL: y"), "");
+
+                    const result = new ComposeRewriter().rewrite(compose, [], new Map());
+
+                    expect(result.envVars).toEqual({DATABASE_URL: "y"});
+                    expect(result.extractedEnv).toBe("DATABASE_URL=y");
                 } finally {
                     vi.unstubAllEnvs();
                 }

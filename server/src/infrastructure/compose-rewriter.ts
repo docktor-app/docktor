@@ -1,4 +1,5 @@
 import {CST, isMap, isScalar, isSeq, parseDocument, Scalar, type YAMLMap} from "yaml";
+import {dockerCliEnvironment} from "../lib/compose-env.js";
 import {AppError} from "../lib/errors.js";
 import {parseEnvAssignments} from "../domain/host-ports.js";
 import type {ComposeRewriterPort} from "../application/ports/compose-rewriter-port.js";
@@ -24,6 +25,7 @@ interface Splice {
 	text: string;
 }
 
+/** The entry of a kept volume nothing is known about: compose is told it exists elsewhere. */
 const EXTERNAL_FLOW = "{external: true}";
 
 /** Plain scalars compose reads back with the same text: booleans and canonical decimal integers. */
@@ -108,6 +110,29 @@ class SourceEdits {
 	}
 }
 
+/** Optional knowledge about the old stack that the rewrite cannot read from the files (#104). */
+export interface RewriteOptions {
+	/**
+	 * `~` bind sources as the compose file spells them, mapped to the host directory the old
+	 * containers mount. A `~` source that is kept becomes that absolute path; without an entry
+	 * a `~` source is left as it is.
+	 */
+	readonly homeSources?: ReadonlyMap<string, string>;
+	/**
+	 * Top-level volume keys mapped to the Docker volume they really refer to (#101). A kept volume
+	 * is then written with that name, as external when Docker already has it and as a named
+	 * volume Docker will create when it does not, so the new stack uses the old stack's data.
+	 * A key without an entry is declared `{external: true}` as before.
+	 */
+	readonly volumes?: ReadonlyMap<string, KeptVolume>;
+}
+
+/** The real Docker volume behind a top-level compose volume key, and whether Docker has it yet. */
+export interface KeptVolume {
+	readonly name: string;
+	readonly exists: boolean;
+}
+
 /** Lookup of which volume references the user chose to convert (the rewrite rules, no text handling). */
 class VolumeRules {
 	private readonly bindRewrites = new Map<string, string>();
@@ -115,6 +140,8 @@ class VolumeRules {
 	constructor(
 		volumeSelections: VolumeSelection[],
 		private readonly namedVolumeSelections: Map<string, boolean>,
+		private readonly homeSources: ReadonlyMap<string, string> = new Map(),
+		private readonly volumes: ReadonlyMap<string, KeptVolume> = new Map(),
 	) {
 		for (const selection of volumeSelections) {
 			if (selection.convert) {
@@ -127,9 +154,21 @@ class VolumeRules {
 		return this.namedVolumeSelections.get(volumeName) === true;
 	}
 
+	/** The converted destination, else the host directory a `~` source stands for, else nothing. */
 	bindTarget(hostPath: string): string | undefined {
 		const newPath = this.bindRewrites.get(hostPath);
-		return newPath || undefined;
+		return newPath || this.homeSources.get(hostPath) || undefined;
+	}
+
+	/** The flow-map text a kept top-level volume is declared with: its real name when it is known. */
+	keptVolumeText(volumeKey: string): string {
+		const volume = this.volumes.get(volumeKey);
+		if (volume === undefined) {
+			return EXTERNAL_FLOW;
+		}
+		// A JSON string is a valid double-quoted YAML scalar.
+		const name = JSON.stringify(volume.name);
+		return volume.exists ? `{external: true, name: ${name}}` : `{name: ${name}}`;
 	}
 
 	namedTarget(volumeName: string): string {
@@ -139,7 +178,8 @@ class VolumeRules {
 	/** New text of a short-form entry (`host:container[:mode]`), or undefined when it stays as it is. */
 	shortForm(entry: string): string | undefined {
 		const [hostPath, ...rest] = entry.split(":");
-		const isNamedReference = !hostPath.startsWith(".") && !hostPath.startsWith("/");
+		// A `~` source is a host path the shell expands, never a named volume.
+		const isNamedReference = !/^[./~]/.test(hostPath);
 		const target = isNamedReference
 			? (this.isConverted(hostPath) ? this.namedTarget(hostPath) : undefined)
 			: this.bindTarget(hostPath);
@@ -388,7 +428,7 @@ class ComposeEditPlan {
 	private markExternal(pair: VolumeEntry): void {
 		if (isScalar(pair.key) && pair.key.range) {
 			const start = colonEnd(this.source, pair.key.range[1]);
-			this.edits.add({start, end: this.entryEnd(pair), text: ` ${EXTERNAL_FLOW}`});
+			this.edits.add({start, end: this.entryEnd(pair), text: ` ${this.rules.keptVolumeText(String(pair.key.value))}`});
 		}
 	}
 
@@ -409,7 +449,7 @@ class ComposeEditPlan {
 		}
 		const key = this.source.slice(pair.key.range[0], pair.key.range[1]);
 		return this.needsExternal(pair)
-			? `${key}: ${EXTERNAL_FLOW}`
+			? `${key}: ${this.rules.keptVolumeText(String(pair.key.value))}`
 			: this.source.slice(pair.key.range[0], this.entryEnd(pair));
 	}
 
@@ -428,16 +468,21 @@ class ComposeEditPlan {
 export class ComposeRewriter implements ComposeRewriterPort {
 	/**
 	 * @param reservedNames names that can never carry an extracted value, read once per rewrite.
-	 *   Docker compose is run with Docktor's own environment and shell variables override `.env`,
-	 *   so every variable of this process is reserved by default.
+	 *   Shell variables override `.env` in compose, but compose children only receive the
+	 *   allowlisted variables (see lib/compose-env.ts), so only those can override a value in the
+	 *   stack's `.env` and only those are reserved by default.
 	 */
-	constructor(private readonly reservedNames: () => ReadonlySet<string> = () => new Set(Object.keys(process.env))) {}
+	constructor(
+		private readonly reservedNames: () => ReadonlySet<string> = () => new Set(Object.keys(dockerCliEnvironment(process.env))),
+	) {}
 
 	/**
 	 * Rewrite compose file:
 	 * 1. Update volume paths based on selections
 	 * 2. Mark unconverted named volumes as external
 	 * 3. Move inline literal `environment` values to `.env`
+	 *
+	 * `options.homeSources` resolves `~` bind sources (#104).
 	 *
 	 * Behaviour change (G-18-4 B): the previous implementation replaced a map-form `environment`
 	 * by a list of bare `${KEY}` entries, which Compose reads as interpolated values without keys.
@@ -451,6 +496,7 @@ export class ComposeRewriter implements ComposeRewriterPort {
 		volumeSelections: VolumeSelection[],
 		namedVolumeSelections: Map<string, boolean>, // volumeName -> convert (true = bind mount, false = keep as named)
 		existingEnv?: string,
+		options: RewriteOptions = {},
 	): RewriteResult {
 		const unchanged: RewriteResult = {rewrittenCompose: originalCompose, extractedEnv: "", envVars: {}};
 		const doc = parseDocument(originalCompose, {keepSourceTokens: true});
@@ -465,7 +511,7 @@ export class ComposeRewriter implements ComposeRewriterPort {
 
 		const plan = new ComposeEditPlan(
 			originalCompose,
-			new VolumeRules(volumeSelections, namedVolumeSelections),
+			new VolumeRules(volumeSelections, namedVolumeSelections, options.homeSources, options.volumes),
 			new EnvNameAllocator({
 				reserved: this.reservedNames(),
 				existingEnv: parseEnvAssignments(existingEnv ?? ""),

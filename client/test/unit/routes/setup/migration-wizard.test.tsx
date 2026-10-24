@@ -8,6 +8,12 @@ import type {MigrationPreviewInput, MigrationTarget} from "@docktor/shared";
 import type {CodeEditorProps} from "@/components/common/code-editor";
 import type {UnifiedDiff} from "@/lib/stacks-api";
 
+// #107: a preview whose filesystem has room for the migration, with or without a backup.
+const ROOMY_DISK_SPACE = {
+    withoutBackup: {ok: true, filesystems: [{label: "/opt/docktor/stacks", requiredBytes: 1024, availableBytes: 1_048_576}]},
+    withBackup: {ok: true, filesystems: [{label: "/opt/docktor/stacks", requiredBytes: 2048, availableBytes: 1_048_576}]},
+};
+
 // CodeMirror itself is covered by its own tests — mock it with a textarea
 // exposing the same aria-label so this file only asserts the review step.
 vi.mock("@/components/common/code-editor", () => ({
@@ -26,6 +32,7 @@ const stack: DiscoveredStack = {
     compatibility: "yellow",
     serviceCount: 1,
     namedVolumes: ["pgdata"],
+    externalVolumes: [],
     absolutePaths: [],
     relativePaths: [],
     inlineEnvVars: false,
@@ -85,7 +92,7 @@ function renderWizard(
     return {onClose, onConfirmMigrate};
 }
 
-const okPreview = (): Promise<MigrationPreview> => Promise.resolve({diff: emptyDiff, extractedEnv: "", emptySources: [], target: separateTarget});
+const okPreview = (): Promise<MigrationPreview> => Promise.resolve({diff: emptyDiff, extractedEnv: "", emptySources: [], anonymousVolumes: [], diskSpace: ROOMY_DISK_SPACE, target: separateTarget});
 
 describe("MigrationWizard", () => {
     beforeEach(() => {
@@ -109,7 +116,7 @@ describe("MigrationWizard", () => {
     });
 
     it("renders the preview as a real line diff with +N / -N counters", async () => {
-        const previewMigration = vi.fn().mockResolvedValue({diff: sampleDiff, extractedEnv: "", emptySources: [], target: separateTarget});
+        const previewMigration = vi.fn().mockResolvedValue({diff: sampleDiff, extractedEnv: "", emptySources: [], anonymousVolumes: [], diskSpace: ROOMY_DISK_SPACE, target: separateTarget});
         renderWizard(previewMigration);
 
         await userEvent.click(screen.getByRole("button", {name: "Preview Changes"}));
@@ -135,7 +142,7 @@ describe("MigrationWizard", () => {
     });
 
     it("shows the empty state with +0 / -0 counters when there are no hunks", async () => {
-        renderWizard(vi.fn().mockResolvedValue({diff: emptyDiff, extractedEnv: "", emptySources: [], target: separateTarget}));
+        renderWizard(vi.fn().mockResolvedValue({diff: emptyDiff, extractedEnv: "", emptySources: [], anonymousVolumes: [], diskSpace: ROOMY_DISK_SPACE, target: separateTarget}));
 
         await userEvent.click(screen.getByRole("button", {name: "Preview Changes"}));
 
@@ -151,6 +158,8 @@ describe("MigrationWizard", () => {
             diff: emptyDiff,
             extractedEnv: "",
             emptySources: ["./missing", "/srv/app/cache"],
+            anonymousVolumes: [],
+            diskSpace: ROOMY_DISK_SPACE,
             target: separateTarget,
         }));
 
@@ -205,7 +214,7 @@ describe("MigrationWizard", () => {
         const MASKED_ENV = "DB_PASSWORD=\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\nPORT=8080";
 
         async function previewWithEnv(extractedEnv: string, onClose = vi.fn()) {
-            renderWizard(vi.fn().mockResolvedValue({diff: emptyDiff, extractedEnv, emptySources: [], target: separateTarget}), onClose);
+            renderWizard(vi.fn().mockResolvedValue({diff: emptyDiff, extractedEnv, emptySources: [], anonymousVolumes: [], diskSpace: ROOMY_DISK_SPACE, target: separateTarget}), onClose);
             await userEvent.click(screen.getByRole("button", {name: "Preview Changes"}));
             await screen.findByRole("heading", {name: "Review Changes"});
         }
@@ -216,15 +225,15 @@ describe("MigrationWizard", () => {
             expect(screen.getByRole("heading", {name: "New .env file"})).toBeInTheDocument();
             expect(screen.getByRole("textbox", {name: "Extracted .env preview"})).toHaveValue(MASKED_ENV);
 
-            await userEvent.click(screen.getByRole("button", {name: "Show secret values"}));
+            await userEvent.click(screen.getByRole("button", {name: "Show secrets"}));
 
             expect(screen.getByRole("textbox", {name: "Extracted .env preview"})).toHaveValue(SECRET_ENV);
-            expect(screen.getByRole("button", {name: "Hide secret values"})).toBeInTheDocument();
+            expect(screen.getByRole("button", {name: "Hide secrets"})).toBeInTheDocument();
         });
 
         it("restores the mask after going Back to step 1 and previewing again", async () => {
             await previewWithEnv(SECRET_ENV);
-            await userEvent.click(screen.getByRole("button", {name: "Show secret values"}));
+            await userEvent.click(screen.getByRole("button", {name: "Show secrets"}));
 
             await userEvent.click(screen.getByRole("button", {name: "Back"}));
             await userEvent.click(screen.getByRole("button", {name: "Preview Changes"}));
@@ -234,11 +243,11 @@ describe("MigrationWizard", () => {
 
         it("restores the mask after the dialog is closed and reopened", async () => {
             const onClose = vi.fn();
-            const previewMigration = vi.fn().mockResolvedValue({diff: emptyDiff, extractedEnv: SECRET_ENV, emptySources: [], target: separateTarget});
+            const previewMigration = vi.fn().mockResolvedValue({diff: emptyDiff, extractedEnv: SECRET_ENV, emptySources: [], anonymousVolumes: [], diskSpace: ROOMY_DISK_SPACE, target: separateTarget});
             const props = {stack, onClose, onConfirmMigrate: vi.fn(), previewMigration};
             const {rerender} = render(<MigrationWizard {...props} open />);
             await userEvent.click(screen.getByRole("button", {name: "Preview Changes"}));
-            await userEvent.click(await screen.findByRole("button", {name: "Show secret values"}));
+            await userEvent.click(await screen.findByRole("button", {name: "Show secrets"}));
 
             await userEvent.click(screen.getByRole("button", {name: "Close"}));
             expect(onClose).toHaveBeenCalled();
@@ -255,7 +264,7 @@ describe("MigrationWizard", () => {
             await previewWithEnv("PORT=8080");
 
             expect(screen.getByRole("textbox", {name: "Extracted .env preview"})).toHaveValue("PORT=8080");
-            expect(screen.queryByRole("button", {name: "Show secret values"})).toBeNull();
+            expect(screen.queryByRole("button", {name: "Show secrets"})).toBeNull();
         });
 
         it("omits the .env block entirely when nothing was extracted", async () => {
@@ -363,7 +372,7 @@ describe("MigrationWizard", () => {
             await click("Preview Changes");
             await click("Cancel Migration");
             expect(onClose).toHaveBeenCalled();
-            resolvePreview({diff: emptyDiff, extractedEnv: "", emptySources: [], target: separateTarget});
+            resolvePreview({diff: emptyDiff, extractedEnv: "", emptySources: [], anonymousVolumes: [], diskSpace: ROOMY_DISK_SPACE, target: separateTarget});
             await deferred;
 
             await waitFor(() => expect(screen.getByRole("heading", {name: "Select Data to Migrate"})).toBeInTheDocument());
@@ -431,7 +440,7 @@ describe("MigrationWizard", () => {
             sharedProjectName: null,
         };
         const inPlacePreview = (): Promise<MigrationPreview> =>
-            Promise.resolve({diff: emptyDiff, extractedEnv: "", emptySources: [], target: inPlaceTarget});
+            Promise.resolve({diff: emptyDiff, extractedEnv: "", emptySources: [], anonymousVolumes: [], diskSpace: ROOMY_DISK_SPACE, target: inPlaceTarget});
         const click = (name: string) => userEvent.click(screen.getByRole("button", {name}));
 
         async function walkTo(target: 3 | 4, onConfirmMigrate = vi.fn()) {
@@ -545,6 +554,86 @@ describe("MigrationWizard", () => {
         });
     });
 
+    describe("free disk space (#107, D-08)", () => {
+        const GIB = 1024 ** 3;
+        const assessment = (requiredBytes: number, availableBytes: number) => ({
+            ok: availableBytes >= requiredBytes,
+            filesystems: [{label: "/opt/docktor/stacks", requiredBytes, availableBytes}],
+        });
+        const click = (name: string) => userEvent.click(screen.getByRole("button", {name}));
+        const backupSwitch = () => screen.getByRole("switch", {name: "Back up the old stack first"});
+
+        async function toBackupStep(diskSpace: MigrationPreview["diskSpace"], target: MigrationTarget = separateTarget) {
+            const previewMigration = vi.fn().mockResolvedValue({diff: emptyDiff, extractedEnv: "", emptySources: [], anonymousVolumes: [], diskSpace, target});
+            renderWizard(previewMigration);
+            await click("Preview Changes");
+            await screen.findByRole("heading", {name: "Review Changes"});
+            await click("Choose Backup");
+        }
+
+        it("shows the assessment without a backup while the backup is off and lets the user continue", async () => {
+            await toBackupStep({withoutBackup: assessment(GIB, 5 * GIB), withBackup: assessment(3 * GIB, 2 * GIB)});
+
+            expect(screen.getByText("/opt/docktor/stacks: needs 1.00 GB, 5.00 GB available")).toBeInTheDocument();
+            expect(screen.queryByRole("alert")).toBeNull();
+            expect(screen.getByRole("button", {name: "Choose Old Stack Action"})).toBeEnabled();
+        });
+
+        it("switches to the with-backup assessment when the backup is turned on and blocks a shortfall", async () => {
+            await toBackupStep({withoutBackup: assessment(GIB, 5 * GIB), withBackup: assessment(3 * GIB, 2 * GIB)});
+
+            await userEvent.click(backupSwitch());
+
+            expect(screen.getByText("/opt/docktor/stacks: needs 3.00 GB, 2.00 GB available")).toBeInTheDocument();
+            expect(screen.getByRole("alert")).toHaveTextContent("Not enough free space on /opt/docktor/stacks: free up 1.00 GB or turn off the backup.");
+            expect(screen.getByRole("button", {name: "Choose Old Stack Action"})).toBeDisabled();
+        });
+
+        it("lets the user continue again once the backup is turned off", async () => {
+            await toBackupStep({withoutBackup: assessment(GIB, 5 * GIB), withBackup: assessment(3 * GIB, 2 * GIB)});
+            await userEvent.click(backupSwitch());
+
+            await userEvent.click(backupSwitch());
+
+            expect(screen.queryByRole("alert")).toBeNull();
+            expect(screen.getByRole("button", {name: "Choose Old Stack Action"})).toBeEnabled();
+        });
+
+        it("blocks continuing when even the migration without a backup does not fit", async () => {
+            await toBackupStep({withoutBackup: assessment(3 * GIB, 2 * GIB), withBackup: assessment(4 * GIB, 2 * GIB)});
+
+            expect(screen.getByRole("alert")).toHaveTextContent("free up 1.00 GB");
+            expect(screen.getByRole("button", {name: "Choose Old Stack Action"})).toBeDisabled();
+        });
+
+        it("uses the without-backup assessment in place, where the renamed original is the backup", async () => {
+            const inPlaceTarget: MigrationTarget = {
+                ...separateTarget,
+                directory: "/opt/docktor/stacks/db",
+                originalDirectory: "/opt/docktor/stacks/db",
+                inPlace: true,
+                suggestedAsideName: "db-pre-migration",
+            };
+
+            await toBackupStep({withoutBackup: assessment(GIB, 5 * GIB), withBackup: null}, inPlaceTarget);
+
+            expect(screen.getByText("/opt/docktor/stacks: needs 1.00 GB, 5.00 GB available")).toBeInTheDocument();
+            expect(screen.getByRole("button", {name: "Choose Old Stack Action"})).toBeEnabled();
+        });
+
+        it("lets the user confirm when the space is enough", async () => {
+            const onConfirmMigrate = vi.fn();
+            const previewMigration = vi.fn().mockImplementation(okPreview);
+            renderWizard(previewMigration, vi.fn(), onConfirmMigrate);
+            await click("Preview Changes");
+            await screen.findByRole("heading", {name: "Review Changes"});
+            await click("Choose Backup");
+            await click("Choose Old Stack Action");
+
+            expect(screen.getByRole("button", {name: "Confirm & Migrate"})).toBeEnabled();
+        });
+    });
+
     describe("shared compose project name (G-18-22-status)", () => {
         const sharedTarget: MigrationTarget = {...separateTarget, sharedProjectName: {name: "db", source: "directory"}};
         const click = (name: string) => userEvent.click(screen.getByRole("button", {name}));
@@ -552,7 +641,7 @@ describe("MigrationWizard", () => {
         async function walkToStep4(target: MigrationTarget, onConfirmMigrate = vi.fn()) {
             const previewMigration = vi
                 .fn()
-                .mockResolvedValue({diff: emptyDiff, extractedEnv: "", emptySources: [], target});
+                .mockResolvedValue({diff: emptyDiff, extractedEnv: "", emptySources: [], anonymousVolumes: [], diskSpace: ROOMY_DISK_SPACE, target});
             renderWizard(previewMigration, vi.fn(), onConfirmMigrate);
             await click("Preview Changes");
             await screen.findByRole("heading", {name: "Review Changes"});
@@ -693,6 +782,81 @@ describe("MigrationWizard", () => {
             expect(
                 screen.getByText("This is the stack directory itself; its files are copied into the new stack directory."),
             ).toBeInTheDocument();
+        });
+    });
+
+    describe("anonymous volumes (D-05)", () => {
+        const click = (name: string) => userEvent.click(screen.getByRole("button", {name}));
+        const anonymousPreview = (): Promise<MigrationPreview> =>
+            Promise.resolve({
+                diff: emptyDiff,
+                extractedEnv: "",
+                emptySources: [],
+                anonymousVolumes: [{service: "db", containerPath: "/var/lib/postgresql/data"}],
+                diskSpace: ROOMY_DISK_SPACE,
+                target: separateTarget,
+            });
+
+        async function toReview(previewMigration: PreviewFn, onConfirmMigrate = vi.fn()) {
+            renderWizard(previewMigration, vi.fn(), onConfirmMigrate);
+            await click("Preview Changes");
+            await screen.findByRole("heading", {name: "Review Changes"});
+            return onConfirmMigrate;
+        }
+
+        it("keeps Next disabled on the review step until the acknowledgement is ticked", async () => {
+            await toReview(vi.fn().mockImplementation(anonymousPreview));
+
+            expect(screen.getByRole("button", {name: "Choose Backup"})).toBeDisabled();
+
+            await userEvent.click(screen.getByRole("checkbox", {name: "I understand these volumes start empty in the new stack"}));
+
+            expect(screen.getByRole("button", {name: "Choose Backup"})).toBeEnabled();
+        });
+
+        it("sends acknowledgeAnonymousVolumes true after ticking", async () => {
+            const onConfirmMigrate = await toReview(vi.fn().mockImplementation(anonymousPreview));
+            await userEvent.click(screen.getByRole("checkbox", {name: "I understand these volumes start empty in the new stack"}));
+            await click("Choose Backup");
+            await click("Choose Old Stack Action");
+
+            await click("Confirm & Migrate");
+
+            expect(onConfirmMigrate).toHaveBeenCalledWith(expect.objectContaining({acknowledgeAnonymousVolumes: true}));
+        });
+
+        it("sends acknowledgeAnonymousVolumes false when there are none", async () => {
+            const onConfirmMigrate = await toReview(vi.fn().mockImplementation(okPreview));
+            await click("Choose Backup");
+            await click("Choose Old Stack Action");
+
+            await click("Confirm & Migrate");
+
+            expect(onConfirmMigrate).toHaveBeenCalledWith(expect.objectContaining({acknowledgeAnonymousVolumes: false}));
+        });
+
+        it("asks again after a new preview", async () => {
+            await toReview(vi.fn().mockImplementation(anonymousPreview));
+            await userEvent.click(screen.getByRole("checkbox", {name: "I understand these volumes start empty in the new stack"}));
+            await click("Back");
+            await click("Preview Changes");
+            await screen.findByRole("heading", {name: "Review Changes"});
+
+            expect(screen.getByRole("checkbox", {name: "I understand these volumes start empty in the new stack"})).not.toBeChecked();
+            expect(screen.getByRole("button", {name: "Choose Backup"})).toBeDisabled();
+        });
+    });
+
+    describe("volumes the compose file declares external (#101)", () => {
+        it("starts an external volume unchecked so it stays a Docker volume, and other volumes checked", async () => {
+            const previewMigration = vi.fn().mockImplementation(okPreview);
+            renderWizard(previewMigration, vi.fn(), vi.fn(), {...stack, namedVolumes: ["pgdata", "shared"], externalVolumes: ["shared"]});
+
+            await userEvent.click(screen.getByRole("button", {name: "Preview Changes"}));
+
+            expect(previewMigration).toHaveBeenCalledWith(
+                expect.objectContaining({namedVolumeSelections: {pgdata: true, shared: false}}),
+            );
         });
     });
 });

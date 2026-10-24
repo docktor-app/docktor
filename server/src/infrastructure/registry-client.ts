@@ -40,10 +40,7 @@ const MAX_TAG_PAGES = 50
  */
 export class RegistryUnavailableError extends AppError {
     constructor(imageRef: string, reason: string, options?: {cause?: unknown}) {
-        super(`Registry unavailable for ${imageRef}: ${reason}`, 502)
-        if (options?.cause !== undefined) {
-            this.cause = options.cause
-        }
+        super(`Registry unavailable for ${imageRef}: ${reason}`, 502, undefined, options)
     }
 }
 

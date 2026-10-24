@@ -5,6 +5,8 @@ import path from "node:path";
 import {ComposeRewriter} from "../../../src/infrastructure/compose-rewriter.js";
 import {parseEnvAssignments} from "../../../src/domain/host-ports.js";
 import {MigrationService} from "../../../src/application/migration-service.js";
+import {InMemoryMigrationLedger, type MigrationLedger} from "../../../src/domain/migration-rollback.js";
+import type {MigrationLedgerEntry} from "@docktor/shared";
 import {BadRequestError, ConflictError} from "../../../src/lib/errors.js";
 import {slugify} from "../../../src/lib/slugify.js";
 import type {DockerExecutorPort} from "../../../src/application/ports/docker-executor-port.js";
@@ -15,6 +17,10 @@ import type {ExternalStackControlPort} from "../../../src/application/ports/exte
 import type {SelfStackPort} from "../../../src/application/ports/self-stack-port.js";
 import type {OwnMountsPort} from "../../../src/application/ports/own-mounts-port.js";
 import type {DirectoryIdentityPort} from "../../../src/application/ports/directory-identity-port.js";
+import type {DiskSpaceProbePort} from "../../../src/application/ports/disk-space-probe-port.js";
+import type {ComposeProjectResolverPort} from "../../../src/application/ports/compose-project-resolver-port.js";
+import {ComposeProjectResolver} from "../../../src/infrastructure/compose-project-resolver.js";
+import type {ProjectContainer} from "../../../src/domain/compose-project.js";
 import {DirectoryIdentityResolver} from "../../../src/infrastructure/directory-identity-resolver.js";
 import {hostViewDirectories} from "../../helpers/host-directory-identity.js";
 import type {OwnMountsView} from "../../../src/domain/bind-mount-sources.js";
@@ -28,15 +34,33 @@ function composeDeclaring(sources: readonly string[]): string {
 }
 
 // The bind sources the tests below convert; a converted source must be declared (WR-01).
-const COMPOSE = composeDeclaring(["./data", "./missing", "./present"]);
+const COMPOSE = `${composeDeclaring(["./data", "./missing", "./present"])}volumes:\n  pgdata:\n`;
 const BACKUP_DIR_NAME = "pre-migration-backup";
 
 function createMockDocker() {
-    return {up: vi.fn()};
+    return {up: vi.fn(), downKeepVolumes: vi.fn().mockResolvedValue(undefined), down: vi.fn()};
 }
 
 function createMockMigrator() {
-    return {copyVolumeToBindMount: vi.fn(), copyDirectory: vi.fn(), moveDirectory: vi.fn()};
+    return {
+        copyVolumeToBindMount: vi.fn(),
+        copyDirectory: vi.fn(),
+        moveDirectory: vi.fn(),
+        // #101: every Docker volume exists unless a test says otherwise.
+        volumeExists: vi.fn().mockResolvedValue(true),
+    };
+}
+
+/** The path the fake reports as the filesystem every write of a migration lands on. */
+const STACKS_FILESYSTEM = "/opt/docktor/stacks";
+
+/** #107: plenty of free space and small sizes by default; a test sets the figures it cares about. */
+function createMockDiskSpace(availableBytes = 1024 ** 4) {
+    return {
+        filesystemOf: vi.fn(async (_target: string) => ({filesystemId: "fs-stacks", label: STACKS_FILESYSTEM, availableBytes})),
+        measureDirectoryBytes: vi.fn(async (_target: string): Promise<number | null> => 1_024),
+        measureVolumeBytes: vi.fn(async (_name: string): Promise<number | null> => 1_024),
+    };
 }
 
 function createMockRewriter() {
@@ -54,24 +78,75 @@ function createMockStackFs(stacksRoot: string) {
             return target;
         }),
         removeDirectory: vi.fn().mockResolvedValue(undefined),
+        claimDirectory: vi.fn().mockResolvedValue(undefined),
+        releaseDirectory: vi.fn().mockResolvedValue(undefined),
+        ownsDirectory: vi.fn().mockResolvedValue(true),
     };
 }
 
 function createMockStackRepo() {
+    // Stateful like the real repository: a created record exists until it is deleted.
+    const stored = new Set<string>();
     return {
-        exists: vi.fn().mockResolvedValue(false),
+        exists: vi.fn(async (id: string) => stored.has(id)),
         listLocations: vi.fn().mockResolvedValue([] as Array<{id: string; displayName: string; hostPath: string}>),
-        create: vi.fn().mockResolvedValue(undefined),
-        delete: vi.fn().mockResolvedValue(undefined),
+        create: vi.fn(async (data: {id: string}) => {
+            stored.add(data.id);
+        }),
+        delete: vi.fn(async (id: string) => {
+            stored.delete(id);
+        }),
     };
 }
 
 function createMockOldStack() {
-    return {stop: vi.fn().mockResolvedValue(undefined), start: vi.fn().mockResolvedValue(undefined)};
+    return {
+        stop: vi.fn().mockResolvedValue(undefined),
+        start: vi.fn().mockResolvedValue(undefined),
+        restoreServices: vi.fn().mockResolvedValue(undefined),
+    };
+}
+
+// Bound before any test spies on fs.readFile: the resolver double reads the files like production would.
+const readFileDirect = fs.readFile.bind(fs);
+
+async function readTextDirect(file: string): Promise<string | null> {
+    try {
+        return await readFileDirect(file, "utf-8");
+    } catch (error: unknown) {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+            return null;
+        }
+        throw error;
+    }
+}
+
+/** One running container of the old project, as the resolver lists it. */
+function runningContainer(project: string, service = "web", index = 1): ProjectContainer {
+    return {id: `${project}-${service}-${index}`, name: `${project}-${service}-${index}`, service, running: true, mounts: []};
+}
+
+/**
+ * The old project as Docker runs it: resolved from the files (no container is
+ * reported at resolve time), `web` running until the old stack's stop was called.
+ */
+function createMockProjects(oldStack: ReturnType<typeof createMockOldStack> = createMockOldStack()) {
+    const resolver = new ComposeProjectResolver({listContainers: () => Promise.resolve([])}, hostViewDirectories(), readTextDirect);
+    return {
+        resolve: vi.fn((composePath: string) => resolver.resolve(composePath)),
+        listContainers: vi.fn((project: string, _composePath: string): Promise<readonly ProjectContainer[]> =>
+            // Down once stopped, running again once the rollback started or restored it.
+            Promise.resolve(oldStack.stop.mock.calls.length > 0 && oldStack.start.mock.calls.length + oldStack.restoreServices.mock.calls.length === 0 ? [] : [runningContainer(project)]),
+        ),
+    };
 }
 
 function createMockSelfStack() {
     return {composeFilePaths: vi.fn().mockResolvedValue([] as string[])};
+}
+
+function createMockLogger() {
+    return {info: vi.fn(), warn: vi.fn(), error: vi.fn()};
 }
 
 /** Docktor not containerized by default: a host path is a local path. */
@@ -101,10 +176,17 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
     let mockStackFs: ReturnType<typeof createMockStackFs>;
     let mockStackRepo: ReturnType<typeof createMockStackRepo>;
     let mockOldStack: ReturnType<typeof createMockOldStack>;
+    let mockProjects: ReturnType<typeof createMockProjects>;
     let mockSelfStack: ReturnType<typeof createMockSelfStack>;
     let mockOwnMounts: ReturnType<typeof createMockOwnMounts>;
+    let mockDiskSpace: ReturnType<typeof createMockDiskSpace>;
+    let mockLogger: ReturnType<typeof createMockLogger>;
+    // A fake clock: the rollback's wait for the restarted services advances it instead of sleeping.
+    let clock: number;
 
     beforeEach(async () => {
+        clock = 0;
+        mockLogger = createMockLogger();
         tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "docktor-migrate-"));
         originalDir = path.join(tmpRoot, "original");
         composePath = path.join(originalDir, "docker-compose.yml");
@@ -120,8 +202,10 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         mockStackFs = createMockStackFs(path.join(tmpRoot, "stacks"));
         mockStackRepo = createMockStackRepo();
         mockOldStack = createMockOldStack();
+        mockProjects = createMockProjects(mockOldStack);
         mockSelfStack = createMockSelfStack();
         mockOwnMounts = createMockOwnMounts();
+        mockDiskSpace = createMockDiskSpace();
     });
 
     afterEach(async () => {
@@ -152,18 +236,24 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         // Test double: these six collaborators are exactly the constructor
         // parameters migrate() invokes; the casts expose only the members it
         // calls, proving each seam accepts a plain-object port double.
-        return new MigrationService(
-            mockDocker as unknown as DockerExecutorPort,
-            mockMigrator as unknown as VolumeMigratorPort,
-            mockRewriter as unknown as ComposeRewriterPort,
-            mockStackFs as unknown as StackFilesystemPort,
-            mockStackRepo as unknown as StackRepository,
-            mockOldStack as unknown as ExternalStackControlPort,
-            mockSelfStack as unknown as SelfStackPort,
-            mockOwnMounts as unknown as OwnMountsPort,
-            undefined,
-            hostViewDirectories(),
-        );
+        return new MigrationService({
+            docker: mockDocker as unknown as DockerExecutorPort,
+            migrator: mockMigrator as unknown as VolumeMigratorPort,
+            rewriter: mockRewriter as unknown as ComposeRewriterPort,
+            stackFs: mockStackFs as unknown as StackFilesystemPort,
+            stackRepo: mockStackRepo as unknown as StackRepository,
+            oldStack: mockOldStack as unknown as ExternalStackControlPort,
+            projects: mockProjects as unknown as ComposeProjectResolverPort,
+            selfStack: mockSelfStack as unknown as SelfStackPort,
+            ownMounts: mockOwnMounts as unknown as OwnMountsPort,
+            directories: hostViewDirectories(),
+            diskSpace: mockDiskSpace as unknown as DiskSpaceProbePort,
+            logger: mockLogger,
+            sleep: async (ms: number) => {
+                clock += ms;
+            },
+            now: () => clock,
+        });
     }
 
     function input(overrides: Partial<{backup: boolean; stopOldStack: boolean}> = {}) {
@@ -174,6 +264,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             namedVolumeSelections: new Map<string, boolean>(),
             backup: true,
             stopOldStack: true,
+            acknowledgeAnonymousVolumes: false,
             ...overrides,
         };
     }
@@ -185,13 +276,13 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
 
         expect(result).toEqual({success: true, stackId, originalPath: originalDir});
         expect(mockOldStack.stop).toHaveBeenCalledTimes(1);
-        expect(mockOldStack.stop).toHaveBeenCalledWith(composePath);
+        expect(mockOldStack.stop).toHaveBeenCalledWith({composePath, project: "original"}, {timeoutMs: 120_000});
         expect(mockOldStack.stop.mock.invocationCallOrder[0]).toBeLessThan(
             mockStackFs.createDirectoryExclusive.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
         );
         expect(mockMigrator.copyDirectory).toHaveBeenCalledWith(
             originalDir,
-            path.join(newStackPath, BACKUP_DIR_NAME),
+            path.join(newStackPath, BACKUP_DIR_NAME, "stack"),
         );
         expect(mockStackFs.removeDirectory).not.toHaveBeenCalled();
         expect(mockStackRepo.delete).not.toHaveBeenCalled();
@@ -208,7 +299,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         const result = await buildService().migrate(input());
 
         expect(result.success).toBe(true);
-        const backupDir = path.join(newStackPath, BACKUP_DIR_NAME);
+        const backupDir = path.join(newStackPath, BACKUP_DIR_NAME, "stack");
         expect(await fs.readFile(path.join(backupDir, "docker-compose.yml"), "utf-8")).toBe(COMPOSE);
         expect(await fs.readFile(path.join(backupDir, "data", "keep.txt"), "utf-8")).toBe("keep me");
     });
@@ -219,14 +310,14 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         const result = await buildService().migrate(input());
 
         expect(result.success).toBe(false);
-        expect(result.error).toContain("docker compose up failed");
-        expect(result.error).toContain("Your original stack directory was not modified.");
-        expect(result.error).toContain("The old stack was restarted.");
+        // #100: the error states the failure only; what the rollback achieved is in the verified report.
+        expect(result.error).toBe("Migration failed: docker compose up failed");
+        expect(result.rollback).toEqual({oldStack: "restored-running", original: "untouched", cleanupErrors: []});
         expect(result.originalPath).toBe(originalDir);
         expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
         expect(mockStackRepo.delete).toHaveBeenCalledWith(stackId);
         expect(mockOldStack.start).toHaveBeenCalledTimes(1);
-        expect(mockOldStack.start).toHaveBeenCalledWith(composePath);
+        expect(mockOldStack.start).toHaveBeenCalledWith({composePath, project: "original"}, ["web"]);
         await assertOriginalUntouched();
         await assertNoOsTempBackup();
     });
@@ -257,8 +348,182 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         expect(result.success).toBe(false);
         expect(mockOldStack.stop).not.toHaveBeenCalled();
         expect(mockOldStack.start).not.toHaveBeenCalled();
-        expect(result.error).toContain("Your original stack directory was not modified.");
-        expect(result.error).not.toContain("old stack");
+        expect(result.error).toBe("Migration failed: port is already allocated");
+        expect(result.rollback).toEqual({oldStack: "not-stopped", original: "untouched", cleanupErrors: []});
+    });
+
+    describe("the old project as Docker runs it (#102, D-04)", () => {
+        function startedAs(project: string): void {
+            mockProjects.resolve.mockResolvedValue({
+                kind: "resolved",
+                project: {name: project, source: "containers", containers: [runningContainer(project)]},
+            });
+        }
+
+        it("refuses preflight and preview with a BadRequestError before anything is stopped when the project cannot be resolved", async () => {
+            mockProjects.resolve.mockResolvedValue({kind: "unresolved", reason: "Docker could not be queried: socket closed"});
+
+            const preflight = buildService().preflight(input());
+            const preview = buildService().previewMigration(input());
+
+            await expect(preflight).rejects.toBeInstanceOf(BadRequestError);
+            await expect(preflight).rejects.toThrow(composePath);
+            await expect(preflight).rejects.toThrow("socket closed");
+            await expect(preview).rejects.toBeInstanceOf(BadRequestError);
+            expectNoSideEffects();
+        });
+
+        it("carries the resolved project in the plan", async () => {
+            startedAs("other");
+
+            const plan = await buildService().preflight(input());
+
+            expect(plan.oldProject.name).toBe("other");
+        });
+
+        it("stops and verifies the project Docker runs, not the one the directory name suggests (-p other from a directory named original)", async () => {
+            startedAs("other");
+            mockDocker.up.mockResolvedValue(undefined);
+            const steps: string[] = [];
+
+            const result = await buildService().migrate(input(), ({step}) => steps.push(step));
+
+            expect(result.success).toBe(true);
+            expect(mockProjects.listContainers.mock.calls).toEqual([
+                ["other", composePath],
+                ["other", composePath],
+            ]);
+            expect(mockOldStack.stop).toHaveBeenCalledWith({composePath, project: "other"}, {timeoutMs: 120_000});
+            const [listBefore, listAfter] = mockProjects.listContainers.mock.invocationCallOrder;
+            const [stopped] = mockOldStack.stop.mock.invocationCallOrder;
+            expect(listBefore).toBeLessThan(stopped ?? Number.NaN);
+            expect(stopped).toBeLessThan(listAfter ?? Number.NaN);
+            expect(steps.slice(0, 3)).toEqual(["stopping_old_stack", "verifying_stop", "creating_directory"]);
+        });
+
+        it("runs no stop and no restart when nothing of the old project was running", async () => {
+            mockProjects.listContainers.mockResolvedValue([{...runningContainer("original"), running: false}]);
+            mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
+            const listener = vi.fn();
+
+            const result = await buildService().migrate(input(), listener);
+
+            expect(result.success).toBe(false);
+            expect(mockOldStack.stop).not.toHaveBeenCalled();
+            expect(mockOldStack.start).not.toHaveBeenCalled();
+            expect(listener).toHaveBeenCalledWith({step: "stopping_old_stack", detail: "(nothing was running)"});
+            expect(result.rollback?.oldStack).toBe("not-stopped");
+        });
+
+        it("stops a project whose containers are all crash-looping instead of treating it as stopped (WR-02)", async () => {
+            const looping = {...runningContainer("original"), running: false, restartingOrPaused: true};
+            mockProjects.listContainers.mockResolvedValueOnce([looping]).mockResolvedValue([]);
+            mockDocker.up.mockResolvedValue(undefined);
+
+            const result = await buildService().migrate(input());
+
+            expect(result.success).toBe(true);
+            expect(mockOldStack.stop).toHaveBeenCalledTimes(1);
+        });
+
+        it("refuses the migration while a container keeps restarting after the stop (WR-02)", async () => {
+            const looping = {...runningContainer("original"), running: false, restartingOrPaused: true};
+            mockProjects.listContainers.mockResolvedValueOnce([runningContainer("original")]).mockResolvedValue([looping]);
+
+            const result = await buildService().migrate(input());
+
+            expect(result.success).toBe(false);
+            expect(result.error).toContain("still running");
+            expect(mockStackFs.createDirectoryExclusive).not.toHaveBeenCalled();
+        });
+
+        it("refuses to stop a project with an active container that has no service label, and stops nothing (WR-05)", async () => {
+            const unlabelled = {...runningContainer("original"), service: null};
+            mockProjects.listContainers.mockResolvedValue([unlabelled]);
+
+            const result = await buildService().migrate(input());
+
+            expect(result.success).toBe(false);
+            expect(result.error).toContain("no compose service label");
+            expect(mockOldStack.stop).not.toHaveBeenCalled();
+            expect(result.rollback?.oldStack).toBe("not-stopped");
+            expect(mockOldStack.start).not.toHaveBeenCalled();
+        });
+
+        it("refuses to stop a project whose running service is named like a compose flag, and stops nothing (WR-06)", async () => {
+            mockProjects.listContainers.mockResolvedValue([{...runningContainer("original"), service: "--force-recreate"}]);
+
+            const result = await buildService().migrate(input());
+
+            expect(result.success).toBe(false);
+            expect(result.error).toContain("not valid compose service names");
+            expect(mockOldStack.stop).not.toHaveBeenCalled();
+        });
+
+        it("gives the stop a timeout that grows with the number of containers", async () => {
+            const many = Array.from({length: 10}, (_, index) => runningContainer("original", "web", index + 1));
+            mockProjects.listContainers.mockResolvedValueOnce(many).mockResolvedValue([]);
+            mockDocker.up.mockResolvedValue(undefined);
+
+            await buildService().migrate(input());
+
+            expect(mockOldStack.stop).toHaveBeenCalledWith(expect.anything(), {timeoutMs: 300_000});
+        });
+
+        describe("restarts only what was running before (#100)", () => {
+            const mixed = [
+                runningContainer("original", "web"),
+                runningContainer("original", "db"),
+                {...runningContainer("original", "job"), running: false},
+            ];
+
+            beforeEach(() => {
+                mockProjects.listContainers
+                    .mockResolvedValueOnce(mixed)
+                    .mockResolvedValue(mixed.map((container) => ({...container, running: false})));
+            });
+
+            it("after a failure later in the migration", async () => {
+                mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
+
+                const result = await buildService().migrate(input());
+
+                expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+                expect(mockOldStack.start).toHaveBeenCalledWith({composePath, project: "original"}, ["db", "web"]);
+                // The fake project never shows the services running again, so the restore stays unverified (D-07).
+                expect(result.rollback).toEqual({oldStack: "restart-unverified", original: "untouched", cleanupErrors: []});
+                expect(result.error).not.toContain("restored");
+            });
+
+            it("after a stop that failed or timed out", async () => {
+                mockOldStack.stop.mockRejectedValue(new Error("timed out"));
+
+                const result = await buildService().migrate(input());
+
+                expect(result.success).toBe(false);
+                expect(mockOldStack.start).toHaveBeenCalledWith({composePath, project: "original"}, ["db", "web"]);
+            });
+        });
+
+        it("refuses with no override when a container of the old project is still running after the stop, before anything is created or copied (D-04)", async () => {
+            startedAs("other");
+            mockProjects.listContainers.mockImplementation(() => Promise.resolve([runningContainer("other", "db")]));
+
+            const result = await buildService().migrate(input());
+
+            expect(result.success).toBe(false);
+            expect(result.error).toContain('"other"');
+            expect(result.error).toContain("other-db-1");
+            expect(mockOldStack.stop).toHaveBeenCalledTimes(1);
+            expect(mockStackFs.createDirectoryExclusive).not.toHaveBeenCalled();
+            expect(mockMigrator.copyDirectory).not.toHaveBeenCalled();
+            expect(mockMigrator.moveDirectory).not.toHaveBeenCalled();
+            expect(mockMigrator.copyVolumeToBindMount).not.toHaveBeenCalled();
+            expect(mockStackRepo.create).not.toHaveBeenCalled();
+            expect(mockDocker.up).not.toHaveBeenCalled();
+            expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+            await assertOriginalUntouched();
+        });
     });
 
     it("tells the user how to restart manually when the automatic restart fails", async () => {
@@ -268,8 +533,9 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         const result = await buildService().migrate(input());
 
         expect(result.success).toBe(false);
-        expect(result.error).toContain("could not be restarted automatically");
-        expect(result.error).toContain(originalDir);
+        expect(result.error).toBe("Migration failed: docker compose up failed. Restarting the old stack failed: daemon unreachable.");
+        expect(result.rollback).toEqual({oldStack: "restart-failed", original: "untouched", cleanupErrors: []});
+        expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining("daemon unreachable"));
     });
 
     it("creates no backup when backup is false (MIG-03, D-07)", async () => {
@@ -294,7 +560,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         expect(result.success).toBe(true);
         expect(mockMigrator.copyDirectory).toHaveBeenCalledWith(
             originalDir,
-            path.join(sameNameStackPath, BACKUP_DIR_NAME),
+            path.join(sameNameStackPath, BACKUP_DIR_NAME, "stack"),
         );
     });
 
@@ -366,6 +632,8 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
     });
 
     it("leaves a directory that appeared during the stop window untouched and restarts the old stack (CR-02)", async () => {
+        // A foreign directory carries no ownership marker of this run.
+        mockStackFs.ownsDirectory.mockResolvedValue(false);
         mockOldStack.stop.mockImplementation(async () => {
             await fs.mkdir(newStackPath, {recursive: true});
             await fs.writeFile(path.join(newStackPath, "marker.txt"), "theirs", "utf-8");
@@ -401,11 +669,10 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
 
         expect(result.success).toBe(false);
         expect(result.error).toContain("ENOSPC");
-        expect(result.error).toContain("Your original stack directory was not modified.");
-        expect(result.error).toContain("The old stack was restarted.");
+        expect(result.rollback).toEqual({oldStack: "restored-running", original: "untouched", cleanupErrors: []});
         expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
         expect(mockOldStack.start).toHaveBeenCalledTimes(1);
-        expect(mockOldStack.start).toHaveBeenCalledWith(composePath);
+        expect(mockOldStack.start).toHaveBeenCalledWith({composePath, project: "original"}, ["web"]);
         expect(mockStackRepo.create).not.toHaveBeenCalled();
         expect(mockStackRepo.delete).not.toHaveBeenCalled();
         expect(mockDocker.up).not.toHaveBeenCalled();
@@ -471,6 +738,434 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         expect(mockMigrator.copyVolumeToBindMount).not.toHaveBeenCalled();
         expect(mockOldStack.start).not.toHaveBeenCalled();
         await assertOriginalUntouched();
+    });
+
+    describe("free disk space on the receiving filesystem (#107, D-08)", () => {
+        const dataSource = (): string => path.join(originalDir, "data");
+
+        /** Sizes by path: the old stack directory, the ./data bind source, anything else small. */
+        function sizes(figures: {stackDir: number; data: number}): void {
+            mockDiskSpace.measureDirectoryBytes.mockImplementation(async (target: string) => {
+                if (target === originalDir) return figures.stackDir;
+                if (target === dataSource()) return figures.data;
+                return 1;
+            });
+        }
+
+        function copyingData(overrides: Partial<{backup: boolean}> = {}) {
+            return {
+                ...input(overrides),
+                volumeSelections: [{originalPath: "./data", newPath: "./volumes/data", convert: true}],
+            };
+        }
+
+        it("refuses a start before anything is stopped when the receiving filesystem is short, naming needed and available", async () => {
+            sizes({stackDir: 600, data: 400});
+            mockDiskSpace.filesystemOf.mockResolvedValue({filesystemId: "fs-stacks", label: STACKS_FILESYSTEM, availableBytes: 439});
+
+            const refusal = buildService().migrate(copyingData({backup: false}));
+
+            await expect(refusal).rejects.toBeInstanceOf(BadRequestError);
+            await expect(refusal).rejects.toThrow(
+                `Migration refused before anything was stopped: not enough free disk space. ${STACKS_FILESYSTEM} needs 440 B (including a 10% margin), 439 B available.`,
+            );
+            expectNoSideEffects();
+            expect(mockMigrator.moveDirectory).not.toHaveBeenCalled();
+            expect(mockDiskSpace.filesystemOf).toHaveBeenCalledWith(newStackPath);
+        });
+
+        it("accepts a start with exactly the required size (data times 1.1)", async () => {
+            sizes({stackDir: 600, data: 400});
+            mockDiskSpace.filesystemOf.mockResolvedValue({filesystemId: "fs-stacks", label: STACKS_FILESYSTEM, availableBytes: 440});
+
+            const plan = await buildService().preflight(copyingData({backup: false}));
+
+            expect(plan.stackId).toBe(stackId);
+        });
+
+        it("measures nothing and requires nothing when no data is copied and there is no backup", async () => {
+            mockDiskSpace.filesystemOf.mockResolvedValue({filesystemId: "fs-stacks", label: STACKS_FILESYSTEM, availableBytes: 0});
+
+            await expect(buildService().preflight(input({backup: false}))).resolves.toBeDefined();
+
+            expect(mockDiskSpace.measureDirectoryBytes).not.toHaveBeenCalled();
+            expect(mockDiskSpace.measureVolumeBytes).not.toHaveBeenCalled();
+        });
+
+        it("adds the old stack directory to what is needed when a backup is chosen", async () => {
+            sizes({stackDir: 600, data: 400});
+            mockDiskSpace.filesystemOf.mockResolvedValue({filesystemId: "fs-stacks", label: STACKS_FILESYSTEM, availableBytes: 1_099});
+
+            const refusal = buildService().preflight(copyingData({backup: true}));
+
+            await expect(refusal).rejects.toThrow(`${STACKS_FILESYSTEM} needs 1.1 KiB (including a 10% margin), 1.1 KiB available.`);
+            expect(mockDiskSpace.measureDirectoryBytes).toHaveBeenCalledWith(originalDir);
+
+            mockDiskSpace.filesystemOf.mockResolvedValue({filesystemId: "fs-stacks", label: STACKS_FILESYSTEM, availableBytes: 1_100});
+            await expect(buildService().preflight(copyingData({backup: true}))).resolves.toBeDefined();
+        });
+
+        it("counts a bind source outside the old stack directory for the copy and for the backup", async () => {
+            const outside = path.join(tmpRoot, "media");
+            await fs.mkdir(outside);
+            await fs.writeFile(composePath, composeDeclaring([outside]), "utf-8");
+            mockDiskSpace.measureDirectoryBytes.mockImplementation(async (target: string) => (target === originalDir ? 600 : target === outside ? 300 : 1));
+            mockDiskSpace.filesystemOf.mockResolvedValue({filesystemId: "fs-stacks", label: STACKS_FILESYSTEM, availableBytes: 1_319});
+            const request = {
+                ...input({backup: true}),
+                volumeSelections: [{originalPath: outside, newPath: "./volumes/media", convert: true}],
+            };
+
+            // copy 300 + backup (600 directory + 300 outside source) = 1200, times 1.1 = 1320
+            await expect(buildService().preflight(request)).rejects.toThrow("needs 1.3 KiB");
+            mockDiskSpace.filesystemOf.mockResolvedValue({filesystemId: "fs-stacks", label: STACKS_FILESYSTEM, availableBytes: 1_320});
+            await expect(buildService().preflight(request)).resolves.toBeDefined();
+        });
+
+        it("measures a converted named volume by its real Docker name and counts it", async () => {
+            await fs.writeFile(composePath, "services:\n  web:\n    image: nginx\nvolumes:\n  data:\n", "utf-8");
+            mockDiskSpace.measureVolumeBytes.mockResolvedValue(1_000);
+            mockDiskSpace.filesystemOf.mockResolvedValue({filesystemId: "fs-stacks", label: STACKS_FILESYSTEM, availableBytes: 1_099});
+
+            const refusal = buildService().preflight({...input({backup: false}), namedVolumeSelections: new Map([["data", true]])});
+
+            await expect(refusal).rejects.toThrow(`needs 1.1 KiB (including a 10% margin), 1.1 KiB available`);
+            expect(mockDiskSpace.measureVolumeBytes).toHaveBeenCalledWith("original_data");
+        });
+
+        it("does not count a named volume the user keeps, and never counts it for the backup", async () => {
+            await fs.writeFile(composePath, "services:\n  web:\n    image: nginx\nvolumes:\n  data:\n", "utf-8");
+
+            await buildService().preflight({...input({backup: true}), namedVolumeSelections: new Map([["data", false]])});
+
+            expect(mockDiskSpace.measureVolumeBytes).not.toHaveBeenCalled();
+        });
+
+        it("blocks a size it cannot measure instead of skipping the check, naming the path", async () => {
+            mockDiskSpace.measureDirectoryBytes.mockImplementation(async (target: string) => (target === dataSource() ? null : 1));
+
+            const refusal = buildService().preflight(copyingData({backup: false}));
+
+            await expect(refusal).rejects.toBeInstanceOf(BadRequestError);
+            await expect(refusal).rejects.toThrow(/size of .*\.\/data.* could not be measured/s);
+            expectNoSideEffects();
+        });
+
+        it("blocks a named volume whose size it cannot measure, naming the volume", async () => {
+            await fs.writeFile(composePath, "services:\n  web:\n    image: nginx\nvolumes:\n  data:\n", "utf-8");
+            mockDiskSpace.measureVolumeBytes.mockResolvedValue(null);
+
+            const refusal = buildService().preflight({...input({backup: false}), namedVolumeSelections: new Map([["data", true]])});
+
+            await expect(refusal).rejects.toThrow(/size of .*original_data.* could not be measured/s);
+            expectNoSideEffects();
+        });
+
+        it("blocks an old stack directory it cannot measure when a backup is chosen", async () => {
+            mockDiskSpace.measureDirectoryBytes.mockImplementation(async (target: string) => (target === originalDir ? null : 1));
+
+            await expect(buildService().preflight(input({backup: true}))).rejects.toThrow(/size of .*old stack directory.* could not be measured/s);
+
+            expectNoSideEffects();
+        });
+
+        it("does not ask about the old directory when no backup is chosen", async () => {
+            await buildService().preflight(copyingData({backup: false}));
+
+            expect(mockDiskSpace.measureDirectoryBytes).not.toHaveBeenCalledWith(originalDir);
+        });
+    });
+
+    describe("the backup comes after the verified stop and before any data is copied (D-01, D-02, D-03)", () => {
+        const outside = (): string => path.join(tmpRoot, "media");
+
+        /** Every step the listener hears and every copy the migrator is asked for, in one timeline. */
+        function timeline(): string[] {
+            const events: string[] = [];
+            mockMigrator.copyDirectory.mockImplementation(async (src: string, dest: string) => {
+                events.push(`copy ${path.relative(tmpRoot, src)} -> ${path.relative(newStackPath, dest)}`);
+                await fs.mkdir(dest, {recursive: true});
+            });
+            mockMigrator.copyVolumeToBindMount.mockImplementation(async (name: string, dest: string) => {
+                events.push(`volume ${name} -> ${path.relative(newStackPath, dest)}`);
+            });
+            mockOldStack.stop.mockImplementation(async () => {
+                events.push("stop");
+            });
+            return events;
+        }
+
+        function copyingEverything(overrides: Partial<{backup: boolean}> = {}) {
+            return {
+                ...input(overrides),
+                volumeSelections: [
+                    {originalPath: "./data", newPath: "./volumes/data", convert: true},
+                    {originalPath: outside(), newPath: "./volumes/media", convert: true},
+                ],
+                namedVolumeSelections: new Map([["pgdata", true]]),
+            };
+        }
+
+        beforeEach(async () => {
+            await fs.mkdir(outside());
+            await fs.writeFile(composePath, `${composeDeclaring(["./data", outside()])}volumes:\n  pgdata:\n`, "utf-8");
+            mockDocker.up.mockResolvedValue(undefined);
+        });
+
+        it("stops and verifies first, then backs up the directory and the outside source, then copies the data", async () => {
+            const events = timeline();
+            const listener = vi.fn((progress: {step: string}) => events.push(progress.step));
+
+            const result = await buildService().migrate(copyingEverything(), listener);
+
+            expect(result.success).toBe(true);
+            expect(events).toEqual([
+                "stopping_old_stack",
+                "stop",
+                "verifying_stop",
+                "creating_directory",
+                "backing_up",
+                `copy original -> ${BACKUP_DIR_NAME}/stack`,
+                `copy media -> ${BACKUP_DIR_NAME}/bind-mounts/1-media`,
+                "copying_named_volume",
+                "volume original_pgdata -> volumes/pgdata",
+                "copying_bind_mount",
+                "copy original/data -> volumes/data",
+                "copying_bind_mount",
+                "copy media -> volumes/media",
+                "writing_compose",
+                "recording_stack",
+                "deploying",
+            ]);
+        });
+
+        it("writes a manifest naming the old directory and every bind mount in the backup", async () => {
+            await buildService().migrate(copyingEverything());
+
+            const manifest: unknown = JSON.parse(await fs.readFile(path.join(newStackPath, BACKUP_DIR_NAME, "manifest.json"), "utf-8"));
+            expect(manifest).toEqual({
+                createdAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
+                stackDirectory: {source: originalDir, backup: "stack"},
+                bindMounts: [{originalPath: outside(), source: outside(), backup: "bind-mounts/1-media"}],
+            });
+        });
+
+        it("does not copy named volumes into the backup", async () => {
+            await buildService().migrate(copyingEverything());
+
+            expect(mockMigrator.copyVolumeToBindMount).toHaveBeenCalledTimes(1);
+            expect(mockMigrator.copyVolumeToBindMount).toHaveBeenCalledWith("original_pgdata", path.join(newStackPath, "volumes", "pgdata"));
+        });
+
+        it("rolls back and restarts the old stack when the backup copy fails, before any data was copied", async () => {
+            mockMigrator.copyDirectory.mockRejectedValueOnce(new Error("no space left on device"));
+
+            const result = await buildService().migrate(copyingEverything());
+
+            expect(result.success).toBe(false);
+            expect(result.error).toContain("no space left on device");
+            expect(mockMigrator.copyDirectory).toHaveBeenCalledTimes(1);
+            expect(mockMigrator.copyVolumeToBindMount).not.toHaveBeenCalled();
+            expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
+            expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+        });
+
+        it("fails and rolls back when a bind source planned for the backup vanished", async () => {
+            mockMigrator.copyDirectory.mockImplementationOnce(async () => {
+                await fs.rm(outside(), {recursive: true});
+            });
+
+            const result = await buildService().migrate(copyingEverything());
+
+            expect(result.success).toBe(false);
+            expect(result.error).toContain("no longer exists");
+            expect(mockMigrator.copyVolumeToBindMount).not.toHaveBeenCalled();
+        });
+
+        it("writes nothing under pre-migration-backup without a backup", async () => {
+            const events = timeline();
+
+            await buildService().migrate(copyingEverything({backup: false}));
+
+            expect(events.some((event) => event.includes(BACKUP_DIR_NAME))).toBe(false);
+            expect(events).not.toContain("backing_up");
+            await expect(fs.access(path.join(newStackPath, BACKUP_DIR_NAME))).rejects.toThrow();
+        });
+
+        it("leaves a bind source inside the old directory to the stack copy", async () => {
+            const events = timeline();
+
+            await buildService().migrate({...copyingEverything(), volumeSelections: [{originalPath: "./data", newPath: "./volumes/data", convert: true}]});
+
+            expect(events.filter((event) => event.includes(`${BACKUP_DIR_NAME}/`))).toEqual([`copy original -> ${BACKUP_DIR_NAME}/stack`]);
+            const manifest = JSON.parse(await fs.readFile(path.join(newStackPath, BACKUP_DIR_NAME, "manifest.json"), "utf-8")) as {bindMounts: unknown[]};
+            expect(manifest.bindMounts).toEqual([]);
+        });
+    });
+
+    describe("named volumes by the real Docker volume name (#101)", () => {
+        const volumesCompose = (block: string): string => `services:\n  web:\n    image: nginx\n    volumes:\n      - data:/data\nvolumes:\n${block}`;
+
+        function convertingVolume(key = "data") {
+            return {...input({backup: false}), namedVolumeSelections: new Map([[key, true]])};
+        }
+
+        it("copies from <project>_<key> of the resolved project, not from the bare key", async () => {
+            await fs.writeFile(composePath, volumesCompose("  data:\n"), "utf-8");
+            await fs.writeFile(path.join(originalDir, ".env"), "COMPOSE_PROJECT_NAME=myproj\n", "utf-8");
+            mockDocker.up.mockResolvedValue(undefined);
+            const listener = vi.fn();
+
+            const result = await buildService().migrate(convertingVolume(), listener);
+
+            expect(result.success).toBe(true);
+            expect(mockMigrator.volumeExists).toHaveBeenCalledWith("myproj_data");
+            expect(mockMigrator.copyVolumeToBindMount).toHaveBeenCalledWith("myproj_data", path.join(newStackPath, "volumes", "data"));
+            expect(listener).toHaveBeenCalledWith({step: "copying_named_volume", detail: "data"});
+        });
+
+        it.each([
+            ["a name: override", "  data:\n    name: custom_db\n", "custom_db"],
+            ["an external volume by its literal name", "  data:\n    external: true\n", "data"],
+            ["an external volume with a name:", "  data:\n    external: true\n    name: shared\n", "shared"],
+        ])("copies from the volume of %s", async (_label, block, expectedName) => {
+            await fs.writeFile(composePath, volumesCompose(block), "utf-8");
+            mockDocker.up.mockResolvedValue(undefined);
+
+            const result = await buildService().migrate(convertingVolume());
+
+            expect(result.success).toBe(true);
+            expect(mockMigrator.copyVolumeToBindMount).toHaveBeenCalledWith(expectedName, path.join(newStackPath, "volumes", "data"));
+        });
+
+        it("refuses a converted volume that does not exist before the old stack is stopped", async () => {
+            await fs.writeFile(composePath, volumesCompose("  data:\n"), "utf-8");
+            mockMigrator.volumeExists.mockResolvedValue(false);
+
+            const refusal = buildService().migrate(convertingVolume());
+
+            await expect(refusal).rejects.toThrow(BadRequestError);
+            await expect(refusal).rejects.toThrow(/data.*original_data.*untick.*start the old stack once/s);
+            expectNoSideEffects();
+            expect(mockMigrator.copyVolumeToBindMount).not.toHaveBeenCalled();
+        });
+
+        it("refuses the same volume in the preview", async () => {
+            await fs.writeFile(composePath, volumesCompose("  data:\n"), "utf-8");
+            mockMigrator.volumeExists.mockResolvedValue(false);
+
+            await expect(
+                buildService().previewMigration({composePath, displayName, volumeSelections: [], namedVolumeSelections: new Map([["data", true]])}),
+            ).rejects.toThrow(/original_data.*untick/s);
+        });
+
+        it("refuses a converted key the compose file does not declare", async () => {
+            await fs.writeFile(composePath, volumesCompose("  data:\n"), "utf-8");
+
+            await expect(buildService().migrate(convertingVolume("other"))).rejects.toThrow(/other.*not declared/s);
+
+            expectNoSideEffects();
+            expect(mockMigrator.volumeExists).not.toHaveBeenCalled();
+        });
+
+        it("refuses a converted volume whose real name is not a valid Docker volume name", async () => {
+            await fs.writeFile(composePath, volumesCompose('  data:\n    name: "a,b"\n'), "utf-8");
+
+            await expect(buildService().migrate(convertingVolume())).rejects.toThrow(/a,b.*not a valid/s);
+
+            expectNoSideEffects();
+            expect(mockMigrator.volumeExists).not.toHaveBeenCalled();
+        });
+
+        it("plans every declared volume by real name, with whether Docker has created it", async () => {
+            await fs.writeFile(composePath, volumesCompose("  data:\n  cache:\n    external: true\n    name: shared\n"), "utf-8");
+            mockMigrator.volumeExists.mockImplementation(async (name: string) => name !== "original_data");
+
+            const plan = await buildService().preflight({...input({backup: false}), namedVolumeSelections: new Map([["data", false]])});
+
+            expect([...plan.volumes]).toEqual([
+                ["data", {name: "original_data", external: false, exists: false}],
+                ["cache", {name: "shared", external: true, exists: true}],
+            ]);
+        });
+    });
+
+    describe("anonymous volumes start empty and need an acknowledgement (D-05)", () => {
+        const HEX_ID = "b".repeat(64);
+        const withAnonymous = `services:\n  web:\n    image: nginx\n    volumes:\n      - /cache\n`;
+
+        function containersWithAnonymousVolume(): void {
+            const container = {
+                ...runningContainer("original", "db"),
+                mounts: [{type: "volume", name: HEX_ID, source: "/var/lib/docker/volumes/x/_data", destination: "/var/lib/postgresql/data"}],
+            };
+            mockProjects.resolve.mockResolvedValue({kind: "resolved", project: {name: "original", source: "containers", containers: [container]}});
+        }
+
+        it("lists those the compose file declares in the preview", async () => {
+            await fs.writeFile(composePath, withAnonymous, "utf-8");
+
+            const preview = await buildService().previewMigration({composePath, displayName, volumeSelections: [], namedVolumeSelections: new Map()});
+
+            expect(preview.anonymousVolumes).toEqual([{service: "web", containerPath: "/cache"}]);
+        });
+
+        it("lists those the old containers have in the preview", async () => {
+            containersWithAnonymousVolume();
+
+            const preview = await buildService().previewMigration({composePath, displayName, volumeSelections: [], namedVolumeSelections: new Map()});
+
+            expect(preview.anonymousVolumes).toEqual([{service: "db", containerPath: "/var/lib/postgresql/data"}]);
+        });
+
+        it("lists none when the old stack has none", async () => {
+            const preview = await buildService().previewMigration({composePath, displayName, volumeSelections: [], namedVolumeSelections: new Map()});
+
+            expect(preview.anonymousVolumes).toEqual([]);
+        });
+
+        it("refuses a start without the acknowledgement, naming each service and path, before anything is stopped", async () => {
+            await fs.writeFile(composePath, withAnonymous, "utf-8");
+            containersWithAnonymousVolume();
+
+            const refusal = buildService().migrate(input());
+
+            await expect(refusal).rejects.toThrow(BadRequestError);
+            await expect(refusal).rejects.toThrow(/db: \/var\/lib\/postgresql\/data.*web: \/cache.*start empty/s);
+            expectNoSideEffects();
+        });
+
+        it("accepts the same request with the acknowledgement and never copies them", async () => {
+            await fs.writeFile(composePath, withAnonymous, "utf-8");
+            mockDocker.up.mockResolvedValue(undefined);
+
+            const result = await buildService().migrate({...input(), acknowledgeAnonymousVolumes: true});
+
+            expect(result.success).toBe(true);
+            expect(mockMigrator.copyVolumeToBindMount).not.toHaveBeenCalled();
+        });
+
+        it("needs no acknowledgement when there are none", async () => {
+            mockDocker.up.mockResolvedValue(undefined);
+
+            await expect(buildService().migrate(input())).resolves.toMatchObject({success: true});
+        });
+    });
+
+    it("hands the planned real volume names to every rewrite (#101)", async () => {
+        mockDocker.up.mockResolvedValue(undefined);
+
+        const plan = await buildService().preflight(input());
+        await buildService().execute(plan);
+
+        expect(plan.volumes.get("pgdata")).toEqual({name: "original_pgdata", external: false, exists: true});
+        expect(mockRewriter.rewrite).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.anything(),
+            expect.anything(),
+            undefined,
+            expect.objectContaining({volumes: plan.volumes}),
+        );
     });
 
     it("refuses a bind-mount newPath escaping the managed directory before anything is stopped (CR-02, WR-01)", async () => {
@@ -554,6 +1249,53 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             expectNoSideEffects();
         });
 
+        it("drops the compose files the stack-root copy brought along, so the rewritten file is the one Compose uses (WR-04)", async () => {
+            await fs.writeFile(composePath, composeDeclaring(["."]), "utf-8");
+            mockDocker.up.mockResolvedValue(undefined);
+            mockMigrator.copyDirectory.mockImplementation(async (_source: string, destination: string) => {
+                await fs.mkdir(destination, {recursive: true});
+                for (const name of ["compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml", "keep.txt"]) {
+                    await fs.writeFile(path.join(destination, name), "old", "utf-8");
+                }
+            });
+
+            const result = await buildService().migrate(converting(".", "."));
+
+            expect(result.success).toBe(true);
+            const files = (await fs.readdir(newStackPath)).filter((name) => !name.startsWith("."));
+            expect(files.sort()).toEqual(["docker-compose.yml", "keep.txt", "volumes"]);
+            expect(await fs.readFile(path.join(newStackPath, "docker-compose.yml"), "utf-8")).toBe(COMPOSE);
+            expect(await fs.readFile(path.join(newStackPath, "keep.txt"), "utf-8")).toBe("old");
+        });
+
+        it.skipIf(process.platform === "win32")(
+            "refuses to copy into a destination that runs through a symlink the stack-root copy brought along (IN-01)",
+            async () => {
+                const outside = path.join(tmpRoot, "outside");
+                await fs.mkdir(outside, {recursive: true});
+                await fs.writeFile(composePath, composeDeclaring([".", "./data"]), "utf-8");
+                mockDocker.up.mockResolvedValue(undefined);
+                mockMigrator.copyDirectory.mockImplementationOnce(async (_source: string, destination: string) => {
+                    await fs.mkdir(destination, {recursive: true});
+                    await fs.symlink(outside, path.join(destination, "assets"));
+                });
+
+                const result = await buildService().migrate({
+                    ...input({backup: false}),
+                    volumeSelections: [
+                        {originalPath: ".", newPath: ".", convert: true},
+                        {originalPath: "./data", newPath: "./assets/data", convert: true},
+                    ],
+                });
+
+                expect(result.success).toBe(false);
+                expect(result.error).toContain("escapes");
+                expect(mockMigrator.copyDirectory).toHaveBeenCalledTimes(1);
+                expect(await fs.readdir(outside)).toEqual([]);
+                expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+            },
+        );
+
         it("accepts the stack-directory mount copied to the stack root", async () => {
             await fs.writeFile(composePath, composeDeclaring(["."]), "utf-8");
 
@@ -601,11 +1343,84 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         );
     });
 
+    describe("~ bind sources resolved from the old containers (#104)", () => {
+        let homeData: string;
+
+        /** The old project as Docker runs it: `web` mounts `homeData` where the compose file says `~/data`. */
+        function mountsHomeData(source: string): void {
+            const container = {...runningContainer("original"), mounts: [{type: "bind", source, destination: "/mnt/0"}]};
+            mockProjects.resolve.mockResolvedValue({
+                kind: "resolved",
+                project: {name: "original", source: "containers", containers: [container]},
+            });
+        }
+
+        const selecting = (convert: boolean) => ({
+            ...input({backup: false}),
+            volumeSelections: [{originalPath: "~/data", newPath: convert ? "./volumes/data" : "~/data", convert}],
+        });
+
+        beforeEach(async () => {
+            homeData = path.join(tmpRoot, "home", "alice", "data");
+            await fs.mkdir(homeData, {recursive: true});
+            await fs.writeFile(path.join(homeData, "note.txt"), "from home", "utf-8");
+            await fs.writeFile(composePath, composeDeclaring(["~/data"]), "utf-8");
+        });
+
+        it("copies a converted ~ source from the host directory the old container mounts, and creates no other volumes directory", async () => {
+            mountsHomeData(homeData);
+            mockDocker.up.mockResolvedValue(undefined);
+
+            const result = await buildService().migrate(selecting(true));
+
+            expect(result.success).toBe(true);
+            expect(mockMigrator.copyDirectory).toHaveBeenCalledTimes(1);
+            expect(mockMigrator.copyDirectory).toHaveBeenCalledWith(homeData, path.join(newStackPath, "volumes", "data"));
+        });
+
+        it.each([true, false])("hands the resolved host path to the rewrite (convert: %s)", async (convert) => {
+            mountsHomeData(homeData);
+            mockDocker.up.mockResolvedValue(undefined);
+
+            await buildService().migrate(selecting(convert));
+
+            expect(mockRewriter.rewrite).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.any(Array),
+                expect.any(Map),
+                undefined,
+                expect.objectContaining({homeSources: new Map([["~/data", homeData]])}),
+            );
+        });
+
+        it.each([true, false])("refuses an unresolved ~ source before anything happens (convert: %s)", async (convert) => {
+            mockProjects.resolve.mockResolvedValue({
+                kind: "resolved",
+                project: {name: "original", source: "files", containers: []},
+            });
+            const service = buildService();
+
+            await expect(service.migrate(selecting(convert))).rejects.toThrow(BadRequestError);
+            await expect(service.migrate(selecting(convert))).rejects.toThrow("~/data");
+            await expect(service.migrate(selecting(convert))).rejects.toThrow("Start the old stack once");
+            await expect(service.migrate(selecting(convert))).rejects.toThrow("absolute path");
+
+            expectNoSideEffects();
+            expect(mockMigrator.moveDirectory).not.toHaveBeenCalled();
+        });
+
+        it("refuses a ~ source that is declared but not selected when it cannot be resolved", async () => {
+            await expect(buildService().migrate(input({backup: false}))).rejects.toThrow("~/data");
+
+            expectNoSideEffects();
+        });
+    });
+
     describe("sources Docktor cannot read fail closed (CR-03)", () => {
         beforeEach(async () => {
             await fs.writeFile(
                 composePath,
-                composeDeclaring(["./data", "./missing", "/opt/app/data", "~/data"]),
+                composeDeclaring(["./data", "./missing", "/opt/app/data"]),
                 "utf-8",
             );
         });
@@ -631,7 +1446,9 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             expect(await fs.readFile(path.join(originalDir, "data", "keep.txt"), "utf-8")).toBe("keep me");
         });
 
-        it("refuses a selected ~ source, before anything happens", async () => {
+        it("refuses a selected ~ source that no old container mounts, before anything happens", async () => {
+            await fs.writeFile(composePath, composeDeclaring(["./data", "~/data"]), "utf-8");
+
             await expect(buildService().migrate(invisible("~/data"))).rejects.toThrow(BadRequestError);
             await expect(buildService().migrate(invisible("~/data"))).rejects.toThrow("~/data");
 
@@ -639,6 +1456,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         });
 
         it("does not refuse an unselected source Docktor cannot read", async () => {
+            await fs.writeFile(composePath, composeDeclaring(["./data", "/opt/app/data"]), "utf-8");
             mockOwnMounts.ownMounts.mockResolvedValue({kind: "unknown"});
             mockDocker.up.mockResolvedValue(undefined);
 
@@ -808,6 +1626,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             expect(result.success).toBe(true);
             expect(listener.mock.calls.map((call) => call[0])).toEqual([
                 {step: "stopping_old_stack", detail: null},
+                {step: "verifying_stop", detail: null},
                 {step: "creating_directory", detail: null},
                 {step: "backing_up", detail: null},
                 {step: "copying_named_volume", detail: "pgdata"},
@@ -832,7 +1651,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             ]);
         });
 
-        it("reports rolling_back last when a step fails, and still returns the rollback failure", async () => {
+        it("reports rolling_back and then restarting_old_stack when a step fails, and still returns the rollback failure", async () => {
             mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
             const listener = vi.fn();
 
@@ -840,13 +1659,15 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
 
             expect(result.success).toBe(false);
             expect(result.error).toContain("docker compose up failed");
-            expect(listener.mock.calls.at(-1)?.[0]).toEqual({step: "rolling_back", detail: null});
-            expect(listener.mock.calls.map((call) => call[0].step)).toContain("deploying");
+            expect(listener.mock.calls.slice(-3).map((call) => call[0].step)).toEqual([
+                "deploying",
+                "rolling_back",
+                "restarting_old_stack",
+            ]);
         });
 
         it("is not affected by a listener that throws on every call", async () => {
             mockDocker.up.mockResolvedValue(undefined);
-            const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
             const listener = vi.fn(() => {
                 throw new Error("listener exploded");
             });
@@ -855,12 +1676,11 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
 
             expect(result).toEqual({success: true, stackId, originalPath: originalDir});
             expect(mockDocker.up).toHaveBeenCalledTimes(1);
-            expect(consoleError).toHaveBeenCalled();
+            expect(mockLogger.error).toHaveBeenCalled();
         });
 
         it("still rolls back and restarts the old stack when the listener throws during a failing run", async () => {
             mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
-            vi.spyOn(console, "error").mockImplementation(() => undefined);
             const listener = vi.fn(() => {
                 throw new Error("listener exploded");
             });
@@ -868,7 +1688,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             const result = await buildService().migrate(input(), listener);
 
             expect(result.success).toBe(false);
-            expect(result.error).toContain("The old stack was restarted.");
+            expect(result.rollback?.oldStack).toBe("restored-running");
             expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
             expect(mockOldStack.start).toHaveBeenCalledTimes(1);
         });
@@ -877,6 +1697,321 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             mockDocker.up.mockResolvedValue(undefined);
 
             await expect(buildService().migrate(copyingInput())).resolves.toMatchObject({success: true});
+        });
+    });
+
+    describe("the rollback ledger (#100)", () => {
+        /** A ledger that also writes to a shared call log, so record order can be compared with the side effects. */
+        function loggingLedger(log: string[]): MigrationLedger {
+            const inner = new InMemoryMigrationLedger();
+            return {
+                record: async (entry: MigrationLedgerEntry) => {
+                    log.push(`record:${entry.kind}`);
+                    await inner.record(entry);
+                },
+                entries: () => inner.entries(),
+            };
+        }
+
+        it("records every destructive step before it happens (write-ahead, WR-01)", async () => {
+            mockDocker.up.mockResolvedValue(undefined);
+            const log: string[] = [];
+            mockOldStack.stop.mockImplementation(async () => {
+                log.push("stop");
+            });
+            mockStackFs.createDirectoryExclusive.mockImplementation(async (id: string) => {
+                log.push("createDirectory");
+                const target = path.join(tmpRoot, "stacks", id);
+                await fs.mkdir(target, {recursive: true});
+                return target;
+            });
+            mockStackRepo.create.mockImplementation(async () => {
+                log.push("createRecord");
+            });
+            const service = buildService();
+            const ledger = loggingLedger(log);
+
+            const result = await service.execute(await service.preflight(input({backup: false})), {ledger});
+
+            expect(result.success).toBe(true);
+            expect(log).toEqual([
+                "record:stopped_old_stack",
+                "stop",
+                "record:created_directory",
+                "createDirectory",
+                "record:created_record",
+                "createRecord",
+                "record:deploy_started",
+            ]);
+            expect(ledger.entries()[0]).toEqual({
+                kind: "stopped_old_stack",
+                project: "original",
+                composePath,
+                runningBefore: ["web"],
+                sharesProjectWithNewStack: false,
+            });
+        });
+
+        it("claims the new directory for the run, records the same owner and releases the claim once the stack is up (CR-01, CR-02)", async () => {
+            mockDocker.up.mockResolvedValue(undefined);
+            const service = buildService();
+            const ledger = new InMemoryMigrationLedger();
+
+            const result = await service.execute(await service.preflight(input({backup: false})), {ledger});
+
+            expect(result.success).toBe(true);
+            const owners = ledger
+                .entries()
+                .flatMap((entry) => (entry.kind === "stopped_old_stack" || entry.kind === "moved_aside" ? [] : [entry.ownerId]));
+            expect(owners).toHaveLength(3);
+            expect(new Set(owners).size).toBe(1);
+            expect(mockStackFs.claimDirectory).toHaveBeenCalledWith(stackId, owners[0]);
+            expect(mockStackFs.releaseDirectory).toHaveBeenCalledWith(stackId, owners[0]);
+            expect(mockStackFs.releaseDirectory.mock.invocationCallOrder[0]).toBeGreaterThan(
+                mockDocker.up.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+            );
+        });
+
+        it("keeps the claim when the deploy fails, so the rollback can still remove the directory", async () => {
+            mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
+            const service = buildService();
+
+            await service.execute(await service.preflight(input({backup: false})), {ledger: new InMemoryMigrationLedger()});
+
+            expect(mockStackFs.releaseDirectory).not.toHaveBeenCalled();
+            expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
+        });
+
+        it("still succeeds when the claim cannot be released", async () => {
+            mockDocker.up.mockResolvedValue(undefined);
+            mockStackFs.releaseDirectory.mockRejectedValue(new Error("EACCES"));
+            const service = buildService();
+
+            const result = await service.execute(await service.preflight(input({backup: false})));
+
+            expect(result.success).toBe(true);
+            expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining("ownership marker"));
+        });
+
+        it("records nothing for a stop that was not needed", async () => {
+            mockDocker.up.mockResolvedValue(undefined);
+            mockProjects.listContainers.mockResolvedValue([]);
+            const service = buildService();
+            const ledger = new InMemoryMigrationLedger();
+
+            await service.execute(await service.preflight(input({backup: false})), {ledger});
+
+            expect(ledger.entries().map((entry) => entry.kind)).toEqual(["created_directory", "created_record", "deploy_started"]);
+            expect(mockOldStack.stop).not.toHaveBeenCalled();
+        });
+
+        it("never removes a directory the exclusive create refused, although its entry is written ahead", async () => {
+            mockStackFs.createDirectoryExclusive.mockRejectedValue(new Error("EEXIST"));
+            mockStackFs.ownsDirectory.mockResolvedValue(false);
+            const service = buildService();
+            const ledger = new InMemoryMigrationLedger();
+
+            const result = await service.execute(await service.preflight(input()), {ledger});
+
+            expect(ledger.entries().map((entry) => entry.kind)).toEqual(["stopped_old_stack", "created_directory"]);
+            expect(mockStackFs.claimDirectory).not.toHaveBeenCalled();
+            expect(mockStackFs.removeDirectory).not.toHaveBeenCalled();
+            expect(result.rollback?.oldStack).toBe("restored-running");
+        });
+
+        it("hands exactly the recorded entries to the rollback after a copy failure behind a verified stop", async () => {
+            mockMigrator.copyDirectory.mockRejectedValue(new Error("ENOSPC: no space left on device"));
+            const service = buildService();
+            const ledger = new InMemoryMigrationLedger();
+
+            const result = await service.execute(await service.preflight(input({backup: true})), {ledger});
+
+            expect(result).toEqual({
+                success: false,
+                error: "Migration failed: ENOSPC: no space left on device",
+                originalPath: originalDir,
+                rollback: {oldStack: "restored-running", original: "untouched", cleanupErrors: []},
+            });
+            expect(ledger.entries().map((entry) => entry.kind)).toEqual(["stopped_old_stack", "created_directory"]);
+        });
+
+        it("lists a failing cleanup in the result and logs it through the injected logger", async () => {
+            mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
+            mockStackFs.removeDirectory.mockRejectedValue(new Error("EBUSY: directory busy"));
+            mockStackRepo.delete.mockRejectedValue(new Error("database locked"));
+
+            const result = await buildService().migrate(input());
+
+            expect(result.rollback?.cleanupErrors).toEqual([
+                "remove the stack record: database locked",
+                "remove the new stack directory: EBUSY: directory busy",
+            ]);
+            expect(result.rollback?.oldStack).toBe("restored-running");
+            expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining("database locked"));
+            expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining("EBUSY: directory busy"));
+        });
+
+        it("records the deploy before it starts and deploys without removing orphans (Pitfall 12)", async () => {
+            const log: string[] = [];
+            mockDocker.up.mockImplementation(async () => {
+                log.push("up");
+            });
+            const service = buildService();
+            const ledger = loggingLedger(log);
+
+            await service.execute(await service.preflight(input({backup: false})), {ledger});
+
+            expect(log.slice(-2)).toEqual(["record:deploy_started", "up"]);
+            expect(mockDocker.up).toHaveBeenCalledWith(stackId, {removeOrphans: false});
+        });
+
+        it("takes a failed deploy down keeping volumes before removing the directory, and never runs the volume-deleting down", async () => {
+            mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
+
+            const result = await buildService().migrate(input());
+
+            expect(result.rollback?.cleanupErrors).toEqual([]);
+            expect(mockDocker.downKeepVolumes).toHaveBeenCalledWith(stackId);
+            const order = (mock: {mock: {invocationCallOrder: number[]}}): number => mock.mock.invocationCallOrder[0] ?? Number.NaN;
+            expect(order(mockDocker.downKeepVolumes)).toBeLessThan(order(mockStackFs.removeDirectory));
+            expect(order(mockStackFs.removeDirectory)).toBeLessThan(order(mockOldStack.start));
+            expect(mockDocker.down).not.toHaveBeenCalled();
+        });
+
+        it("never takes anything down when the failure happens before the deploy", async () => {
+            mockMigrator.copyDirectory.mockRejectedValue(new Error("ENOSPC: no space left on device"));
+
+            await buildService().migrate(input());
+
+            expect(mockDocker.downKeepVolumes).not.toHaveBeenCalled();
+            expect(mockDocker.down).not.toHaveBeenCalled();
+        });
+
+        it("lists a failing keep-volumes down and still removes the directory", async () => {
+            mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
+            mockDocker.downKeepVolumes.mockRejectedValue(new Error("daemon unreachable"));
+
+            const result = await buildService().migrate(input());
+
+            expect(result.rollback?.cleanupErrors).toEqual([expect.stringContaining("daemon unreachable")]);
+            expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
+            expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining("daemon unreachable"));
+        });
+
+        it("never logs through the console when an injected logger is given", async () => {
+            mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
+            const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+            await buildService().migrate(input(), () => {
+                throw new Error("listener exploded");
+            });
+
+            expect(consoleError).not.toHaveBeenCalled();
+            expect(mockLogger.error).toHaveBeenCalled();
+        });
+    });
+
+    describe("rollbackInterrupted: a journalled ledger replayed after a Docktor restart (#100, D-06)", () => {
+        const stopped: MigrationLedgerEntry = {
+            kind: "stopped_old_stack",
+            project: "original",
+            composePath,
+            runningBefore: ["web"],
+            sharesProjectWithNewStack: false,
+        };
+
+        it("runs the same rollback a failed step runs: record, directory, then the old stack back", async () => {
+            const entries: MigrationLedgerEntry[] = [
+                stopped,
+                {kind: "created_directory", stackId, ownerId: "owner-1"},
+                {kind: "created_record", stackId, ownerId: "owner-1"},
+            ];
+
+            await mockStackRepo.create({id: stackId});
+
+            const outcome = await buildService().rollbackInterrupted(entries, {});
+
+            expect(outcome.report).toEqual({oldStack: "restored-running", original: "untouched", cleanupErrors: []});
+            expect(mockStackRepo.delete).toHaveBeenCalledWith(stackId);
+            expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
+            expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+            const order = (mock: {mock: {invocationCallOrder: number[]}}): number => mock.mock.invocationCallOrder[0] ?? Number.NaN;
+            expect(order(mockStackRepo.delete)).toBeLessThan(order(mockStackFs.removeDirectory));
+            expect(order(mockStackFs.removeDirectory)).toBeLessThan(order(mockOldStack.start));
+        });
+
+        it("moves an in-place original back and restores its services from the restored files after an interrupted deploy", async () => {
+            const asideDir = `${originalDir}-pre-migration`;
+            const entries: MigrationLedgerEntry[] = [
+                {...stopped, sharesProjectWithNewStack: true},
+                {kind: "moved_aside", originalDir, asideDir},
+                {kind: "created_directory", stackId, ownerId: "owner-1"},
+                {kind: "deploy_started", stackId, ownerId: "owner-1"},
+            ];
+            await fs.rename(originalDir, asideDir);
+
+            const outcome = await buildService().rollbackInterrupted(entries, {});
+
+            expect(mockDocker.downKeepVolumes).toHaveBeenCalledWith(stackId);
+            expect(mockDocker.down).not.toHaveBeenCalled();
+            expect(mockMigrator.moveDirectory).toHaveBeenCalledWith(asideDir, originalDir);
+            expect(mockOldStack.restoreServices).toHaveBeenCalledTimes(1);
+            expect(mockOldStack.start).not.toHaveBeenCalled();
+            expect(outcome.report).toMatchObject({oldStack: "restored-running", original: "restored"});
+        });
+
+        it("leaves the directory, the record and the containers of a stack it does not own alone (CR-01, CR-02)", async () => {
+            mockStackFs.ownsDirectory.mockResolvedValue(false);
+            await mockStackRepo.create({id: stackId});
+            const entries: MigrationLedgerEntry[] = [
+                stopped,
+                {kind: "created_directory", stackId, ownerId: "owner-1"},
+                {kind: "created_record", stackId, ownerId: "owner-1"},
+                {kind: "deploy_started", stackId, ownerId: "owner-1"},
+            ];
+
+            const outcome = await buildService().rollbackInterrupted(entries, {});
+
+            expect(mockStackFs.ownsDirectory).toHaveBeenCalledWith(stackId, "owner-1");
+            expect(mockDocker.downKeepVolumes).not.toHaveBeenCalled();
+            expect(mockStackRepo.delete).not.toHaveBeenCalled();
+            expect(mockStackFs.removeDirectory).not.toHaveBeenCalled();
+            expect(outcome.report.cleanupErrors).toEqual([]);
+        });
+
+        it("does not delete the restored original when the same in-place ledger is replayed after the move back", async () => {
+            // First rollback finished the directory removal and the move back, then Docktor stopped
+            // before the journal was removed. The replay finds the original at its path and no aside.
+            mockStackFs.ownsDirectory.mockResolvedValue(false);
+            const asideDir = `${originalDir}-pre-migration`;
+            const entries: MigrationLedgerEntry[] = [
+                stopped,
+                {kind: "moved_aside", originalDir, asideDir},
+                {kind: "created_directory", stackId, ownerId: "owner-1"},
+            ];
+
+            const outcome = await buildService().rollbackInterrupted(entries, {});
+
+            expect(mockStackFs.removeDirectory).not.toHaveBeenCalled();
+            expect(mockMigrator.moveDirectory).not.toHaveBeenCalled();
+            await expect(fs.access(originalDir)).resolves.toBeUndefined();
+            expect(outcome.report).toEqual({oldStack: "restored-running", original: "untouched", cleanupErrors: []});
+        });
+
+        it("reports progress through the listener", async () => {
+            const steps: string[] = [];
+
+            await buildService().rollbackInterrupted([stopped], {onProgress: (progress) => steps.push(progress.step)});
+
+            expect(steps).toEqual(["restarting_old_stack"]);
+        });
+
+        it("reports not-stopped for an empty ledger and touches nothing", async () => {
+            const outcome = await buildService().rollbackInterrupted([], {});
+
+            expect(outcome.report).toEqual({oldStack: "not-stopped", original: "untouched", cleanupErrors: []});
+            expect(mockOldStack.start).not.toHaveBeenCalled();
+            expect(mockStackFs.removeDirectory).not.toHaveBeenCalled();
         });
     });
 
@@ -935,6 +2070,43 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             expect(mockStackRepo.create).toHaveBeenCalledWith(expect.objectContaining({hostPath: originalDir}));
         });
 
+        it("records the rename before it happens and rolls back cleanly when the rename itself fails (WR-01)", async () => {
+            const log: string[] = [];
+            mockMigrator.moveDirectory.mockImplementation(async () => {
+                log.push("move");
+                throw new Error("EBUSY: resource busy");
+            });
+            const service = buildService();
+            const inner = new InMemoryMigrationLedger();
+            const ledger: MigrationLedger = {
+                record: async (entry: MigrationLedgerEntry) => {
+                    log.push(`record:${entry.kind}`);
+                    await inner.record(entry);
+                },
+                entries: () => inner.entries(),
+            };
+
+            const result = await service.execute(await service.preflight(inPlaceInput()), {ledger});
+
+            expect(log.slice(0, 3)).toEqual(["record:stopped_old_stack", "record:moved_aside", "move"]);
+            expect(result.success).toBe(false);
+            expect(result.rollback).toEqual({oldStack: "restored-running", original: "untouched", cleanupErrors: []});
+            expect(await fs.readFile(path.join(originalDir, "data", "keep.txt"), "utf-8")).toBe("keep me");
+            expect(mockMigrator.moveDirectory).toHaveBeenCalledTimes(1);
+        });
+
+        it("counts no backup copy in place: the renamed original is the backup", async () => {
+            mockDiskSpace.measureDirectoryBytes.mockImplementation(async (target: string) =>
+                target === path.join(originalDir, "data") ? 400 : 5_000_000,
+            );
+            mockDiskSpace.filesystemOf.mockResolvedValue({filesystemId: "fs-stacks", label: STACKS_FILESYSTEM, availableBytes: 440});
+
+            const plan = await buildService().preflight(inPlaceInput({backup: true}));
+
+            expect(plan.inPlace).not.toBeNull();
+            expect(mockDiskSpace.measureDirectoryBytes).not.toHaveBeenCalledWith(originalDir);
+        });
+
         it("reports moving_original_aside after stopping and before creating the directory, without a backup step", async () => {
             mockDocker.up.mockResolvedValue(undefined);
             const listener = vi.fn();
@@ -943,6 +2115,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
 
             expect(listener.mock.calls.map((call) => call[0].step)).toEqual([
                 "stopping_old_stack",
+                "verifying_stop",
                 "moving_original_aside",
                 "creating_directory",
                 "copying_bind_mount",
@@ -1074,6 +2247,24 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         });
 
         describe("rollback", () => {
+            it("records the rename aside after it happened and shares the project with the new stack", async () => {
+                mockDocker.up.mockResolvedValue(undefined);
+                const service = buildService();
+                const ledger = new InMemoryMigrationLedger();
+
+                await service.execute(await service.preflight(inPlaceInput()), {ledger});
+
+                expect(ledger.entries().map((entry) => entry.kind)).toEqual([
+                    "stopped_old_stack",
+                    "moved_aside",
+                    "created_directory",
+                    "created_record",
+                    "deploy_started",
+                ]);
+                expect(ledger.entries()[0]).toMatchObject({sharesProjectWithNewStack: true});
+                expect(ledger.entries()[1]).toEqual({kind: "moved_aside", originalDir, asideDir});
+            });
+
             it("removes the new directory, moves the original back and restarts the old stack", async () => {
                 mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
 
@@ -1081,8 +2272,8 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
 
                 expect(result.success).toBe(false);
                 expect(result.error).toContain("docker compose up failed");
-                expect(result.error).toContain("moved back");
-                expect(result.error).toContain("The old stack was restarted.");
+                expect(result.error).toBe("Migration failed: docker compose up failed");
+                expect(result.rollback).toEqual({oldStack: "restored-running", original: "restored", cleanupErrors: []});
                 expect(result.keptOriginalAt).toBeUndefined();
                 expect(mockMigrator.moveDirectory).toHaveBeenLastCalledWith(asideDir, originalDir);
                 expect(await fs.readFile(composePath, "utf-8")).toBe(ASIDE_COMPOSE);
@@ -1091,10 +2282,37 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
                 await expect(fs.access(path.join(originalDir, "volumes"))).rejects.toThrow();
                 await expect(fs.access(asideDir)).rejects.toThrow();
                 expect(mockStackRepo.delete).toHaveBeenCalledWith(stackId);
-                expect(mockOldStack.start).toHaveBeenCalledTimes(1);
-                expect(mockOldStack.start).toHaveBeenCalledWith(composePath);
+                // The new stack took the old project over, so the old containers are gone: restore, never start (#100 AC2).
+                expect(mockOldStack.start).not.toHaveBeenCalled();
+                expect(mockOldStack.restoreServices).toHaveBeenCalledTimes(1);
+                expect(mockOldStack.restoreServices).toHaveBeenCalledWith({composePath, project: stackId}, ["web"]);
                 const moveBack = mockMigrator.moveDirectory.mock.invocationCallOrder[1] ?? Number.NaN;
-                expect(moveBack).toBeLessThan(mockOldStack.start.mock.invocationCallOrder[0] ?? Number.NaN);
+                expect(moveBack).toBeLessThan(mockOldStack.restoreServices.mock.invocationCallOrder[0] ?? Number.NaN);
+            });
+
+            it("takes the failed deploy down, removes the new directory, moves the original back and restores its services, in that order (#100 AC2)", async () => {
+                mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
+
+                const result = await buildService().migrate(inPlaceInput());
+
+                const order = (mock: {mock: {invocationCallOrder: number[]}}, call = 0): number =>
+                    mock.mock.invocationCallOrder[call] ?? Number.NaN;
+                expect(order(mockDocker.downKeepVolumes)).toBeLessThan(order(mockStackFs.removeDirectory));
+                expect(order(mockStackFs.removeDirectory)).toBeLessThan(order(mockMigrator.moveDirectory, 1));
+                expect(order(mockMigrator.moveDirectory, 1)).toBeLessThan(order(mockOldStack.restoreServices));
+                expect(mockDocker.down).not.toHaveBeenCalled();
+                expect(result.rollback).toEqual({oldStack: "restored-running", original: "restored", cleanupErrors: []});
+            });
+
+            it("starts the stopped containers when the failure came before the deploy, since nothing recreated them", async () => {
+                mockMigrator.copyDirectory.mockRejectedValue(new Error("ENOSPC: no space left on device"));
+
+                const result = await buildService().migrate(inPlaceInput({backup: false}));
+
+                expect(mockDocker.downKeepVolumes).not.toHaveBeenCalled();
+                expect(mockOldStack.restoreServices).not.toHaveBeenCalled();
+                expect(mockOldStack.start).toHaveBeenCalledWith({composePath, project: stackId}, ["web"]);
+                expect(result.rollback).toEqual({oldStack: "restored-running", original: "restored", cleanupErrors: []});
             });
 
             it("leaves everything in place and explains how to restore it when the original path is still occupied", async () => {
@@ -1105,10 +2323,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
                 const result = await buildService().migrate(inPlaceInput());
 
                 expect(result.success).toBe(false);
-                expect(result.error).toContain(asideDir);
-                expect(result.error).toContain(originalDir);
-                expect(result.error).toContain("by hand");
-                expect(result.error).not.toContain("The old stack was restarted.");
+                expect(result.rollback).toEqual({oldStack: "left-stopped", original: "left-aside", keptOriginalAt: asideDir, cleanupErrors: []});
                 expect(mockMigrator.moveDirectory).toHaveBeenCalledTimes(1);
                 expect(mockOldStack.start).not.toHaveBeenCalled();
                 expect(await fs.readFile(path.join(asideDir, "docker-compose.yml"), "utf-8")).toBe(ASIDE_COMPOSE);
@@ -1125,8 +2340,8 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
                 const result = await buildService().migrate(inPlaceInput());
 
                 expect(result.success).toBe(false);
-                expect(result.error).toContain("by hand");
-                expect(result.error).toContain(asideDir);
+                expect(result.rollback).toMatchObject({oldStack: "left-stopped", original: "left-aside", keptOriginalAt: asideDir});
+                expect(result.rollback?.cleanupErrors).toEqual([expect.stringContaining("EBUSY")]);
                 expect(mockOldStack.start).not.toHaveBeenCalled();
                 expect(await fs.readFile(path.join(asideDir, "data", "keep.txt"), "utf-8")).toBe("keep me");
             });
@@ -1182,19 +2397,22 @@ describe("previewMigration (MIG-02, D-04, G-18-7)", () => {
             rewrite: vi.fn().mockReturnValue({rewrittenCompose: COMPOSE, extractedEnv: "", envVars: {}}),
         },
         ownMounts: OwnMountsPort = createMockOwnMounts(),
+        projects: ComposeProjectResolverPort = createMockProjects() as unknown as ComposeProjectResolverPort,
+        diskSpace: ReturnType<typeof createMockDiskSpace> = createMockDiskSpace(),
     ): MigrationService {
-        return new MigrationService(
-            createMockDocker() as unknown as DockerExecutorPort,
-            createMockMigrator() as unknown as VolumeMigratorPort,
-            rewriter as ComposeRewriterPort,
-            mockStackFs as unknown as StackFilesystemPort,
-            mockStackRepo as unknown as StackRepository,
-            createMockOldStack() as unknown as ExternalStackControlPort,
-            mockSelfStack as unknown as SelfStackPort,
+        return new MigrationService({
+            docker: createMockDocker() as unknown as DockerExecutorPort,
+            migrator: createMockMigrator() as unknown as VolumeMigratorPort,
+            rewriter: rewriter as ComposeRewriterPort,
+            stackFs: mockStackFs as unknown as StackFilesystemPort,
+            stackRepo: mockStackRepo as unknown as StackRepository,
+            oldStack: createMockOldStack() as unknown as ExternalStackControlPort,
+            projects,
+            selfStack: mockSelfStack as unknown as SelfStackPort,
             ownMounts,
-            undefined,
-            hostViewDirectories(),
-        );
+            directories: hostViewDirectories(),
+            diskSpace: diskSpace as unknown as DiskSpaceProbePort,
+        });
     }
 
     function request(overrides: Partial<{composePath: string; displayName: string}> = {}) {
@@ -1235,6 +2453,106 @@ describe("previewMigration (MIG-02, D-04, G-18-7)", () => {
         await service.previewMigration(request());
 
         expect(rewriter.rewrite.mock.calls.map((call) => call[3])).toEqual([undefined, "OLD=1\n"]);
+    });
+
+    describe("the disk space check (#107, D-08)", () => {
+        const dataDir = (): string => path.join(composeDir, "data");
+        const selection = [{originalPath: "./data", newPath: "./volumes/data", convert: true}];
+
+        beforeEach(async () => {
+            await fs.mkdir(dataDir());
+        });
+
+        function probe(availableBytes: number) {
+            const diskSpace = createMockDiskSpace(availableBytes);
+            diskSpace.measureDirectoryBytes.mockImplementation(async (target: string) => (target === composeDir ? 600 : target === dataDir() ? 400 : 1));
+            return diskSpace;
+        }
+
+        it("reports the assessment without and with a backup for a separate migration, a shortfall as ok false", async () => {
+            const result = await buildPreviewService(undefined, undefined, undefined, probe(1_000)).previewMigration(
+                request({volumeSelections: selection}),
+            );
+
+            expect(result.diskSpace).toEqual({
+                withoutBackup: {ok: true, filesystems: [{label: STACKS_FILESYSTEM, requiredBytes: 440, availableBytes: 1_000}]},
+                withBackup: {ok: false, filesystems: [{label: STACKS_FILESYSTEM, requiredBytes: 1_100, availableBytes: 1_000}]},
+            });
+        });
+
+        it("measures every item once, however many assessments it feeds", async () => {
+            const diskSpace = probe(10_000);
+
+            await buildPreviewService(undefined, undefined, undefined, diskSpace).previewMigration(request({volumeSelections: selection}));
+
+            expect(diskSpace.measureDirectoryBytes.mock.calls.map((call) => call[0]).sort()).toEqual([composeDir, dataDir()].sort());
+        });
+
+        it("has no with-backup assessment for an in-place migration", async () => {
+            const inPlaceDir = path.join(stacksRoot, stackId);
+            await fs.mkdir(path.join(inPlaceDir, "data"), {recursive: true});
+            await fs.writeFile(path.join(inPlaceDir, "docker-compose.yml"), COMPOSE, "utf-8");
+            const diskSpace = probe(10_000);
+
+            const result = await buildPreviewService(undefined, undefined, undefined, diskSpace).previewMigration(
+                request({composePath: path.join(inPlaceDir, "docker-compose.yml"), volumeSelections: selection}),
+            );
+
+            expect(result.diskSpace.withBackup).toBeNull();
+            expect(result.diskSpace.withoutBackup.ok).toBe(true);
+            expect(diskSpace.measureDirectoryBytes.mock.calls.map((call) => call[0])).not.toContain(inPlaceDir);
+        });
+
+        it("refuses a size it cannot measure like the start does", async () => {
+            const diskSpace = probe(10_000);
+            diskSpace.measureDirectoryBytes.mockResolvedValue(null);
+
+            await expect(
+                buildPreviewService(undefined, undefined, undefined, diskSpace).previewMigration(request({volumeSelections: selection})),
+            ).rejects.toBeInstanceOf(BadRequestError);
+        });
+    });
+
+    describe("a ~ bind source (#104)", () => {
+        const homeProject = (source: string): ComposeProjectResolverPort =>
+            ({
+                resolve: vi.fn().mockResolvedValue({
+                    kind: "resolved",
+                    project: {
+                        name: "original",
+                        source: "containers",
+                        containers: [{...runningContainer("original"), mounts: [{type: "bind", source, destination: "/mnt/0"}]}],
+                    },
+                }),
+                listContainers: vi.fn().mockResolvedValue([]),
+            }) as unknown as ComposeProjectResolverPort;
+
+        const selecting = (convert: boolean) => ({
+            ...request(),
+            volumeSelections: [{originalPath: "~/data", newPath: convert ? "./volumes/data" : "~/data", convert}],
+        });
+
+        beforeEach(async () => {
+            await fs.writeFile(composePath, composeDeclaring(["~/data"]), "utf-8");
+        });
+
+        it.each([
+            [true, "./volumes/data:/mnt/0"],
+            [false, "/home/alice/data:/mnt/0"],
+        ])("shows the rewritten line in the diff (convert: %s)", async (convert, rewritten) => {
+            const service = buildPreviewService(new ComposeRewriter(), createMockOwnMounts(), homeProject("/home/alice/data"));
+
+            const result = await service.previewMigration(selecting(convert));
+
+            const lines = result.diff.hunks.flatMap((hunk) => hunk.lines);
+            expect(lines).toContainEqual(expect.objectContaining({kind: "removed", text: "      - ~/data:/mnt/0"}));
+            expect(lines).toContainEqual(expect.objectContaining({kind: "added", text: `      - ${rewritten}`}));
+        });
+
+        it("refuses a ~ source that cannot be resolved", async () => {
+            await expect(buildPreviewService().previewMigration(selecting(true))).rejects.toThrow(BadRequestError);
+            await expect(buildPreviewService().previewMigration(selecting(true))).rejects.toThrow("~/data");
+        });
     });
 
     it("returns the empty diff when the rewrite leaves the content unchanged", async () => {
@@ -1442,18 +2760,19 @@ describe.skipIf(process.platform === "win32")("a stack in the stacks folder reac
 
     function buildService(): MigrationService {
         const rewriter = {rewrite: vi.fn().mockReturnValue({rewrittenCompose: REWRITTEN, extractedEnv: "", envVars: {}})};
-        return new MigrationService(
-            mockDocker as unknown as DockerExecutorPort,
-            mockMigrator as unknown as VolumeMigratorPort,
-            rewriter as unknown as ComposeRewriterPort,
-            mockStackFs as unknown as StackFilesystemPort,
-            mockStackRepo as unknown as StackRepository,
-            mockOldStack as unknown as ExternalStackControlPort,
-            createMockSelfStack() as unknown as SelfStackPort,
-            mockOwnMounts as unknown as OwnMountsPort,
-            undefined,
-            directoriesOver(mockOwnMounts as unknown as OwnMountsPort),
-        );
+        return new MigrationService({
+            docker: mockDocker as unknown as DockerExecutorPort,
+            migrator: mockMigrator as unknown as VolumeMigratorPort,
+            rewriter: rewriter as unknown as ComposeRewriterPort,
+            stackFs: mockStackFs as unknown as StackFilesystemPort,
+            stackRepo: mockStackRepo as unknown as StackRepository,
+            oldStack: mockOldStack as unknown as ExternalStackControlPort,
+            projects: createMockProjects(mockOldStack) as unknown as ComposeProjectResolverPort,
+            selfStack: createMockSelfStack() as unknown as SelfStackPort,
+            ownMounts: mockOwnMounts as unknown as OwnMountsPort,
+            directories: directoriesOver(mockOwnMounts as unknown as OwnMountsPort),
+            diskSpace: createMockDiskSpace() as unknown as DiskSpaceProbePort,
+        });
     }
 
     function request(composePath: string = aliasCompose) {
@@ -1490,7 +2809,10 @@ describe.skipIf(process.platform === "win32")("a stack in the stacks folder reac
         for (const argument of mockMigrator.moveDirectory.mock.calls.flat()) {
             expect(String(argument).startsWith(hostRoot)).toBe(false);
         }
-        expect(mockOldStack.stop).toHaveBeenCalledWith(path.join(realDir, "docker-compose.yml"));
+        expect(mockOldStack.stop).toHaveBeenCalledWith(
+            {composePath: path.join(realDir, "docker-compose.yml"), project: stackId},
+            {timeoutMs: 120_000},
+        );
         expect(mockStackRepo.create).toHaveBeenCalledWith(expect.objectContaining({hostPath: realDir}));
         expect(await fs.readFile(path.join(asideDir, "data", "keep.txt"), "utf-8")).toBe("keep me");
         expect(await fs.readFile(path.join(realDir, "volumes", "data", "keep.txt"), "utf-8")).toBe("keep me");
@@ -1595,18 +2917,19 @@ describe("MigrationService environment extraction (CR-02)", () => {
     function buildRealRewriterService(): MigrationService {
         const docker = createMockDocker();
         docker.up.mockResolvedValue(undefined);
-        return new MigrationService(
-            docker as unknown as DockerExecutorPort,
-            createMockMigrator() as unknown as VolumeMigratorPort,
-            new ComposeRewriter(() => new Set()),
-            mockStackFs as unknown as StackFilesystemPort,
-            createMockStackRepo() as unknown as StackRepository,
-            mockOldStack as unknown as ExternalStackControlPort,
-            createMockSelfStack() as unknown as SelfStackPort,
-            createMockOwnMounts() as unknown as OwnMountsPort,
-            undefined,
-            hostViewDirectories(),
-        );
+        return new MigrationService({
+            docker: docker as unknown as DockerExecutorPort,
+            migrator: createMockMigrator() as unknown as VolumeMigratorPort,
+            rewriter: new ComposeRewriter(() => new Set()),
+            stackFs: mockStackFs as unknown as StackFilesystemPort,
+            stackRepo: createMockStackRepo() as unknown as StackRepository,
+            oldStack: mockOldStack as unknown as ExternalStackControlPort,
+            projects: createMockProjects(mockOldStack) as unknown as ComposeProjectResolverPort,
+            selfStack: createMockSelfStack() as unknown as SelfStackPort,
+            ownMounts: createMockOwnMounts() as unknown as OwnMountsPort,
+            directories: hostViewDirectories(),
+            diskSpace: createMockDiskSpace() as unknown as DiskSpaceProbePort,
+        });
     }
 
     function request() {
@@ -1617,6 +2940,7 @@ describe("MigrationService environment extraction (CR-02)", () => {
             namedVolumeSelections: new Map<string, boolean>(),
             backup: false,
             stopOldStack: false,
+            acknowledgeAnonymousVolumes: false,
         };
     }
 
@@ -1683,16 +3007,14 @@ describe("MigrationService environment extraction (CR-02)", () => {
             expect(Buffer.compare(await fs.readFile(path.join(newStackPath, ".env")), bytes)).toBe(0);
         });
 
-        it("fails the migration with rollback when the old .env cannot be read", async () => {
+        it("refuses the migration before anything is stopped when the old .env cannot be read (#101)", async () => {
             await fs.writeFile(path.join(originalDir, ".env"), "PORT=8080\n", "utf-8");
             failReadingOldEnv();
 
-            const result = await buildRealRewriterService().migrate({...request(), stopOldStack: true});
+            await expect(buildRealRewriterService().migrate({...request(), stopOldStack: true})).rejects.toThrow("EACCES");
 
-            expect(result.success).toBe(false);
-            expect(result.error).toContain("EACCES");
-            expect(mockStackFs.removeDirectory).toHaveBeenCalledWith(stackId);
-            expect(mockOldStack.start).toHaveBeenCalledTimes(1);
+            expect(mockOldStack.stop).not.toHaveBeenCalled();
+            expect(mockStackFs.createDirectoryExclusive).not.toHaveBeenCalled();
         });
 
         it("rejects the preview when the old .env cannot be read", async () => {
@@ -1710,6 +3032,18 @@ describe("MigrationService environment extraction (CR-02)", () => {
 
         expect(result.success).toBe(true);
         expect(await readNewEnv()).toBe("PORT=80");
+    });
+
+    it("writes the .env that holds extracted secrets readable by the owner only (IN-02)", async () => {
+        await fs.writeFile(composePath, ONE_SERVICE, "utf-8");
+        await fs.writeFile(path.join(originalDir, ".env"), "PORT=8080\n", "utf-8");
+        await fs.chmod(path.join(originalDir, ".env"), 0o600);
+
+        const result = await buildRealRewriterService().migrate(request());
+
+        expect(result.success).toBe(true);
+        const {mode} = await fs.stat(path.join(newStackPath, ".env"));
+        expect(mode & 0o777).toBe(0o600);
     });
 });
 
@@ -1752,18 +3086,19 @@ describe("shared compose project name (G-18-22-status)", () => {
 
     function buildService(): MigrationService {
         const rewriter = {rewrite: vi.fn().mockReturnValue({rewrittenCompose: PLAIN_COMPOSE, extractedEnv: ""})};
-        return new MigrationService(
-            mockDocker as unknown as DockerExecutorPort,
-            mockMigrator as unknown as VolumeMigratorPort,
-            rewriter as unknown as ComposeRewriterPort,
-            mockStackFs as unknown as StackFilesystemPort,
-            mockStackRepo as unknown as StackRepository,
-            mockOldStack as unknown as ExternalStackControlPort,
-            createMockSelfStack() as unknown as SelfStackPort,
-            createMockOwnMounts() as unknown as OwnMountsPort,
-            undefined,
-            hostViewDirectories(),
-        );
+        return new MigrationService({
+            docker: mockDocker as unknown as DockerExecutorPort,
+            migrator: mockMigrator as unknown as VolumeMigratorPort,
+            rewriter: rewriter as unknown as ComposeRewriterPort,
+            stackFs: mockStackFs as unknown as StackFilesystemPort,
+            stackRepo: mockStackRepo as unknown as StackRepository,
+            oldStack: mockOldStack as unknown as ExternalStackControlPort,
+            projects: createMockProjects(mockOldStack) as unknown as ComposeProjectResolverPort,
+            selfStack: createMockSelfStack() as unknown as SelfStackPort,
+            ownMounts: createMockOwnMounts() as unknown as OwnMountsPort,
+            directories: hostViewDirectories(),
+            diskSpace: createMockDiskSpace() as unknown as DiskSpaceProbePort,
+        });
     }
 
     function request(composePath: string, displayName: string, stopOldStack: boolean) {
@@ -1820,6 +3155,23 @@ describe("shared compose project name (G-18-22-status)", () => {
 
             expect(preview.target.sharedProjectName).toEqual({name: "memos", source: "directory"});
         });
+
+        it("marks the plan as sharing the project, so a rollback restores the old services from their files (#100)", async () => {
+            const plan = await buildService().preflight(request(composePath, "Memos", true));
+
+            expect(plan.sharesProjectWithNewStack).toBe(true);
+        });
+
+        it("restores the old services from their files when the deploy that took the project over fails", async () => {
+            mockDocker.up.mockRejectedValue(new Error("docker compose up failed"));
+
+            const result = await buildService().migrate(request(composePath, "Memos", true));
+
+            expect(mockDocker.downKeepVolumes).toHaveBeenCalledWith("memos");
+            expect(mockOldStack.start).not.toHaveBeenCalled();
+            expect(mockOldStack.restoreServices).toHaveBeenCalledWith({composePath, project: "memos"}, ["web"]);
+            expect(result.rollback).toMatchObject({oldStack: "restored-running", original: "untouched"});
+        });
     });
 
     describe("a name the old stack's files set", () => {
@@ -1868,13 +3220,67 @@ describe("shared compose project name (G-18-22-status)", () => {
         });
     });
 
+    describe("an old stack started under another name than its files suggest (-p)", () => {
+        function startedAs(project: string): ReturnType<typeof createMockProjects> {
+            const projects = createMockProjects(mockOldStack);
+            projects.resolve.mockResolvedValue({kind: "resolved", project: {name: project, source: "containers", containers: []}});
+            return projects;
+        }
+
+        function serviceWith(projects: ReturnType<typeof createMockProjects>): MigrationService {
+            const rewriter = {rewrite: vi.fn().mockReturnValue({rewrittenCompose: PLAIN_COMPOSE, extractedEnv: ""})};
+            return new MigrationService({
+                docker: mockDocker as unknown as DockerExecutorPort,
+                migrator: mockMigrator as unknown as VolumeMigratorPort,
+                rewriter: rewriter as unknown as ComposeRewriterPort,
+                stackFs: mockStackFs as unknown as StackFilesystemPort,
+                stackRepo: mockStackRepo as unknown as StackRepository,
+                oldStack: mockOldStack as unknown as ExternalStackControlPort,
+                projects: projects as unknown as ComposeProjectResolverPort,
+                selfStack: createMockSelfStack() as unknown as SelfStackPort,
+                ownMounts: createMockOwnMounts() as unknown as OwnMountsPort,
+                directories: hostViewDirectories(),
+                diskSpace: createMockDiskSpace() as unknown as DiskSpaceProbePort,
+            });
+        }
+
+        it("refuses leaving it running when the new stack id equals the real project name, saying the new stack takes it from its directory", async () => {
+            const composePath = await oldStack("old");
+
+            const refusal = serviceWith(startedAs("foo")).migrate(request(composePath, "Foo", false));
+
+            await expect(refusal).rejects.toBeInstanceOf(BadRequestError);
+            await expect(refusal).rejects.toThrow('"foo"');
+            await expect(refusal).rejects.toThrow("the new stack takes it from its directory name");
+            expectNoSideEffects();
+        });
+
+        it("reports the shared name in the preview with the new stack's name source", async () => {
+            const composePath = await oldStack("old");
+
+            const preview = await serviceWith(startedAs("foo")).previewMigration(request(composePath, "Foo", false));
+
+            expect(preview.target.sharedProjectName).toEqual({name: "foo", source: "directory"});
+        });
+
+        it("does not refuse when only the files' name equals the new stack id but the real project differs", async () => {
+            const composePath = await oldStack("memos");
+
+            const result = await serviceWith(startedAs("other")).migrate(request(composePath, "Memos", false));
+
+            expect(result.success).toBe(true);
+        });
+    });
+
     it("does not report or refuse a different stack name", async () => {
         const composePath = await oldStack("memos");
 
         const preview = await buildService().previewMigration(request(composePath, "Memos New", false));
+        const plan = await buildService().preflight(request(composePath, "Memos New", true));
         const result = await buildService().migrate(request(composePath, "Memos New", false));
 
         expect(preview.target.sharedProjectName).toBeNull();
+        expect(plan.sharesProjectWithNewStack).toBe(false);
         expect(result.success).toBe(true);
     });
 
@@ -1885,5 +3291,117 @@ describe("shared compose project name (G-18-22-status)", () => {
 
         expect(preview.target.inPlace).toBe(true);
         expect(preview.target.sharedProjectName).toBeNull();
+        expect((await buildService().preflight(request(composePath, "Memos", true))).sharesProjectWithNewStack).toBe(true);
+    });
+});
+
+describe("MigrationService compose file check and dependencies (#108, T-22-03)", () => {
+    const displayName = "Hardening Fixture";
+
+    let tmpRoot: string;
+    let mockStackFs: ReturnType<typeof createMockStackFs>;
+    let mockStackRepo: ReturnType<typeof createMockStackRepo>;
+
+    beforeEach(async () => {
+        tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "docktor-compose-check-"));
+        mockStackFs = createMockStackFs(path.join(tmpRoot, "stacks"));
+        mockStackRepo = createMockStackRepo();
+    });
+
+    afterEach(async () => {
+        vi.restoreAllMocks();
+        await fs.rm(tmpRoot, {recursive: true, force: true});
+    });
+
+    /** Only the ports assessTarget touches; every other dependency falls back to its production singleton. */
+    function buildService(): MigrationService {
+        return new MigrationService({
+            rewriter: createMockRewriter() as unknown as ComposeRewriterPort,
+            stackFs: mockStackFs as unknown as StackFilesystemPort,
+            stackRepo: mockStackRepo as unknown as StackRepository,
+            projects: createMockProjects() as unknown as ComposeProjectResolverPort,
+            selfStack: createMockSelfStack() as unknown as SelfStackPort,
+            ownMounts: createMockOwnMounts() as unknown as OwnMountsPort,
+            directories: hostViewDirectories(),
+            diskSpace: createMockDiskSpace() as unknown as DiskSpaceProbePort,
+        });
+    }
+
+    function request(composePath: string) {
+        return {
+            composePath,
+            displayName,
+            volumeSelections: [],
+            namedVolumeSelections: new Map<string, boolean>(),
+            backup: false,
+            stopOldStack: false,
+            acknowledgeAnonymousVolumes: false,
+        };
+    }
+
+    it("uses the given fakes and falls back to the production singletons for omitted dependencies", async () => {
+        const dir = path.join(tmpRoot, "app");
+        await fs.mkdir(dir, {recursive: true});
+        const composePath = path.join(dir, "docker-compose.yml");
+        await fs.writeFile(composePath, COMPOSE, "utf-8");
+
+        const preview = await buildService().previewMigration(request(composePath));
+
+        expect(mockStackRepo.exists).toHaveBeenCalledWith(slugify(displayName));
+        expect(preview.target.stackId).toBe(slugify(displayName));
+    });
+
+    it("refuses a missing compose file with a BadRequestError that keeps the ENOENT error as cause", async () => {
+        const composePath = path.join(tmpRoot, "gone", "docker-compose.yml");
+
+        const error = await buildService().previewMigration(request(composePath)).catch((err: unknown) => err);
+
+        expect(error).toBeInstanceOf(BadRequestError);
+        expect(error).toHaveProperty("message", expect.stringContaining(composePath));
+        expect(error).toHaveProperty("cause.code", "ENOENT");
+    });
+
+    describe.skipIf(process.platform === "win32")("a compose.yml that is a symlink", () => {
+        let composePath: string;
+        let realTarget: string;
+
+        beforeEach(async () => {
+            const dir = path.join(tmpRoot, "linked");
+            await fs.mkdir(dir, {recursive: true});
+            realTarget = path.join(dir, "passwd");
+            await fs.writeFile(realTarget, "root:x:0:0:root:/root:/bin/sh\n", "utf-8");
+            composePath = path.join(dir, "compose.yml");
+            await fs.symlink(realTarget, composePath);
+        });
+
+        it("is refused by the preview before its content is read, naming the real path", async () => {
+            const readFile = vi.spyOn(fs, "readFile");
+
+            const error = await buildService().previewMigration(request(composePath)).catch((err: unknown) => err);
+
+            expect(error).toBeInstanceOf(BadRequestError);
+            expect(error).toHaveProperty("message", expect.stringContaining(await fs.realpath(realTarget)));
+            expect(readFile).not.toHaveBeenCalled();
+        });
+
+        it("is refused by preflight with the same error", async () => {
+            const error = await buildService()
+                .preflight(request(composePath))
+                .catch((err: unknown) => err);
+
+            expect(error).toBeInstanceOf(BadRequestError);
+            expect(error).toHaveProperty("message", expect.stringContaining(await fs.realpath(realTarget)));
+        });
+
+        it("is accepted when the link points at a compose file", async () => {
+            const realCompose = path.join(tmpRoot, "linked", "docker-compose.yaml");
+            await fs.writeFile(realCompose, COMPOSE, "utf-8");
+            await fs.rm(composePath);
+            await fs.symlink(realCompose, composePath);
+
+            const preview = await buildService().previewMigration(request(composePath));
+
+            expect(preview.target.stackId).toBe(slugify(displayName));
+        });
     });
 });

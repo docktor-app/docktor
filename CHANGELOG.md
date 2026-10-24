@@ -6,6 +6,26 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+Hardens the stack migration wizard: the old stack is proven stopped, data is copied faithfully, secrets stay masked, a backup exists before any data is touched, and a failed or interrupted migration puts the original stack back.
+
+### Changed
+
+- Compose and Docker commands run by Docktor now get only an allowlisted environment (PATH, HOME, USER, locale, TZ, TMPDIR, DOCKER_*, SSH_AUTH_SOCK and proxy variables), so a stack no longer sees variables set on Docktor's own container or Docktor's COMPOSE_* variables, and `${VAR}` in a stack resolves from the stack's own `.env` or the compose default ([#109](https://github.com/docktor-app/docktor/issues/109)).
+- The pre-migration backup is taken after the old stack's stop is verified and before any data is copied, covers the old directory plus the bind sources selected for copying, and a migration is refused up front when the receiving filesystem lacks the needed space plus a 10% margin ([#107](https://github.com/docktor-app/docktor/issues/107)).
+- The stack-edit review dialog masks secrets in compose diffs as well as in `.env` diffs, behind one "Show secrets" toggle that is off whenever the dialog opens ([#103](https://github.com/docktor-app/docktor/issues/103)).
+
+### Fixed
+
+- Migration stops the compose project Docker actually runs, proves that its containers are stopped before it creates or copies anything, and refuses with the project name and the containers still running otherwise ([#102](https://github.com/docktor-app/docktor/issues/102)).
+- Migration copies a named volume from the Docker volume the compose file really refers to, refuses a missing volume before any downtime, keeps external volumes in place by default, and requires an explicit acknowledgement before anonymous volumes start empty in the new stack ([#101](https://github.com/docktor-app/docktor/issues/101)).
+- Migration resolves `~` bind sources from the mounts of the old containers and copies and rewrites them consistently, or refuses them with an explanation ([#104](https://github.com/docktor-app/docktor/issues/104)).
+- A failed migration is rolled back from a ledger of what it did: the new stack is taken down without deleting any volume, the original directory is renamed back only into a free path, only the services that were running are restarted, and the result says "restored" only after they were seen running, otherwise it ends as failed with the reason ([#100](https://github.com/docktor-app/docktor/issues/100)).
+- When Docktor restarts in the middle of a migration it finds the migration journal on boot, rolls the migration back the same way, restarts the original stack and shows the operation as rolled back or failed under the same operation id ([#100](https://github.com/docktor-app/docktor/issues/100)).
+- Migration progress toasts always end as done, failed, rolled back or lost track, whether the page is reloaded, the connection drops or the user leaves the page, and every live-update event is validated before the page uses it ([#105](https://github.com/docktor-app/docktor/issues/105)).
+- Secrets in compose diffs, `.env` previews and migration error messages (key=value pairs, map and list forms, URL credentials) stay masked until "Show secrets" is chosen ([#103](https://github.com/docktor-app/docktor/issues/103)).
+- Errors keep their cause, failures during rollback and cleanup are logged and listed instead of swallowed, and migration request paths and symlinked compose files are validated ([#108](https://github.com/docktor-app/docktor/issues/108)).
+- A Linux CI job running as root verifies that a migration copy keeps ownership, permissions, timestamps and symlinks, and fails instead of skipping when it does not run as root ([#109](https://github.com/docktor-app/docktor/issues/109)).
+
 ## [0.1.1] - 2026-10-21
 
 Bug fixes and interface polish after the first release, with no new product features beyond the items listed under Added.

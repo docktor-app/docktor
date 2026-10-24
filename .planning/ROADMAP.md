@@ -2,14 +2,15 @@
 
 ## Overview
 
-Docktor v0.1.0 (the first public release, Phases 1-16) is shipped. This roadmap covers **v0.1.1 (Release Follow-ups)**, a small patch release on the single branch `release/v0.1.1`: fix the bugs found right after launch and polish the interface. No new product features. Phase numbering continues from the previous milestone, so v0.1.1 starts at Phase 17.
+Docktor v0.1.0 (Phases 1-16) and v0.1.1 (Phases 17-21) are shipped. This roadmap covers **v0.2.0 (Migration Hardening, Proxy & Access)**: make the brownfield migration flow trustworthy, widen the reverse-proxy options, and replace the single-user model with real access control. Phase numbering continues from the previous milestone, so v0.2.0 starts at Phase 22.
 
-The 22 v0.1.1 requirements (BKP, MIG, STK, DASH, UI, A11Y, REL) fall into five delivery boundaries, run in order on one branch: server-side correctness fixes first (backup repository, port warnings), then the import and migration flow, then the sidebar redesign (sidebar sections, Templates page and version block are designed together), then the cross-cutting visual polish that should land on the finished navigation, and finally the release gate. Product scope lives in GitHub Issues (`docktor-app/docktor`); each requirement in REQUIREMENTS.md cites its source issue.
+The 31 v0.2.0 requirements (MIG, PRX, RBAC, USR, AUD, RST, OIDC) form three largely independent streams. Migration hardening (Phase 22) fixes data-loss paths in already-shipped code, so it goes first. The proxy work (Phase 23) is independent of both migration and auth and runs before the access phases so the new route inventory covers every route it adds. The access retrofit then runs in a strict order because the Docker socket makes any mutation host-root: the better-auth upgrade and permission foundation first, dark-launched while every user is still an owner (Phase 24); the audit log and per-role stream authorization next (Phase 25), which must land before any non-owner user exists; password reset and user administration after that (Phase 26), because session revocation and non-owner roles both depend on the hardened streams; OIDC last (Phase 27), because it provisions into roles, invited users and the audit log. Granularity is coarse: research proposed nine phases, merged here into six without crossing any of those ordering constraints. Product scope lives in GitHub Issues (`docktor-app/docktor`); each requirement in REQUIREMENTS.md cites its source issue.
 
 ## Milestones
 
 - ✅ **v0.1.0 First Release** - Phases 1-16 (shipped; archived)
-- 🚧 **v0.1.1 Release Follow-ups** - Phases 17-21 (in progress)
+- ✅ **v0.1.1 Release Follow-ups** - Phases 17-21 (shipped 2026-10-21; archived)
+- 🚧 **v0.2.0 Migration Hardening, Proxy & Access** - Phases 22-27 (in progress)
 
 ## Phases
 
@@ -31,228 +32,169 @@ Deferred past v0.1.0 and still tracked in GitHub Issues: public demo instance (#
 
 </details>
 
-### 🚧 v0.1.1 Release Follow-ups (In Progress)
+<details>
+<summary>✅ v0.1.1 Release Follow-ups (Phases 17-21) - SHIPPED 2026-10-21</summary>
 
-**Milestone Goal:** A small patch release that fixes the bugs found right after v0.1.0 and polishes the interface, with no new product features.
+Full roadmap archived at `.planning/milestones/v0.1.1-ROADMAP.md`; requirements at `.planning/milestones/v0.1.1-REQUIREMENTS.md`; phase directories (plans, summaries, verification, UAT) at `.planning/milestones/v0.1.1-phases/`; the v0.1.1 project memory (decisions, blockers, metrics) at `.planning/milestones/v0.1.1-STATE.md`.
+
+What shipped, by phase:
+
+- Phase 17: backups use the configured SFTP/S3 repository; deploy-time port warnings stop flagging a stack's own ports
+- Phase 18: import and migration flow (Docktor's own stack hidden from import, real line diff, explicit backup and stop-old-stack choices, in-place migration, background migration operations with live progress)
+- Phase 19: labelled sidebar sections, standalone Templates page, running version and project links above the account menu
+- Phase 20: one status casing, monospace KPIs, shared form and table look, honest backup-coverage card, 44px mobile touch targets
+- Phase 21: release gate (versions at 0.1.1, changelog, CI green on `release/v0.1.1`)
+
+</details>
+
+### 🚧 v0.2.0 Migration Hardening, Proxy & Access (In Progress)
+
+**Milestone Goal:** Make the brownfield migration flow trustworthy, widen reverse-proxy options, and replace the single-user model with real access control.
 
 **Phase Numbering:**
 
-- Integer phases (17, 18, 19): Planned milestone work
-- Decimal phases (17.1, 17.2): Urgent insertions (marked with INSERTED)
+- Integer phases (22, 23, 24): Planned milestone work
+- Decimal phases (22.1, 22.2): Urgent insertions (marked with INSERTED)
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [x] **Phase 17: Backup Repository and Port-Check Fixes** - Backups use the configured SFTP/S3 repository, and deploy-time port warnings stop flagging a stack's own ports (completed 2026-10-14)
-- [x] **Phase 18: Import and Migration Flow** - Docktor's own stack is not offered for import, and the migration dialog shows a real diff with explicit backup and stop-old-stack choices (completed 2026-10-18)
-- [x] **Phase 19: Sidebar, Templates and Version Block** - Labelled sidebar sections, a standalone Templates page, and the running version plus project links above the account menu (completed 2026-10-18)
-- [x] **Phase 20: Visual Consistency, Dashboard Clarity and Touch Targets** - One status casing, monospace KPIs, scrollbar-free tabs, shared form spacing and table look, an honest "Backups Configured" card, and 44px mobile touch targets (completed 2026-10-21)
-- [x] **Phase 21: Release v0.1.1** - Versions bumped to 0.1.1, changelog updated, CI green on `release/v0.1.1` (completed 2026-10-21)
+- [ ] **Phase 22: Migration Hardening** - The old stack is verifiably stopped, every volume is copied faithfully, secrets stay masked, a backup exists before any data is changed, and a failed migration puts the original stack back without losing data
+- [ ] **Phase 23: Proxy Modes and WebSocket Support** - Users can run their own reverse proxy (Traefik labels and Caddy/NPM/nginx snippets) and mark individual proxied domains as long-lived-connection (WebSocket) domains
+- [ ] **Phase 24: better-auth Upgrade and Access Control Foundation** - Every API route enforces a documented four-role permission matrix through one guard, existing instances upgrade with their oldest user as owner, and the UI only offers actions the role may perform (dark launch)
+- [ ] **Phase 25: Audit Log and Live-Stream Authorization** - Mutations, auth events and access denials land in an append-only log owners and admins can filter, and live streams are authorized per role and cut off on session revoke or role change
+- [ ] **Phase 26: Password Reset and User Administration** - Users recover their own accounts by email, and owners and admins create, edit, disable and assign roles to users without ever locking out the last owner
+- [ ] **Phase 27: OIDC Sign-in** - An owner connects an OpenID Connect provider for sign-in alongside email and password, with no implicit account creation or linking
 
 ## Phase Details
 
-### Phase 17: Backup Repository and Port-Check Fixes
+### Phase 22: Migration Hardening
 
-**Goal**: Backups go where the user configured them to go, and deploy-time port warnings are accurate: no false alarm about a stack's own ports, no missed real conflicts
-**Depends on**: Nothing (first phase of v0.1.1)
-**Requirements**: BKP-01, BKP-02, BKP-03, STK-01, STK-02
+**Goal**: Users can migrate an existing stack knowing the old stack is truly stopped, every volume is copied faithfully, secrets stay masked, a backup exists before any data is changed, and a failure puts the original stack back without losing data
+**Depends on**: Nothing (first phase of v0.2.0)
+**Requirements**: MIG-05, MIG-06, MIG-07, MIG-08, MIG-09, MIG-10, MIG-11, MIG-12, MIG-13
 **Success Criteria** (what must be TRUE):
 
-  1. With an SFTP or S3 repository configured in Settings, a manual backup, a restore and the snapshot listing for a stack all operate against that configured remote repository instead of the stack-local path
-  2. With a `local` repository, backup, restore and snapshot listing behave exactly as before, and snapshots created before this release are still listed and restorable
-  3. The SFTP and S3 branches of repository environment construction are covered by unit tests, written before the fix, that fail if either branch builds the wrong repository location or credentials
-  4. Deploying or redeploying a stack that publishes a host port shows no port warning when the only holder of that port is the stack's own container
-  5. Deploying a stack whose host port is held by a different stack or an external process still shows the warning and names the holder
+  1. Migrating a stack that was started under a different compose project (`docker compose -p`, `COMPOSE_PROJECT_NAME`, another directory name) stops the real old containers and confirms they are stopped before any data is copied; if the stop cannot be verified, the migration refuses and says why instead of copying live data
+  2. A stack with named volumes has the volume its compose file actually refers to copied (never an empty one auto-created in its place), anonymous volumes are flagged to the user instead of silently starting empty, and `~` bind sources are analysed, rewritten and copied to the right location
+  3. When a migration step fails, or Docktor restarts in the middle of a migration, the original stack is restored and running again, no volume is deleted by the rollback, and the result shown to the user states only outcomes that were verified (for example "restart requested" until the containers are seen running)
+  4. With backup chosen, the pre-migration backup is taken after the old stack is verifiably stopped and before any data copy or destructive step, so no data is changed before a backup exists; free disk space is checked on the filesystem that will receive the data, and a shortfall blocks the migration before any downtime; the review diff shows secret values (map and list env forms, URL credentials) masked behind one reveal toggle
+  5. The migration progress toast always ends in a terminal state (done, failed or rolled back), including after a reload, reconnect or leaving the page; compose commands run by Docktor never see Docktor's own secrets or `COMPOSE_*` variables; migration request paths that escape the permitted directories are refused with a validation error; and a Linux CI job proves the data copy preserves ownership and modes
 
-**Plans:** 3/3 plans complete
+**Plans**: 8/8 plans executed
+- [x] 22-01-PLAN.md
+- [x] 22-02-PLAN.md
+- [x] 22-03-PLAN.md
+- [x] 22-04-PLAN.md
+- [x] 22-05-PLAN.md
+- [x] 22-06-PLAN.md
+- [x] 22-07-PLAN.md
+- [x] 22-08-PLAN.md
 
-Plans:
-**Wave 1**
-- [x] 17-01-PLAN.md — Backup, restore and snapshot listing resolve the configured repository (per-stack S3/SFTP sub-repo, local unchanged, hard-fail on incomplete remote config) (wave 1)
-- [x] 17-02-PLAN.md — Port check ignores the stack's own published sockets, real conflicts still name the holder (wave 1)
+Notes: source issues [#100](https://github.com/docktor-app/docktor/issues/100), [#101](https://github.com/docktor-app/docktor/issues/101), [#102](https://github.com/docktor-app/docktor/issues/102), [#103](https://github.com/docktor-app/docktor/issues/103), [#104](https://github.com/docktor-app/docktor/issues/104), [#105](https://github.com/docktor-app/docktor/issues/105), [#107](https://github.com/docktor-app/docktor/issues/107), [#108](https://github.com/docktor-app/docktor/issues/108), [#109](https://github.com/docktor-app/docktor/issues/109). Largest phase of the milestone (9 requirements); natural plan seam for plan-phase: correctness first (error `cause` hygiene, shared compose-project resolver, verified stop, named-volume and `~` handling), then rollback and UX (rollback ledger with journal and startup recovery, backup after the verified stop with disk check, shared `maskSecrets`, operation store with shared event schemas, compose env allowlist and Linux root CI job). The shared event schemas and `maskSecrets` are reused by Phases 24-25, and the `AppError` cause change must land before the auth work adds error subclasses. Rollback must never run `down -v` (the only existing `down` deletes volumes). Decide in discuss-phase for #107: warm pre-stop copy versus honest "crash-consistent at best" wording. Real-Docker and ownership tests run in GitHub Actions, not on the VPS; any live `docker compose` test must use a collision-proof random project name.
 
-**Wave 2** *(blocked on Wave 1 completion)*
-- [x] 17-03-PLAN.md — SFTP authentication: per-run 0600 key file via sftp.command, accept-new host pinning, openssh-client in the image (wave 2, after 17-01)
+### Phase 23: Proxy Modes and WebSocket Support
 
-Notes: server-side work (backup service and repository environment construction, port-conflict check). Source issues [#68](https://github.com/docktor-app/docktor/issues/68) and [#76](https://github.com/docktor-app/docktor/issues/76). Server unit tests mock repository, filesystem and Docker; integration tests run in CI, not locally. The docs site (`docktor-app/docks`) currently labels SFTP/S3 settings "not used in v0.1.0"; correcting it is outside this repo and should follow this phase.
-
-### Phase 18: Import and Migration Flow
-
-**Goal**: Users can import existing stacks without being offered Docktor's own stack, and can migrate one with a readable diff, an explicit choice about the pre-migration backup, and control over whether the old stack keeps running
-**Depends on**: Phase 17 (sequencing on the single branch only; no code dependency)
-**Requirements**: STK-03, MIG-01, MIG-02, MIG-03, MIG-04
+**Goal**: Users can run their own reverse proxy instead of the managed one, and can mark individual proxied domains as needing long-lived (WebSocket) connections
+**Depends on**: Nothing (independent of the migration work; runs before the access phases so their route inventory covers every route added here)
+**Requirements**: PRX-01, PRX-02, PRX-03, PRX-04, PRX-05
 **Success Criteria** (what must be TRUE):
 
-  1. The "Import existing stack" scan results never include Docktor's own stack, while every other discovered stack is still offered
-  2. The migration dialog opens larger than before, and its diff and steps are readable at desktop and phone widths without clipped content
-  3. The migration shows a real line diff of the compose changes (added and removed lines individually marked), rendered with the shared code editor component
-  4. The pre-migration backup is its own explicit step the user can opt out of: opting out creates no backup, opting in creates one whether or not the compose file is renamed
-  5. The user can choose to stop (undeploy) the old stack as part of the migration, so the new draft stack does not run alongside it; if they decline, the old stack is left running
+  1. On a proxied domain the user can switch "WebSocket support" on or off; it defaults to off, survives a reload and a redeploy, and is shown on the stack's Proxy tab
+  2. A long-lived connection through a domain with WebSocket support on stays open past the proxy's default idle timeout and takes effect without hand-editing a compose file, while a domain with it off keeps the default behaviour
+  3. In Settings the user can choose the proxy mode (managed or external); switching is blocked, with an explanation, while any proxy domains exist
+  4. In external mode, configuring a domain on a service writes Traefik labels (a unique router name per stack and service) into that service's compose file, and the Proxy tab shows copyable Caddy, Nginx Proxy Manager and plain nginx snippets for the same domain
+  5. In external mode Docktor deploys no proxy stack and does no certificate management, and the certificates view shows those domains as "managed externally"
 
-**Plans:** 26/26 plans complete (5 gap-closure plans pending, round 3)
-
-Plans:
-**Wave 1**
-- [x] 18-01-PLAN.md — Docktor's own stack excluded from the brownfield scan via its own container's compose labels and mounts (fail-open), scanner ignores pre-migration-backup (wave 1)
-- [x] 18-02-PLAN.md — Brownfield request bodies on shared Zod schemas (incl. compose-path rule), preview returns a real UnifiedDiff, positional diff retired (wave 1)
-
-**Wave 2** *(blocked on Wave 1 completion)*
-- [x] 18-03-PLAN.md — Migrate honours required backup/stopOldStack: compose stop before copy via a new port, backup kept in pre-migration-backup/, non-destructive rollback with compose start (wave 2, after 18-01 and 18-02)
-- [x] 18-04-PLAN.md — Wider dialog with pinned header/footer, review step renders UnifiedDiffView with counters, masked read-only .env CodeEditor via shared env-mask helper (wave 2, after 18-02)
-
-**Wave 3** *(blocked on Wave 2 completion)*
-- [x] 18-05-PLAN.md — Four-step dialog: backup and old-stack steps with summary, flags sent through typed API clients, step indicator/focus/stale-preview guard, toasts, Playwright flow incl. 360px (wave 3, after 18-03 and 18-04)
-
-**Gap closure** *(from 18-VERIFICATION.md: CR-01, CR-02, plus recommended WR-09 and WR-03; from 18-UAT.md round 1: G-18-2, G-18-3-scan, G-18-4, G-18-7, G-18-job)*
-
-*Gap wave 1*
-- [x] 18-06-PLAN.md — Failed bind-mount copy rolls back (ENOENT-only empty source), exclusive target mkdir, recordCreated-scoped record delete, migrate split into side-effect-free preflight (typed 400/409 refusals) and execute (CR-01, CR-02; in-flight 409 and client row state moved to 18-14/18-17)
-- [x] 18-08-PLAN.md — Non-lossy compose rewrite: node-range splices keep untouched lines byte-identical (comments, indentation, quoting, CRLF), env values become ${KEY} in place (G-18-4)
-- [x] 18-09-PLAN.md — Shared scan contract in @docktor/shared; scan returns per-root skip reasons and relative bind mounts (G-18-3-scan, G-18-4)
-
-*Gap wave 2*
-- [x] 18-07-PLAN.md — Adopt and migrate refuse Docktor's own compose file via one shared fail-open lookup; setup migrate and preview require an existing admin (WR-09, WR-03; after 18-06, 18-09)
-- [x] 18-10-PLAN.md — Migration dialog offers relative bind mounts (default ./volumes/<name>, per-mount keep with warning), counts and sends them, collision-free targets (G-18-4; after 18-09)
-
-*Gap wave 3*
-- [x] 18-11-PLAN.md — Scan marks already-managed stacks; adopt and migrate of a managed compose path answer 409 (G-18-2; after 18-07, 18-09, 18-10)
-
-*Gap wave 4*
-- [x] 18-12-PLAN.md — In-place migration: rename original aside (editable name), build in place, forced stop, full rollback; preview returns the target (G-18-7; after 18-11)
-- [x] 18-13-PLAN.md — Scan list shows skipped roots with reasons and the /host hint; already-managed rows disabled with indicator and link (G-18-3-scan, G-18-2; after 18-09, 18-10, 18-11)
-
-*Gap wave 5*
-- [x] 18-14-PLAN.md — Migration as a background operation: 202 with operation id, in-flight 409 by slug and compose path, operation status and list endpoints in both route families (G-18-job; after 18-07, 18-12)
-- [x] 18-15-PLAN.md — Dialog adapts to in-place vs new directory: aside-name step, forced stop, backup default off with original-path note (G-18-7; after 18-10, 18-12, 18-13)
-
-*Gap wave 6*
-- [x] 18-16-PLAN.md — Migration steps streamed as migration_progress over the existing SSE/StateBroadcaster channel (G-18-job; after 18-14)
-- [x] 18-17-PLAN.md — Client follows operations: progress toast, disabled in-flight rows, resync after reload/reconnect (G-18-job; after 18-13, 18-14, 18-15)
-
-**Gap closure round 2** *(from the re-verification 18-VERIFICATION.md gaps 1-3 = 18-REVIEW.md CR-03, CR-01, CR-02, with WR-01 and WR-09 folded in; WR-02 deferred as a human security decision)*
-
-*Gap wave 1*
-- [x] 18-18-PLAN.md — Faithful copies: bind-mount data and the opt-in backup keep ownership, modes, timestamps and symlinks via `cp -a`, merge into an existing stack directory, reject on failure (CR-01)
-- [x] 18-19-PLAN.md — Bind-mount sources resolved through Docktor's own mounts (containerVisiblePaths), invisible sources refused before any side effect, vanished sources roll back, preview lists sources that start empty; all request paths validated in preflight (CR-03, WR-01)
-
-*Gap wave 2*
-- [x] 18-20-PLAN.md — .env extraction keeps each service's value: per-value names (SERVICE_KEY), never a name Docktor's environment, COMPOSE_/DOCKER_, compose references or the old .env would change; only valid names and dotenv-safe values move (CR-02, WR-09; after 18-19)
-- [x] 18-21-PLAN.md — Review step names every selected source that starts empty in the new stack (CR-03 client half; after 18-19)
-
-**Gap closure round 3** *(from the 18-UAT.md re-test: G-18-22-inplace (with review WR-10), G-18-22-status, G-18-22-card, G-18-23-stop-ui)*
-
-*Gap wave 1*
-- [x] 18-22-PLAN.md — Canonical directory identity (fs.realpath plus Docktor's own bind mounts): a stacks-folder stack scanned through /host migrates in place through the writable path; managed rows and adopt/migrate refusals recognise /host and symlink spellings (G-18-22-inplace, WR-10)
-- [x] 18-23-PLAN.md — Docker event stream decoded line by line and handled one compose project at a time in order (reconcile included); kill no longer subscribed, so a stop shows as exited/STOPPED without a reload (G-18-23-stop-ui)
-- [x] 18-24-PLAN.md — Discovered-stacks card and setup wizard wrapper widened to max-w-6xl, long directories wrap; phone layout unchanged (G-18-22-card)
-
-*Gap wave 2* *(blocked on Gap wave 1 completion)*
-- [x] 18-25-PLAN.md — Containers belong to a stack by compose project and compose directory identity in events, reconcile and post-deploy catch-up (G-18-22-status; after 18-22, 18-23)
-- [x] 18-26-PLAN.md — Migration refused when the old stack keeps running under the new stack's compose project name (directory, name: or COMPOSE_PROJECT_NAME); step 4 requires the stop and says why (G-18-22-status user decision; after 18-22, 18-24)
-
+**Plans**: TBD
 **UI hint**: yes
 
-Notes: STK-03 sits here rather than in Phase 17 because it is the same "Import existing stack" surface (`brownfield-import.tsx`, `BrownfieldScanner`) that launches the migration wizard. Source issues [#13](https://github.com/docktor-app/docktor/issues/13) and [#72](https://github.com/docktor-app/docktor/issues/72). `UnifiedDiffView` and `CodeEditor` already exist in `components/common/`; reuse them, do not add a second diff renderer.
+Notes: source issues [#44](https://github.com/docktor-app/docktor/issues/44) and [#86](https://github.com/docktor-app/docktor/issues/86); the ProxyProvider abstraction ([#43](https://github.com/docktor-app/docktor/issues/43)) is deferred. Research flag, spike before building: nginx-proxy already forwards `Upgrade` headers for every vhost, so the WebSocket field means "long-lived connections" (timeouts only, never `proxy_set_header`), default off; verify the `vhost.d` reload behaviour, acme-companion collisions and the 60 s idle drop. Suggested order: #86 first, extracting the pure applier seam from `ProxyService` so nginx env and Traefik labels share it, then #44. External mode needs a shared compose collection editor (map and list forms), `certSource=external`, a poller skip, and golden-file tests for the Traefik label output. Real-Docker tests run in GitHub Actions, not on the VPS.
 
-### Phase 19: Sidebar, Templates and Version Block
+### Phase 24: better-auth Upgrade and Access Control Foundation
 
-**Goal**: Navigation is organised into labelled sections, Templates is a first-class destination, and the running version and project links sit above the account menu, all designed together as one sidebar
-**Depends on**: Phase 18 (sequencing on the single branch only; no code dependency)
-**Requirements**: UI-01, UI-06, UI-07
+**Goal**: Every API route enforces a documented four-role permission matrix through one server guard, existing instances upgrade with their oldest user as owner and nothing changes for them, and the UI only offers actions the signed-in role may perform, all dark-launched while every existing user is still an owner
+**Depends on**: Phase 22, Phase 23 (every route they add must be covered by the guard)
+**Requirements**: OIDC-05, RBAC-01, RBAC-02, RBAC-03, RBAC-05
 **Success Criteria** (what must be TRUE):
 
-  1. Sidebar entries appear under labelled section headings, and on nested routes (for example a stack detail page) the parent entry keeps its active highlight
-  2. A Templates entry in the sidebar opens a standalone catalog page, and "Use template" there starts the existing create-stack flow with that template
-  3. Above the account menu the sidebar shows the running version, read from the build rather than hard-coded, together with working GitHub and docs links
-  4. The version block and links stay usable when the sidebar is collapsed to icons and inside the mobile sidebar sheet
+  1. Docktor runs on better-auth 1.7.x and the existing auth test suite (sign-up, login, session persistence, 2FA, the mandatory-2FA gate) passes
+  2. An existing v0.1.1 instance upgrades with no manual steps: on first boot the oldest user becomes owner, every existing user signs in as before, and a boot-time check guarantees an owner exists
+  3. The four roles (owner, admin, operator, viewer) and their permission matrix are documented once in `@docktor/shared` and used by both server and client, and a role-by-route test shows each role gets exactly the allowed responses and a 403 elsewhere for every API route
+  4. Registering an API route without a declared required permission makes the server refuse to boot
+  5. Signed in as each role (test fixtures; the Users page arrives in Phase 26), the UI hides the actions that role cannot perform, for example a viewer sees no deploy, edit or delete controls
 
-**Plans:** 3/3 plans complete
-
-Plans:
-**Wave 1**
-- [x] 19-01-PLAN.md — Labelled Platform/System sections from a pure nav model with segment-aware highlight, icon rail with tooltips and logo/mark swap, mobile sheet closes on internal nav (UI-06, #93)
-
-**Wave 2** *(blocked on Wave 1 completion)*
-- [x] 19-02-PLAN.md — Templates catalog at /templates beside /stacks/create/templates, path-derived header, zero-templates empty state, page under 80 lines, sidebar journey e2e (UI-07, #94; after 19-01)
-- [x] 19-03-PLAN.md — Build-time version from client/package.json plus GitHub and getdocktor.dev links above the account menu, collapsed Info dropdown, 44px mobile targets (UI-01, #88; after 19-01)
-
+**Plans**: TBD
 **UI hint**: yes
 
-Notes: the three requirements share one component tree (`app-sidebar.tsx`, `nav-user.tsx`) and one set of layout constraints (collapsed, mobile, active-route matching), so they are planned and verified as a unit. `components/ui/sidebar.tsx` is shadcn-managed and is not edited. Source issues [#88](https://github.com/docktor-app/docktor/issues/88), [#93](https://github.com/docktor-app/docktor/issues/93), [#94](https://github.com/docktor-app/docktor/issues/94) (bundle [#96](https://github.com/docktor-app/docktor/issues/96)).
+Notes: OIDC-05 lives here, not in Phase 27, because the upgrade is a prerequisite for the whole access stream and must be its own first step (watch `freshAge` now counting from `createdAt`, the `enableTwoFactor` return-type change and the rewritten generic OAuth API). Source issues [#87](https://github.com/docktor-app/docktor/issues/87) and [#64](https://github.com/docktor-app/docktor/issues/64). Structure: one root `onRequest` access guard with a boot-time `onRoute` check replacing the per-plugin `requireAuth` hooks; role migration with oldest-user backfill plus a boot `ensureOwnerInvariant` (the column default must not be owner; check against the migration rule in `server/CLAUDE.md`); a `can(user, action, {stackId?})` seam for later per-stack scoping, with roles global for now. Ratify the open product decisions before planning (viewer: no logs, masked compose, no env; operator: may trigger backups, not restore; roles are global, no per-stack table). Research spike: better-auth `admin` plugin used for storage only, with its HTTP surface disabled via `disabledPaths` while Docktor's own `/api/users*` routes wrap `auth.api.*`.
 
-### Phase 20: Visual Consistency, Dashboard Clarity and Touch Targets
+### Phase 25: Audit Log and Live-Stream Authorization
 
-**Goal**: The interface reads as one consistent system: status labels, KPI typography, tabs, forms and tables follow shared rules, the dashboard's backup card is honest, and icon-only controls are comfortable to tap on a phone
-**Depends on**: Phase 19 (the new Templates page and sidebar must exist so the shared rules apply to them too), Phase 17 (the backup behaviour the dashboard card reports)
-**Requirements**: UI-02, UI-03, UI-04, UI-05, UI-08, UI-09, DASH-01, DASH-02, A11Y-01
+**Goal**: Every mutation, auth event and access denial is recorded in an append-only audit log that owners and admins can read, and live event streams are authorized per role and cut off when a session or role changes
+**Depends on**: Phase 24 (the guard, the matrix and a resolved actor identity)
+**Requirements**: AUD-01, AUD-02, RBAC-04
 **Success Criteria** (what must be TRUE):
 
-  1. The same status (for example running) reads with identical casing on the dashboard, stack list, stack header, services table and activity timeline, all driven by one shared mapping
-  2. Dashboard KPI numbers and the defined set of labels render in a self-hosted monospace font defined in the design tokens, with no request to an external font host
-  3. The "Backups Configured" card states exactly what it counts (or counts what its label says), and a stack that has a manual snapshot but no schedule is not silently invisible on the dashboard
-  4. Forms across the app share one label-to-input and field-to-button spacing, and every data table shares one restyled look that matches the shadcn blocks while keeping sorting, status pills and row actions
-  5. The stack tab bar shows no scrollbar at desktop and tablet widths and stays usable on narrow screens, and the stack actions trigger, theme toggle, certificate delete button and table pagination buttons have a 44px touch target below `md` and keep the compact size at `md` and up
-  6. On a stack's non-overview tab the stack-name breadcrumb links to the stack overview and the tab name is the current page
+  1. Deploying, editing or deleting a stack, changing settings, signing in and out, a failed sign-in and a denied (403) request each add an audit entry with actor, target and outcome, and no entry contains secrets such as compose or env content, passwords or tokens
+  2. Audit entries cannot be edited or deleted through the application
+  3. An owner or admin can open the audit log and filter it; operators and viewers cannot reach it
+  4. The live event and log streams deliver only what the signed-in role may see, and a stream is closed with a visible signed-out or role-changed state (not a silently dead page) when its session is revoked or its role changes
 
-**Plans:** 11/11 plans complete
-
-Plans:
-**Wave 1**
-- [x] 20-01-PLAN.md — One lowercase status vocabulary from lib/status-labels.ts (badges, timeline) and a shared StackBreadcrumb that links the stack name to the overview; UI-09 added to requirements (wave 1)
-- [x] 20-02-PLAN.md — Shared DataTable look and capabilities: TableFrame, SortableHead (uncontrolled + controlled sort), ExpandedRow, footer, required empty copy, card layout below md (wave 1)
-- [x] 20-03-PLAN.md — TOUCH_TARGET constant; 44px-below-md pagination buttons (named), stack actions trigger and theme toggle; wrapping pagination footer (wave 1)
-- [x] 20-04-PLAN.md — FormStack/FormActions primitives; login, signup, two-factor, create stack, health probe and setup-wizard forms adopt them (wave 1)
-- [x] 20-05-PLAN.md — Self-hosted Geist Mono via @fontsource-variable/geist-mono and the --font-mono token; mono deploy-warning values and sidebar version (wave 1)
-- [x] 20-06-PLAN.md — StackTabBar section: no vertical/horizontal scrollbar, swipe kept, active tab scrolled into view (wave 1)
-
-**Wave 2** *(blocked on Wave 1 completion)*
-- [x] 20-07-PLAN.md — hasBackup on GET /api/stacks (BackupRepository groupBy behind a StackService port) → Backup Coverage n/total card with hint; mono KPIs; refetch after a first backup (wave 2, after 20-01)
-- [x] 20-08-PLAN.md — Storage backups/stacks, backup history and snapshots on DataTable; env editor and brownfield import framed (wave 2, after 20-02/20-03)
-- [x] 20-09-PLAN.md — Certificates and notification log on DataTable (44px delete, ToneBadge pills, mono domain); certificate upload and dialog forms on FormStack/FormActions (wave 2, after 20-02/20-03/20-04)
-- [x] 20-10-PLAN.md — Services, proxy domains and incidents on DataTable with mono technical values and the lowercase upgrade-blocked label (wave 2, after 20-01/20-02/20-03)
-
-**Wave 3** *(blocked on Wave 2 completion)*
-- [x] 20-11-PLAN.md — Playwright proof (status casing, font origin, tab bar at 1280/768/375, table frame light/dark, 44px vs compact targets), phase-wide guards, isolated CTA relabels (wave 3)
-
+**Plans**: TBD
 **UI hint**: yes
 
-Notes: client-side polish (`components/common/`, `components/domain/`, route components); `components/ui/` is not edited, so touch-target sizing is applied at call sites and the `SidebarTrigger` stays out of scope. Every light-only color utility needs a `dark:` counterpart, and status/config pills keep rendering through `ToneBadge` and `StatusDot`. Settings cards are not migrated to react-hook-form here (separate refactoring target). Source issues [#71](https://github.com/docktor-app/docktor/issues/71), [#85](https://github.com/docktor-app/docktor/issues/85), [#89](https://github.com/docktor-app/docktor/issues/89), [#90](https://github.com/docktor-app/docktor/issues/90), [#91](https://github.com/docktor-app/docktor/issues/91), [#92](https://github.com/docktor-app/docktor/issues/92), [#95](https://github.com/docktor-app/docktor/issues/95).
+Notes: must land before any non-owner user exists (Phase 26). Audit: append-only `AuditLog` table without foreign keys, fed by a route-config audit hook, denial recording and better-auth `hooks.after` for auth events, with a retention pruner; metadata stores keys and identifiers, never values, reusing `maskSecrets` from Phase 22. Streams: a shared `sse-stream.ts` helper with heartbeat, periodic revalidation, a terminal `revoked` frame and per-event filtering through an `EVENT_PERMISSIONS` map built on the shared event schemas from Phase 22; hooks keep closing the `EventSource` on cleanup, and a 403 on the stream must end the migration toast with an error. Standard patterns.
 
-### Phase 21: Release v0.1.1
+### Phase 26: Password Reset and User Administration
 
-**Goal**: v0.1.1 is ready to tag: package versions say 0.1.1, the changelog records what changed, and CI is green on the release branch
-**Depends on**: Phase 17, Phase 18, Phase 19, Phase 20 (the release gate closes the milestone, so it runs after every other phase)
-**Requirements**: REL-01
+**Goal**: Users can recover their own accounts by email, and an owner or admin can create, edit, disable and assign roles to other users without ever being able to lock the instance out of its last owner
+**Depends on**: Phase 25 (session revocation and non-owner roles rely on the authorized, closable streams, and user-admin changes must be audited from the first day)
+**Requirements**: RST-01, RST-02, RST-03, USR-01, USR-02
 **Success Criteria** (what must be TRUE):
 
-  1. The root, `shared`, `server` and `client` package versions are all 0.1.1, and a build shows 0.1.1 in the sidebar version block from Phase 19
-  2. A changelog entry for 0.1.1 lists the fixes and polish shipped in this release, each tied to its GitHub issue
-  3. Every CI job is green on `release/v0.1.1`: build, typecheck and unit/integration/Playwright tests on Linux, unit tests on Windows and macOS, and the image build with its startup check
+  1. From the login page a user can request a password reset by email, and a known and an unknown address get the same neutral response
+  2. A reset link works exactly once and expires; completing a reset signs the user out of every session (open tabs lose their live streams), and a user with 2FA still has to pass 2FA to sign in afterwards
+  3. When SMTP is not configured the reset flow is unavailable and the login page says so, instead of offering a link whose email never arrives
+  4. An owner or admin can create or invite a user, edit them, disable them (a disabled user is signed out and cannot sign in) and assign their role from a Users page
+  5. The last owner cannot be demoted, disabled or deleted, from the UI or through concurrent API requests
 
-**Plans:** 2/2 plans complete
+**Plans**: TBD
+**UI hint**: yes
 
-Plans:
-**Wave 1**
-- [x] 21-01-PLAN.md — Root, shared, server and client at 0.1.1 with a guard test that the sidebar version equals the release version; CHANGELOG.md (Keep a Changelog, one issue link per 0.1.1 entry) and the changelog step in CONTRIBUTING's release procedure; docs/design.md and the bug report form describe v0.1.1 (wave 1)
+Notes: source issues [#79](https://github.com/docktor-app/docktor/issues/79) and [#64](https://github.com/docktor-app/docktor/issues/64). Password reset comes first inside the phase because the invite flow reuses the same mail and link mechanism. Reset hardening: mail sent in the background (no timing oracle), session revocation on reset, a strict rate limit that also covers `GET /reset-password/*`, links built from the configured base URL only, and a `/api/auth-options` endpoint so the login page can tell whether reset is available. User administration: a `UserAdminService` wrapping `auth.api.*`, a transactional last-owner invariant, notification recipients chosen by role, and the full role matrix exercised in CI.
 
-**Wave 2** *(blocked on Wave 1 completion)*
-- [x] 21-02-PLAN.md — Fast-forward push to release/v0.1.1, PR #99 description closing exactly the shipped issues, all five CI checks green on the release head incl. the Playwright sidebar version test; no tag (maintainer's call), release-day handoff (wave 2, after 21-01)
+### Phase 27: OIDC Sign-in
 
-Notes: the repository has no changelog file yet, so this phase creates one. Heavy verification (integration tests, full builds) runs in GitHub Actions, not locally.
+**Goal**: An owner can connect an OpenID Connect provider so people can sign in with it alongside email and password, with no path that silently creates or takes over an account
+**Depends on**: Phase 26 (invited users, roles, user administration and audit), Phase 24 (better-auth 1.7)
+**Requirements**: OIDC-01, OIDC-02, OIDC-03, OIDC-04
+**Success Criteria** (what must be TRUE):
+
+  1. The owner can set up an OIDC provider and see its status in Settings, including the redirect URI to register at the provider; other roles cannot view or change it
+  2. The login page offers sign-in with the configured provider next to email and password, and both methods work
+  3. An OIDC sign-in from an unknown identity creates no account and links to none by email match; an identity links only from an already authenticated account or to an invited user with a verified email, and otherwise the user sees a clear refusal
+  4. A user with no password credential who signs in through OIDC is not blocked by the mandatory-2FA gate, while users with a password credential are still held to it
+
+**Plans**: TBD
+**UI hint**: yes
+
+Notes: source issues [#61](https://github.com/docktor-app/docktor/issues/61) and [#87](https://github.com/docktor-app/docktor/issues/87). Use core `genericOAuth` (not the SSO plugin or SAML) with `disableImplicitLinking` and `disableImplicitSignUp`, never `trustedProviders`; `databaseHooks.user.create.before` blocks first-user creation and assigns the lowest role. Just-in-time user creation stays deferred (Future Requirements). Open decision to confirm in discuss-phase: research recommends env-driven provider config with a read-only status page for v0.2.0 and DB-backed config later, while OIDC-01 says "configure in Settings". Research spike: better-auth 1.7 `signIn.social` flow, `email_verified` behaviour per provider, and 2FA for OIDC sessions. A fake-IdP test runs in CI.
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 17 → 18 → 19 → 20 → 21
+Phases execute in numeric order: 22 → 23 → 24 → 25 → 26 → 27
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 17. Backup Repository and Port-Check Fixes | 3/3 | Complete    | 2026-10-14 |
-| 18. Import and Migration Flow | 26/26 | Complete    | 2026-10-18 |
-| 19. Sidebar, Templates and Version Block | 3/3 | Complete    | 2026-10-18 |
-| 20. Visual Consistency, Dashboard Clarity and Touch Targets | 11/11 | Complete    | 2026-10-21 |
-| 21. Release v0.1.1 | 2/2 | Complete    | 2026-10-21 |
+| 22. Migration Hardening | 8/8 | In Progress | - |
+| 23. Proxy Modes and WebSocket Support | 0/TBD | Not started | - |
+| 24. better-auth Upgrade and Access Control Foundation | 0/TBD | Not started | - |
+| 25. Audit Log and Live-Stream Authorization | 0/TBD | Not started | - |
+| 26. Password Reset and User Administration | 0/TBD | Not started | - |
+| 27. OIDC Sign-in | 0/TBD | Not started | - |
 
-Phases 1-16 (v0.1.0) are complete and archived; see `.planning/milestones/v0.1.0-ROADMAP.md`.
+Phases 1-16 (v0.1.0) and Phases 17-21 (v0.1.1) are complete and archived; see `.planning/milestones/v0.1.0-ROADMAP.md` and `.planning/milestones/v0.1.1-ROADMAP.md`.
 
 ## Backlog
 

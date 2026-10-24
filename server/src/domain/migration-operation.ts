@@ -1,4 +1,9 @@
-import type {MigrationOperation, MigrationOperationResult, MigrationOperationStep} from "@docktor/shared";
+import type {
+    MigrationOperation,
+    MigrationOperationResult,
+    MigrationOperationStatus,
+    MigrationOperationStep,
+} from "@docktor/shared";
 
 /** What identifies a migration run; all of it is known once preflight passed. */
 export interface MigrationOperationStart {
@@ -41,6 +46,22 @@ export function recordMigrationStep(
     return {...operation, step, stepDetail: detail};
 }
 
+/**
+ * The status a result stands for: succeeded, rolled_back only when the report
+ * verified both the old stack (not stopped, or seen running again) and the
+ * original directory (untouched or moved back); anything else, including no
+ * report at all, is failed so the user is told to check by hand.
+ */
+export function migrationOperationStatusOf(result: MigrationOperationResult): MigrationOperationStatus {
+    if (result.success) {
+        return "succeeded";
+    }
+    const {rollback} = result;
+    const oldStackVerified = rollback?.oldStack === "not-stopped" || rollback?.oldStack === "restored-running";
+    const originalVerified = rollback?.original === "untouched" || rollback?.original === "restored";
+    return oldStackVerified && originalVerified ? "rolled_back" : "failed";
+}
+
 /** The terminal state of an operation; the status follows the migration result. */
 export function finishMigrationOperation(
     operation: MigrationOperation,
@@ -49,7 +70,7 @@ export function finishMigrationOperation(
 ): MigrationOperation {
     return {
         ...operation,
-        status: result.success ? "succeeded" : "failed",
+        status: migrationOperationStatusOf(result),
         step: "finished",
         stepDetail: null,
         finishedAt: finishedAt.toISOString(),
@@ -81,3 +102,4 @@ export function pruneFinishedOperations(
     );
     return sorted.filter((operation) => operation.status === "running" || finishedKept.has(operation));
 }
+

@@ -141,6 +141,7 @@ Apply patterns where they improve clarity — never for their own sake.
 - Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`
 - Never commit with failing tests or type errors
 - Feature work on `feature/*` branches; merge to `main` via PR
+- **Every GSD phase runs on its own feature branch** named `feature/phase-<N>-<slug>` (e.g. `feature/phase-22-migration-hardening`), created from `main` before the phase's discuss/plan/execute work starts; all of the phase's commits (including `.planning/` docs) go on that branch
 - PRs close their issue with `Closes #<n>`
 
 ---

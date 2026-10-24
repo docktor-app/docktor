@@ -35,6 +35,32 @@ vi.mock("../../../src/infrastructure/docker-self-stack.js", () => ({
     dockerSelfStack: {composeFilePaths: vi.fn(async () => [])},
 }));
 
+// The preview resolves the old compose project (#102); no Docker daemon is involved here, so the
+// project is the one predicted from the files and no container runs.
+vi.mock("../../../src/infrastructure/compose-project-resolver.js", () => ({
+    composeProjectResolver: {
+        resolve: vi.fn(async () => ({
+            kind: "resolved",
+            project: {name: "docktor-brownfield-routes", source: "files", containers: []},
+        })),
+        listContainers: vi.fn(async () => []),
+    },
+}));
+
+// The preview checks the Docker volumes it would copy (#101); no Docker daemon is involved here.
+vi.mock("../../../src/infrastructure/volume-migrator.js", () => ({
+    volumeMigrator: {volumeExists: vi.fn(async () => true)},
+}));
+
+// The preview assesses the free disk space (#107); the figures come from a fake, never from the host.
+vi.mock("../../../src/infrastructure/disk-space-probe.js", () => ({
+    diskSpaceProbe: {
+        filesystemOf: vi.fn(async () => ({filesystemId: "fs-fake", label: "/stacks", availableBytes: 1024 ** 4})),
+        measureDirectoryBytes: vi.fn(async () => 1_024),
+        measureVolumeBytes: vi.fn(async () => 1_024),
+    },
+}));
+
 import Fastify from "fastify";
 import {serializerCompiler, validatorCompiler, type ZodTypeProvider} from "fastify-type-provider-zod";
 import importRoutes from "../../../src/routes/imports.js";
@@ -199,6 +225,7 @@ describe("brownfield routes", () => {
                 namedVolumeSelections: {},
                 backup: true,
                 stopOldStack: true,
+                acknowledgeAnonymousVolumes: false,
             };
         }
 
@@ -230,6 +257,7 @@ describe("brownfield routes", () => {
             namedVolumeSelections: {},
             backup: true,
             stopOldStack: true,
+            acknowledgeAnonymousVolumes: false,
         });
 
         it.each([
@@ -314,6 +342,7 @@ describe("brownfield routes", () => {
                 namedVolumeSelections: {},
                 backup: true,
                 stopOldStack: false,
+                acknowledgeAnonymousVolumes: false,
                 ...overrides,
             };
         }
@@ -325,11 +354,16 @@ describe("brownfield routes", () => {
                 composePath,
                 originalDir: "/opt/app",
                 targetDir: "/data/stacks/my-app",
+                oldProject: {name: "app", source: "files", containers: []},
                 volumeSelections: [],
                 namedVolumeSelections: new Map(),
                 backup: true,
                 stopOldStack: false,
+                bindCopies: [],
+                homeSources: new Map(),
+                volumes: new Map(),
                 inPlace: null,
+                sharesProjectWithNewStack: false,
             };
         }
 
@@ -438,6 +472,7 @@ describe("brownfield routes", () => {
                     displayName: "My App",
                     volumeSelections: [],
                     namedVolumeSelections: {},
+                    acknowledgeAnonymousVolumes: false,
                     ...flags,
                 },
             });
@@ -469,6 +504,7 @@ describe("brownfield routes", () => {
                 namedVolumeSelections: {},
                 backup: true,
                 stopOldStack: false,
+                acknowledgeAnonymousVolumes: false,
             };
         }
 

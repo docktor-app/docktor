@@ -1,4 +1,4 @@
-import {useState} from "react";
+import {useMemo, useState} from "react";
 import {useNavigate} from "react-router";
 import {toast} from "sonner";
 import type {MigrationExecuteInput, MigrationOperation, MigrationPreviewInput} from "@docktor/shared";
@@ -17,7 +17,7 @@ import {ScanSkippedDirectories} from "@/components/domain/stack/scan-skipped-dir
 import {MigrationWizard, type ConfirmMigrateParams} from "@/routes/setup/components/migration-wizard";
 import {useMigrationOperations} from "@/hooks/use-migration-operations";
 import {directoryDisplayName} from "@/lib/path-display";
-import {MIGRATION_ERROR_FALLBACK, showMigrationToast} from "@/lib/migration-progress";
+import {MIGRATION_ERROR_FALLBACK} from "@/lib/migration-progress";
 import type {
   DiscoveredStack,
   MigrationPreview,
@@ -56,14 +56,13 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
   const [migratingStack, setMigratingStack] = useState<DiscoveredStack | null>(null);
   const [adoptedIds, setAdoptedIds] = useState<Set<string>>(new Set());
 
-  const {runningByComposePath, track} = useMigrationOperations(api.listMigrationOperations, {
-    onUpdate: (operation) => {
-      showMigrationToast(operation, navigate);
-      if (operation.status === "succeeded") {
-        setAdoptedIds((prev) => new Set([...prev, operation.composePath]));
-      }
-    },
-  });
+  // Toasts and the event stream belong to the layout-level MigrationToastTracker;
+  // this page only reads the shared store.
+  const {operations, runningByComposePath, track} = useMigrationOperations();
+  const migratedPaths = useMemo(
+    () => new Set(operations.filter((op) => op.status === "succeeded").map((op) => op.composePath)),
+    [operations],
+  );
 
   const handleScan = async () => {
     const dirs = directories
@@ -125,7 +124,7 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
   // mounted for the whole background migration) instead of inside
   // MigrationWizard, which closes/unmounts as soon as the user confirms.
   // G-18-job: the request answers 202 with an operation; its progress and
-  // outcome arrive as toasts through useMigrationOperations.
+  // outcome arrive as toasts owned by the MigrationToastTracker.
   const handleConfirmMigrate = ({
     stack,
     displayName,
@@ -133,6 +132,7 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
     namedVolumeSelections,
     backup,
     stopOldStack,
+    acknowledgeAnonymousVolumes,
     inPlaceAsideName,
   }: ConfirmMigrateParams) => {
     api
@@ -143,6 +143,7 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
         namedVolumeSelections,
         backup,
         stopOldStack,
+        acknowledgeAnonymousVolumes,
         ...(inPlaceAsideName !== null && {inPlaceAsideName}),
       })
       .then(track)
@@ -224,7 +225,7 @@ export function BrownfieldImport({api}: Readonly<BrownfieldImportProps>) {
                   </TableHeader>
                   <TableBody>
                     {stacks.map((stack) => {
-                      const isAdopted = adoptedIds.has(stack.path);
+                      const isAdopted = adoptedIds.has(stack.path) || migratedPaths.has(stack.path);
                       const isAdopting = adoptingId === stack.path;
 
                       return (

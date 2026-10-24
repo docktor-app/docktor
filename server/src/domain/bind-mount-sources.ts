@@ -1,4 +1,5 @@
 import path from "node:path";
+import type {ProjectContainer} from "./compose-project.js";
 import {containerPathsOfHostPath} from "./directory-identity.js";
 import {toComparablePath, type ContainerMount} from "./self-stack-paths.js";
 
@@ -27,8 +28,11 @@ export type BindSourceRefusal =
     | "not-visible"
     /** Docktor is containerized but could not determine its mounts. */
     | "mounts-unknown"
-    /** The source starts with `~`; it is never resolved. */
-    | "home-relative";
+    /**
+     * The source starts with `~` and was not resolved to a host directory
+     * ({@link resolveHomeRelativeSources}); it is never expanded against Docktor's own HOME.
+     */
+    | "home-unresolved";
 
 export type BindSourceLocation =
     | {readonly kind: "candidates"; readonly paths: readonly string[]}
@@ -114,9 +118,107 @@ export function locateBindSource(
     view: OwnMountsView,
 ): BindSourceLocation {
     if (isHomeRelative(declaredPath)) {
-        return {kind: "refused", reason: "home-relative"};
+        return {kind: "refused", reason: "home-unresolved"};
     }
     return isAbsoluteSource(declaredPath)
         ? locateAbsolute(declaredPath, composeDir, view)
         : locateRelative(resolveRelative(declaredPath, composeDir), composeDir, view);
+}
+
+/** What a `~` bind source of the old stack stands for on the host (#104). */
+export type HomeSourceResolution =
+    | {readonly kind: "resolved"; readonly hostPath: string}
+    | {
+          readonly kind: "unresolved";
+          /**
+           * `no-container`: no old container mounts it; `inconsistent`: the old containers disagree or
+           * the host directory does not match the declared path; `unsupported`: `~user`, `~+`, `~-`.
+           */
+          readonly reason: "no-container" | "inconsistent" | "unsupported";
+      };
+
+/** A bind mount as the compose file declares it: the source string, its service and its container path. */
+export interface DeclaredBindMount {
+    readonly path: string;
+    readonly serviceName: string;
+    readonly containerPath: string;
+}
+
+/** A POSIX path in normal form without a trailing separator (the root stays `/`). */
+function normalizedPosix(value: string): string {
+    const normalized = path.posix.normalize(value);
+    let end = normalized.length;
+    while (end > 1 && normalized[end - 1] === "/") {
+        end--;
+    }
+    return normalized.slice(0, end);
+}
+
+/** The part of `~/rest` after the home directory: "" for a bare `~`, null when the form is not supported. */
+function homeRemainder(declaredPath: string): string | null {
+    if (declaredPath === "~") {
+        return "";
+    }
+    if (!declaredPath.startsWith("~/")) {
+        return null;
+    }
+    const remainder = normalizedPosix(declaredPath.slice(2));
+    if (remainder === ".." || remainder.startsWith("../")) {
+        return null;
+    }
+    return remainder === "." ? "" : remainder;
+}
+
+/** The host directories the service's containers bind at `containerPath`. */
+function mountedSources(mount: DeclaredBindMount, containers: readonly ProjectContainer[]): string[] {
+    const destination = normalizedPosix(mount.containerPath);
+    return containers
+        .filter((container) => container.service === mount.serviceName)
+        .flatMap((container) => container.mounts)
+        .filter((candidate) => candidate.type === "bind" && normalizedPosix(candidate.destination) === destination)
+        .map((candidate) => normalizedPosix(candidate.source));
+}
+
+function endsWithRemainder(hostPath: string, remainder: string): boolean {
+    return path.posix.isAbsolute(hostPath) && (remainder === "" || hostPath.endsWith(`/${remainder}`));
+}
+
+function resolveOneHomeSource(
+    declaredPath: string,
+    mounts: readonly DeclaredBindMount[],
+    containers: readonly ProjectContainer[],
+): HomeSourceResolution {
+    const remainder = homeRemainder(declaredPath);
+    if (remainder === null) {
+        return {kind: "unresolved", reason: "unsupported"};
+    }
+    const sources = new Set(mounts.flatMap((mount) => mountedSources(mount, containers)));
+    if (sources.size === 0) {
+        return {kind: "unresolved", reason: "no-container"};
+    }
+    const [hostPath] = sources;
+    if (sources.size > 1 || !endsWithRemainder(hostPath, remainder)) {
+        return {kind: "unresolved", reason: "inconsistent"};
+    }
+    return {kind: "resolved", hostPath};
+}
+
+/**
+ * Resolves every `~` bind source of the compose file to the host directory the
+ * old containers really mount (#104): the shell that started the old stack
+ * expanded `~` to its own HOME, which Docktor cannot know and must never guess.
+ * Evidence is Docker's record of the bind mounts of the service's containers at
+ * the declared container path, and the recorded directory must end in what the
+ * declared path says after `~/`. Sources that do not start with `~` are not in
+ * the result. The same declared string from several services must agree.
+ */
+export function resolveHomeRelativeSources(
+    mounts: readonly DeclaredBindMount[],
+    containers: readonly ProjectContainer[],
+): ReadonlyMap<string, HomeSourceResolution> {
+    const byPath = new Map<string, DeclaredBindMount[]>();
+    for (const mount of mounts.filter((candidate) => isHomeRelative(candidate.path))) {
+        byPath.set(mount.path, [...(byPath.get(mount.path) ?? []), mount]);
+    }
+    return new Map([...byPath].map(([declaredPath, group]) => [declaredPath, resolveOneHomeSource(declaredPath, group, containers)]));
 }

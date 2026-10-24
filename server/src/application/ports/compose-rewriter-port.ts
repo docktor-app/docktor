@@ -1,4 +1,4 @@
-import type {RewriteResult, VolumeSelection} from "../../infrastructure/compose-rewriter.js";
+import type {RewriteOptions, RewriteResult, VolumeSelection} from "../../infrastructure/compose-rewriter.js";
 
 /**
  * Port for the brownfield-migration compose-rewriting dependency (D-07).
@@ -20,7 +20,9 @@ export interface ComposeRewriterPort {
          * else that would change how a variable resolves.
          */
         existingEnv?: string,
+        /** What the files cannot tell: the host directories behind `~` bind sources (#104). */
+        options?: RewriteOptions,
     ): RewriteResult;
 }
 
-export type {RewriteResult, VolumeSelection};
+export type {RewriteOptions, RewriteResult, VolumeSelection};

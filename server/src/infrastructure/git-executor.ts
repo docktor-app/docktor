@@ -20,10 +20,7 @@ const COMMON_CONFIG = ["-c", "protocol.ext.allow=never", "-c", "core.symlinks=fa
 
 export class GitCommandError extends AppError {
     constructor(subcommand: string, stderrFirstLine: string, cause?: unknown) {
-        super(`git ${subcommand} failed: ${stderrFirstLine}`);
-        if (cause !== undefined) {
-            this.cause = cause;
-        }
+        super(`git ${subcommand} failed: ${stderrFirstLine}`, 500, undefined, cause === undefined ? undefined : {cause});
     }
 }
 

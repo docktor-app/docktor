@@ -2,34 +2,88 @@ import {spawn} from "node:child_process";
 import type {Stats} from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import {AppError, hasErrorCode} from "../lib/errors.js";
+import {COMPOSE_VOLUME_NAME_PATTERN} from "@docktor/shared";
+import {dockerCliEnvironment} from "../lib/compose-env.js";
+import {AppError, BadRequestError, hasErrorCode} from "../lib/errors.js";
 import type {VolumeMigratorPort} from "../application/ports/volume-migrator-port.js";
+
+// A copy of a large volume legitimately takes hours, but never forever: a hung copy would hold the
+// in-flight keys and leave the old stack stopped. Past this bound the child is killed and the
+// migration fails into its rollback (WR-07).
+export const COPY_TIMEOUT_MS = 4 * 60 * 60 * 1000;
 
 /**
  * Runs `command` with an argument array (never through a shell) and resolves on exit 0.
- * A non-zero exit rejects with an AppError naming `purpose`, the exit code and stderr.
+ * A non-zero exit rejects with an AppError naming `purpose`, the exit code and stderr; a child
+ * that outlives `timeoutMs` is killed and rejects with a timeout error.
  */
-function runCommand(command: string, args: readonly string[], purpose: string): Promise<void> {
+export function runCommand(
+	command: string,
+	args: readonly string[],
+	purpose: string,
+	timeoutMs: number = COPY_TIMEOUT_MS,
+): Promise<void> {
 	return new Promise((resolve, reject) => {
-		const proc = spawn(command, args);
+		const proc = spawn(command, args, {timeout: timeoutMs});
 
 		let stderr = "";
 		proc.stderr.on("data", (chunk: Buffer) => {
 			stderr += chunk.toString();
 		});
 
-		proc.on("close", (code) => {
+		proc.on("close", (code, signal) => {
 			if (code === 0) {
 				resolve();
+			} else if (signal !== null) {
+				reject(new AppError(`${purpose} was stopped after ${Math.round(timeoutMs / 1000)} s (${signal}): ${stderr.trim()}`));
 			} else {
 				reject(new AppError(`${purpose} failed (exit ${code}): ${stderr.trim()}`));
 			}
 		});
 
 		proc.on("error", (err) => {
-			reject(new AppError(`Failed to spawn ${command}: ${err.message}`));
+			reject(new AppError(`Failed to spawn ${command}: ${err.message}`, 500, undefined, {cause: err}));
 		});
 	});
+}
+
+/** Runs `docker` with `args` and resolves with its output; a non-zero exit rejects with an AppError naming `purpose`. */
+export type VolumeDockerRunner = (args: readonly string[], purpose: string) => Promise<{stdout: string; stderr: string}>;
+
+/** The production {@link VolumeDockerRunner}: an argument array, never a shell, and only the allowlisted environment (#109). */
+export const defaultVolumeDockerRunner: VolumeDockerRunner = (args, purpose) =>
+	new Promise((resolve, reject) => {
+		const proc = spawn("docker", [...args], {env: dockerCliEnvironment(process.env), timeout: COPY_TIMEOUT_MS});
+
+		let stdout = "";
+		let stderr = "";
+		proc.stdout.on("data", (chunk: Buffer) => {
+			stdout += chunk.toString();
+		});
+		proc.stderr.on("data", (chunk: Buffer) => {
+			stderr += chunk.toString();
+		});
+
+		proc.on("close", (code, signal) => {
+			if (code === 0) {
+				resolve({stdout, stderr});
+			} else if (signal !== null) {
+				reject(new AppError(`${purpose} was stopped after ${Math.round(COPY_TIMEOUT_MS / 1000)} s (${signal}): ${stderr.trim()}`));
+			} else {
+				reject(new AppError(`${purpose} failed (exit ${code}): ${stderr.trim()}`));
+			}
+		});
+
+		proc.on("error", (err) => {
+			reject(new AppError(`Failed to spawn docker: ${err.message}`, 500, undefined, {cause: err}));
+		});
+	});
+
+/** T-22-15: the name ends up inside a `--mount` option string, where a comma would start another option. */
+function assertVolumeName(volumeName: string): void {
+	if (!COMPOSE_VOLUME_NAME_PATTERN.test(volumeName)) {
+		throw new BadRequestError(`"${volumeName}" is not a valid Docker volume name`);
+	}
 }
 
 /** `lstat` that reports a missing path as `null` instead of throwing. */
@@ -45,24 +99,52 @@ async function lstatIfExists(target: string): Promise<Stats | null> {
 }
 
 export class VolumeMigrator implements VolumeMigratorPort {
+	constructor(private readonly docker: VolumeDockerRunner = defaultVolumeDockerRunner) {}
+
+	/** `docker volume inspect`: it only reads, so asking never creates the volume. */
+	async volumeExists(volumeName: string): Promise<boolean> {
+		assertVolumeName(volumeName);
+		try {
+			await this.docker(["volume", "inspect", volumeName], "Volume inspect");
+			return true;
+		} catch (error: unknown) {
+			const message = error instanceof Error ? error.message : String(error);
+			if (/no such volume/i.test(message)) {
+				return false;
+			}
+			throw new AppError(`Could not check whether the Docker volume ${volumeName} exists: ${message}`, 500, undefined, {cause: error});
+		}
+	}
+
 	/**
-	 * Copy data from Docker named volume to bind mount directory
-	 * Uses: docker run --rm -v volumeName:/source -v destPath:/dest alpine cp -a /source/. /dest/
+	 * Copy data from a Docker named volume to a bind mount directory.
+	 *
+	 * Docker creates a volume it does not know when a container mounts it, and
+	 * `--mount type=volume` does the same, so mounting alone never protects against
+	 * copying from an empty volume made on the spot (#101). The guard is the
+	 * inspect right before the run: a missing volume is refused and `docker run`
+	 * never executes. The volume is mounted read-only; the destination is created
+	 * only after the volume is known to exist.
 	 */
 	async copyVolumeToBindMount(volumeName: string, destPath: string): Promise<void> {
-		// Create destination directory
+		assertVolumeName(volumeName);
+		if (!(await this.volumeExists(volumeName))) {
+			throw new AppError(`The Docker volume ${volumeName} does not exist; nothing was copied`);
+		}
+
 		await fs.mkdir(destPath, {recursive: true});
 
-		const args = [
-			"run",
-			"--rm",
-			"-v", `${volumeName}:/source:ro`,
-			"-v", `${destPath}:/dest`,
-			"alpine",
-			"sh", "-c", "cp -a /source/. /dest/",
-		];
-
-		return runCommand("docker", args, "Volume copy");
+		await this.docker(
+			[
+				"run",
+				"--rm",
+				"--mount", `type=volume,src=${volumeName},dst=/source,readonly`,
+				"-v", `${destPath}:/dest`,
+				"alpine",
+				"sh", "-c", "cp -a /source/. /dest/",
+			],
+			"Volume copy",
+		);
 	}
 
 	/**

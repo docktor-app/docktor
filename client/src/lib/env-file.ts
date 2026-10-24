@@ -103,12 +103,10 @@ export function applyTableRows(lines: EnvLine[], rows: readonly EnvTableRow[]): 
     return output.join("\n");
 }
 
-// D-22: a deliberately broad, display-only heuristic — not a security
-// control. A value is masked on screen when its key name merely *looks*
-// like it holds a secret; the underlying .env file is always plain text.
-export function isSecretKey(key: string): boolean {
-    return /password|secret|key|token/i.test(key);
-}
+// D-22: the display-only secret-key heuristic now lives in @docktor/shared
+// (one masker for client and server); re-exported so existing importers keep
+// their import path.
+export {isSecretKey} from "@docktor/shared";
 
 /** Non-blank passthrough lines — the count shown in the "kept as-is, switch to raw text mode" note. */
 export function countPassthroughLines(lines: EnvLine[]): number {

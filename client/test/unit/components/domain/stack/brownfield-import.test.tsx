@@ -5,9 +5,17 @@ import {MemoryRouter} from "react-router";
 import type {MigrationOperation, MigrationTarget} from "@docktor/shared";
 import {toast} from "sonner";
 import {BrownfieldImport, type BrownfieldImportApi} from "@/components/domain/stack/brownfield-import";
+import {MigrationToastTracker} from "@/components/domain/stack/migration-toast-tracker";
+import {migrationOperationsStore} from "@/lib/migration-operations-store";
 import {useContainerEvents, type StateEvent} from "@/hooks/use-container-events";
 import type {DiscoveredStack, ScanResult} from "@/lib/brownfield-types";
 import type {CodeEditorProps} from "@/components/common/code-editor";
+
+// #107: a preview whose filesystem has room for the migration, with or without a backup.
+const ROOMY_DISK_SPACE = {
+    withoutBackup: {ok: true, filesystems: [{label: "/opt/docktor/stacks", requiredBytes: 1024, availableBytes: 1_048_576}]},
+    withBackup: {ok: true, filesystems: [{label: "/opt/docktor/stacks", requiredBytes: 2048, availableBytes: 1_048_576}]},
+};
 
 // CodeMirror itself is covered by its own tests.
 vi.mock("@/components/common/code-editor", () => ({
@@ -17,11 +25,12 @@ vi.mock("@/components/common/code-editor", () => ({
 }));
 
 vi.mock("sonner", () => ({
-    toast: {error: vi.fn(), info: vi.fn(), success: vi.fn(), loading: vi.fn()},
+    toast: {error: vi.fn(), info: vi.fn(), success: vi.fn(), loading: vi.fn(), warning: vi.fn()},
 }));
 
 // The SSE connection is exercised by the hook's own tests; here the test
-// delivers migration_progress events through the handler the component registered.
+// delivers migration_progress events through the handler the layout-level
+// tracker registered (it owns the stream and the toasts, see AppLayout).
 vi.mock("@/hooks/use-container-events", () => ({
     useContainerEvents: vi.fn(),
 }));
@@ -34,7 +43,13 @@ function emit(event: StateEvent): void {
     act(() => handler(event));
 }
 
-const FALLBACK = "Migration failed. Your original stack directory was not modified. Check the error and try again.";
+function openStream(): void {
+    const onOpen = mockedEvents.mock.lastCall?.[1]?.onOpen;
+    if (!onOpen) throw new Error("no onOpen callback registered");
+    act(() => onOpen());
+}
+
+const FALLBACK = "Migration failed. Check the error and the old stack, then try again.";
 
 const stack: DiscoveredStack = {
     path: "/host/opt/db/docker-compose.yml",
@@ -42,6 +57,7 @@ const stack: DiscoveredStack = {
     compatibility: "yellow",
     serviceCount: 1,
     namedVolumes: ["pgdata"],
+    externalVolumes: [],
     absolutePaths: [],
     relativePaths: [],
     inlineEnvVars: false,
@@ -118,7 +134,7 @@ function createApi(
     return {
         scanDirectories: vi.fn().mockResolvedValue({stacks: [stack], skippedDirectories: 0, skipped: []}),
         adoptStack: vi.fn().mockResolvedValue({id: "db"}),
-        previewMigration: vi.fn().mockResolvedValue({diff: {hunks: [], added: 0, removed: 0}, extractedEnv: "", emptySources: [], target}),
+        previewMigration: vi.fn().mockResolvedValue({diff: {hunks: [], added: 0, removed: 0}, extractedEnv: "", emptySources: [], anonymousVolumes: [], diskSpace: ROOMY_DISK_SPACE, target}),
         executeMigration,
         listMigrationOperations: vi.fn().mockResolvedValue({operations: []}),
     };
@@ -141,6 +157,7 @@ async function walkToConfirm(options: {backupOn?: boolean; stopOff?: boolean} = 
 function renderImport(api: BrownfieldImportApi): void {
     render(
         <MemoryRouter>
+            <MigrationToastTracker listOperations={api.listMigrationOperations} />
             <BrownfieldImport api={api} />
         </MemoryRouter>,
     );
@@ -149,6 +166,7 @@ function renderImport(api: BrownfieldImportApi): void {
 describe("BrownfieldImport migration flow", () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        migrationOperationsStore.reset();
     });
 
     it("sends backup false and stopOldStack true by default and closes the dialog", async () => {
@@ -175,9 +193,34 @@ describe("BrownfieldImport migration flow", () => {
             namedVolumeSelections: {pgdata: true},
             backup: false,
             stopOldStack: true,
+            acknowledgeAnonymousVolumes: false,
         });
         expect(body).not.toHaveProperty("inPlaceAsideName");
         expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("sends acknowledgeAnonymousVolumes true once the user acknowledged the anonymous volumes (D-05)", async () => {
+        const executeMigration = vi.fn().mockResolvedValue(runningOperation);
+        const api = createApi(executeMigration);
+        vi.mocked(api.previewMigration).mockResolvedValue({
+            diff: {hunks: [], added: 0, removed: 0},
+            extractedEnv: "",
+            emptySources: [],
+            anonymousVolumes: [{service: "db", containerPath: "/var/lib/postgresql/data"}],
+            diskSpace: ROOMY_DISK_SPACE,
+            target: separateTarget,
+        });
+        renderImport(api);
+        await userEvent.click(screen.getByRole("button", {name: "Scan"}));
+        await userEvent.click(await screen.findByRole("button", {name: "Migrate"}));
+        await userEvent.click(screen.getByRole("button", {name: "Preview Changes"}));
+        await userEvent.click(await screen.findByRole("checkbox", {name: "I understand these volumes start empty in the new stack"}));
+        await userEvent.click(screen.getByRole("button", {name: "Choose Backup"}));
+        await userEvent.click(screen.getByRole("button", {name: "Choose Old Stack Action"}));
+
+        await userEvent.click(screen.getByRole("button", {name: "Confirm & Migrate"}));
+
+        expect(executeMigration.mock.calls[0]?.[0]).toMatchObject({acknowledgeAnonymousVolumes: true});
     });
 
     it("sends backup true and stopOldStack false when the backup is turned on and the stop off", async () => {
@@ -205,6 +248,7 @@ describe("BrownfieldImport migration flow", () => {
             namedVolumeSelections: {pgdata: true},
             backup: false,
             stopOldStack: true,
+            acknowledgeAnonymousVolumes: false,
             inPlaceAsideName: "db-pre-migration",
         });
     });
@@ -332,14 +376,14 @@ describe("BrownfieldImport migration flow", () => {
             expect(call?.[1]).toHaveProperty("action");
         });
 
-        it("shows the server's rollback message verbatim on failure", async () => {
-            const error = "Migration failed: disk full. Your original stack directory was not modified. The old stack was restarted.";
+        it("shows the server's error text as the detail of the failure toast", async () => {
+            const error = "Migration failed: disk full.";
             await confirm(() => Promise.resolve(runningOperation));
             await waitFor(() => expect(toast.loading).toHaveBeenCalled());
 
             emit(progress(failed(error)));
 
-            expect(toast.error).toHaveBeenCalledWith(error, {id: "op-1"});
+            expect(toast.error).toHaveBeenCalledWith("Migration of db failed", {id: "op-1", description: error});
             expect(screen.queryByText("Imported")).toBeNull();
         });
 
@@ -349,7 +393,7 @@ describe("BrownfieldImport migration flow", () => {
 
             emit(progress(failed(undefined)));
 
-            expect(toast.error).toHaveBeenCalledWith(FALLBACK, {id: "op-1"});
+            expect(toast.error).toHaveBeenCalledWith("Migration of db failed", {id: "op-1", description: FALLBACK});
         });
 
         it("shows the refusal of a start (for example the in-flight guard) and tracks nothing", async () => {
@@ -412,6 +456,7 @@ describe("BrownfieldImport migration flow", () => {
             const api = createApi(vi.fn());
             vi.mocked(api.listMigrationOperations).mockResolvedValue({operations: [runningOperation]});
             renderImport(api);
+            openStream();
 
             await waitFor(() =>
                 expect(toast.loading).toHaveBeenCalledWith(expect.stringMatching(/^Migrating db/), {id: "op-1"}),
@@ -435,11 +480,10 @@ describe("BrownfieldImport migration flow", () => {
                 .mockResolvedValueOnce({operations: [runningOperation]})
                 .mockResolvedValueOnce({operations: [finished()]});
             renderImport(api);
+            openStream();
             await waitFor(() => expect(toast.loading).toHaveBeenCalled());
 
-            const onOpen = mockedEvents.mock.lastCall?.[1]?.onOpen;
-            expect(onOpen).toBeDefined();
-            act(() => onOpen?.());
+            openStream();
 
             await waitFor(() =>
                 expect(toast.success).toHaveBeenCalledWith(

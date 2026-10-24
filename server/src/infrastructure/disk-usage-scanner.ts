@@ -67,7 +67,7 @@ function stdoutOfFailure(err: unknown): string {
 }
 
 /** KiB total from `du -sk` output (first tab-separated field) as bytes, or null when unparseable. */
-function parseDuBytes(stdout: string): number | null {
+export function parseDuBytes(stdout: string): number | null {
     const firstField = stdout.split("\t")[0]?.trim() ?? "";
     // Number("") is 0, so an empty field must be rejected explicitly.
     if (!/^\d+$/.test(firstField)) return null;

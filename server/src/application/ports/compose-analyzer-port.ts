@@ -10,11 +10,11 @@ import type {AnalysisResult, BindMountInfo} from "../../infrastructure/compose-a
 export interface ComposeAnalyzerPort {
     analyzeCompatibility(content: string): AnalysisResult;
 
-    extractNamedVolumes(doc: any): string[];
+    extractNamedVolumes(doc: unknown): string[];
 
-    extractBindMounts(doc: any): BindMountInfo[];
+    extractBindMounts(doc: unknown): BindMountInfo[];
 
-    extractInlineEnvVars(doc: any): {serviceName: string; vars: Record<string, string>}[];
+    extractInlineEnvVars(doc: unknown): {serviceName: string; vars: Record<string, string>}[];
 }
 
 export type {AnalysisResult, BindMountInfo};

@@ -15,6 +15,7 @@ const greenStack = {
     compatibility: "green" as const,
     serviceCount: 1,
     namedVolumes: [] as string[],
+    externalVolumes: [] as string[],
     absolutePaths: [] as string[],
     relativePaths: [] as string[],
     inlineEnvVars: false,

@@ -4,8 +4,12 @@ import type {OwnMountsView} from "../../../src/domain/bind-mount-sources.js";
 import {localDirectoryIdentity} from "../../../src/domain/directory-identity.js";
 import {
     asideNameCandidates,
+    BACKUP_BIND_MOUNTS_DIR,
+    BACKUP_MANIFEST_NAME,
+    BACKUP_STACK_DIR,
     classifyMigrationTarget,
     copyDestinationViolations,
+    planBackupCopies,
 } from "../../../src/domain/migration-target.js";
 
 /** Host-view identities, as when Docktor is not containerized. */
@@ -156,5 +160,79 @@ describe("copyDestinationViolations (WR-01)", () => {
     it("rejects an empty destination and a destination containing NUL", () => {
         expect(violations([{originalPath: "./a", newPath: ""}])).not.toEqual([]);
         expect(violations([{originalPath: "./a", newPath: "./volumes/a\0b"}])).not.toEqual([]);
+    });
+});
+
+describe("the backup layout (D-03)", () => {
+    const originalDir = path.resolve("/opt/old/app");
+
+    it("names the three parts of the backup", () => {
+        expect([BACKUP_STACK_DIR, BACKUP_BIND_MOUNTS_DIR, BACKUP_MANIFEST_NAME]).toEqual(["stack", "bind-mounts", "manifest.json"]);
+    });
+
+    describe("planBackupCopies", () => {
+        const outside = (name: string): string => path.resolve("/mnt/storage", name);
+
+        it("plans each selected source outside the old directory, numbered from 1 under bind-mounts/", () => {
+            const plan = planBackupCopies(
+                [
+                    {originalPath: "/mnt/storage/media", sourcePath: outside("media")},
+                    {originalPath: "/mnt/storage/photos", sourcePath: outside("photos")},
+                ],
+                originalDir,
+            );
+
+            expect(plan).toEqual([
+                {originalPath: "/mnt/storage/media", sourcePath: outside("media"), backupPath: "bind-mounts/1-media"},
+                {originalPath: "/mnt/storage/photos", sourcePath: outside("photos"), backupPath: "bind-mounts/2-photos"},
+            ]);
+        });
+
+        it("skips sources inside the old directory (the stack copy has them), the directory itself and absent sources", () => {
+            const plan = planBackupCopies(
+                [
+                    {originalPath: "./data", sourcePath: path.join(originalDir, "data")},
+                    {originalPath: ".", sourcePath: originalDir},
+                    {originalPath: "/mnt/storage/gone", sourcePath: null},
+                    {originalPath: "/mnt/storage/media", sourcePath: outside("media")},
+                ],
+                originalDir,
+            );
+
+            expect(plan).toEqual([{originalPath: "/mnt/storage/media", sourcePath: outside("media"), backupPath: "bind-mounts/1-media"}]);
+        });
+
+        it("treats a sibling whose name starts with the old directory name as outside", () => {
+            const sibling = path.resolve("/opt/old/app-data");
+
+            expect(planBackupCopies([{originalPath: sibling, sourcePath: sibling}], originalDir)).toHaveLength(1);
+        });
+
+        it("keeps a directory called ..cache inside the old directory", () => {
+            const inside = path.join(originalDir, "..cache");
+
+            expect(planBackupCopies([{originalPath: "./..cache", sourcePath: inside}], originalDir)).toEqual([]);
+        });
+
+        it.each([
+            ["a space and a bracket", "my media [old]", "bind-mounts/1-my_media_old_"],
+            ["a dot, an underscore and a hyphen", "a.b_c-d", "bind-mounts/1-a.b_c-d"],
+            ["only characters that are replaced", "***", "bind-mounts/1-_"],
+            ["a comma", "x,y", "bind-mounts/1-x_y"],
+        ])("reduces %s in the directory name", (_label, name, expected) => {
+            const source = outside(name);
+
+            expect(planBackupCopies([{originalPath: source, sourcePath: source}], originalDir)[0]?.backupPath).toBe(expected);
+        });
+
+        it("falls back to source for a root directory without a name", () => {
+            const root = path.parse(originalDir).root;
+
+            expect(planBackupCopies([{originalPath: root, sourcePath: root}], originalDir)[0]?.backupPath).toBe("bind-mounts/1-source");
+        });
+
+        it("returns nothing for no sources", () => {
+            expect(planBackupCopies([], originalDir)).toEqual([]);
+        });
     });
 });
