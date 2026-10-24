@@ -92,11 +92,11 @@ describe("useContainerEvents (OBS-08)", () => {
         const onEvent = vi.fn();
         renderHook(() => useContainerEvents(onEvent));
 
-        expect(() => mockEventSourceInstance.onmessage?.(new MessageEvent("message", {data: "{not json"}))).not.toThrow();
+        expect(() => deliver("{not json")).not.toThrow();
         expect(onEvent).not.toHaveBeenCalled();
 
-        mockEventSourceInstance.onmessage?.(new MessageEvent("message", {data: JSON.stringify({containerId: "abc"})}));
-        expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({containerId: "abc"}));
+        deliver(JSON.stringify(STACK_STATUS_FRAME));
+        expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({stackId: "my-stack"}));
     });
 
     it("closes EventSource on unmount", () => {
