@@ -77,6 +77,8 @@ Issue numbers refer to `docktor-app/docktor`. Research: `.planning/research/SUMM
 
 ## Traceability
 
+Which phases cover which requirements. Updated during roadmap creation.
+
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | MIG-05 | Phase 22 | Complete |
