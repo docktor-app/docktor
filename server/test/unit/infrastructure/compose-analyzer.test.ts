@@ -1,6 +1,7 @@
 import {describe, it, expect} from "vitest";
 import {parse as parseYaml} from "yaml";
 import {ComposeAnalyzer} from "../../../src/infrastructure/compose-analyzer.js";
+import {BadRequestError} from "../../../src/lib/errors.js";
 
 // WR-04: consolidated from the former server/test/unit/compose-analyzer.test.ts
 // (deleted) and server/test/unit/infrastructure/compose-analyzer.test.ts —
@@ -190,6 +191,18 @@ volumes:
         });
     });
 
+    describe("externalVolumes (#101)", () => {
+        it.each([
+            ["external: true", "volumes:\n  shared:\n    external: true\n  own:\n", ["shared"]],
+            ["the legacy external map", "volumes:\n  shared:\n    external:\n      name: old\n", ["shared"]],
+            ["external: false", "volumes:\n  shared:\n    external: false\n", []],
+            ["no external entry", "volumes:\n  own:\n  other: {}\n", []],
+            ["no volumes block", "services:\n  web:\n    image: x\n", []],
+        ])("lists the keys declared with %s", (_label, content, expected) => {
+            expect(new ComposeAnalyzer().analyzeCompatibility(content).externalVolumes).toEqual(expected);
+        });
+    });
+
     describe("extractBindMounts", () => {
         it("should categorize relative and absolute bind mounts across services", () => {
             const doc = {
@@ -370,5 +383,51 @@ services:
                 {path: "~/data", type: "absolute", serviceName: "app", containerPath: "/data", index: 0},
             ]);
         });
+    });
+});
+
+describe("ComposeAnalyzer on unusual documents (#108)", () => {
+    const analyzer = new ComposeAnalyzer();
+
+    it.each([
+        ["an empty document", ""],
+        ["a comment-only document", "# nothing here\n"],
+        ["a scalar document", "just a string\n"],
+        ["a list document", "- a\n- b\n"],
+        ["a document whose services is a scalar", "services: nope\n"],
+        ["a document whose services is a list", "services:\n  - web\n"],
+    ])("analyses %s as zero services, green, with no volumes", (_label, content) => {
+        const result = analyzer.analyzeCompatibility(content);
+
+        expect(result).toEqual({
+            compatibility: "green",
+            namedVolumes: [],
+            externalVolumes: [],
+            bindMounts: [],
+            inlineEnvVars: [],
+            unsupportedFeatures: [],
+            serviceCount: 0,
+        });
+    });
+
+    it("reports invalid YAML as a BadRequestError that keeps the YAML error as cause", () => {
+        let thrown: unknown;
+        try {
+            analyzer.analyzeCompatibility("services:\n  web: [unclosed\n");
+        } catch (error: unknown) {
+            thrown = error;
+        }
+
+        expect(thrown).toBeInstanceOf(BadRequestError);
+        expect(thrown).toHaveProperty("message", expect.stringContaining("The compose file is not valid YAML"));
+        expect(thrown).toHaveProperty("cause.name", "YAMLParseError");
+    });
+
+    it("ignores a service whose body is not a mapping", () => {
+        const result = analyzer.analyzeCompatibility("services:\n  web: null\n  db: nope\n");
+
+        expect(result.serviceCount).toBe(2);
+        expect(result.bindMounts).toEqual([]);
+        expect(result.inlineEnvVars).toEqual([]);
     });
 });

@@ -2,8 +2,9 @@ import {useState, useEffect} from "react";
 import {useNavigate, Link} from "react-router";
 import {toast} from "sonner";
 import {refreshSession, signIn} from "@/lib/auth-client";
-import {checkSetupStatus, completeSetup, submitStep1, submitStep2, submitStep3, submitStep4, submitStep6} from "@/lib/setup-api";
+import {checkSetupStatus, completeSetup, listMigrationOperations, submitStep1, submitStep2, submitStep3, submitStep4, submitStep6} from "@/lib/setup-api";
 import {BrandLogo} from "@/components/common/brand-logo";
+import {MigrationToastTracker} from "@/components/domain/stack/migration-toast-tracker";
 import {WizardStepper} from "@/routes/setup/components/wizard-stepper";
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from "@/components/ui/card";
 import {Button} from "@/components/ui/button";
@@ -221,6 +222,8 @@ export default function SetupPage() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6">
+      {/* Owns the migration toasts of the brownfield step (#105); the app layout's tracker continues with the shared store after the wizard. */}
+      <MigrationToastTracker listOperations={listMigrationOperations} />
       <BrandLogo className="mb-4 h-9 w-auto"/>
       <h1 className="text-2xl font-bold mb-6">Setup Wizard</h1>
 

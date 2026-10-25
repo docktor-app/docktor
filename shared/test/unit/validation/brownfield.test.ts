@@ -1,14 +1,21 @@
 import {describe, expect, it} from "vitest";
 import {
+    anonymousVolumeSchema,
     brownfieldAdoptSchema,
+    COMPOSE_FILE_NAMES,
+    COMPOSE_VOLUME_NAME_PATTERN,
     composeFilePathSchema,
+    composeVolumeNameSchema,
     discoveredStackSchema,
+    migrationDiskSpaceSchema,
     migrationExecuteSchema,
+    migrationPreviewDiskSpaceSchema,
     migrationPreviewSchema,
     migrationTargetSchema,
     scanResultSchema,
     skippedDirectorySchema,
     stackDirectoryNameSchema,
+    volumeSelectionSchema,
 } from "../../../src/validation/brownfield.js";
 
 describe("composeFilePathSchema (T-18-05)", () => {
@@ -33,8 +40,73 @@ describe("composeFilePathSchema (T-18-05)", () => {
         ["a trailing slash", "/opt/app/docker-compose.yml/"],
         ["an empty string", ""],
         ["an embedded NUL character", "/opt/app/\0docker-compose.yml"],
+        ["a leading .. segment", "/opt/../etc/compose.yml"],
+        ["an inner .. segment", "/opt/app/../x/docker-compose.yml"],
+        ["a .. segment on a Windows path", "C:\\stacks\\..\\x\\compose.yaml"],
     ])("rejects %s", (_label, value) => {
         expect(composeFilePathSchema.safeParse(value).success).toBe(false);
+    });
+
+    it("accepts a directory whose name merely contains two dots", () => {
+        expect(composeFilePathSchema.safeParse("/opt/app..old/compose.yml").success).toBe(true);
+    });
+});
+
+describe("COMPOSE_FILE_NAMES", () => {
+    it("lists exactly the four compose file names the scanner recognises", () => {
+        expect([...COMPOSE_FILE_NAMES].sort()).toEqual([
+            "compose.yaml",
+            "compose.yml",
+            "docker-compose.yaml",
+            "docker-compose.yml",
+        ]);
+    });
+});
+
+describe("composeVolumeNameSchema", () => {
+    it.each(["db_data", "a", "7zip", "my.vol-1"])("accepts %s", (value) => {
+        expect(composeVolumeNameSchema.safeParse(value).success).toBe(true);
+        expect(COMPOSE_VOLUME_NAME_PATTERN.test(value)).toBe(true);
+    });
+
+    it.each(["../x", "a/b", "", ".hidden", "-lead", "a b", "a\0b"])("rejects %j", (value) => {
+        expect(composeVolumeNameSchema.safeParse(value).success).toBe(false);
+    });
+});
+
+describe("volumeSelectionSchema (T-22-02)", () => {
+    const convertSelection = (newPath: string) => ({originalPath: "/srv/data", newPath, convert: true});
+
+    it.each(["./volumes/data", "volumes/data", "./a.b/c"])("accepts the converted destination %s", (newPath) => {
+        expect(volumeSelectionSchema.safeParse(convertSelection(newPath)).success).toBe(true);
+    });
+
+    it.each([
+        ["an empty destination", ""],
+        ["an absolute destination", "/etc"],
+        ["a Windows absolute destination", "C:\\x"],
+        ["a home destination", "~"],
+        ["a home sub-path destination", "~/data"],
+        ["a leading .. segment", "../x"],
+        ["a nested .. segment", "./a/../../b"],
+        ["a backslash .. segment", "a\\..\\b"],
+    ])("rejects a converted destination with %s and reports it on newPath", (_label, newPath) => {
+        const result = volumeSelectionSchema.safeParse(convertSelection(newPath));
+
+        expect(result.success).toBe(false);
+        expect(result.error?.issues.map((issue) => issue.path.join("."))).toContain("newPath");
+    });
+
+    it("accepts an absolute newPath for a mount that is kept (convert: false)", () => {
+        const result = volumeSelectionSchema.safeParse({originalPath: "/srv/data", newPath: "/srv/data", convert: false});
+
+        expect(result.success).toBe(true);
+    });
+
+    it.each(["originalPath", "newPath"] as const)("rejects a NUL character in %s", (field) => {
+        const selection = {originalPath: "/srv/data", newPath: "./volumes/data", convert: false, [field]: "a\0b"};
+
+        expect(volumeSelectionSchema.safeParse(selection).success).toBe(false);
     });
 });
 
@@ -59,6 +131,18 @@ describe("migrationPreviewSchema", () => {
         expect(migrationPreviewSchema.safeParse({...validPreview, displayName: ""}).success).toBe(false);
     });
 
+    it("accepts a Docker volume name as a namedVolumeSelections key", () => {
+        expect(migrationPreviewSchema.safeParse({...validPreview, namedVolumeSelections: {db_data: true}}).success).toBe(true);
+    });
+
+    it.each(["../x", "a/b"])("rejects the namedVolumeSelections key %s", (key) => {
+        expect(migrationPreviewSchema.safeParse({...validPreview, namedVolumeSelections: {[key]: true}}).success).toBe(false);
+    });
+
+    it("rejects a composePath with a .. segment", () => {
+        expect(migrationPreviewSchema.safeParse({...validPreview, composePath: "/opt/../etc/compose.yml"}).success).toBe(false);
+    });
+
     it("rejects a non-boolean convert", () => {
         const body = {
             ...validPreview,
@@ -81,7 +165,13 @@ describe("brownfieldAdoptSchema", () => {
 });
 
 describe("migrationExecuteSchema", () => {
-    const validExecute = {...validPreview, displayName: "My App", backup: true, stopOldStack: true};
+    const validExecute = {
+        ...validPreview,
+        displayName: "My App",
+        backup: true,
+        stopOldStack: true,
+        acknowledgeAnonymousVolumes: false,
+    };
 
     it("accepts a full valid body", () => {
         expect(migrationExecuteSchema.safeParse(validExecute).success).toBe(true);
@@ -106,6 +196,19 @@ describe("migrationExecuteSchema", () => {
     it("rejects a body without stopOldStack (D-12)", () => {
         const {stopOldStack: _stopOldStack, ...body} = validExecute;
         expect(migrationExecuteSchema.safeParse(body).success).toBe(false);
+    });
+
+    it("rejects a body without acknowledgeAnonymousVolumes (D-05)", () => {
+        const {acknowledgeAnonymousVolumes: _acknowledged, ...body} = validExecute;
+        expect(migrationExecuteSchema.safeParse(body).success).toBe(false);
+    });
+
+    it("rejects a non-boolean acknowledgeAnonymousVolumes", () => {
+        expect(migrationExecuteSchema.safeParse({...validExecute, acknowledgeAnonymousVolumes: "yes"}).success).toBe(false);
+    });
+
+    it("accepts the acknowledgement being given", () => {
+        expect(migrationExecuteSchema.safeParse({...validExecute, acknowledgeAnonymousVolumes: true}).success).toBe(true);
     });
 
     it("rejects a non-boolean backup", () => {
@@ -195,6 +298,7 @@ describe("scan result schemas", () => {
         compatibility: "yellow",
         serviceCount: 1,
         namedVolumes: [],
+        externalVolumes: [],
         absolutePaths: [],
         relativePaths: ["./data"],
         inlineEnvVars: false,
@@ -219,6 +323,11 @@ describe("scan result schemas", () => {
         expect(skippedDirectorySchema.safeParse({directory: "/x", reason: "missing"}).success).toBe(false);
     });
 
+    it("rejects a discovered stack without externalVolumes (#101)", () => {
+        const {externalVolumes: _externalVolumes, ...withoutExternal} = validStack;
+        expect(discoveredStackSchema.safeParse(withoutExternal).success).toBe(false);
+    });
+
     it("rejects a discovered stack without relativePaths", () => {
         const {relativePaths: _relativePaths, ...withoutRelative} = validStack;
         expect(discoveredStackSchema.safeParse(withoutRelative).success).toBe(false);
@@ -240,5 +349,59 @@ describe("scan result schemas", () => {
 
     it("rejects an unknown compatibility level", () => {
         expect(discoveredStackSchema.safeParse({...validStack, compatibility: "blue"}).success).toBe(false);
+    });
+});
+
+describe("anonymousVolumeSchema (D-05)", () => {
+    it("accepts a service and a container path", () => {
+        expect(anonymousVolumeSchema.safeParse({service: "db", containerPath: "/var/lib/postgresql/data"}).success).toBe(true);
+    });
+
+    it.each([
+        ["without a service", {containerPath: "/data"}],
+        ["without a container path", {service: "db"}],
+        ["with a non-string path", {service: "db", containerPath: 3}],
+    ])("rejects an entry %s", (_label, value) => {
+        expect(anonymousVolumeSchema.safeParse(value).success).toBe(false);
+    });
+});
+
+describe("migrationDiskSpaceSchema (D-08)", () => {
+    const filesystem = {label: "/opt/docktor/stacks", requiredBytes: 1_100, availableBytes: 5_000};
+
+    it("accepts an assessment with its filesystems", () => {
+        expect(migrationDiskSpaceSchema.safeParse({ok: true, filesystems: [filesystem]}).success).toBe(true);
+        expect(migrationDiskSpaceSchema.safeParse({ok: true, filesystems: []}).success).toBe(true);
+    });
+
+    it.each([
+        ["no ok flag", {filesystems: [filesystem]}],
+        ["a non-boolean ok", {ok: "yes", filesystems: [filesystem]}],
+        ["a negative required size", {ok: false, filesystems: [{...filesystem, requiredBytes: -1}]}],
+        ["a fractional available size", {ok: false, filesystems: [{...filesystem, availableBytes: 1.5}]}],
+        ["a filesystem without a label", {ok: false, filesystems: [{requiredBytes: 1, availableBytes: 1}]}],
+    ])("rejects %s", (_label, value) => {
+        expect(migrationDiskSpaceSchema.safeParse(value).success).toBe(false);
+    });
+});
+
+describe("migrationPreviewDiskSpaceSchema (D-08)", () => {
+    const assessment = {ok: true, filesystems: [{label: "/opt/docktor/stacks", requiredBytes: 1, availableBytes: 2}]};
+
+    it("accepts an assessment without and with a backup", () => {
+        expect(migrationPreviewDiskSpaceSchema.safeParse({withoutBackup: assessment, withBackup: assessment}).success).toBe(true);
+    });
+
+    it("accepts a null with-backup assessment (an in-place migration keeps the renamed original as its backup)", () => {
+        expect(migrationPreviewDiskSpaceSchema.safeParse({withoutBackup: assessment, withBackup: null}).success).toBe(true);
+    });
+
+    it.each([
+        ["no without-backup assessment", {withBackup: null}],
+        ["no with-backup field", {withoutBackup: assessment}],
+        ["a null without-backup assessment", {withoutBackup: null, withBackup: null}],
+        ["an invalid assessment", {withoutBackup: {ok: true}, withBackup: null}],
+    ])("rejects %s", (_label, value) => {
+        expect(migrationPreviewDiskSpaceSchema.safeParse(value).success).toBe(false);
     });
 });

@@ -11,18 +11,14 @@ a single Fastify server — API, background jobs, SSE streams, and static React 
 
 Users can deploy, monitor, and manage Docker Compose stacks through a browser UI without needing SSH or Docker CLI access.
 
-## Current Milestone: v0.1.1 Release Follow-ups
+## Current Milestone: v0.2.0 Migration Hardening, Proxy & Access
 
-**Goal:** A small patch release on one branch (`release/v0.1.1`) that polishes the interface after v0.1.0 and fixes the bugs found right after launch. No new product features.
+**Goal:** Make the brownfield migration flow trustworthy, widen reverse-proxy options, and replace the single-user model with real access control.
 
 **Target features:**
-- UI polish bundle ([#96](https://github.com/docktor-app/docktor/issues/96): #88-#95) — sidebar version/links, labelled sidebar sections, Templates page, consistent status casing, monospace KPI typography, tab bar without scrollbar, form spacing, restyled data tables
-- Backup repository fix ([#68](https://github.com/docktor-app/docktor/issues/68)) — configured SFTP/S3 repositories are actually used
-- Migration dialog improvements ([#72](https://github.com/docktor-app/docktor/issues/72))
-- No false port-conflict warnings for a stack's own ports ([#76](https://github.com/docktor-app/docktor/issues/76))
-- Docktor's own stack is not offered by "Import existing stack" ([#13](https://github.com/docktor-app/docktor/issues/13))
-- Clearer dashboard "Backups Configured" card ([#85](https://github.com/docktor-app/docktor/issues/85))
-- 44px mobile touch targets for remaining icon-only controls ([#71](https://github.com/docktor-app/docktor/issues/71))
+- Migration hardening ([#100](https://github.com/docktor-app/docktor/issues/100), #101, #102, #103, #104, #105, #107, #108, #109) — reliable rollback, correct named-volume copy, verified stop of the old stack, masked secrets in the compose diff, `~` bind handling, non-sticky progress toast, backup before stopping, convention/path hardening, Linux verification of ownership and env handling
+- Proxy ([#44](https://github.com/docktor-app/docktor/issues/44), #86) — external proxy mode for users running their own reverse proxy; WebSocket support per proxied domain (ProxyProvider abstraction #43 deferred)
+- Auth and access ([#79](https://github.com/docktor-app/docktor/issues/79), #87/#61, #64) — password reset by email, OIDC sign-in, multi-user with RBAC and audit log
 
 ## Requirements
 
@@ -61,17 +57,17 @@ Users can deploy, monitor, and manage Docker Compose stacks through a browser UI
 
 ### Active
 
-<!-- Current scope. Building toward v0.1.1 (patch release) — see ROADMAP.md Phase 17+. -->
+<!-- Current scope. Building toward v0.2.0 — see ROADMAP.md. -->
 
-Scope is tracked in GitHub Issues (`docktor-app/docktor`); see "Current Milestone" above and REQUIREMENTS.md for the issue-to-requirement mapping. v0.1.0 (Phases 10-16) is shipped.
+Scope is tracked in GitHub Issues (`docktor-app/docktor`); see "Current Milestone" above and REQUIREMENTS.md for the issue-to-requirement mapping. v0.1.0 (Phases 10-16) and v0.1.1 (Phases 17-21) are shipped.
 
 ### Out of Scope
 
 - Marketplace — deferred; not in this roadmap cycle
-- RBAC / multi-user access control — single-user model sufficient for personal server use case
 - Inter-stack networking (Docker overlay networks) — users can use `external: true` manually
 - Metrics dashboards (Prometheus/Grafana) — out of product scope
-- OAuth / LDAP integration — better-auth email/password is sufficient
+- LDAP integration — OIDC (v0.2.0) covers external identity providers
+- ProxyProvider abstraction (#43) — deferred past v0.2.0; nginx-proxy remains the only managed provider
 - Docker Secrets integration — filesystem + encrypted backups covers MVP security needs
 - Plugin system — adds complexity without near-term user benefit
 - Docktor self-update via UI — users run `docker compose pull && up -d` from host
@@ -132,4 +128,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-14 — milestone v0.1.1 (Release Follow-ups) started*
+*Last updated: 2026-10-21 — milestone v0.2.0 (Migration Hardening, Proxy & Access) started*

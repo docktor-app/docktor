@@ -1,6 +1,12 @@
 import {test, expect} from "./fixtures";
 import type {Page} from "@playwright/test";
 
+// #107: a preview whose filesystem has room for the migration, with or without a backup.
+const ROOMY_DISK_SPACE = {
+    withoutBackup: {ok: true, filesystems: [{label: "/opt/docktor/stacks", requiredBytes: 1024, availableBytes: 1_048_576}]},
+    withBackup: {ok: true, filesystems: [{label: "/opt/docktor/stacks", requiredBytes: 2048, availableBytes: 1_048_576}]},
+};
+
 const mockUser = {id: "1", name: "admin", email: "admin@example.com"};
 const mockAuthSession = {session: {id: "sess-1", userId: "1"}, user: mockUser};
 
@@ -10,6 +16,7 @@ const greenStack = {
     compatibility: "green" as const,
     serviceCount: 1,
     namedVolumes: [] as string[],
+    externalVolumes: [] as string[],
     absolutePaths: [] as string[],
     relativePaths: [] as string[],
     inlineEnvVars: false,
@@ -23,6 +30,7 @@ const yellowStack = {
     compatibility: "yellow" as const,
     serviceCount: 1,
     namedVolumes: ["pgdata"],
+    externalVolumes: [] as string[],
     absolutePaths: [] as string[],
     relativePaths: [] as string[],
     inlineEnvVars: false,
@@ -36,6 +44,7 @@ const redStack = {
     compatibility: "red" as const,
     serviceCount: 1,
     namedVolumes: [] as string[],
+    externalVolumes: [] as string[],
     absolutePaths: [] as string[],
     relativePaths: [] as string[],
     inlineEnvVars: false,
@@ -522,7 +531,7 @@ test.describe("Setup Wizard", () => {
             suggestedAsideName: "db-pre-migration",
             sharedProjectName: null,
         };
-        const emptyPreview = {diff: {hunks: [], added: 0, removed: 0}, extractedEnv: "", emptySources: [], target: separateTarget};
+        const emptyPreview = {diff: {hunks: [], added: 0, removed: 0}, extractedEnv: "", emptySources: [], anonymousVolumes: [], diskSpace: ROOMY_DISK_SPACE, target: separateTarget};
         const diffPreview = {
             diff: {
                 added: 1,
@@ -543,6 +552,8 @@ test.describe("Setup Wizard", () => {
             },
             extractedEnv: "",
             emptySources: [],
+            anonymousVolumes: [],
+            diskSpace: ROOMY_DISK_SPACE,
             target: separateTarget,
         };
 

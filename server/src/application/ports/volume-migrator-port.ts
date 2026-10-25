@@ -6,6 +6,17 @@
  * depends on a port, not on infrastructure/).
  */
 export interface VolumeMigratorPort {
+    /**
+     * Whether Docker has a volume of exactly this name. It only inspects: it
+     * never creates anything (#101).
+     */
+    volumeExists(volumeName: string): Promise<boolean>;
+
+    /**
+     * Copies the data of the Docker volume `volumeName` (its real name, not the
+     * compose key) into `destPath`. A volume that does not exist rejects before
+     * anything runs, so an empty volume is never created and copied in its place.
+     */
     copyVolumeToBindMount(volumeName: string, destPath: string): Promise<void>;
 
     /**

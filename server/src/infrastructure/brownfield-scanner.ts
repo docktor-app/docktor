@@ -152,6 +152,7 @@ export class BrownfieldScanner implements BrownfieldScannerPort {
                     compatibility: analysis.compatibility,
                     serviceCount: analysis.serviceCount,
                     namedVolumes: analysis.namedVolumes,
+                    externalVolumes: analysis.externalVolumes,
                     absolutePaths: distinctPaths(analysis.bindMounts.filter((m) => m.type === "absolute")),
                     // Relative mounts are listed so the migration dialog can copy
                     // them into the new stack directory; without them the new

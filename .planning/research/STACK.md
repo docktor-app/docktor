@@ -1,558 +1,338 @@
-# Technology Stack
+# Stack Research
 
-**Project:** Docktor — Docker Compose management platform
-**Researched:** 2026-03-10
-**Scope:** Milestone 2 additions — container state poller, live log streaming, settings page,
-file watcher, update checker, SMTP notifications, first-run wizard, brownfield import,
-backup/restore (restic), Nginx Proxy Manager integration.
+**Domain:** Self-hosted Docker Compose management platform — v0.2.0 additions (migration hardening, external proxy mode and WebSocket, password reset, OIDC, RBAC, audit log)
+**Researched:** 2026-10-21
+**Confidence:** HIGH for the better-auth findings (checked against the npm registry, the 1.7.12 package source and the GitHub security advisories). MEDIUM for the nginx-proxy WebSocket mechanics (read from the template, not exercised). MEDIUM for Traefik and Caddy label syntax (official docs).
 
----
-
-## Current Stack (Locked — Do Not Change)
-
-These are confirmed from the existing codebase and `server/package.json`.
-
-| Layer | Technology | Version (installed) | Notes |
-|-------|-----------|---------------------|-------|
-| Runtime | Node.js + TypeScript | Node 20 LTS in dev, 22-slim in prod image | ESM (`"type": "module"`) |
-| HTTP server | Fastify | 5.7.4 | `fastify-type-provider-zod` for typed routes |
-| Frontend | React + Vite | — | SPA, served by Fastify in prod via `@fastify/static` |
-| UI | shadcn/ui + Tailwind CSS | — | Locked |
-| ORM / DB | Prisma + PostgreSQL | — | Multi-file schema under `server/prisma/schema/` |
-| Auth | better-auth | — | Email + password, session-based |
-| Compose orchestration | `docker compose` CLI via `node:child_process` | — | `DockerExecutor` service wrapper |
-| Docker SDK | dockerode | 4.0.9 | For inspect, log streaming |
-| File watching | chokidar | 4.0.3 | Already installed |
-| Job scheduler | node-cron | 3.0.3 | Already installed |
-| YAML parsing | yaml | 2.7.0 | Already installed |
-| Validation | Zod | 4.3.6 | Shared between client and server |
+**Headline: v0.2.0 needs exactly one dependency change: upgrade `better-auth` from `^1.4.18` to `^1.7.12`.** No new runtime packages are needed. Everything else is already installed (`nodemailer`, `yaml`, `zod`, Prisma 7, `node-cron`, the in-memory event bus) or is Docktor code on top of them.
 
 ---
 
-## Recommended Additions
+## The Decision That Gates Everything: Upgrade better-auth to 1.7.x First
 
-### 1. SMTP — nodemailer
+| Item | Finding |
+|------|---------|
+| Installed | `better-auth 1.4.18` (root `package.json`: `^1.4.18`) |
+| Latest | `1.7.12` (published 2026-10-20). The 1.4 line ended at `1.4.22` (March 2026) and gets no more fixes. |
+| Why upgrade | Several advisories that matter for OIDC are fixed only in 1.6.x and 1.7.x, and the 1.4 line never received the fixes. |
 
-**Recommendation: nodemailer ^6.9**
-**Confidence: HIGH** — de facto standard for SMTP in Node.js; no serious alternative.
+Advisories relevant to this milestone (GitHub security advisories for better-auth; HIGH confidence):
 
-nodemailer is not yet installed. It is the industry standard for SMTP in Node.js, has been
-maintained since 2010, and has zero runtime dependencies. It supports TLS/STARTTLS, connection
-pooling, and all standard auth mechanisms (LOGIN, PLAIN, OAuth2 — only LOGIN/PLAIN needed for
-MVP). The v6.x line is current and stable.
+| Advisory | Summary | Fixed in |
+|----------|---------|----------|
+| GHSA-g38m-r43w-p2q7 (high) | OAuth sign-in can link to an account an attacker registered in advance (pre-registration account takeover). This is exactly the multi-user plus OIDC scenario. | 1.6.11 |
+| GHSA-wxw3-q3m9-c3jr (medium) | OAuth callback accepts a forged `state` when state is kept in a cookie | 1.6.2 |
+| GHSA-965c-763c-88jm (critical) | OAuth state can be used as a Magic Link to sign in as another user | 1.7.7 |
+| GHSA-r4xp-prcw-77qf (high) | OAuth Proxy plugin lets an attacker sign in as another user | 1.7.7 |
+| GHSA-fmh4-wcc4-5jm3 (high) | Organization invitations can be accepted by an unverified account | 1.6.11 |
 
-Do not use: `email-templates` (overkill), `@sendgrid/mail` (SaaS dependency), `mailgen`
-(template generator only, not a transport). nodemailer alone is sufficient.
+**Minimum safe version for OIDC is 1.7.7. Pin `^1.7.12`.** Do not ship OIDC on the 1.4 line, and do not "stay on 1.4.22 to avoid the migration".
 
-**Install:**
-```bash
-npm install nodemailer
-npm install -D @types/nodemailer
-```
+**Do the upgrade as its own first phase, before any feature work.** The plan below handles the known regressions.
 
-**Usage pattern for Docktor:**
-```typescript
-import nodemailer from 'nodemailer';
+### What the 1.4.18 to 1.7.12 jump changes for Docktor's existing customisations
 
-// Create transporter once; reuse across notifications
-const transporter = nodemailer.createTransport({
-  host: settings.smtp_host,
-  port: settings.smtp_port,     // 587 default (STARTTLS)
-  secure: settings.smtp_port === 465,  // true for 465, false for 587
-  auth: {
-    user: settings.smtp_username,
-    pass: settings.smtp_password,  // decrypt from DB before use
-  },
-});
+| Change | Impact on Docktor | Action |
+|--------|-------------------|--------|
+| 1.6: `session.freshAge` is now measured from `createdAt`, not `updatedAt` | Routes behind `freshSessionMiddleware` (for example unlinking an account) and `sensitiveSessionMiddleware` (used inside the twoFactor plugin) can start answering "session not fresh" after about 24 hours of being signed in. | Add an integration test for 2FA enable/disable and change-password at session age over 24h. Then decide: set `session.freshAge` explicitly, or `0` if password re-entry is already required (as it is for the 2FA endpoints). |
+| 1.7: `enableTwoFactor` returns a discriminated `method` (`"totp"` or `"otp"`) | `totpURI` and `backupCodes` are only present for `"totp"`. This is a TypeScript break in `account-security-service.ts` and the client enrollment UI. | Narrow on `method === "totp"`. Keep OTP closed (the existing `TWO_FACTOR_DISABLED_PATHS` entries for OTP stay). |
+| 1.7.0 to 1.7.2 added a required `Account.issuer`; 1.7.3 reverted it | Docktor targets 1.7.12, so the `Account` table is unchanged from 1.4/1.6. **No backfill is needed.** | Before upgrading, run the duplicate check from the upgrade guide: `SELECT "providerId","accountId",count(*) FROM account GROUP BY 1,2 HAVING count(*)>1;`. Do not add an `issuer` column. |
+| 1.7: generic OAuth rewritten as a first-class social provider | Not an issue for Docktor because it has no generic OAuth today. It affects how OIDC is wired (see below): `signIn.social({provider})`, callback `/api/auth/callback/:providerId`, and no `genericOAuthClient()`. | Write OIDC against the 1.7 API from the start. Ignore older tutorials that use `signIn.oauth2` and `/oauth2/callback/`. |
+| 1.7: `advanced.trustedProxyHeaders` | Only applies when `baseURL` is the dynamic `allowedHosts` form. Docktor uses a plain string or undefined. | No action. Leave `baseURL` as a string. |
+| Prisma adapter | `better-auth/adapters/prisma` still exports; `@prisma/client` peer is `^5 \|\| ^6 \|\| ^7` (Docktor is on 7). The `joins` option moved to `advanced.database.joins`. | Leave joins off. Use `npx auth generate --adapter prisma` only to diff the schema, then hand-merge into `server/prisma/schema/auth.prisma`. Do not run `npx auth migrate` (that is for the built-in Kysely adapter). |
+| Database rate-limit storage | The `RateLimit` table is Docktor-owned (`rate-limit.prisma`). 1.7 changed the custom-storage interface to `consume()`; the built-in database storage is not documented as changed. | Verify with `npx auth generate --adapter prisma` that the `RateLimit` model shape is unchanged. Keep the existing rate-limit integration tests as the gate. |
+| Node | Production image is `node:22-slim`; `engines` is `>=22`. The `auth` CLI needs Node 22.12 or newer (dev-only). | No action. |
+| Zod | 1.7 depends on `zod ^4.5.4`; the repo has `^4.3.6`. Compatible within the 4.x range. | Let the lockfile resolve to one 4.x version. Run `tsc --build` in CI. |
 
-await transporter.sendMail({
-  from: settings.smtp_from,
-  to: settings.notification_recipient,
-  subject: `[Docktor] Stack "${stackId}" entered ERROR state`,
-  text: `Stack ${stackId} entered ERROR state at ${new Date().toISOString()}\n\n${lastLogLines}`,
-});
-```
-
-**Key points:**
-- Call `transporter.verify()` when saving SMTP settings to validate credentials immediately.
-- Re-create the transporter when settings change (settings change is infrequent; singleton is fine).
-- `smtp_port: 587` with `secure: false` is the correct default for modern STARTTLS servers.
-  `smtp_port: 465` with `secure: true` is for SSL-wrapped legacy connections.
-- Store `smtp_password` AES-encrypted in the Settings model (already planned in DB schema).
+Keep these existing protections and re-run their tests after the upgrade: `disabledPaths`, the `ipAddressHeaders` stamping, `useSecureCookies`, and the no-`cookieCache` rule (GHSA-xg6x-h9c9-2m83).
 
 ---
 
-### 2. Restic CLI Invocation
+## Recommended Stack
 
-**Recommendation: `node:child_process.spawn` (built-in) — no extra library needed**
-**Confidence: HIGH** — derived from existing `DockerExecutor` pattern already in the codebase.
+### Core Technologies (changes only)
 
-Restic is invoked as a CLI process, exactly like `docker compose`. The project already uses
-`execFileAsync` (promisified `execFile` from `node:child_process`) in `DockerExecutor`. Use the
-same pattern for a `ResticExecutor` service.
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| `better-auth` | `^1.7.12` (from `^1.4.18`) | Password reset, OIDC sign-in, admin/RBAC plumbing | Already the auth foundation. 1.7.x carries the OAuth security fixes (see above). Every plugin below ships inside this one package, so there is no new dependency. |
+| `better-auth/plugins` `genericOAuth` | in `better-auth` | OIDC sign-in against one operator-configured provider | Core plugin. It supports `discoveryUrl`, PKCE on by default, ID-token signature, issuer, audience and nonce verification, and `disableImplicitSignUp` / `disableSignUp`. It reuses Docktor's existing `Account`, `Session` and `User` tables with no new schema. |
+| `better-auth/plugins` `admin` + `better-auth/plugins/access` | in `better-auth` | `role`, ban and user-management endpoints, plus a typed role-to-permission model (`createAccessControl`, `ac.newRole`, `role.authorize()`) | Gives a tested role column, ban with session revocation, and `createUser` / `setRole` / `listUsers` / `removeUser`. Docktor does not hand-roll a role system. `authorize()` and `hasPermission` are pure, synchronous functions, so the same definition can drive server route guards and client UI hiding. |
+| PostgreSQL `AuditLog` table (new Prisma model) | Prisma 7 (existing) | Append-only audit log | Docktor already owns its data in Postgres with the repository pattern. An audit log needs no library: it is one table, one repository, one service, and a subscriber on the existing event bus. |
 
-Use `execFile` (not `exec`) to avoid shell injection via user-supplied values (repo paths,
-passwords). Pass restic arguments as an array.
+### Database (additions to existing schema)
 
-**Do not add execa.** Execa v5 is present as a transitive dependency but is not a direct
-dependency. Execa v9+ (ESM-only rewrite) is the current version — the transitive v5 is stale.
-The project's existing approach (`node:child_process.execFile`) is correct for short-lived
-commands like backup/restore. There is no benefit to adding execa here.
+| Change | Purpose | Notes |
+|--------|---------|-------|
+| `User`: `role String?`, `banned Boolean? @default(false)`, `banReason String?`, `banExpires DateTime?` | Admin plugin fields | Add to `server/prisma/schema/auth.prisma`. Existing rows get `role = NULL`, so a backfill is mandatory (next section). |
+| `Session`: `impersonatedBy String?` | Admin plugin field | Required by the plugin even though impersonation is disabled. |
+| New `server/prisma/schema/audit-log.prisma`: `AuditLog { id, createdAt, actorId?, actorEmail?, actorRole?, action, resourceType?, resourceId?, outcome, ip?, userAgent?, metadata Json? }` | Audit log | Make `actorId` and `resourceId` plain strings with no foreign keys, so rows survive user and stack deletion. Snapshot `actorEmail`. Index `(createdAt)`, `(actorId, createdAt)`, `(action, createdAt)`, `(resourceType, resourceId)`. |
+| `ProxyConfig`: `websocketEnabled Boolean` | #86 | See the WebSocket section for the default. Existing rows must keep their current behaviour (backfill to whatever matches today's nginx-proxy behaviour). |
+| Settings keys: external-proxy mode, entrypoint name, certresolver name, external network name; OIDC provider config (client secret via the existing `encrypt()`) | Config | Reuse the existing `Setting` table (`encrypted` flag). No new table. |
 
-**ResticExecutor pattern (mirrors DockerExecutor):**
-```typescript
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+**Owner backfill.** Add a startup reconciliation in the application layer: if no user has `role = "owner"`, promote the earliest-created user. This is idempotent, unit-testable, and covers "existing single-user instances keep working with no migration steps; the first account stays the owner" (#87). Prefer it over hand-editing migration SQL (`server/CLAUDE.md` says never edit migrations manually). The first-run setup wizard must also create the first user with `role = "owner"`; that goes through the existing `signUpEmail` path in `onboarding-service.ts`.
 
-const execFileAsync = promisify(execFile);
-
-export class ResticExecutor {
-  private async restic(args: string[], env: Record<string, string>): Promise<{ stdout: string; stderr: string }> {
-    return execFileAsync('restic', args, {
-      env: { ...process.env, ...env },
-      timeout: 300_000, // 5 minutes for backup/restore operations
-    });
-  }
-
-  async backup(repoPath: string, repoPassword: string, sourceDir: string, tags: string[]): Promise<void> {
-    await this.restic(
-      ['backup', sourceDir, '--json', ...tags.flatMap(t => ['--tag', t])],
-      { RESTIC_REPOSITORY: repoPath, RESTIC_PASSWORD: repoPassword }
-    );
-  }
-
-  async snapshots(repoPath: string, repoPassword: string): Promise<ResticSnapshot[]> {
-    const { stdout } = await this.restic(
-      ['snapshots', '--json'],
-      { RESTIC_REPOSITORY: repoPath, RESTIC_PASSWORD: repoPassword }
-    );
-    return JSON.parse(stdout);
-  }
-
-  async restore(repoPath: string, repoPassword: string, snapshotId: string, targetDir: string): Promise<void> {
-    await this.restic(
-      ['restore', snapshotId, '--target', targetDir],
-      { RESTIC_REPOSITORY: repoPath, RESTIC_PASSWORD: repoPassword }
-    );
-  }
-
-  async forget(repoPath: string, repoPassword: string, policy: RetentionPolicy): Promise<void> {
-    const flags = [
-      policy.daily    ? `--keep-daily=${policy.daily}` : null,
-      policy.weekly   ? `--keep-weekly=${policy.weekly}` : null,
-      policy.monthly  ? `--keep-monthly=${policy.monthly}` : null,
-    ].filter(Boolean) as string[];
-    await this.restic(
-      ['forget', '--prune', ...flags],
-      { RESTIC_REPOSITORY: repoPath, RESTIC_PASSWORD: repoPassword }
-    );
-  }
-}
-```
-
-**Key points:**
-- Pass `RESTIC_REPOSITORY` and `RESTIC_PASSWORD` as environment variables, never as CLI args.
-  This avoids them appearing in `ps` output.
-- `restic` is installed in the Docker image (confirmed in `docs/design.md` Dockerfile).
-- For backup/restore, `execFile` is acceptable — these are one-shot operations with a bounded
-  timeout. Streaming stdout for progress updates is a post-MVP enhancement.
-- `restic init` must be called once on first backup. Check with `restic snapshots` — if it
-  fails with exit code 1 and "no initialized repository", call `init` automatically.
-- `--json` flag on `snapshots` returns machine-parseable output; always use it.
-
----
-
-### 3. Dockerode: Container Inspect and Log Streaming
-
-**Recommendation: dockerode 4.0.9 (already installed) — use `container.logs()` with `follow:true` + `container.modem.demuxStream()`**
-**Confidence: HIGH** — verified directly against installed source (`node_modules/dockerode`,
-`node_modules/docker-modem`).
-
-**Container Inspect (for state poller):**
-
-```typescript
-import Dockerode from 'dockerode';
-
-const docker = new Dockerode({ socketPath: '/var/run/docker.sock' });
-
-// Get container by ID (stored in Service.containerId from docker compose ps)
-const container = docker.getContainer(containerId);
-const info = await container.inspect();
-
-// ContainerInspectInfo.State shape (confirmed from @types/dockerode):
-// info.State.Status:    'running' | 'exited' | 'paused' | 'restarting' | 'dead' | 'created'
-// info.State.Running:   boolean
-// info.State.ExitCode:  number
-// info.State.Health?:   { Status: 'healthy' | 'unhealthy' | 'starting' | 'none', FailingStreak, Log }
-```
-
-**State mapping for the poller:**
-```
-container.State.Status === 'running' && no health → RUNNING
-container.State.Status === 'running' && health.Status === 'healthy' → HEALTHY
-container.State.Status === 'running' && health.Status === 'unhealthy' → UNHEALTHY
-container.State.Status === 'running' && health.Status === 'starting' → RUNNING (transitioning)
-container.State.Status === 'exited' && ExitCode !== 0 → ERROR
-container.State.Status === 'restarting' → ERROR (crash loop)
-container.State.Status === 'dead' → ERROR
-```
-
-**Log Streaming (for SSE endpoint):**
-
-Docker logs are multiplexed: stdout and stderr share the same stream with an 8-byte header per
-chunk (byte 0: stream type 1=stdout/2=stderr; bytes 4-7: payload length as uint32 big-endian).
-You must demux this stream. `docker.modem.demuxStream()` does this — verified in
-`node_modules/docker-modem/lib/modem.js` line 434.
-
-```typescript
-// In a Fastify SSE route handler:
-app.get('/api/stacks/:id/logs/:service', async (request, reply) => {
-  reply.hijack();
-  const res = reply.raw;
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
-    'X-Accel-Buffering': 'no',  // disable Nginx buffering
-  });
-
-  const container = docker.getContainer(containerId);
-
-  // AbortController for clean cancellation on client disconnect
-  const ac = new AbortController();
-  request.raw.on('close', () => ac.abort());
-
-  const logStream = await container.logs({
-    follow: true,
-    stdout: true,
-    stderr: true,
-    tail: 100,       // last 100 lines of history on connect
-    timestamps: true,
-    abortSignal: ac.signal,
-  });
-
-  // Demux the multiplexed Docker log stream
-  const { PassThrough } = await import('node:stream');
-  const stdout = new PassThrough();
-  const stderr = new PassThrough();
-  docker.modem.demuxStream(logStream, stdout, stderr);
-
-  function emitLine(line: string, streamName: 'stdout' | 'stderr') {
-    res.write(`data: ${JSON.stringify({ stream: streamName, line })}\n\n`);
-  }
-
-  stdout.on('data', (chunk: Buffer) => emitLine(chunk.toString(), 'stdout'));
-  stderr.on('data', (chunk: Buffer) => emitLine(chunk.toString(), 'stderr'));
-  logStream.on('end', () => res.end());
-  logStream.on('error', () => res.end());
-});
-```
-
-**Key points:**
-
-1. **TTY containers skip demux.** If the container was started with `tty: true` in its compose
-   file, Docker does NOT multiplex the stream — stdout and stderr are merged into a raw byte
-   stream. Check `ContainerInspectInfo.Config.Tty`. If `Tty === true`, read `logStream` directly
-   without calling `demuxStream`. Most self-hosted app containers do NOT use TTY.
-
-2. **AbortSignal support is confirmed in `ContainerLogsOptions`.** Use `AbortController` to
-   cancel the upstream Docker log stream when the SSE client disconnects. This prevents memory
-   leaks from orphaned streams. Without this, every client disconnect leaves a live stream
-   attached to the Docker socket.
-
-3. **`reply.hijack()` is the correct Fastify 5 pattern** for streaming responses (confirmed
-   from Fastify docs and `Migration-Guide-V5.md`). Do NOT use `reply.send()` for SSE.
-
-4. **`X-Accel-Buffering: no`** is required when Nginx/NPM sits in front of Fastify. Without it,
-   Nginx buffers the SSE stream and the client sees nothing until the buffer fills.
-
-5. **Combined view:** For a combined log stream across all services in a stack, open one
-   `container.logs()` stream per service and prefix each line with `[service-name] `. All
-   streams write to the same SSE response. Maintain an `AbortController` per service and abort
-   all when the client disconnects.
-
----
-
-### 4. Chokidar: File Watching
-
-**Recommendation: chokidar 4.0.3 (already installed)**
-**Confidence: HIGH** — verified directly against installed source and type definitions.
-
-Chokidar 4.x dropped native binary dependencies entirely (no more `fsevents` on macOS in prod
-context). On Linux (Docktor's deployment target), it uses inotify via `fs.watch`. The API is
-unchanged from v3.
-
-**Pattern for compose file watching:**
-```typescript
-import chokidar from 'chokidar';
-
-export function startFileWatcher(stacksDir: string) {
-  const watcher = chokidar.watch(`${stacksDir}/*/docker-compose.yml`, {
-    persistent: true,
-    ignoreInitial: true,     // don't fire 'add' events for files present at startup
-    awaitWriteFinish: {
-      stabilityThreshold: 500,  // wait 500ms after last write before firing 'change'
-      pollInterval: 100,
-    },
-    usePolling: false,       // use inotify on Linux; set to true only for NFS/FUSE mounts
-    depth: 1,                // only watch one level deep inside stacksDir
-  });
-
-  watcher.on('change', async (filePath) => {
-    const stackId = extractStackIdFromPath(filePath);
-    await reconcileStackConfig(stackId);
-  });
-
-  watcher.on('error', (err) => {
-    logger.error({ err }, 'File watcher error');
-  });
-
-  return watcher;
-}
-```
-
-**Key points:**
-
-1. **`awaitWriteFinish` is mandatory for compose files.** Editors and `scp`/`rsync` often write
-   files non-atomically (open → truncate → write). Without `awaitWriteFinish`, the 'change'
-   event fires while the file is still being written and the YAML parse will fail or return
-   partial content.
-
-2. **Polling fallback is a separate reconciliation loop, not a chokidar option.** Do NOT set
-   `usePolling: true` globally — it is expensive (polls every N ms for every watched file).
-   Instead, implement a 60s interval via `node-cron` that hashes all compose files and compares
-   to `Stack.lastKnownHash`. This catches changes missed by inotify on NFS mounts or bind-mounted
-   volumes in Docker.
-
-3. **NFS/FUSE caveat.** If the stacks directory is on an NFS mount (e.g., a NAS), inotify events
-   are not delivered. The 60s polling reconciler is the safety net. Document this limitation.
-
-4. **Glob pattern `${stacksDir}/*/docker-compose.yml`** watches exactly the files needed without
-   watching the volumes/ subdirectory (which would generate enormous noise from database writes).
-
-5. **`ignoreInitial: true`** is critical. On startup, chokidar fires 'add' events for all already-
-   watched files. Without this flag, every startup would trigger config reconciliation for all
-   stacks.
-
----
-
-### 5. Nginx Proxy Manager API Integration
-
-**Recommendation: native `fetch` (Node.js built-in) — no HTTP client library needed**
-**Confidence: MEDIUM** — NPM API behavior derived from training knowledge (knowledge cutoff
-August 2025); web fetch tools unavailable during this research session. Verify against
-https://github.com/NginxProxyManager/nginx-proxy-manager before implementation.
-
-NPM exposes a REST API (no official versioning, but stable in practice). Authentication uses
-JWT tokens issued via `POST /api/tokens`. Proxy hosts are created/updated via
-`POST /api/nginx/proxy-hosts` and `PUT /api/nginx/proxy-hosts/:id`.
-
-**Do not add an NPM client library.** No battle-tested Node.js client library exists. The NPM
-API surface Docktor needs is small (token management + proxy host CRUD + SSL request). Use
-native `fetch` directly.
-
-**NPM API client pattern:**
-```typescript
-export class NginxProxyManagerClient {
-  private token: string | null = null;
-  private tokenExpiry: Date | null = null;
-
-  constructor(private baseUrl: string, private email: string, private password: string) {}
-
-  private async authenticate(): Promise<void> {
-    if (this.token && this.tokenExpiry && this.tokenExpiry > new Date()) return;
-
-    const res = await fetch(`${this.baseUrl}/api/tokens`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ identity: this.email, secret: this.password }),
-    });
-    if (!res.ok) throw new Error(`NPM auth failed: ${res.status}`);
-    const data = await res.json() as { token: string; expires: string };
-    this.token = data.token;
-    this.tokenExpiry = new Date(data.expires);
-  }
-
-  async createProxyHost(opts: {
-    domain: string;
-    forwardHost: string;
-    forwardPort: number;
-    ssl?: boolean;
-  }): Promise<number> {
-    await this.authenticate();
-    const res = await fetch(`${this.baseUrl}/api/nginx/proxy-hosts`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.token}`,
-      },
-      body: JSON.stringify({
-        domain_names: [opts.domain],
-        forward_scheme: 'http',
-        forward_host: opts.forwardHost,
-        forward_port: opts.forwardPort,
-        ssl_forced: opts.ssl ?? true,
-        certificate_id: opts.ssl ? 'new' : null,
-        meta: { letsencrypt_agree: opts.ssl, letsencrypt_email: 'admin@docktor' },
-      }),
-    });
-    if (!res.ok) throw new Error(`NPM create proxy host failed: ${res.status}`);
-    const host = await res.json() as { id: number };
-    return host.id;
-  }
-
-  async deleteProxyHost(id: number): Promise<void> {
-    await this.authenticate();
-    await fetch(`${this.baseUrl}/api/nginx/proxy-hosts/${id}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${this.token}` },
-    });
-  }
-}
-```
-
-**Key points:**
-
-1. **Store NPM URL + credentials in the Settings model** (encrypted for password). NPM base URL
-   defaults to `http://nginx-proxy-manager:81` when NPM runs as a Docktor-managed stack on the
-   same Docker network.
-
-2. **Store the NPM proxy host ID in `ProxyConfig.npmHostId`** (add to schema if not present).
-   This allows updating or deleting the proxy host later. Without it, you cannot identify which
-   NPM host corresponds to which Docktor service.
-
-3. **Token expiry:** NPM JWT tokens expire after 1 day by default. Cache the token and
-   re-authenticate when expired (as shown above). Do not authenticate on every request.
-
-4. **SSL via Let's Encrypt:** NPM handles TLS automatically via Let's Encrypt when
-   `certificate_id: 'new'` is set. This requires the NPM container to be reachable from the
-   public internet on port 80. For LAN-only deployments, set `ssl: false`.
-
-5. **NPM API is not officially versioned.** It is an internal API that has changed across NPM
-   versions. **This is the highest-risk integration in this milestone.** Test against the actual
-   NPM version running in the user's environment. The proxy configuration feature should be
-   marked as requiring specific NPM version compatibility (NPM 2.x API).
-
-6. **Low adoption risk mitigation:** Proxy configuration is the last post-MVP phase. Defer
-   until the API surface is validated against a running NPM instance during development.
-
----
-
-## Full Stack Summary
-
-### Core Framework (Locked)
+### Infrastructure
 
 | Technology | Version | Purpose | Why |
 |------------|---------|---------|-----|
-| Node.js | 22 LTS (prod), 20 LTS (dev) | Runtime | Strong async I/O, Docker socket support |
-| TypeScript | ^5.7.3 | Language | Type safety across client/server/shared |
-| Fastify | ^5.7.4 | HTTP + SSE + static serving | High-perf, schema validation, reply.hijack() for SSE |
-| React + Vite | — | SPA frontend | Fast builds, HMR, no SSR overhead needed |
+| None new | | | v0.2.0 does not add containers or services. The managed proxy stays `nginxproxy/nginx-proxy` plus `acme-companion`. External-proxy mode explicitly deploys nothing. |
 
-### Database (Locked)
-
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| PostgreSQL | — | Primary database | Robust, multi-schema Prisma support |
-| Prisma | — | ORM | Multi-file schema, type-safe queries |
-
-### Docker Integration (Locked)
-
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| dockerode | ^4.0.9 | Container inspect + log streaming | Mature Node.js Docker API client |
-| docker compose CLI | v2 (plugin) | Stack lifecycle operations | dockerode cannot orchestrate compose |
-| node:child_process | built-in | CLI invocation for compose + restic | No extra library needed |
-
-### Supporting Libraries (Installed, Configured in Milestone 2)
+### Supporting Libraries
 
 | Library | Version | Purpose | When to Use |
 |---------|---------|---------|-------------|
-| chokidar | ^4.0.3 | Watch compose files for external edits | File watcher feature |
-| node-cron | ^3.0.3 | Polling reconciliation + backup scheduling + update checks | All background jobs |
-| yaml | ^2.7.0 | Compose file parsing | Brownfield scan + config parse |
+| `nodemailer` | `^8.0.2` (already installed; keep) | Password-reset email | Reuse `SmtpClient` and `NotificationService`'s SMTP config (decrypted per send). Extend the `sendMail` message with optional `html` only if wanted; plain text is sufficient. The registry shows `nodemailer 10.x`; a major bump is not needed for this milestone and is out of scope. |
+| `yaml` | `^2.7.0` (already installed; keep) | Traefik label emission into the compose file | Use the Document API as `compose-proxy-editor.ts` does today (surgical edits that preserve comments). |
+| `zod` | `^4.3.6` (already installed) | Schemas for OIDC settings, external-proxy settings, role assignment, audit-log queries | Put all in `@docktor/shared/src/validation/`, per project rules. |
+| `node-cron` | `^3.0.3` (already installed) | Audit-log retention prune job | Optional; a daily `deleteMany` older than a configurable window. |
+| Domain event bus (`InMemoryEventBus`, existing) | n/a | Audit capture | Add an `audit-subscriber.ts` under `application/subscribers/` beside the existing incident, notification and stack-event subscribers. Its per-subscriber failure isolation means an audit write failure can never break the action. |
 
-### New Additions for Milestone 2
+### Development Tools
 
-| Library | Version | Purpose | Why |
-|---------|---------|---------|-----|
-| nodemailer | ^6.9 | SMTP email notifications | Industry standard, zero deps, full TLS/auth support |
-| @types/nodemailer | ^6.4 | TypeScript types for nodemailer | Dev dependency |
+| Tool | Purpose | Notes |
+|------|---------|-------|
+| `npx auth@latest generate --adapter prisma` | Diff the schema better-auth expects against `auth.prisma` | Dev-only, Node 22.12 or newer. Hand-merge the result. Never `auth migrate`. |
+| Existing Vitest, Testcontainers Postgres | RBAC allow/deny matrix per role, OIDC path, reset flow | Integration tests need a real DB (project rule). OIDC tests need a fake IdP; see Pitfalls for the options. |
 
 ---
 
-## Alternatives Considered
+## Integration Notes by Feature
 
-| Category | Recommended | Alternative | Why Not |
-|----------|-------------|-------------|---------|
-| SMTP | nodemailer | @sendgrid/mail | SaaS dependency; self-hosters should not need a cloud SMTP relay |
-| SMTP | nodemailer | email-templates | Template generation overkill; Docktor emails are simple text alerts |
-| CLI execution | node:child_process | execa | Transitive dep only (stale v5); no benefit over built-in for one-shot commands |
-| NPM API | native fetch | node-fetch, axios, got | Node 18+ has built-in fetch; no need for HTTP client libraries |
-| SSE | reply.raw (Fastify) | @fastify/sse, fastify-sse-v2 | These plugins add reply.sse() for simple use; Docktor's SSE streams are complex (dockerode pipe) and reply.hijack() + reply.raw gives full control |
-| File watching | chokidar | fs.watch (native) | Native fs.watch is not cross-platform reliable and lacks glob support, awaitWriteFinish, and depth filtering |
+### 1. Password reset (#79): better-auth core, no plugin
+
+Config on the existing `betterAuth({...})`:
+
+```ts
+emailAndPassword: {
+    enabled: true,
+    resetPasswordTokenExpiresIn: 60 * 60,   // 1 hour
+    revokeSessionsOnPasswordReset: true,    // acceptance criterion: signs out all sessions
+    sendResetPassword: async ({user, url}) => { /* build mail, hand to NotificationService/SmtpClient */ },
+},
+advanced: {
+    backgroundTasks: {handler: (promise) => { void promise; }},  // REQUIRED, see below
+},
+```
+
+- **Re-enable the two endpoints.** Remove `/request-password-reset` and `/reset-password` from `TWO_FACTOR_DISABLED_PATHS` in `auth-config.ts`. Rename the constant, since it will no longer be only two-factor paths.
+- **Rate limits.** Add `/request-password-reset` and `/reset-password` to `AUTH_STRICT_PATHS`. The emailed link first hits a GET `/reset-password/<token>`. The rate limiter supports `*` wildcards in `customRules` keys (checked in the 1.7.12 source: `wildcardMatch` when the key contains `*`), so add `/reset-password/*` explicitly. The existing comment "exact paths only, never a wildcard" must be revisited for this one path.
+- **Neutral response is built in.** In 1.7.12 `requestPasswordReset` returns `{status: true, message: "If this email exists in our system, check your email for the reset link"}` for known and unknown addresses alike (verified in `dist/api/routes/password.mjs`).
+- **Timing oracle (verified in source).** better-auth calls `ctx.context.runInBackgroundOrAwait(sendResetPassword(...))`. Unless `advanced.backgroundTasks.handler` is set it **awaits** the send. A known address then takes as long as an SMTP round trip and an unknown one returns at once, so an attacker can enumerate accounts by response time. Setting the handler (as above) makes the send fire-and-forget. This is a hard requirement for the "account existence is not revealed" acceptance criterion.
+- **2FA is not bypassed.** The reset endpoint only changes the password and creates no session, so sign-in still goes through the twoFactor hooks. Keep the `before` hook behaviour unchanged.
+- **SMTP not configured.** `sendResetPassword` cannot report failure to the caller without breaking neutrality. Gate on the server side: a small Docktor route (`GET /api/auth-capabilities`, public) returns `{passwordReset: boolean}` from "is SMTP configured", and the sign-in page only shows "Forgot password?" when true. In the `before` hook, return a clear 4xx for the two paths when SMTP is unconfigured (this does not leak account existence).
+- **`redirectTo`.** The link redirects to a client route (`/reset-password?token=`). The target must be in `trustedOrigins`; Docktor's dynamic `resolveTrustedOrigins` already covers the configured base URL.
+
+### 2. OIDC sign-in (#61 / #87): `genericOAuth`, not `@better-auth/sso`
+
+```ts
+import {genericOAuth} from "better-auth/plugins";
+
+genericOAuth({
+    config: [{
+        providerId: "oidc",
+        discoveryUrl: `${issuer}/.well-known/openid-configuration`,
+        clientId, clientSecret,                 // clientSecret decrypted from Setting
+        scopes: ["openid", "email", "profile"],
+        pkce: true,                             // default in 1.7, keep explicit
+        requireIdTokenVerification: true,       // fail closed if discovery lacks JWKS
+        disableImplicitSignUp: true,            // first-sign-in rule: see below
+    }],
+})
+```
+
+Client: `authClient.signIn.social({provider: "oidc", callbackURL})`. No `genericOAuthClient()` in 1.7. The IdP redirect URI to document for operators is `${baseURL}/api/auth/callback/oidc`.
+
+Settings that matter (all verified as 1.7.12 types or docs):
+- `account.accountLinking: {enabled, trustedProviders, disableImplicitLinking, allowDifferentEmails}`. **Recommended: `disableImplicitLinking: true`, and never list the OIDC provider in `trustedProviders` unless the operator opts in.** An OIDC email must not silently attach to an existing local account unless the IdP asserts `email_verified`. This is the mitigation for the same class as GHSA-g38m. Linking should be an explicit signed-in action (`linkSocial`) or an admin action.
+- `account.encryptOAuthTokens: true`. OIDC rows in `Account` otherwise store access, refresh and ID tokens in plaintext. Docktor never needs them after sign-in, so also consider not requesting `offline_access`.
+- `disableImplicitSignUp: true` plus `requestSignUp` semantic: a new OIDC identity does not create a user unless Docktor decides to allow it. Docktor decides per instance via a setting ("auto-create users on first OIDC sign-in as role X", default off with an admin pre-creating or inviting the user). Enforce with `databaseHooks.user.create.before` (Docktor code, in `lib/`), which also assigns the default role. Default new-user role must be the lowest privilege.
+- `mapProfileToUser` cannot set `id` in 1.7 and the account subject defaults to the verified `sub`. Do not key identity on email.
+
+**Config is static in better-auth.** `genericOAuth` reads `options.config` once at init. Provider endpoints are discovered at startup, with later retries only for a provider that failed discovery. There is no runtime-registration API in core. Two ways to give operators a Settings-page OIDC form:
+
+| Option | Cost | Recommendation |
+|--------|------|----------------|
+| A. Env-var config (`OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`), restart to change | Zero plumbing | Acceptable minimum |
+| B. DB-backed config (Setting rows, encrypted secret) plus an `AuthRuntime` holder that rebuilds the `betterAuth()` instance when the OIDC settings change | The `auth` singleton is imported in only two places (`routes/auth.ts`, `onboarding-service.ts`) plus `auth-middleware.ts`. Rebuilding is cheap because sessions and rate limits are DB-backed, but `routes/auth.ts` must call the current instance per request instead of capturing `toNodeHandler(auth)` once. | **Recommended**, because Docktor already keeps Base URL, SMTP and ACME settings in the DB and "configure in the UI" is the product's pattern. Treat the rebuild holder as a Docktor design (not a better-auth feature) and put it in its own plan. |
+
+Config precedence rule if both exist: env wins and the UI shows it as read-only.
+
+### 3. Roles and access control (#64 / #87): `admin` plugin with custom `ac`
+
+Define the statement and roles once in `@docktor/shared` (new `shared/src/access/`), importing from `better-auth/plugins/access` (the docs recommend this subpath for small bundles) and `better-auth/plugins/admin/access` for `defaultStatements` and `adminAc`:
+
+```ts
+const statement = {
+    ...defaultStatements,                       // user + session admin permissions
+    stack: ["view", "create", "deploy", "operate", "edit", "delete"],
+    backup: ["view", "run", "restore", "configure"],
+    proxy: ["view", "configure"],
+    settings: ["view", "update"],
+    audit: ["view"],
+    import: ["scan", "migrate"],
+} as const;
+export const ac = createAccessControl(statement);
+// owner, admin, operator, viewer = ac.newRole({...}); spread adminAc.statements into owner/admin
+```
+
+(The statement shape above is a sketch; the actual permission matrix is a roadmap/architecture decision.)
+
+- Plugin config: `admin({ac, roles, defaultRole: "viewer", adminRoles: ["owner", "admin"]})`. **If a role is not in `roles`, `setRole` and permission checks treat it as having no permissions.** Include every role.
+- Server: a `requirePermission(resource, action)` preHandler factory next to `requireAuth` in `auth-middleware.ts`. It calls `roles[user.role].authorize({...})` (pure, no DB call; `userHasPermission` is the async API variant). `requireSession` already loads the user on every request, so the role comes for free once the admin plugin adds `role` to the session user type. Users can hold comma-separated multiple roles; `hasPermission` handles that.
+- **Enforce on SSE, not only REST.** `routes/events.ts` currently runs `requireAuth` in `onRequest` once per connection. Add a permission check for each stream, filter events by what the role may see, and close open `EventSource` connections when a user's role changes, they are banned, or their session is revoked. A long-lived SSE connection otherwise keeps its authorisation from the moment it opened. This needs a hook into `StateBroadcaster` and is the easiest place to leave a gap.
+- **Route the admin plugin's HTTP surface through Docktor, do not expose it.** Add all `/admin/*` paths to `disabledPaths`. `disabledPaths` is applied to HTTP requests only (the router `onRequest`, verified in 1.7.12 `dist/api/index.mjs`), so server-side `auth.api.createUser(...)`, `setRole`, `banUser`, `listUsers`, `removeUser`, `revokeUserSessions` calls still work. Docktor adds its own `/api/users/*` routes that call them from an application service, which gives one choke point for the 2FA-enrollment gate, the "last owner" invariant, the audit write, and Zod validation from `@docktor/shared`. This is also why impersonation (`/admin/impersonate-user`, `/admin/stop-impersonating`) must never be reachable: with Docker-socket authority it would be a privilege-escalation path.
+- Keep the existing `before` hook that blocks `/sign-up/email` once a user exists. It is unaffected, because admin `createUser` uses a different path and goes through the Docktor route.
+- Domain invariants better-auth does not give you (put in `domain/`): at least one `owner` must always exist (block demote, ban and delete of the last owner); a non-owner cannot grant `owner`.
+- **Per-stack scoping is not supported by better-auth's access control** (it is global role to resource to action). #87 asks that per-stack scoping be "decided and documented". Recommendation: v0.2.0 ships global per-role scope and documents per-stack scoping as deferred. If it is pulled in later, add a Docktor-owned `StackAccess(userId, stackId, role)` table and a check in the same `requirePermission` guard. Do not adopt the organization plugin for this (see "What NOT to Use").
+- Client: `adminClient({ac, roles})` is only needed if the UI calls the plugin client directly. With the Docktor-route design the client does not need it; use the shared `ac` and roles for `can(resource, action)` UI hiding. The server remains the enforcement point.
+- 2FA interplay: `twoFactor` hooks apply to credential sign-in only. OIDC sign-in does not prompt for TOTP (the IdP owns that). The mandatory-2FA gate in `requireAuth` (`isEnrollmentRequired`) would lock out OIDC-only users who cannot enroll TOTP; decide the policy (exempt OIDC-only users) in the roadmap.
+
+### 4. Audit log (#64): Postgres table plus event-bus subscriber
+
+- **Storage:** the `AuditLog` model above, `AuditLogRepository`, `AuditService` (`record()`, `list(filters, cursor)`). No library.
+- **Capture points (both are needed):**
+  1. Docktor domain actions (deploy, stop, delete, settings change, user and role changes, backup restore, proxy changes, migration): emit domain events on the existing `InMemoryEventBus`; an `audit-subscriber.ts` writes rows. Subscriber isolation means an audit failure cannot fail the user action, but also means a failed write is silent, so log failures through the app logger and alert on them.
+  2. Auth events from better-auth (sign-in success and failure, sign-out, password change and reset, 2FA enable and disable, OIDC sign-in and linking): record from the existing `hooks.after` middleware (`ctx.path`, `ctx.context.newSession`, `ctx.context.returned`), next to the current 2FA after-hook.
+- Actor context: take `request.user` (id, email, role) and `request.ip` (honours `TRUST_PROXY`) at the route boundary and pass it into services as an explicit `actor` parameter. Do not read it from ambient state.
+- Never store secrets: scrub `metadata`, and never write env values, compose contents, tokens or SMTP passwords. Store identifiers and key names only.
+- Immutability: no update or delete endpoint. Retention via an optional `node-cron` prune job with a configurable window (default long, for example 365 days).
+- API: `GET /api/audit-log` guarded by the `audit:view` permission, cursor-paginated on `(createdAt, id)`.
+
+### 5. External proxy mode (#44): no library, extend the existing compose editor
+
+Traefik label output is a handful of strings, emitted with the `yaml` Document API through the same editing path as `compose-proxy-editor.ts`:
+
+```yaml
+labels:
+  - traefik.enable=true
+  - traefik.docker.network=<external proxy network>
+  - traefik.http.routers.docktor-<stack>-<service>.rule=Host(`app.example.com`)
+  - traefik.http.routers.docktor-<stack>-<service>.entrypoints=websecure
+  - traefik.http.routers.docktor-<stack>-<service>.tls=true
+  - traefik.http.routers.docktor-<stack>-<service>.tls.certresolver=<resolver>
+  - traefik.http.services.docktor-<stack>-<service>.loadbalancer.server.port=<port>
+```
+
+(Syntax confirmed in the Traefik v3 Docker provider reference. The same labels are valid in v2.)
+
+- Make `entrypoints`, `certresolver` and the shared network name **instance settings**, not constants. They are different on every user's Traefik, and Docktor cannot see their proxy.
+- Router and service names must be unique across the user's whole Traefik, so prefix with `docktor-<stackId>-<serviceName>`. A bare service name collides.
+- The service also needs to join the user's external proxy network (`networks: {<name>: {external: true}}`) or Traefik cannot reach it. Reuse the network-adding code path that already adds `docktor_proxy` in `compose-proxy-editor.ts`.
+- The user's compose may use list-form or map-form `labels`; the editor must handle both and must never drop the user's own labels.
+- Copyable snippets for other proxies are pure string builders in `domain/` (testable, no I/O), each a `{title, language, text}`:
+  - **Caddy (caddy-docker-proxy labels):** `caddy: app.example.com` and `caddy.reverse_proxy: "{{upstreams <port>}}"` (the quotes only in YAML), plus the shared-network requirement (confirmed in the project README). Also offer a plain Caddyfile block (`app.example.com { reverse_proxy <container>:<port> }`) for users not running caddy-docker-proxy.
+  - **Nginx Proxy Manager:** a field list to enter in the UI (domain, scheme, forward host as container name, forward port, "Websockets Support", SSL). Do not integrate with its API (undocumented, already ruled out in PROJECT.md Key Decisions).
+  - **Plain nginx** (optional): a `server {}` block with `Upgrade` and `Connection` headers.
+- Clipboard: `navigator.clipboard` exists only in secure contexts, and Docktor explicitly supports plain-http LAN installs. Use `navigator.clipboard.writeText` with a fallback (selectable text plus `document.execCommand("copy")`). No clipboard library is needed.
+
+### 6. WebSocket per proxied domain on nginx-proxy (#86): verified behaviour changes what this feature is
+
+Read from `nginx.tmpl` (main branch): nginx-proxy already forwards WebSocket upgrades for every vhost.
+- `map $http_upgrade $proxy_connection { default upgrade; '' $proxy_connection_noupgrade; }`
+- `proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection $proxy_connection;` at the http level.
+
+So there is no missing "enable WebSocket" switch. A WebSocket client that sends `Upgrade` already works. What breaks WebSocket apps in practice is nginx's default `proxy_read_timeout` (60 seconds, nginx's own default, not set in the template) closing idle connections. The issue asked to "verify first how nginx-proxy treats Upgrade headers", and this is the result: **default behaviour is already on**, so the per-domain setting has to be defined as something other than on/off for the upgrade headers.
+
+Recommended definition: `websocketEnabled` means "extend `proxy_read_timeout` / `proxy_send_timeout` for this domain". Implement by writing `volumes/vhost.d/<domain>_location` containing only timeout directives. This file is included inside the generated `location` block (template lines ~342-347) and `./volumes/vhost.d` is already mounted into nginx-proxy by `proxy-stack-compose.ts`.
+
+- **Do not put `proxy_set_header` in that file.** In nginx, a `proxy_set_header` at location level replaces every inherited `proxy_set_header` from the http level, which would drop `Host`, `X-Forwarded-*` and the Upgrade headers. Timeouts only.
+- A true "off" (stripping Upgrade) would therefore require re-declaring the whole header set. Recommend not offering "off" beyond "don't write the timeout file". Document that Upgrade is always forwarded.
+- The template renders `exists "<file>"` at generation time, so creating a new `_location` file needs nginx-proxy to regenerate its config, not only reload. The current assign-domain flow recreates the service container, which fires a Docker event that triggers regeneration, so write the file before `compose up`. Toggling the setting alone, without a container event, needs a spike. **This is MEDIUM confidence; flag it for phase research.**
+- Use a stable file name derived from the exact `VIRTUAL_HOST` value and clean it up in the "remove domain" path (the same idempotent apply/remove discipline as the certificate files). Wildcard hosts need the `\*` escaping seen in the template.
+- Traefik and Caddy handle WebSocket upgrades natively, so external mode needs no WebSocket setting. The NPM snippet should tell the user to switch on "Websockets Support".
+- Versions in the repo: `nginxproxy/nginx-proxy:1.11-alpine` is current (latest release `1.11.6`, 2026-07-16). `acme-companion` is pinned at `2.6.3` while `v2.8.2` is out (2026-07-17); a bump is optional and unrelated to these features.
+
+### 7. Migration hardening (#100 to #109): no new packages
+
+All of this is changes to `migration-service.ts`, `volume-migrator.ts`, `compose-rewriter.ts`, `compose-analyzer.ts`, `external-stack-control.ts`, and the client migration wizard. The existing tools suffice: `docker compose ps -q` and `docker volume inspect` through the existing `DockerExecutor`, `yaml` for `external: {name}` rewrites, `fs.realpath` for #108. For #103 (mask secrets in the compose diff), reuse the key-aware masking already used for the `.env` preview and the existing `diff` package (`^9.0.0`). Do not add a secret-scanning library. The mask works by key name, as the issue specifies.
 
 ---
 
 ## Installation
 
 ```bash
-# New dependency (server)
-cd server && npm install nodemailer
-npm install -D @types/nodemailer
+# The only dependency change (root package.json)
+yarn add better-auth@^1.7.12
 
-# All other dependencies are already installed
+# Dev-only schema diff, never `auth migrate` (Prisma app); needs Node >= 22.12
+npx auth@latest generate --adapter prisma
 ```
 
----
+No other `yarn add` for v0.2.0.
 
-## Confidence Summary
+## Alternatives Considered
 
-| Area | Confidence | Source |
-|------|------------|--------|
-| dockerode API (logs, inspect) | HIGH | Verified against installed source: `node_modules/dockerode` v4.0.9, `node_modules/docker-modem`, `node_modules/@types/dockerode` |
-| dockerode demuxStream | HIGH | Verified against `node_modules/docker-modem/lib/modem.js` line 434 |
-| Fastify SSE pattern (reply.hijack + reply.raw) | HIGH | Verified against `node_modules/fastify/docs/Reference/Reply.md` and Migration-Guide-V5.md |
-| ContainerLogsOptions.abortSignal | HIGH | Verified in `@types/dockerode` line 2083 |
-| ContainerInspectInfo.State shape | HIGH | Verified in `@types/dockerode` lines 585-608 |
-| chokidar API | HIGH | Verified against `node_modules/chokidar/index.d.ts` |
-| node:child_process for restic | HIGH | Mirrors existing DockerExecutor pattern in codebase |
-| nodemailer API | HIGH (training) | Industry standard; no breaking changes in v6 since 2019. Not independently verified this session due to tool restrictions. |
-| NPM API endpoints | MEDIUM | Training knowledge (August 2025). Web fetch denied. Verify against https://github.com/NginxProxyManager/nginx-proxy-manager/tree/develop/backend/internal/api before implementing the proxy phase. |
-| NPM JWT token schema | MEDIUM | Same caveat as above |
+| Recommended | Alternative | When to Use Alternative |
+|-------------|-------------|-------------------------|
+| `genericOAuth` (core plugin) | `@better-auth/sso` (`1.7.12`, runtime `registerSSOProvider`, `ssoProvider` table) | Only for a multi-tenant product where many customers each bring their own IdP, by domain. For Docktor (one instance, one IdP) it adds SAML (`samlify`, XML parsing), domain verification and organization linking that Docktor never uses, and it requires pinning to the same `better-auth` version exactly. Its advisory history is also the worst in the ecosystem: GHSA-5rr4-8452-hf4v (critical, SSRF), GHSA-prpr-5gj3-qqhg, GHSA-mx9r-x6ww-qjw9 and others. The better-auth self-service SSO dashboard also moved to their paid Infrastructure product in 1.5, which conflicts with Docktor's "never paywalled" stance for OIDC. |
+| `admin` plugin plus custom `ac` | Hand-rolled `role` column and permission matrix | Only if you want zero better-auth schema additions. You would then reimplement ban-with-session-revoke, user CRUD, and role validation. Not worth it. |
+| `admin` plugin plus custom `ac` | CASL or another ability library | Only if per-stack or attribute-based conditions are pulled into scope. The role-to-resource-action model covers per-role scoping. |
+| Postgres `AuditLog` table | better-auth Infrastructure audit logs | Paid hosted product; does not cover Docktor's non-auth actions (deploy, delete, and so on). |
+| Postgres `AuditLog` table | Ship audit events to a log file or external SIEM only | Add as an optional later sink. The in-app audit view (#64 "records who did what") needs queryable storage. |
+| DB-backed OIDC settings with a rebuildable auth holder | Env-var-only OIDC config | If the roadmap wants to cap scope. Restart-to-change is a documented, acceptable first cut. |
+| Docktor-side `/api/users/*` over `auth.api.*` | Expose `/api/auth/admin/*` directly to the browser | Only if you skip the audit, the last-owner invariant and the 2FA gate. Not recommended. |
 
----
+## What NOT to Use
 
-## Risks and Flags
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| Staying on `better-auth` 1.4.x while adding OIDC | The OAuth account-linking and state-handling advisories (GHSA-g38m-r43w-p2q7, GHSA-wxw3-q3m9-c3jr, GHSA-965c-763c-88jm) are fixed only in 1.6.x and 1.7.x. The 1.4 line stopped at 1.4.22. | `^1.7.12` |
+| `@better-auth/sso` | See Alternatives. SAML and organisation machinery, large advisory history, version-locked, and paid-dashboard coupling. | `genericOAuth` |
+| `organization` plugin | Multi-tenant teams and invitations. It does not provide per-stack ACLs, and it carries its own advisory history (GHSA-fmh4-wcc4-5jm3). | Admin plugin roles now; a Docktor-owned `StackAccess` table later if per-stack scoping is needed |
+| `oidcProvider` or `@better-auth/oauth-provider` | These turn Docktor into an identity provider. The need is the opposite: Docktor consumes an IdP. `oidcProvider` was removed in 1.7. | `genericOAuth` |
+| Admin plugin impersonation (`/admin/impersonate-user`) | With Docker-socket authority it is an escalation path. | Add the `/admin/*` paths to `disabledPaths` and call `auth.api.*` server-side only |
+| `@better-auth/api-key`, `bearer`, `jwt` | Token REST API is #60, explicitly out of scope for #87. | Defer to #60 |
+| `signIn.oauth2`, `genericOAuthClient()`, `/api/auth/oauth2/callback/` | Pre-1.7 API; removed in the 1.7 rewrite. Most blog posts show these. | `signIn.social({provider})`, callback `/api/auth/callback/:providerId` |
+| Awaiting the email send inside `sendResetPassword` (default, no `backgroundTasks` handler) | Creates an account-enumeration timing oracle (verified in source). | `advanced.backgroundTasks.handler` |
+| Hand-parsing or regex-editing compose for label injection | Loses comments and mishandles list vs map `labels`. | The `yaml` Document API, as in `compose-proxy-editor.ts` |
+| A Traefik or Caddy client library, or any NPM API client | Docktor has no visibility into the user's proxy by design (#44 out-of-scope). | Emit labels and snippets only |
+| `proxy_set_header` in nginx-proxy `vhost.d/*_location` | Drops all inherited proxy headers for that location. | Timeout directives only |
+| A second audit store (`pino` file transport as the system of record, an audit npm package) | Not queryable by role, permission, or the UI. | Postgres `AuditLog` plus the logger as a secondary sink |
 
-**Highest risk: Nginx Proxy Manager API.**
-NPM's API is internal and undocumented officially. It changes across NPM versions without
-announcement. Implementation should be deferred to the final post-MVP phase and validated
-against a live NPM instance early in that phase. If the API has changed materially,
-the proxy integration may need a different approach (e.g., direct Nginx config file generation
-instead of NPM API calls).
+## Stack Patterns by Variant
 
-**Medium risk: dockerode TTY containers.**
-Some containers use `tty: true`, which bypasses the Docker multiplex framing. The log streaming
-implementation must check `ContainerInspectInfo.Config.Tty` and skip `demuxStream` for those
-containers. Failure to handle this results in binary garbage in the log stream.
+**If the instance has no SMTP configured:**
+- Hide "Forgot password?", return a clear message on the two reset paths, and document the on-box recovery.
+- Because the issue requires the flow to be unavailable with a clear message.
 
-**Low risk: chokidar on NFS.**
-inotify events are not delivered on NFS mounts. The 60s polling reconciler is the mitigation,
-but this must be implemented — it is not optional.
+**If OIDC is configured but a user's email matches an existing local account:**
+- Do not auto-link. Require sign-in with the existing method and an explicit `linkSocial`, or an admin-initiated link.
+- Because of the pre-registration account-takeover class (GHSA-g38m).
 
----
+**If the instance is an upgrade of a single-user install:**
+- Startup reconciliation promotes the earliest user to `owner`; nothing else is required of the operator.
+- Because #87 requires zero migration steps.
+
+**If an operator runs Traefik with a different certresolver or entrypoint:**
+- Those are instance settings with defaults `websecure` and a resolver name entered by the user. Docktor does not verify them.
+
+## Version Compatibility
+
+| Package A | Compatible With | Notes |
+|-----------|-----------------|-------|
+| `better-auth@1.7.12` | `@prisma/client@7`, `prisma@7` | Peer range `^5 \|\| ^6 \|\| ^7`. Adapter is bundled (`@better-auth/prisma-adapter`). |
+| `better-auth@1.7.12` | `zod@^4.5.4` (its own dependency) | Repo declares `^4.3.6`; resolve to a single 4.x in the lockfile. |
+| `better-auth@1.7.12` | Node 22 | Production image `node:22-slim`. The `auth` CLI needs 22.12 or newer (dev only). |
+| `@better-auth/sso@1.7.12` | `better-auth@^1.7.12` (peer) | Listed only to document why it is not used. Older `sso@1.4.22` pins `better-auth` to exactly `1.4.22`. |
+| `nginxproxy/nginx-proxy:1.11-alpine` | `vhost.d/<host>_location` includes | Verified in the current `nginx.tmpl`. Re-verify if the pin changes major or minor. |
+| Traefik v3 (and v2) | Docker-provider labels above | Same label names; entrypoint and resolver names are user-defined. |
 
 ## Sources
 
-- Installed source: `server/package.json` — confirmed all existing dependencies and versions (HIGH)
-- Installed source: `node_modules/@types/dockerode/index.d.ts` — ContainerInspectInfo, ContainerLogsOptions, abortSignal (HIGH)
-- Installed source: `node_modules/docker-modem/lib/modem.js` — demuxStream implementation (HIGH)
-- Installed source: `node_modules/dockerode/lib/container.js` — logs() implementation with isStream/follow (HIGH)
-- Installed source: `node_modules/chokidar/index.d.ts` — ChokidarOptions, FSWatcher API (HIGH)
-- Installed source: `node_modules/fastify/docs/Reference/Reply.md` — reply.hijack() + reply.raw pattern (HIGH)
-- Installed source: `node_modules/fastify/docs/Guides/Ecosystem.md` — @fastify/sse plugin reference (HIGH)
-- Project context: `.planning/PROJECT.md` — requirements, constraints, architectural decisions (HIGH)
-- Project context: `docs/design.md` — detailed technical design (HIGH)
-- Existing codebase: `server/src/infrastructure/docker-executor.ts` — child_process pattern (HIGH)
-- Training knowledge (August 2025 cutoff): nodemailer API, NPM API — WebSearch and WebFetch denied during this session
+- npm registry (`npm view`): `better-auth@1.7.12` (published 2026-10-20), `@better-auth/sso@1.7.12`, `nodemailer`, `yaml`; dist-tags and publish times for 1.4.18, 1.4.22, 1.5.0, 1.6.0, 1.7.0. HIGH.
+- `better-auth@1.7.12`, `@better-auth/core@1.7.12`, and the installed `better-auth@1.4.18` package source and types: reset-password route, `runInBackgroundOrAwait`, rate-limiter wildcard matching, `disabledPaths` handling, admin `hasPermission`, access `authorize`, `accountLinking` and `encryptOAuthTokens` options, package export paths. HIGH.
+- GitHub security advisories for `better-auth/better-auth` (`gh api repos/better-auth/better-auth/security-advisories`), fetched 2026-10-21. HIGH.
+- GitHub releases v1.5.0, v1.6.0 and v1.7.0 for `better-auth/better-auth` (breaking-change notes). HIGH.
+- https://better-auth.com/docs/guides/1-7-upgrade-guide.md (account issuer reversal in 1.7.3, generic OAuth rewrite, 2FA changes, Prisma notes). HIGH.
+- https://www.better-auth.com/docs/plugins/admin, /plugins/generic-oauth, /plugins/sso, /authentication/email-password (plugin options and examples). MEDIUM to HIGH. The pages carry no version numbers, so each claim was checked against the 1.7.12 types where it mattered.
+- https://raw.githubusercontent.com/nginx-proxy/nginx-proxy/main/nginx.tmpl (WebSocket headers, `vhost.d` include points). HIGH for what the template says; MEDIUM for the regeneration-versus-reload behaviour, which was not exercised.
+- GitHub releases for `nginx-proxy/nginx-proxy` (1.11.6) and `nginx-proxy/acme-companion` (v2.8.2). HIGH.
+- https://doc.traefik.io/traefik/reference/routing-configuration/other-providers/docker/ (Traefik v3 Docker labels). MEDIUM to HIGH.
+- https://github.com/lucaslorentz/caddy-docker-proxy (label syntax and network requirements). MEDIUM.
+- NPM "Websockets Support" API field name (`allow_websocket_upgrade`): found in a third-party client only; LOW. Not needed, because Docktor shows UI field instructions rather than calling the API.
+- Docktor repo: `server/src/lib/auth.ts`, `auth-config.ts`, `auth-middleware.ts`, `routes/auth.ts`, `routes/events.ts`, `lib/proxy-stack-compose.ts`, `lib/compose-proxy-editor.ts`, `infrastructure/smtp-client.ts`, `infrastructure/event-bus.ts`, `prisma/schema/auth.prisma`, `proxy.prisma`. HIGH.
+- Context7 was not available in this session, so library claims rest on the registry, package source and official docs above.
+
+---
+*Stack research for: Docktor v0.2.0 (migration hardening, proxy modes, auth and access)*
+*Researched: 2026-10-21*

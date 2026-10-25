@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {StackFilesystem} from "../../../src/infrastructure/stack-filesystem.js";
-import {ConflictError} from "../../../src/lib/errors.js";
+import {AppError, ConflictError} from "../../../src/lib/errors.js";
 
 describe("StackFilesystem directory creation", () => {
     let tmpRoot: string;
@@ -47,11 +47,60 @@ describe("StackFilesystem directory creation", () => {
         });
     });
 
+    describe.skipIf(process.platform === "win32" || process.getuid?.() === 0)("createDirectoryExclusive failures", () => {
+        it("wraps any other mkdir failure in an AppError that keeps the original error as cause", async () => {
+            await fs.chmod(tmpRoot, 0o500);
+            try {
+                const attempt = new StackFilesystem().createDirectoryExclusive("blocked");
+
+                await expect(attempt).rejects.toBeInstanceOf(AppError);
+                await expect(attempt).rejects.not.toBeInstanceOf(ConflictError);
+                await expect(attempt).rejects.toThrow(path.join(tmpRoot, "blocked"));
+                await expect(attempt).rejects.toHaveProperty("cause.code", "EACCES");
+            } finally {
+                await fs.chmod(tmpRoot, 0o700);
+            }
+        });
+    });
+
     describe("createDirectory", () => {
         it("stays tolerant of an existing directory (mkdir -p)", async () => {
             await fs.mkdir(path.join(tmpRoot, "taken"));
 
             await expect(new StackFilesystem().createDirectory("taken")).resolves.toBe(path.join(tmpRoot, "taken"));
+        });
+    });
+
+    describe("directory ownership marker (CR-01, CR-02)", () => {
+        it("owns a claimed directory only for the claiming owner", async () => {
+            const stackFs = new StackFilesystem();
+            await stackFs.createDirectoryExclusive("mine");
+
+            await stackFs.claimDirectory("mine", "op-1");
+
+            await expect(stackFs.ownsDirectory("mine", "op-1")).resolves.toBe(true);
+            await expect(stackFs.ownsDirectory("mine", "op-2")).resolves.toBe(false);
+        });
+
+        it("owns neither a missing directory nor a directory without a marker", async () => {
+            const stackFs = new StackFilesystem();
+            await fs.mkdir(path.join(tmpRoot, "plain"));
+
+            await expect(stackFs.ownsDirectory("missing", "op-1")).resolves.toBe(false);
+            await expect(stackFs.ownsDirectory("plain", "op-1")).resolves.toBe(false);
+        });
+
+        it("stops owning the directory once it is released, and releasing for another owner changes nothing", async () => {
+            const stackFs = new StackFilesystem();
+            await stackFs.createDirectoryExclusive("mine");
+            await stackFs.claimDirectory("mine", "op-1");
+
+            await stackFs.releaseDirectory("mine", "op-2");
+            await expect(stackFs.ownsDirectory("mine", "op-1")).resolves.toBe(true);
+
+            await stackFs.releaseDirectory("mine", "op-1");
+            await expect(stackFs.ownsDirectory("mine", "op-1")).resolves.toBe(false);
+            await expect(stackFs.releaseDirectory("mine", "op-1")).resolves.toBeUndefined();
         });
     });
 });

@@ -1,86 +1,20 @@
 import {EventEmitter} from "node:events"
-import type {MigrationOperation} from "@docktor/shared"
+import type {StateEvent} from "@docktor/shared"
 
-export interface ContainerStateEvent {
-    type: "container_state"
-    stackId: string
-    serviceName: string
-    containerState: string
-    healthStatus: string | null
-    stackStatus: string
-    statusLog?: {
-        id: string
-        fromStatus: string | null
-        toStatus: string
-        message: string | null
-        createdAt: string
-    }
-}
-
-export interface StackStatusEvent {
-    type: "stack_status"
-    stackId: string
-    stackStatus: string
-}
-
-export interface ConfigChangedEvent {
-    type: "config_changed"
-    stackId: string
-    newHash: string
-    // Distinguishes an app-initiated save (StackService.publishConfigChanged,
-    // always "app") from a genuine external edit (FileWatcher's two publish
-    // call sites, always "external") — closes G-08-2's server half so the
-    // client can gate its "changed externally" toast on this field instead
-    // of showing it unconditionally for every config_changed broadcast.
-    source: "app" | "external"
-}
-
-export interface ConfigErrorEvent {
-    type: "config_error"
-    stackId: string
-    message: string
-}
-
-export interface UpdateAvailableEvent {
-    type: "update_available"
-    stackId: string
-    imageRef: string
-    latestTag: string | null
-    hasUpdate: boolean
-}
-
-export interface NotificationCreatedEvent {
-    type: "notification_created"
-    notificationId: string
-}
-
-export interface ProxyCertStatusEvent {
-    type: "proxy_cert_status"
-    proxyConfigId: string
-    stackId: string
-    domain: string
-    // Matches @docktor/shared's certStatusSchema exactly — "expiring" is the
-    // D-13 approaching-expiry state for custom certificates, which have no
-    // automatic renewal. This travels the existing event; no second event
-    // type is introduced for it.
-    status: "pending" | "issued" | "failed" | "expiring"
-    message?: string
-}
-
-export interface MigrationProgressEvent {
-    type: "migration_progress"
-    operation: MigrationOperation
-}
-
-export type StateEvent =
-    | ContainerStateEvent
-    | StackStatusEvent
-    | ConfigChangedEvent
-    | ConfigErrorEvent
-    | UpdateAvailableEvent
-    | NotificationCreatedEvent
-    | ProxyCertStatusEvent
-    | MigrationProgressEvent
+// The event shapes live in @docktor/shared (state-events.ts) so server and
+// client share one Zod definition of every /api/events frame. The names are
+// re-exported so existing server importers compile unchanged.
+export type {
+    ConfigChangedEvent,
+    ConfigErrorEvent,
+    ContainerStateEvent,
+    MigrationProgressEvent,
+    NotificationCreatedEvent,
+    ProxyCertStatusEvent,
+    StackStatusEvent,
+    StateEvent,
+    UpdateAvailableEvent,
+} from "@docktor/shared"
 
 export class StateBroadcaster extends EventEmitter {
     publish(event: StateEvent): void {

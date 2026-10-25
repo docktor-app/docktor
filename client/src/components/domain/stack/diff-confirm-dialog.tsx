@@ -13,9 +13,9 @@ import {
 import {Alert, AlertDescription} from "@/components/ui/alert";
 import {Button} from "@/components/ui/button";
 import {ScrollArea} from "@/components/ui/scroll-area";
-import {UnifiedDiffView, type UnifiedDiffHunk, type UnifiedDiffLine} from "@/components/common/unified-diff-view";
+import {UnifiedDiffView, type UnifiedDiffHunk} from "@/components/common/unified-diff-view";
 import {ComposeFindingRow} from "@/components/domain/stack/compose-finding-row";
-import {envLineHasSecret, maskEnvLine} from "@/lib/env-mask";
+import {hunksHaveSecret, maskDiffHunks} from "@/lib/secret-mask";
 import type {ReviewFinding, UnifiedDiff} from "@/lib/stacks-api";
 
 // Issue #18/D-01/D-03 + Issue #20/D-02: the review gate between an edit (or
@@ -37,25 +37,6 @@ export interface DiffConfirmDialogProps {
     readonly onCancel: () => void;
 }
 
-function maskSecretLine(line: UnifiedDiffLine, revealSecrets: boolean): UnifiedDiffLine {
-    const text = maskEnvLine(line.text, revealSecrets);
-    return text === line.text ? line : {...line, text};
-}
-
-function maskSecretHunks(
-    hunks: ReadonlyArray<UnifiedDiffHunk>,
-    revealSecrets: boolean,
-): ReadonlyArray<UnifiedDiffHunk> {
-    return hunks.map((hunk) => ({
-        ...hunk,
-        lines: hunk.lines.map((line) => maskSecretLine(line, revealSecrets)),
-    }));
-}
-
-function hunksHaveSecret(hunks: ReadonlyArray<UnifiedDiffHunk>): boolean {
-    return hunks.some((hunk) => hunk.lines.some((line) => envLineHasSecret(line.text)));
-}
-
 // Issue #20/D-03: the set of new-file line numbers actually rendered by the
 // diff (every non-removed line that carries a newLine) — a finding whose
 // line isn't in this set (removed-only line, or outside every hunk's
@@ -71,6 +52,9 @@ function visibleNewLines(hunks: ReadonlyArray<UnifiedDiffHunk>): ReadonlySet<num
     }
     return lines;
 }
+
+// A finding whose line is known (IN-03): narrows `line` from `number | null` to `number`.
+type AnchoredFinding = ReviewFinding & {readonly line: number};
 
 function findingKey(finding: ReviewFinding, index: number): string {
     return `${finding.ruleId}-${finding.serviceName ?? ""}-${index}`;
@@ -123,17 +107,18 @@ export function DiffConfirmDialog({
     const hunks = subject?.kind === "edit" ? subject.diff.hunks : [];
     const added = subject?.kind === "edit" ? subject.diff.added : 0;
     const removed = subject?.kind === "edit" ? subject.diff.removed : 0;
-    // T-12-02/D-22: compose diffs are never masked — only env diffs can
-    // contain KEY=value lines whose key matches the secret heuristic.
-    const hasSecret = isEnv && hunksHaveSecret(hunks);
-    const displayedHunks = isEnv ? maskSecretHunks(hunks, revealSecrets) : hunks;
+    // T-12-02/D-09: env and compose diffs share one masker (map and list env
+    // forms, KEY=value and URL credentials) behind the same reveal toggle.
+    const hasSecret = hunksHaveSecret(hunks);
+    const displayedHunks = maskDiffHunks(hunks, revealSecrets);
 
     // Issue #20/D-03: a finding anchors next to its diff line only for a
     // compose edit whose line is actually visible in the diff; every other
     // finding (including every finding when the subject is an env edit or a
     // create review, which has no diff at all) is listed above instead.
     const visibleLines = isComposeEdit ? visibleNewLines(hunks) : new Set<number>();
-    const isAnchored = (finding: ReviewFinding): boolean =>
+    // The type predicate carries the `line !== null` check into `anchoredFindings`.
+    const isAnchored = (finding: ReviewFinding): finding is AnchoredFinding =>
         isComposeEdit && finding.line !== null && visibleLines.has(finding.line);
     const anchoredFindings = findings.filter(isAnchored);
     const listedFindings = findings.filter((finding) => !isAnchored(finding));
@@ -142,10 +127,9 @@ export function DiffConfirmDialog({
     if (isComposeEdit) {
         const byLine = new Map<number, ReviewFinding[]>();
         for (const finding of anchoredFindings) {
-            const line = finding.line as number;
-            const existing = byLine.get(line) ?? [];
+            const existing = byLine.get(finding.line) ?? [];
             existing.push(finding);
-            byLine.set(line, existing);
+            byLine.set(finding.line, existing);
         }
         for (const [line, lineFindings] of byLine) {
             annotations.set(

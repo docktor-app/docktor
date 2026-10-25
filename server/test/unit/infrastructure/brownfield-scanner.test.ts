@@ -37,6 +37,7 @@ function createMockAnalyzer() {
         analyzeCompatibility: vi.fn().mockReturnValue({
             compatibility: "green",
             namedVolumes: [],
+            externalVolumes: [],
             bindMounts: [],
             inlineEnvVars: [],
             unsupportedFeatures: [],
@@ -361,6 +362,28 @@ volumes:
             expect(result.stacks).toHaveLength(1);
             expect(result.stacks[0].compatibility).toBe("yellow");
             expect(result.stacks[0].namedVolumes).toEqual(["pgdata"]);
+        });
+
+        it("reports the volumes the compose file declares as external (#101)", async () => {
+            mockFg.mockResolvedValue(["/stacks/app/docker-compose.yml"]);
+            mockReadFile.mockResolvedValue(`
+services:
+  db:
+    image: postgres:15
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - shared:/shared
+
+volumes:
+  pgdata:
+  shared:
+    external: true
+`);
+            const scanner = new BrownfieldScanner(new ComposeAnalyzer());
+            const result = await scanner.scan(["/stacks"]);
+
+            expect(result.stacks[0].namedVolumes).toEqual(["pgdata", "shared"]);
+            expect(result.stacks[0].externalVolumes).toEqual(["shared"]);
         });
 
         it("discovers stacks with absolute paths (yellow compatibility)", async () => {

@@ -1,7 +1,8 @@
 import {describe, expect, it} from "vitest";
-import type {MigrationOperation} from "@docktor/shared";
+import type {MigrationOperation, MigrationOperationResult, MigrationOperationStatus} from "@docktor/shared";
 import {
     finishMigrationOperation,
+    migrationOperationStatusOf,
     pruneFinishedOperations,
     recordMigrationStep,
     startMigrationOperation,
@@ -94,6 +95,54 @@ describe("finishMigrationOperation", () => {
         finishMigrationOperation(original, {success: true, originalPath: "/opt/old"}, at(1));
 
         expect(original.status).toBe("running");
+    });
+});
+
+describe("migrationOperationStatusOf", () => {
+    const failure = (rollback?: MigrationOperationResult["rollback"]): MigrationOperationResult => ({
+        success: false,
+        error: "boom",
+        originalPath: "/opt/old",
+        ...(rollback && {rollback}),
+    });
+
+    it.each<[string, MigrationOperationResult, MigrationOperationStatus]>([
+        ["a success", {success: true, stackId: "a", originalPath: "/opt/old"}, "succeeded"],
+        ["a failure without a rollback report", failure(), "failed"],
+        ["not-stopped and untouched", failure({oldStack: "not-stopped", original: "untouched", cleanupErrors: []}), "rolled_back"],
+        ["restored-running and untouched", failure({oldStack: "restored-running", original: "untouched", cleanupErrors: []}), "rolled_back"],
+        ["restored-running and restored", failure({oldStack: "restored-running", original: "restored", cleanupErrors: []}), "rolled_back"],
+        ["restored with cleanup errors", failure({oldStack: "restored-running", original: "untouched", cleanupErrors: ["rm: busy"]}), "rolled_back"],
+        ["restart-unverified", failure({oldStack: "restart-unverified", original: "untouched", cleanupErrors: []}), "failed"],
+        ["restart-failed", failure({oldStack: "restart-failed", original: "restored", cleanupErrors: []}), "failed"],
+        ["left-stopped", failure({oldStack: "left-stopped", original: "untouched", cleanupErrors: []}), "failed"],
+        ["a left-aside original", failure({oldStack: "restored-running", original: "left-aside", keptOriginalAt: "/opt/aside", cleanupErrors: []}), "failed"],
+    ])("derives the status for %s", (_label, result, expected) => {
+        expect(migrationOperationStatusOf(result)).toBe(expected);
+    });
+});
+
+describe("finishMigrationOperation with a rollback report", () => {
+    it("ends as rolled_back when the original stack was verified restored", () => {
+        const operation = finishMigrationOperation(
+            running("a", 0),
+            {success: false, error: "boom", originalPath: "/opt/old", rollback: {oldStack: "restored-running", original: "untouched", cleanupErrors: []}},
+            at(3),
+        );
+
+        expect(operation.status).toBe("rolled_back");
+        expect(operation.step).toBe("finished");
+        expect(operation.result?.rollback?.oldStack).toBe("restored-running");
+    });
+
+    it("ends as failed when the restart could not be verified", () => {
+        const operation = finishMigrationOperation(
+            running("a", 0),
+            {success: false, error: "boom", originalPath: "/opt/old", rollback: {oldStack: "restart-unverified", original: "untouched", cleanupErrors: []}},
+            at(3),
+        );
+
+        expect(operation.status).toBe("failed");
     });
 });
 

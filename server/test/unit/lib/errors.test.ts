@@ -1,5 +1,14 @@
 import {describe, expect, it} from "vitest";
-import {AppError, BadRequestError, ConflictError, ForbiddenError, hasErrorCode, NotFoundError, UnauthorizedError} from "../../../src/lib/errors.js";
+import {
+    AppError,
+    BadRequestError,
+    ConfirmationRequiredError,
+    ConflictError,
+    ForbiddenError,
+    hasErrorCode,
+    NotFoundError,
+    UnauthorizedError,
+} from "../../../src/lib/errors.js";
 
 describe("AppError", () => {
     it("has default status code 500", () => {
@@ -97,6 +106,51 @@ describe("UnauthorizedError", () => {
         expect(error.statusCode).toBe(401);
         expect(error.name).toBe("UnauthorizedError");
         expect(error).toBeInstanceOf(AppError);
+    });
+});
+
+describe("error cause", () => {
+    const cause = new Error("root cause");
+
+    it("AppError carries the cause through the constructor and keeps status, code and name", () => {
+        const error = new AppError("wrapped", 502, "CODE", {cause});
+
+        expect(error.cause).toBe(cause);
+        expect(error.statusCode).toBe(502);
+        expect(error.code).toBe("CODE");
+        expect(error.name).toBe("AppError");
+    });
+
+    it("AppError has no cause unless one is given", () => {
+        expect(new AppError("plain").cause).toBeUndefined();
+        expect(Object.hasOwn(new AppError("plain"), "cause")).toBe(false);
+    });
+
+    it.each([
+        ["NotFoundError", (options: ErrorOptions) => new NotFoundError("missing", options), 404],
+        ["ConflictError", (options: ErrorOptions) => new ConflictError("taken", options), 409],
+        ["BadRequestError", (options: ErrorOptions) => new BadRequestError("invalid", options), 400],
+        ["UnauthorizedError", (options: ErrorOptions) => new UnauthorizedError("who", options), 401],
+        ["ConfirmationRequiredError", (options: ErrorOptions) => new ConfirmationRequiredError("confirm", options), 428],
+    ])("%s carries options.cause and keeps its status code", (name, create, statusCode) => {
+        const error = create({cause});
+
+        expect(error.cause).toBe(cause);
+        expect(error.statusCode).toBe(statusCode);
+        expect(error.name).toBe(name);
+    });
+
+    it("ForbiddenError carries options.cause after the optional code", () => {
+        const error = new ForbiddenError("No way", "SOME_CODE", {cause});
+
+        expect(error.cause).toBe(cause);
+        expect(error.code).toBe("SOME_CODE");
+        expect(error.statusCode).toBe(403);
+    });
+
+    it("subclasses without options have no cause", () => {
+        expect(new NotFoundError().cause).toBeUndefined();
+        expect(new ForbiddenError("x", "C").cause).toBeUndefined();
     });
 });
 

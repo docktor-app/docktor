@@ -2,6 +2,8 @@ import {execFile} from "node:child_process";
 import path from "node:path";
 import {promisify} from "node:util";
 import type {ExternalStackControlPort} from "../application/ports/external-stack-control-port.js";
+import {composeStopTimeoutMs, unsafeServiceNames, type ComposeProjectTarget} from "../domain/compose-project.js";
+import {dockerCliEnvironment} from "../lib/compose-env.js";
 import {AppError} from "../lib/errors.js";
 
 const execFileAsync = promisify(execFile);
@@ -16,40 +18,75 @@ const COMPOSE_TIMEOUT_MS = 120_000;
 export type ComposeCommandRunner = (
     file: string,
     args: readonly string[],
-    options: {readonly cwd: string; readonly timeout: number},
+    options: {readonly cwd: string; readonly timeout: number; readonly env: NodeJS.ProcessEnv},
 ) => Promise<{stdout: string; stderr: string}>;
 
 const defaultRunner: ComposeCommandRunner = (file, args, options) =>
-    execFileAsync(file, [...args], {cwd: options.cwd, timeout: options.timeout});
+    execFileAsync(file, [...args], {cwd: options.cwd, timeout: options.timeout, env: options.env});
 
 /**
- * Stops and starts a compose project Docktor does not manage (migration source
- * stacks). The compose path travels as its own argv element and no shell is
- * involved, so it can never be interpreted as a command (T-18-08).
+ * Service names come from container labels and a journal; one that starts with
+ * "-" would be read as a compose flag. They are checked here as well, and `--`
+ * ends the options before the list (WR-06).
+ */
+function safeServices(services: readonly string[]): readonly string[] {
+    const unsafe = unsafeServiceNames(services);
+    if (unsafe.length > 0) {
+        throw new AppError(`Refusing to pass the invalid compose service name(s) ${unsafe.map((name) => JSON.stringify(name)).join(", ")} to docker compose`);
+    }
+    return services;
+}
+
+/**
+ * Stops, starts and (for a rollback) restores a compose project Docktor does not
+ * manage (migration source stacks), always addressed as `-p <project>` (#102). The compose path and the
+ * project name travel as their own argv elements and no shell is involved, so
+ * they can never be interpreted as a command (T-18-08). The child receives only the
+ * allowlisted environment (see lib/compose-env.ts), evaluated per call.
  */
 export class ExternalStackControl implements ExternalStackControlPort {
-    constructor(private readonly run: ComposeCommandRunner = defaultRunner) {}
+    constructor(
+        private readonly run: ComposeCommandRunner = defaultRunner,
+        private readonly environment: () => NodeJS.ProcessEnv = () => dockerCliEnvironment(process.env),
+    ) {}
 
-    async stop(composePath: string): Promise<void> {
-        await this.compose(composePath, "stop");
+    async stop(target: ComposeProjectTarget, options: {readonly timeoutMs: number}): Promise<void> {
+        await this.compose(target, ["stop"], options.timeoutMs);
     }
 
-    async start(composePath: string): Promise<void> {
-        await this.compose(composePath, "start");
+    async start(target: ComposeProjectTarget, services: readonly string[]): Promise<void> {
+        if (services.length === 0) {
+            return;
+        }
+        await this.compose(target, ["start", "--", ...safeServices(services)], COMPOSE_TIMEOUT_MS);
     }
 
-    private async compose(composePath: string, subcommand: "stop" | "start"): Promise<void> {
+    async restoreServices(target: ComposeProjectTarget, services: readonly string[]): Promise<void> {
+        if (services.length === 0) {
+            return;
+        }
+        // --no-build: the original images exist already; a restore must never build. No flag removes orphans, volumes or images.
+        // Known limits of recreating a service: the child only gets the allowlisted environment, so a
+        // `${VAR}` that was exported in the user's shell (and is not in `.env`) resolves blank, and the
+        // anonymous volumes of the removed containers are not carried over to the new ones.
+        await this.compose(target, ["up", "-d", "--no-build", "--", ...safeServices(services)], composeStopTimeoutMs(services.length));
+    }
+
+    private async compose(target: ComposeProjectTarget, command: readonly string[], timeout: number): Promise<void> {
+        const {composePath, project} = target;
         try {
-            await this.run("docker", ["compose", "-f", composePath, subcommand], {
+            await this.run("docker", ["compose", "-p", project, "-f", composePath, ...command], {
                 cwd: path.dirname(composePath),
-                timeout: COMPOSE_TIMEOUT_MS,
+                timeout,
+                env: this.environment(),
             });
         } catch (err: unknown) {
-            const wrapped = new AppError(
-                `docker compose ${subcommand} failed for ${composePath}: ${describeFailure(err)}`,
+            throw new AppError(
+                `docker compose ${command[0]} failed for project ${project} (${composePath}): ${describeFailure(err)}`,
+                500,
+                undefined,
+                {cause: err},
             );
-            wrapped.cause = err;
-            throw wrapped;
         }
     }
 }
