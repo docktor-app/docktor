@@ -31,7 +31,7 @@ function fsOps(existing: Record<string, number>, free: Record<string, {bavail: n
 const noSizer = {measureBytes: vi.fn()};
 const noDocker: VolumeDockerRunner = vi.fn();
 
-describe("DiskSpaceProbe.filesystemOf", () => {
+describe.skipIf(process.platform === "win32")("DiskSpaceProbe.filesystemOf", () => {
     it("reports the device and the free bytes (bavail x bsize) of an existing path", async () => {
         const ops = fsOps({"/opt/docktor/stacks": 64}, {"/opt/docktor/stacks": {bavail: 1_000, bsize: 4_096}});
 

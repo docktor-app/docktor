@@ -805,7 +805,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
             await expect(buildService().preflight(copyingData({backup: true}))).resolves.toBeDefined();
         });
 
-        it("counts a bind source outside the old stack directory for the copy and for the backup", async () => {
+        it.skipIf(process.platform === "win32")("counts a bind source outside the old stack directory for the copy and for the backup", async () => {
             const outside = path.join(tmpRoot, "media");
             await fs.mkdir(outside);
             await fs.writeFile(composePath, composeDeclaring([outside]), "utf-8");
@@ -876,7 +876,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         });
     });
 
-    describe("the backup comes after the verified stop and before any data is copied (D-01, D-02, D-03)", () => {
+    describe.skipIf(process.platform === "win32")("the backup comes after the verified stop and before any data is copied (D-01, D-02, D-03)", () => {
         const outside = (): string => path.join(tmpRoot, "media");
 
         /** Every step the listener hears and every copy the migrator is asked for, in one timeline. */
@@ -1343,7 +1343,7 @@ describe("MigrationService.migrate (MIG-03, MIG-04, BF-05)", () => {
         );
     });
 
-    describe("~ bind sources resolved from the old containers (#104)", () => {
+    describe.skipIf(process.platform === "win32")("~ bind sources resolved from the old containers (#104)", () => {
         let homeData: string;
 
         /** The old project as Docker runs it: `web` mounts `homeData` where the compose file says `~/data`. */
@@ -3034,7 +3034,7 @@ describe("MigrationService environment extraction (CR-02)", () => {
         expect(await readNewEnv()).toBe("PORT=80");
     });
 
-    it("writes the .env that holds extracted secrets readable by the owner only (IN-02)", async () => {
+    it.skipIf(process.platform === "win32")("writes the .env that holds extracted secrets readable by the owner only (IN-02)", async () => {
         await fs.writeFile(composePath, ONE_SERVICE, "utf-8");
         await fs.writeFile(path.join(originalDir, ".env"), "PORT=8080\n", "utf-8");
         await fs.chmod(path.join(originalDir, ".env"), 0o600);
@@ -3313,9 +3313,13 @@ describe("MigrationService compose file check and dependencies (#108, T-22-03)",
         await fs.rm(tmpRoot, {recursive: true, force: true});
     });
 
-    /** Only the ports assessTarget touches; every other dependency falls back to its production singleton. */
+    /**
+     * Only the ports assessTarget touches; every other dependency falls back to its production singleton.
+     * The volume migrator is faked because the production one spawns docker, which a macOS or Windows runner lacks.
+     */
     function buildService(): MigrationService {
         return new MigrationService({
+            migrator: createMockMigrator() as unknown as VolumeMigratorPort,
             rewriter: createMockRewriter() as unknown as ComposeRewriterPort,
             stackFs: mockStackFs as unknown as StackFilesystemPort,
             stackRepo: mockStackRepo as unknown as StackRepository,

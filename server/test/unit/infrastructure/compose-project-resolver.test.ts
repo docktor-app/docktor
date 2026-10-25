@@ -164,7 +164,7 @@ describe("ComposeProjectResolver.resolve (#102)", () => {
         expect(resolution.kind === "resolved" && resolution.project.name).toBe("other");
     });
 
-    it("predicts the name from the files when no container belongs to the compose file", async () => {
+    it.skipIf(process.platform === "win32")("predicts the name from the files when no container belongs to the compose file", async () => {
         const {resolver} = build([], directoriesFake(), {
             [COMPOSE_PATH]: PLAIN_COMPOSE,
             "/srv/app/.env": "COMPOSE_PROJECT_NAME=From_Env\n",
